@@ -1,3 +1,32 @@
+# AgentMesh360 Client
+
+> [!IMPORTANT]
+> **This is the active development repository for the AgentMesh360 desktop client.**
+> It is a Grok-first fork of [`xai-org/grok-build`](https://github.com/xai-org/grok-build):
+> Grok Build supplies the core agent harness, while AgentMesh360 is building the
+> persistent multi-agent desktop product around it.
+
+The first-party product agents — including **Job Agent**, **LectureCast Agent**,
+and **Deploy Agent** — will live here as persistent, user-visible agents with
+stable conversations, memory, tools, permissions, background work, and recovery.
+
+- **Active client development:** this repository
+- **Upstream harness:** [`xai-org/grok-build`](https://github.com/xai-org/grok-build)
+- **Legacy prototype and migration source:** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
+- **Repository boundary:** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
+
+Do not add new AgentMesh360 client features to the legacy `AgentMesh` repository.
+Migrate only still-valid product contracts, assets, and cloud integration code
+from it into this fork.
+
+---
+
+## Upstream Grok Build reference
+
+The documentation below is retained from the upstream project while the
+AgentMesh360 product surface is built. Upstream attribution, licensing,
+`SOURCE_REV`, and third-party notices must remain intact.
+
 <div align="center">
 
 <h1>
