@@ -128,7 +128,7 @@ impl MvpAgent {
     /// This is a roster-wide notification (no `sessionId`), so the leader IPC
     /// server broadcasts it to all clients rather than routing by session (see
     /// the `x.ai/sessions/changed` special-case in `leader/server.rs`).
-    pub(super) fn emit_roster_changed(
+    pub(crate) fn emit_roster_changed(
         &self,
         upserted: Vec<crate::agent::roster::RosterEntry>,
         removed: Vec<String>,

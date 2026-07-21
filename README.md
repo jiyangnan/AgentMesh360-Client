@@ -15,7 +15,7 @@ stable conversations, memory, tools, permissions, background work, and recovery.
 - **Legacy prototype and migration source:** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
 - **Repository boundary:** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
 - **产品与技术蓝图（中文）：** [`docs/architecture/PRODUCT_BLUEPRINT.md`](docs/architecture/PRODUCT_BLUEPRINT.md)
-- **Persistent Agent architecture:** [`docs/architecture/PERSISTENT_PRODUCT_AGENTS.md`](docs/architecture/PERSISTENT_PRODUCT_AGENTS.md)
+- **持久化产品 Agent 架构（中文）：** [`docs/architecture/PERSISTENT_PRODUCT_AGENTS.md`](docs/architecture/PERSISTENT_PRODUCT_AGENTS.md)
 
 Do not add new AgentMesh360 client features to the legacy `AgentMesh` repository.
 Migrate only still-valid product contracts, assets, and cloud integration code

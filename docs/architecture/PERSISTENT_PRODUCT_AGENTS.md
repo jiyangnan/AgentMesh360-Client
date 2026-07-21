@@ -1,72 +1,92 @@
-# Persistent Product Agents
+# 持久化产品 Agent 架构
 
-Status: first implementation slice
-Established: 2026-07-21
+状态：基础实现完成，已接入 Host 订阅门禁
+建立日期：2026-07-21
+最近更新：2026-07-22
 
-Related target product, flow, package, provider, and trust-boundary diagrams (Chinese):
-[`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md).
+相关的产品结构、流程、Package、Provider 与信任边界图见：
+[`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。
 
-## Decision
+## 核心决策
 
-AgentMesh360 treats Job Agent, LectureCast Agent, Deploy Agent, and future
-first-party agents as persistent product identities hosted by the Grok Build
-Harness. They are not aliases for disposable chat sessions and they are not
-independent copies of the full runtime.
+AgentMesh360 将 Job Agent、LectureCast Agent、Deploy Agent 以及未来的第一方
+Agent 视为由 Grok Build Harness 承载的持久化产品身份。它们不是一次性聊天 Session
+的别名，也不是各自运行一份完整 Harness 的独立进程。
 
-Each activated product agent owns:
+每个已激活的产品 Agent 拥有：
 
-- a stable product `agent_id`;
-- a deterministic main-session UUID;
-- a durable main conversation in Grok's existing session store;
-- a product-specific Grok `AgentDefinition`;
-- a dedicated local workspace;
-- desired and observed lifecycle state in a small local registry.
+- 稳定的产品 `agent_id`；
+- 确定性的 Main Session UUID；
+- 保存在 Grok 既有 Session Store 中的持久主对话；
+- 产品专属的 Grok `AgentDefinition`；
+- 独立的本地工作目录；
+- 存储在轻量本地 Registry 中的期望状态与运行状态。
 
-The top-level product agent may use Grok subagents for bounded work. Those
-subagents remain ordinary task workers and do not replace the product agent's
-identity or long-running conversation.
+顶层产品 Agent 可以调用 Grok subagent 完成边界清晰的任务，但 subagent 仍是临时
+Worker，不能取代产品 Agent 的长期身份与固定主对话。
 
-## Runtime boundary
+## Runtime 边界
 
-Grok Build remains responsible for the agent loop, model access, tools,
-permissions, session transcripts, compaction, memory, background work, and
-subagent execution. AgentMesh360 adds only the product-facing identity,
-catalog, activation, restoration, and residency policy.
+Grok Build 继续负责 Agent Loop、模型访问、工具、权限、对话记录、压缩、记忆、后台
+任务与 subagent 执行。AgentMesh360 只增加产品身份、目录、激活、订阅准入、恢复与
+常驻策略。
 
-The local registry lives at `~/.agentmesh360/state.db`. Tests and managed
-installations may override the root with `AGENTMESH360_HOME`. Grok session data
-continues to use the upstream session store; the registry references it by
-stable UUID and does not duplicate transcripts.
+本地 Registry 位于 `~/.agentmesh360/state.db`。测试和受管安装可以通过
+`AGENTMESH360_HOME` 覆盖根目录。Grok Session 数据仍使用上游 Session Store；
+Registry 只引用稳定 UUID，不复制对话记录。
 
-## Lifecycle
+AgentMesh360 Core 的默认地址为 `https://api.agentmesh360.com`；本地开发可以通过
+`AGENTMESH360_CORE_URL` 覆盖。该变量只允许改变服务地址，不改变 Core 返回的
+`schema_version = 1` 契约与 Host 的失败关闭策略。
 
-1. Before activation an Agent is `inactive / available`.
-2. Activation records `desired_state = running`, creates its workspace, and
-   creates or loads its deterministic main session.
-3. An activated main session is pinned across client disconnects, including
-   while idle. Ordinary chats and task subagents retain Grok's bounded
-   idle-unload behavior.
-4. On Harness initialization, all agents whose desired state is `running` are
-   restored from the existing Grok session store and pinned again.
-5. A failed restoration is recorded as `error` without deleting the durable
-   session or changing the desired state, so a later startup can retry.
+## 生命周期
 
-## ACP surface
+1. 激活前，Agent 状态为 `inactive / available`。
+2. 客户端用用户 JWT 调用 Core 的 `/v1/account/client-bootstrap`；Host 只接受 Core
+   给出的最终 `can_enter_client`，不自行拼装订阅与 credits 结论。
+3. 只有有效订阅或有效历史体验期才能列出和激活产品 Agent。激活时写入
+   `desired_state = running`，创建工作目录，并创建或加载确定性的 Main Session。
+4. 已激活的 Main Session 在客户端窗口断开后仍保持 pin；普通聊天与临时 subagent
+   继续沿用 Grok 的有界 idle-unload 行为。
+5. Harness 初始化时不再无条件恢复产品 Agent。Core 准入成功后，Host 才恢复所有
+   `desired_state = running` 的 Agent，并重新 pin 它们。
+6. 准入缺失、过期、暂停或 Core 无法验证时，Host 立即失败关闭并清除产品 Session
+   的常驻 pin；本地 Registry 与对话数据继续保留，但不能加载、浏览或运行。
+7. 恢复失败会记录为 `error`，不会删除持久 Session，也不会改变期望状态，后续有效
+   bootstrap 可以重试。
 
-The first client-facing contract is deliberately small:
+Host 使用 Core 的 `server_time` 与 `period_end` 计算单调时钟截止点，避免客户端时钟
+偏差导致越权；即使 UI 没有及时刷新，当前准入也不会超过服务端返回的会员周期。
 
-- `x.agentmesh360/agents/list`
-- `x.agentmesh360/agents/activate` with `{ "agentId": "job-agent" }`
+## ACP 接口
 
-Both use the standard extension result envelope. The list reports the durable
-identity and a live runtime view, including the fixed `mainSessionId` needed to
-open the agent's one canonical conversation window.
+当前客户端接口包括：
 
-## Upstream sync rule
+- `x.agentmesh360/account/bootstrap`，请求
+  `{ "accessToken": "<AgentMesh360 user JWT>" }`；
+- `x.agentmesh360/agents/list`；
+- `x.agentmesh360/agents/activate`，请求
+  `{ "agentId": "job-agent" }`。
 
-AgentMesh360 code is isolated under `xai-grok-shell::agentmesh360`. Integration
-with upstream currently touches only module export, ACP extension dispatch,
-MvpAgent state construction, initialization restoration, activity visibility,
-and idle eviction. This narrow seam is intentional: upstream Grok Build
-updates should be merged or rebased explicitly, while product state and
-contracts remain owned by the fork.
+bootstrap 成功响应会把 Core 的 snake_case 契约转换为 camelCase，并继续使用标准
+Extension Result envelope。JWT 只存在于本次请求内存和 HTTPS Authorization Header
+中，不写入 `state.db`、Grok Session、日志或错误消息。
+
+未验证时，Host 返回 `agentmesh360_access_required`；订阅失效时返回
+`agentmesh360_subscription_required` 以及 Core 原因码。除 Agent 目录外，Host 还会在
+产品 Main Session 的新建、加载、Prompt 以及携带 `sessionId` 的扩展调用入口再次
+检查准入，防止绕开 UI 直接调用底层 ACP。
+
+## 当前实现边界
+
+本切片完成的是 Core 契约和 Host 强制执行。桌面端登录页面、Refresh Token / Keychain、
+定时与唤醒重验、续费拦截页、官网跳转仍属于下一切片。在这些能力接入前，桌面外壳
+需要在启动、登录成功、从休眠恢复和订阅状态变化后重新调用 bootstrap；Host 会在
+服务端周期截止时自动失效，但无法在周期内主动获知退款或后台暂停。
+
+## 上游同步规则
+
+AgentMesh360 代码集中在 `xai-grok-shell::agentmesh360`。与上游的集成点只包括模块
+导出、ACP 分发、`MvpAgent` 状态、Session 创建 / 加载 / Prompt 门禁、活动可见性和
+idle eviction。保持这条窄接缝，可以在显式合并或 rebase 上游 Grok Build 更新时清楚
+审查差异，同时让产品状态与商业契约继续由本 Fork 管理。

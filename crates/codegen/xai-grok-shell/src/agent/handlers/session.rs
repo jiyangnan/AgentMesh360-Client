@@ -53,7 +53,9 @@ async fn handle_roster_list(
     agent: &MvpAgent,
     _args: &acp::ExtRequest,
 ) -> Result<acp::ExtResponse, acp::Error> {
-    let sessions = agent.build_roster().await;
+    let hidden = crate::agentmesh360::hidden_product_session_ids(agent)?;
+    let mut sessions = agent.build_roster().await;
+    sessions.retain(|session| !hidden.contains(&session.session_id));
     ExtMethodResult::success(crate::agent::roster::RosterListResponse { sessions })
         .to_ext_response()
         .map_err(|e| acp::Error::internal_error().data(e.to_string()))
@@ -93,6 +95,7 @@ async fn handle_session_info(
     };
 
     let sid = acp::SessionId::new(session_id.clone());
+    crate::agentmesh360::require_product_session_access(agent, &sid)?;
     let Some(session) = agent.sessions.borrow().get(&sid).cloned() else {
         return ExtMethodResult::success(serde_json::json!({}))
             .to_ext_response()
@@ -177,7 +180,7 @@ async fn handle_session_close(
 }
 
 async fn handle_session_summaries(
-    _agent: &MvpAgent,
+    agent: &MvpAgent,
     args: &acp::ExtRequest,
 ) -> Result<acp::ExtResponse, acp::Error> {
     match args.method.as_ref() {
@@ -190,6 +193,8 @@ async fn handle_session_summaries(
             let mut summaries = list_summaries(Some(&cwd)).await.map_err(|e| {
                 acp::Error::internal_error().data(format!("failed to list sessions: {e}"))
             })?;
+            let hidden = crate::agentmesh360::hidden_product_session_ids(agent)?;
+            summaries.retain(|summary| !hidden.contains(summary.info.id.0.as_ref()));
             for s in &mut summaries {
                 backfill_session_summary(s);
             }
@@ -209,9 +214,11 @@ async fn handle_session_summaries(
 
             let _timer = crate::instrumentation_timer!("session.list_sessions_for_load");
 
-            let summaries = list_summaries(None).await.map_err(|e| {
+            let mut summaries = list_summaries(None).await.map_err(|e| {
                 acp::Error::internal_error().data(format!("failed to list workspaces: {e}"))
             })?;
+            let hidden = crate::agentmesh360::hidden_product_session_ids(agent)?;
+            summaries.retain(|summary| !hidden.contains(summary.info.id.0.as_ref()));
 
             summaries_to_overview_response(summaries)
         }
@@ -224,6 +231,8 @@ async fn handle_session_summaries(
             let mut summaries = list_recent_summaries(limit).await.map_err(|e| {
                 acp::Error::internal_error().data(format!("failed to list workspaces: {e}"))
             })?;
+            let hidden = crate::agentmesh360::hidden_product_session_ids(agent)?;
+            summaries.retain(|summary| !hidden.contains(summary.info.id.0.as_ref()));
             for s in &mut summaries {
                 backfill_session_summary(s);
             }
@@ -278,12 +287,16 @@ async fn handle_session_list(
 
     let registry_client = agent.session_registry_client();
     let conversations_client = agent.conversations_client();
-    let result = unified_list::build_unified_list(
+    let mut result = unified_list::build_unified_list(
         registry_client.as_ref(),
         conversations_client.as_ref(),
         req,
     )
     .await;
+    let hidden = crate::agentmesh360::hidden_product_session_ids(agent)?;
+    result
+        .rows
+        .retain(|row| !hidden.contains(&row.legacy.session_id));
 
     ExtMethodResult::success(unified_list::ext_list_response(result))
         .to_ext_response()

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
@@ -121,6 +122,26 @@ impl AgentRegistry {
             Self::row_to_record,
         )
         .with_context(|| format!("unknown AgentMesh360 product agent: {agent_id}"))
+    }
+
+    pub fn contains_main_session(&self, session_id: &str) -> Result<bool> {
+        let conn = self.open()?;
+        let found = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM product_agents WHERE main_session_id = ?1)",
+            [session_id],
+            |row| row.get(0),
+        )?;
+        Ok(found)
+    }
+
+    pub fn main_session_ids(&self) -> Result<HashSet<String>> {
+        let conn = self.open()?;
+        let mut stmt = conn.prepare(
+            "SELECT main_session_id FROM product_agents WHERE main_session_id IS NOT NULL",
+        )?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<HashSet<_>>>()
+            .context("read AgentMesh360 protected main sessions")
     }
 
     pub fn prepare_activation(&self, agent_id: &str) -> Result<ProductAgentRecord> {
@@ -262,14 +283,28 @@ mod tests {
     fn activation_is_idempotent_across_registry_reopen() {
         let temp = tempfile::tempdir().expect("tempdir");
         let first = AgentRegistry::in_home(temp.path());
-        let activated = first.prepare_activation("job-agent").expect("activate");
         let expected_session_id = stable_main_session_id("job-agent").to_string();
+        assert!(
+            !first
+                .contains_main_session(&expected_session_id)
+                .expect("inactive agent has no main session")
+        );
+        let activated = first.prepare_activation("job-agent").expect("activate");
 
         assert_eq!(
             activated.main_session_id.as_deref(),
             Some(expected_session_id.as_str())
         );
         assert_eq!(activated.desired_state, "running");
+        assert!(
+            first
+                .contains_main_session(&expected_session_id)
+                .expect("activated main session is protected")
+        );
+        assert_eq!(
+            first.main_session_ids().expect("protected sessions"),
+            HashSet::from([expected_session_id.clone()])
+        );
 
         let reopened = AgentRegistry::in_home(temp.path());
         let activated_again = reopened
@@ -278,6 +313,11 @@ mod tests {
         assert_eq!(activated_again.main_session_id, activated.main_session_id);
         assert_eq!(activated_again.workspace_dir, activated.workspace_dir);
         assert_eq!(activated_again.activated_at, activated.activated_at);
+        assert!(
+            reopened
+                .contains_main_session(&expected_session_id)
+                .expect("reopened registry protects the same main session")
+        );
     }
 
     #[test]

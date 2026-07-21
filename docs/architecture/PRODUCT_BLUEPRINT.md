@@ -136,6 +136,12 @@ flowchart TD
 客户端 bootstrap 必须是服务端给出的单一准入结论。客户端不能自行组合订阅日期、
 credits 余额和产品标记来推断用户是否有权进入。
 
+当前已经落地 Core `GET /v1/account/client-bootstrap` 与 Host
+`x.agentmesh360/account/bootstrap`。Host 在准入成功前不会恢复持久 Agent，并在产品
+Main Session 的创建、加载、Prompt 和携带 Session ID 的扩展调用入口重复校验。
+JWT 仅用于内存中的 HTTPS 请求，不写入 Registry 或对话。桌面登录、Refresh Token、
+Keychain、定时 / 唤醒重验和订阅拦截页面仍由后续桌面外壳切片实现。
+
 ## 3. 技术架构图
 
 ```mermaid
@@ -438,7 +444,7 @@ flowchart LR
 | 能力切片 | 状态 | 具体范围 |
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：基础能力** | SQLite Agent Registry、确定性 Main Session、激活 ACP 方法、Session 固定、启动恢复 |
-| 订阅硬门禁 | **下一阶段目标** | 登录、Token 刷新、服务端 bootstrap、Host 强制执行、订阅界面、官网跳转 |
+| 订阅硬门禁 | **Core + Host 基础已实现** | 已完成服务端 bootstrap、恢复门禁、产品 Session 强制校验与周期截止；待登录、Token 刷新、Keychain、定时重验、订阅界面和官网跳转 |
 | BYOK Provider 层 | **下一阶段目标** | 安全凭据、OpenAI/xAI/Anthropic Adapter、能力校验、模型选择、统一流式响应与错误 |
 | 动态 Agent Package | **目标** | Manifest、签名、目录、安装器、迁移、权限变更、回滚、宿主 Skill Adapter |
 | 桌面产品外壳 | **目标** | Agent 首页、固定对话、垂直工作区、活动、产物、审批与设置 |

@@ -387,7 +387,6 @@ impl acp::Agent for MvpAgent {
         }
         self.spawn_announcements_refresh();
         self.spawn_heap_profile_monitor();
-        crate::agentmesh360::spawn_restore_activated_agents(self);
         let init_model_state = if crate::agent::chat_modes::process_chat_mode_enabled() {
             self.chat_modes.model_state().await
         } else {
@@ -890,6 +889,7 @@ impl acp::Agent for MvpAgent {
             }
             None => acp::SessionId::new(uuid::Uuid::now_v7().to_string()),
         };
+        crate::agentmesh360::require_product_session_access(self, &session_id)?;
         let mut session_timer = crate::instrumentation_timer!("session.new_session");
         session_timer.with_field("session_id", session_id.0.as_ref());
         session_timer.with_field("cwd", cwd.as_str());
@@ -1212,6 +1212,7 @@ impl acp::Agent for MvpAgent {
         &self,
         arguments: acp::LoadSessionRequest,
     ) -> Result<acp::LoadSessionResponse, acp::Error> {
+        crate::agentmesh360::require_product_session_access(self, &arguments.session_id)?;
         let _load_guard = self.begin_session_load(&arguments.session_id);
         self.sweep_dead_sessions();
         self.drain_old_session_thread(&arguments.session_id).await;
@@ -1986,6 +1987,7 @@ impl acp::Agent for MvpAgent {
         mut arguments: acp::PromptRequest,
     ) -> Result<acp::PromptResponse, acp::Error> {
         use crate::session::plan_mode::PromptMode;
+        crate::agentmesh360::require_product_session_access(self, &arguments.session_id)?;
         if let Some(meta) = arguments.meta.as_ref() {
             xai_file_utils::trace_context::link_current_span_to_meta(
                 &serde_json::Value::Object(meta.clone()),
@@ -3168,6 +3170,9 @@ impl acp::Agent for MvpAgent {
             xai_file_utils::trace_context::link_current_span_to_meta(meta);
         }
         tracing::info!("Received extension method call: method={}", args.method);
+        if let Some(session_id) = crate::extensions::parse_session_id(&args) {
+            crate::agentmesh360::require_product_session_access(self, &session_id)?;
+        }
         #[allow(unused_mut)]
         let mut backend_no_bridge_err: Option<acp::Error> = None;
         let method = args.method.clone();
@@ -3437,7 +3442,7 @@ impl acp::Agent for MvpAgent {
             }
             "x.ai/suggest" => crate::extensions::suggest::handle(self, &args).await,
             "x.ai/suggestPrompt" => crate::extensions::suggest::handle(self, &args).await,
-            s if s.starts_with("x.agentmesh360/agents/") => {
+            s if s.starts_with("x.agentmesh360/") => {
                 crate::agentmesh360::handle(self, &args).await
             }
             s if s.starts_with("x.ai/auth/") => {
