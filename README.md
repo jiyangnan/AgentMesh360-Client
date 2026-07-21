@@ -14,6 +14,7 @@ stable conversations, memory, tools, permissions, background work, and recovery.
 - **Upstream harness:** [`xai-org/grok-build`](https://github.com/xai-org/grok-build)
 - **Legacy prototype and migration source:** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
 - **Repository boundary:** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
+- **Persistent Agent architecture:** [`docs/architecture/PERSISTENT_PRODUCT_AGENTS.md`](docs/architecture/PERSISTENT_PRODUCT_AGENTS.md)
 
 Do not add new AgentMesh360 client features to the legacy `AgentMesh` repository.
 Migrate only still-valid product contracts, assets, and cloud integration code

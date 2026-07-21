@@ -151,7 +151,7 @@ impl MvpAgent {
     /// `NeedsInput` (wins even over a running turn — a session awaiting a
     /// permission *mid-turn* is "needs input"); else a running turn →
     /// `Working`; else map the coarse `SessionLiveState`.
-    pub(super) fn resident_activity(
+    pub(crate) fn resident_activity(
         &self,
         id: &acp::SessionId,
     ) -> crate::agent::roster::RosterActivity {

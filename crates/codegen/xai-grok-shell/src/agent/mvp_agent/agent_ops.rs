@@ -1502,6 +1502,7 @@ impl MvpAgent {
         subagent_coordinator.set_running_gauge(activity.subagent_gauge());
         let instance = Self {
             sessions: RefCell::new(HashMap::new()),
+            agentmesh360: Default::default(),
             activity,
             loading_sessions: RefCell::new(HashMap::new()),
             dispatch_locks: RefCell::new(HashMap::new()),
@@ -1655,21 +1656,30 @@ impl MvpAgent {
             .iter()
             .map(|sid| {
                 let id = acp::SessionId::new(sid.clone());
+                let pinned = self.agentmesh360.is_pinned(&id);
                 async move {
-                    let busy = self.session_has_live_work(&id).await;
-                    (id, busy)
+                    let busy = pinned || self.session_has_live_work(&id).await;
+                    (id, busy, pinned)
                 }
             });
         let resolved = futures::future::join_all(checks).await;
         let mut kept_resident: usize = 0;
         let mut unloaded: usize = 0;
-        for (id, busy) in resolved {
+        for (id, busy, pinned) in resolved {
             if busy {
-                self.set_session_live_state(&id, SessionLiveState::Working);
+                self.set_session_live_state(
+                    &id,
+                    if pinned {
+                        SessionLiveState::IdleResident
+                    } else {
+                        SessionLiveState::Working
+                    },
+                );
                 kept_resident += 1;
                 tracing::info!(
                     session_id = % id.0,
-                    "kept session resident across client disconnect (live work)"
+                    reason = if pinned { "persistent_product_agent" } else { "live_work" },
+                    "kept session resident across client disconnect"
                 );
                 continue;
             }

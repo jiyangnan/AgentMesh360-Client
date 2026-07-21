@@ -596,6 +596,10 @@ pub struct MvpAgent {
     /// per client request; no cross-session iteration except cleanup
     /// (`remove_session`, `sweep_dead_sessions`).
     pub(crate) sessions: RefCell<HashMap<acp::SessionId, SessionHandle>>,
+    /// Stable first-party AgentMesh360 identities and their residency policy.
+    /// Grok sessions remain the execution/state engine; this layer only binds
+    /// product agents to deterministic main sessions.
+    pub(crate) agentmesh360: crate::agentmesh360::AgentMesh360Runtime,
     /// `Send + Sync` mirror of per-session activity (running turn, pending
     /// interactions, subagent gauge) shared with the leader's auto-update
     /// checker, which cannot read the `!Send` maps above. Sessions are

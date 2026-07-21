@@ -387,6 +387,7 @@ impl acp::Agent for MvpAgent {
         }
         self.spawn_announcements_refresh();
         self.spawn_heap_profile_monitor();
+        crate::agentmesh360::spawn_restore_activated_agents(self);
         let init_model_state = if crate::agent::chat_modes::process_chat_mode_enabled() {
             self.chat_modes.model_state().await
         } else {
@@ -3436,6 +3437,9 @@ impl acp::Agent for MvpAgent {
             }
             "x.ai/suggest" => crate::extensions::suggest::handle(self, &args).await,
             "x.ai/suggestPrompt" => crate::extensions::suggest::handle(self, &args).await,
+            s if s.starts_with("x.agentmesh360/agents/") => {
+                crate::agentmesh360::handle(self, &args).await
+            }
             s if s.starts_with("x.ai/auth/") => {
                 crate::extensions::auth::handle(self, &args).await
             }

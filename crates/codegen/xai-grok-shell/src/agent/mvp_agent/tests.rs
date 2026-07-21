@@ -3343,6 +3343,41 @@ fn disconnect_unloads_idle_session_without_finalize() {
         );
     });
 }
+/// An activated AgentMesh360 product agent owns a persistent main session.
+/// Unlike an ordinary idle chat, disconnecting its current window must not
+/// unload the actor: the same resident conversation remains available for the
+/// next client attachment without a load/replay cycle.
+#[test]
+fn disconnect_keeps_idle_product_agent_session_resident() {
+    run_local_for_bridge_test(|| async {
+        let agent = build_minimal_agent_for_tests();
+        let sid = acp::SessionId::new(
+            crate::agentmesh360::registry::stable_main_session_id("job-agent").to_string(),
+        );
+        let (handle, _cmd_tx, mut cmd_rx) = make_live_session_handle(&sid, None);
+        agent.sessions.borrow_mut().insert(sid.clone(), handle);
+        agent.agentmesh360.pin(sid.clone());
+
+        drive_disconnect(&agent, &sid).await;
+
+        assert!(
+            agent.sessions.borrow().contains_key(&sid),
+            "an activated product agent must remain resident while idle"
+        );
+        assert_eq!(
+            agent.session_live_state_for(&sid),
+            Some(SessionLiveState::IdleResident),
+            "a pinned idle product agent remains an idle resident"
+        );
+        assert!(
+            matches!(
+                cmd_rx.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ),
+            "disconnect must not query or shut down a pinned product agent"
+        );
+    });
+}
 /// The `IsBusy` keep-resident path. A between-turns session
 /// (`current_prompt_id = None`) whose actor answers `IsBusy = true` (queued
 /// inputs at the turn boundary) must be kept resident — NOT unloaded — and
