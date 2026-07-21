@@ -3,7 +3,7 @@
 Status: first implementation slice
 Established: 2026-07-21
 
-Related target product, flow, package, provider, and trust-boundary diagrams:
+Related target product, flow, package, provider, and trust-boundary diagrams (Chinese):
 [`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md).
 
 ## Decision

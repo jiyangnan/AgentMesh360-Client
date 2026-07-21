@@ -14,7 +14,7 @@ stable conversations, memory, tools, permissions, background work, and recovery.
 - **Upstream harness:** [`xai-org/grok-build`](https://github.com/xai-org/grok-build)
 - **Legacy prototype and migration source:** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
 - **Repository boundary:** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
-- **Product and technical blueprint:** [`docs/architecture/PRODUCT_BLUEPRINT.md`](docs/architecture/PRODUCT_BLUEPRINT.md)
+- **产品与技术蓝图（中文）：** [`docs/architecture/PRODUCT_BLUEPRINT.md`](docs/architecture/PRODUCT_BLUEPRINT.md)
 - **Persistent Agent architecture:** [`docs/architecture/PERSISTENT_PRODUCT_AGENTS.md`](docs/architecture/PERSISTENT_PRODUCT_AGENTS.md)
 
 Do not add new AgentMesh360 client features to the legacy `AgentMesh` repository.
