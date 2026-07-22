@@ -6,6 +6,7 @@
 //! deterministic main conversation per activated product agent.
 
 mod access;
+mod credential_lease;
 mod credential_vault;
 mod model_assignments;
 mod model_policy;

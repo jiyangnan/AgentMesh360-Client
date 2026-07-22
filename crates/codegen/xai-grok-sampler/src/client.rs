@@ -200,7 +200,18 @@ fn extract_context_total(value: &serde_json::Value) -> Option<u32> {
 fn record_stream_request_failure(err: &reqwest::Error) {
     let span = tracing::Span::current();
     span.record("success", false);
-    span.record("error", err.to_string().as_str());
+    let category = if err.is_timeout() {
+        "transport_timeout"
+    } else if err.is_connect() {
+        "transport_connect"
+    } else if err.is_body() {
+        "transport_body"
+    } else if err.is_decode() {
+        "transport_decode"
+    } else {
+        "transport_error"
+    };
+    span.record("error", category);
 }
 
 fn extract_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
