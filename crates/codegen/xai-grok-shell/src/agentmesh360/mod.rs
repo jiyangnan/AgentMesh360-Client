@@ -38,18 +38,66 @@ pub const ACCOUNT_BOOTSTRAP_METHOD: &str = "x.agentmesh360/account/bootstrap";
 pub const AGENTS_LIST_METHOD: &str = "x.agentmesh360/agents/list";
 pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
 
-#[derive(Default)]
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
-    providers: providers::ProviderService<credential_vault::SystemCredentialVault>,
+    providers: providers::ProviderService<credential_vault::RuntimeCredentialVault>,
     model_routing: model_routing::ModelRoutingService,
     access: access::ClientAccess,
+    state_home: PathBuf,
+    credential_vault: credential_vault::RuntimeCredentialVault,
     pinned_sessions: RefCell<HashSet<acp::SessionId>>,
     restore_started: Cell<bool>,
     access_generation: Cell<u64>,
 }
 
+impl Default for AgentMesh360Runtime {
+    fn default() -> Self {
+        let state_home = state::default_state_home();
+        let credential_vault = credential_vault::RuntimeCredentialVault::default();
+        Self::new(
+            state_home,
+            access::ClientAccess::default(),
+            credential_vault,
+        )
+    }
+}
+
 impl AgentMesh360Runtime {
+    fn new(
+        state_home: PathBuf,
+        access: access::ClientAccess,
+        credential_vault: credential_vault::RuntimeCredentialVault,
+    ) -> Self {
+        Self {
+            registry: AgentRegistry::in_home(&state_home),
+            providers: providers::ProviderService::new(
+                provider_profiles::ProviderProfileStore::in_home(&state_home),
+                credential_vault.clone(),
+            ),
+            model_routing: model_routing::ModelRoutingService::in_home(&state_home),
+            access,
+            state_home,
+            credential_vault,
+            pinned_sessions: RefCell::default(),
+            restore_started: Cell::default(),
+            access_generation: Cell::default(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_host_test(
+        state_home: impl Into<PathBuf>,
+        core_base_url: impl Into<String>,
+    ) -> Self {
+        Self::new(
+            state_home.into(),
+            access::ClientAccess::new(core_base_url),
+            credential_vault::RuntimeCredentialVault::Memory(
+                credential_vault::MemoryCredentialVault::default(),
+            ),
+        )
+    }
+
     pub(crate) fn registry(&self) -> &AgentRegistry {
         &self.registry
     }
@@ -94,6 +142,8 @@ impl AgentMesh360Runtime {
             owner_account_id,
             agent_id,
             self.access.guard(owner_account_id),
+            self.state_home.clone(),
+            self.credential_vault.clone(),
         )))
     }
 }
@@ -483,4 +533,195 @@ fn current_account_id(agent: &MvpAgent) -> Result<i64> {
         .access
         .current_account_id()
         .ok_or_else(|| anyhow!("AgentMesh360 account access is unavailable"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use xai_acp_lib::AcpAgentGatewaySender as GatewaySender;
+
+    use super::*;
+    use crate::agent::config::Config;
+    use crate::auth::{AuthManager, GrokComConfig};
+
+    const ACTIVE_BOOTSTRAP: &str = r#"{
+        "schema_version":1,
+        "server_time":"2026-07-22T00:00:00Z",
+        "account":{"id":1,"email":"u@example.com","account_id":41,"display_name":null,"avatar_url":null},
+        "subscription":{"status":"active","source":"monthly_pass","plan":"monthly_pass","period_start":"2026-07-01 00:00:00","period_end":"2026-08-31 00:00:00","auto_renews":false},
+        "credits":{"balance":0,"source":"monthly_pass","expires_at":"2026-08-31 00:00:00"},
+        "access":{"can_enter_client":true,"reason":"active_subscription"}
+    }"#;
+
+    fn ext_request(method: &str, params: serde_json::Value) -> acp::ExtRequest {
+        acp::ExtRequest::new(
+            method,
+            Arc::from(serde_json::value::to_raw_value(&params).expect("request params")),
+        )
+    }
+
+    fn ext_result(response: acp::ExtResponse) -> serde_json::Value {
+        let envelope: serde_json::Value =
+            serde_json::from_str(response.0.get()).expect("extension response");
+        envelope
+            .get("result")
+            .cloned()
+            .unwrap_or_else(|| panic!("extension response has no result: {envelope}"))
+    }
+
+    async fn serve_bootstrap_once() -> (String, tokio::task::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind Core mock");
+        let address = listener.local_addr().expect("Core mock address");
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept Core request");
+            let mut request = vec![0; 4096];
+            let read = stream.read(&mut request).await.expect("read Core request");
+            let request = String::from_utf8_lossy(&request[..read]).to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{ACTIVE_BOOTSTRAP}",
+                ACTIVE_BOOTSTRAP.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("write Core response");
+            request
+        });
+        (format!("http://{address}"), task)
+    }
+
+    fn build_host_test_agent(state_home: &std::path::Path, core_base_url: String) -> MvpAgent {
+        let auth_home = tempfile::tempdir().expect("auth home");
+        let auth_manager = Arc::new(AuthManager::new(auth_home.path(), GrokComConfig::default()));
+        let (gateway_tx, _gateway_rx) = tokio::sync::mpsc::unbounded_channel();
+        let gateway = GatewaySender::new(gateway_tx);
+        let mut agent =
+            MvpAgent::new(gateway, &Config::default(), auth_manager, None).expect("test agent");
+        agent.agentmesh360 = AgentMesh360Runtime::for_host_test(state_home, core_base_url);
+        agent
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn host_test_runtime_shares_memory_vault_across_acp_and_prompt_routing() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let agent = build_host_test_agent(state_home.path(), core_base_url);
+
+                let bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "sentinel-bootstrap-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap response");
+                let bootstrap = ext_result(bootstrap);
+                assert_eq!(bootstrap["access"]["canEnterClient"], true);
+                assert_eq!(bootstrap["credits"]["balance"], 0);
+                let core_request = core.await.expect("Core request task");
+                assert!(core_request.contains("authorization: Bearer sentinel-bootstrap-token"));
+
+                let provider = handle(
+                    &agent,
+                    &ext_request(
+                        providers::PROVIDERS_CREATE_METHOD,
+                        serde_json::json!({
+                            "profile": {
+                                "presetId": "local-openai-chat",
+                                "displayName": "Host E2E Local",
+                                "protocol": "openai_chat",
+                                "baseUrl": "http://127.0.0.1:11434/v1",
+                                "authKind": "bearer_api_key",
+                                "enabledModels": ["model-main"]
+                            },
+                            "apiKey": "sentinel-provider-secret-1234"
+                        }),
+                    ),
+                )
+                .await
+                .expect("create Provider response");
+                let provider = ext_result(provider);
+                let profile_id = provider["profile"]["profileId"]
+                    .as_str()
+                    .expect("profile id")
+                    .to_owned();
+                assert!(
+                    !provider
+                        .to_string()
+                        .contains("sentinel-provider-secret-1234")
+                );
+
+                handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::ASSIGNMENTS_UPSERT_METHOD,
+                        serde_json::json!({
+                            "assignment": {
+                                "scopeKind": "agent",
+                                "scopeId": "job-agent",
+                                "role": "main",
+                                "providerProfileId": profile_id,
+                                "modelId": "model-main"
+                            }
+                        }),
+                    ),
+                )
+                .await
+                .expect("upsert Assignment");
+
+                let record = agent
+                    .agentmesh360
+                    .registry()
+                    .prepare_activation(41, "job-agent")
+                    .expect("prepare product Agent");
+                let session_id = record.main_session_id.expect("main Session");
+                let route_context = agent
+                    .agentmesh360
+                    .session_route_context(&acp::SessionId::new(session_id.clone()))
+                    .expect("route context lookup")
+                    .expect("product Session route context");
+                let mut route = route_context
+                    .prepare_turn(&session_id, "turn-host-shared-vault")
+                    .expect("prepare bound turn using ACP-created credential");
+                route
+                    .submit(|config| {
+                        assert!(config.api_key.is_none());
+                        assert!(config.bearer_resolver.is_some());
+                        Ok(())
+                    })
+                    .expect("accept bound turn");
+
+                let history = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "main",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("Turn Route history response");
+                let history = ext_result(history);
+                assert_eq!(history["turnRoutes"].as_array().map(Vec::len), Some(1));
+                assert!(
+                    !history
+                        .to_string()
+                        .contains("sentinel-provider-secret-1234")
+                );
+                assert!(!format!("{route:?}").contains("sentinel-provider-secret-1234"));
+            })
+            .await;
+    }
 }

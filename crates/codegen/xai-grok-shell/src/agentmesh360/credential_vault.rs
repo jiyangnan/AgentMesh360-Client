@@ -1,5 +1,8 @@
 use std::fmt;
 
+#[cfg(test)]
+use std::sync::Arc;
+
 use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -102,6 +105,60 @@ pub trait CredentialVault {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemCredentialVault;
 
+/// Runtime Vault adapter shared by Provider management and Prompt routing.
+///
+/// Production builds contain only the operating-system Vault variant. The
+/// memory-backed variant is compiled exclusively for repeatable Host tests, so
+/// there is no environment flag or runtime path that can bypass Keychain in a
+/// shipped client.
+#[derive(Clone, Default)]
+pub enum RuntimeCredentialVault {
+    #[default]
+    System,
+    #[cfg(test)]
+    Memory(MemoryCredentialVault),
+}
+
+impl fmt::Debug for RuntimeCredentialVault {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::System => formatter.write_str("RuntimeCredentialVault::System"),
+            #[cfg(test)]
+            Self::Memory(_) => formatter.write_str("RuntimeCredentialVault::Memory([REDACTED])"),
+        }
+    }
+}
+
+impl CredentialVault for RuntimeCredentialVault {
+    fn put(
+        &self,
+        credential_ref: &CredentialRef,
+        secret: &SecretValue,
+    ) -> Result<(), CredentialVaultError> {
+        match self {
+            Self::System => SystemCredentialVault.put(credential_ref, secret),
+            #[cfg(test)]
+            Self::Memory(vault) => vault.put(credential_ref, secret),
+        }
+    }
+
+    fn get(&self, credential_ref: &CredentialRef) -> Result<SecretValue, CredentialVaultError> {
+        match self {
+            Self::System => SystemCredentialVault.get(credential_ref),
+            #[cfg(test)]
+            Self::Memory(vault) => vault.get(credential_ref),
+        }
+    }
+
+    fn delete(&self, credential_ref: &CredentialRef) -> Result<(), CredentialVaultError> {
+        match self {
+            Self::System => SystemCredentialVault.delete(credential_ref),
+            #[cfg(test)]
+            Self::Memory(vault) => vault.delete(credential_ref),
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 impl CredentialVault for SystemCredentialVault {
     fn put(
@@ -172,15 +229,23 @@ impl CredentialVault for SystemCredentialVault {
 }
 
 #[cfg(test)]
+#[derive(Clone)]
 pub struct MemoryCredentialVault {
-    secrets: std::cell::RefCell<std::collections::HashMap<String, Zeroizing<Vec<u8>>>>,
+    secrets: Arc<parking_lot::Mutex<std::collections::HashMap<String, Zeroizing<Vec<u8>>>>>,
+}
+
+#[cfg(test)]
+impl fmt::Debug for MemoryCredentialVault {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("MemoryCredentialVault([REDACTED])")
+    }
 }
 
 #[cfg(test)]
 impl Default for MemoryCredentialVault {
     fn default() -> Self {
         Self {
-            secrets: std::cell::RefCell::new(std::collections::HashMap::new()),
+            secrets: Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -188,7 +253,7 @@ impl Default for MemoryCredentialVault {
 #[cfg(test)]
 impl MemoryCredentialVault {
     pub(crate) fn len(&self) -> usize {
-        self.secrets.borrow().len()
+        self.secrets.lock().len()
     }
 }
 
@@ -199,7 +264,7 @@ impl CredentialVault for MemoryCredentialVault {
         credential_ref: &CredentialRef,
         secret: &SecretValue,
     ) -> Result<(), CredentialVaultError> {
-        self.secrets.borrow_mut().insert(
+        self.secrets.lock().insert(
             credential_ref.as_str().to_owned(),
             Zeroizing::new(secret.as_bytes().to_vec()),
         );
@@ -207,7 +272,7 @@ impl CredentialVault for MemoryCredentialVault {
     }
 
     fn get(&self, credential_ref: &CredentialRef) -> Result<SecretValue, CredentialVaultError> {
-        let secrets = self.secrets.borrow();
+        let secrets = self.secrets.lock();
         let secret = secrets
             .get(credential_ref.as_str())
             .ok_or(CredentialVaultError::NotFound)?;
@@ -219,7 +284,7 @@ impl CredentialVault for MemoryCredentialVault {
     }
 
     fn delete(&self, credential_ref: &CredentialRef) -> Result<(), CredentialVaultError> {
-        self.secrets.borrow_mut().remove(credential_ref.as_str());
+        self.secrets.lock().remove(credential_ref.as_str());
         Ok(())
     }
 }
@@ -244,6 +309,8 @@ mod tests {
         );
         assert_eq!(secret.last_four(), "1234");
         assert_eq!(format!("{secret:?}"), "SecretValue([REDACTED])");
+        let runtime = RuntimeCredentialVault::Memory(vault.clone());
+        assert!(!format!("{runtime:?}").contains("sk-example-1234"));
 
         vault.delete(&credential_ref).expect("delete secret");
         assert_eq!(

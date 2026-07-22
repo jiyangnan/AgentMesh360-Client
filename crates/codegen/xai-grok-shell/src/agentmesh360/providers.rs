@@ -3,7 +3,9 @@ use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::credential_vault::{CredentialRef, CredentialVault, SecretValue, SystemCredentialVault};
+use super::credential_vault::{
+    CredentialRef, CredentialVault, RuntimeCredentialVault, SecretValue, SystemCredentialVault,
+};
 use super::provider_profiles::{ProviderProfileInput, ProviderProfileRecord, ProviderProfileStore};
 
 pub const PROVIDERS_LIST_METHOD: &str = "x.agentmesh360/providers/list";
@@ -71,9 +73,17 @@ impl Default for ProviderService<SystemCredentialVault> {
     }
 }
 
+impl Default for ProviderService<RuntimeCredentialVault> {
+    fn default() -> Self {
+        Self::new(
+            ProviderProfileStore::default(),
+            RuntimeCredentialVault::default(),
+        )
+    }
+}
+
 impl<V: CredentialVault> ProviderService<V> {
-    #[cfg(test)]
-    fn new(store: ProviderProfileStore, vault: V) -> Self {
+    pub(super) fn new(store: ProviderProfileStore, vault: V) -> Self {
         Self { store, vault }
     }
 
@@ -151,8 +161,8 @@ impl<V: CredentialVault> ProviderService<V> {
     }
 }
 
-pub fn handle(
-    service: &ProviderService<SystemCredentialVault>,
+pub fn handle<V: CredentialVault>(
+    service: &ProviderService<V>,
     owner_account_id: i64,
     args: &acp::ExtRequest,
 ) -> crate::extensions::ExtResult {

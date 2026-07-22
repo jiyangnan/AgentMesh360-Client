@@ -129,20 +129,25 @@ pub struct ModelRoutingService {
 
 impl Default for ModelRoutingService {
     fn default() -> Self {
-        let catalog = ProviderCatalog::builtin();
         let state_home = super::state::default_state_home();
-        Self {
-            catalog: catalog.clone(),
-            assignments: ModelAssignmentStore::in_home(&state_home),
-            bindings: SessionBindingStore::in_home(&state_home),
-            turn_routes: TurnRouteStore::in_home(&state_home),
-            registry: AgentRegistry::in_home(&state_home),
-            compiler: RouteCompiler::in_home(catalog, &state_home),
-        }
+        Self::in_home(state_home)
     }
 }
 
 impl ModelRoutingService {
+    pub fn in_home(state_home: impl AsRef<std::path::Path>) -> Self {
+        let state_home = state_home.as_ref();
+        let catalog = ProviderCatalog::builtin();
+        Self {
+            catalog: catalog.clone(),
+            assignments: ModelAssignmentStore::in_home(state_home),
+            bindings: SessionBindingStore::in_home(state_home),
+            turn_routes: TurnRouteStore::in_home(state_home),
+            registry: AgentRegistry::in_home(state_home),
+            compiler: RouteCompiler::in_home(catalog, state_home),
+        }
+    }
+
     #[cfg(test)]
     fn new(catalog: ProviderCatalog, state_home: &std::path::Path) -> Self {
         Self {

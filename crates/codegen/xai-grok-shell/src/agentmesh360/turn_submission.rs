@@ -3,7 +3,7 @@ use xai_grok_sampler::SamplerConfig;
 
 use super::access::ClientAccessGuard;
 use super::credential_lease::{CredentialLeaseResolver, LeasedSamplingRoute};
-use super::credential_vault::CredentialVault;
+use super::credential_vault::{CredentialVault, RuntimeCredentialVault};
 use super::model_routing::ModelRoutingService;
 use super::session_bindings::SessionProviderBinding;
 use super::turn_routes::{TurnRouteRecord, TurnRouteStore};
@@ -91,15 +91,25 @@ pub struct AgentMeshSessionRouteContext {
     agent_id: String,
     role: String,
     access: ClientAccessGuard,
+    state_home: std::path::PathBuf,
+    vault: RuntimeCredentialVault,
 }
 
 impl AgentMeshSessionRouteContext {
-    pub(super) fn new(owner_account_id: i64, agent_id: String, access: ClientAccessGuard) -> Self {
+    pub(super) fn new(
+        owner_account_id: i64,
+        agent_id: String,
+        access: ClientAccessGuard,
+        state_home: std::path::PathBuf,
+        vault: RuntimeCredentialVault,
+    ) -> Self {
         Self {
             owner_account_id,
             agent_id,
             role: "main".into(),
             access,
+            state_home,
+            vault,
         }
     }
 
@@ -107,14 +117,14 @@ impl AgentMeshSessionRouteContext {
         self.access
             .require()
             .map_err(|_| anyhow::anyhow!("AgentMesh360 subscription access is unavailable"))?;
-        ModelRoutingService::default().ensure_product_binding(
+        ModelRoutingService::in_home(&self.state_home).ensure_product_binding(
             self.owner_account_id,
             session_id,
             &self.agent_id,
             &self.role,
         )?;
-        let resolver = CredentialLeaseResolver::default();
-        let prepared = TurnSubmissionCoordinator::default().prepare(
+        let resolver = CredentialLeaseResolver::in_home(&self.state_home, self.vault.clone());
+        let prepared = TurnSubmissionCoordinator::in_home(&self.state_home).prepare(
             &resolver,
             self.owner_account_id,
             session_id,
