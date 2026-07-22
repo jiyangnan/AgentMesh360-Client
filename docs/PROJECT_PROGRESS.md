@@ -196,7 +196,7 @@ Keychain 做破坏性验证。
 
 状态：已完成
 
-本地提交：待切片 C 检查点提交后回填
+本地提交：`ae07801 feat: persist immutable session provider bindings`
 
 目标：
 
