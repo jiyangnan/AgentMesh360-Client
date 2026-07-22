@@ -34,6 +34,46 @@ impl std::fmt::Debug for BoundTurnSubmission {
 pub struct AcceptedBoundTurn<T> {
     pub accepted: T,
     pub turn_route: TurnRouteRecord,
+    active: ActiveBoundTurn,
+}
+
+impl<T> AcceptedBoundTurn<T> {
+    pub fn into_active(self) -> (T, ActiveBoundTurn) {
+        (self.accepted, self.active)
+    }
+}
+
+/// Reusable, non-serializable routing authority for the remaining model calls
+/// inside one Prompt turn. It never re-resolves Assignment/Profile state and
+/// never writes a second Turn Route record.
+pub struct ActiveBoundTurn {
+    sampler_config: SamplerConfig,
+    turn_route: TurnRouteRecord,
+}
+
+impl std::fmt::Debug for ActiveBoundTurn {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ActiveBoundTurn")
+            .field("turn_route", &self.turn_route)
+            .field("sampler_config", &self.sampler_config)
+            .finish()
+    }
+}
+
+impl ActiveBoundTurn {
+    pub fn submit_again<T>(&self, submit: impl FnOnce(SamplerConfig) -> Result<T>) -> Result<T> {
+        submit(self.sampler_config.clone()).context("resubmit active bound turn")
+    }
+
+    pub fn turn_route(&self) -> &TurnRouteRecord {
+        &self.turn_route
+    }
+
+    #[cfg(test)]
+    fn sampler_config(&self) -> &SamplerConfig {
+        &self.sampler_config
+    }
 }
 
 pub struct TurnSubmissionCoordinator {
@@ -82,6 +122,7 @@ impl BoundTurnSubmission {
         let (sampler_config, binding) = self.leased_route.into_parts();
         self.turn_routes
             .validate_submission(self.owner_account_id, &self.turn_id, &binding)?;
+        let active_config = sampler_config.clone();
         let accepted = submit(sampler_config).context("submit bound turn to Sampling actor")?;
         let turn_route = self
             .turn_routes
@@ -89,7 +130,11 @@ impl BoundTurnSubmission {
             .context("record accepted bound turn route")?;
         Ok(AcceptedBoundTurn {
             accepted,
-            turn_route,
+            turn_route: turn_route.clone(),
+            active: ActiveBoundTurn {
+                sampler_config: active_config,
+                turn_route,
+            },
         })
     }
 }
@@ -311,5 +356,51 @@ mod tests {
             .expect_err("missing secret must fail before a submission exists");
         assert!(error.to_string().contains("credential is unavailable"));
         assert!(route_history(&temp).is_empty());
+    }
+
+    #[test]
+    fn active_turn_reuses_one_binding_without_writing_more_records() {
+        let (temp, resolver, coordinator, _) = setup();
+        let first = coordinator
+            .prepare(
+                &resolver,
+                ACCOUNT_ID,
+                "session-turn",
+                "main",
+                "turn-multi-call",
+            )
+            .expect("prepare")
+            .submit(|config| {
+                assert_eq!(config.model, "turn-model");
+                Ok("first-accepted")
+            })
+            .expect("first submit");
+        let (receipt, active) = first.into_active();
+        assert_eq!(receipt, "first-accepted");
+
+        let tool_follow_up = active
+            .submit_again(|config| Ok((config.model, config.api_backend)))
+            .expect("tool follow-up");
+        let auth_retry = active
+            .submit_again(|config| Ok((config.base_url, config.auth_scheme)))
+            .expect("auth retry");
+
+        assert_eq!(tool_follow_up.0, "turn-model");
+        assert_eq!(
+            tool_follow_up.1,
+            xai_grok_sampling_types::ApiBackend::Responses
+        );
+        assert_eq!(auth_retry.0, "https://turn.example/v1");
+        assert_eq!(auth_retry.1, xai_grok_sampler::AuthScheme::Bearer);
+        assert_eq!(active.turn_route().turn_id, "turn-multi-call");
+        assert_eq!(route_history(&temp).len(), 1);
+
+        let serialized =
+            serde_json::to_string(active.sampler_config()).expect("serialize sampler config");
+        let debug = format!("{active:?}");
+        assert!(!serialized.contains(SECRET));
+        assert!(!debug.contains(SECRET));
+        assert!(active.sampler_config().api_key.is_none());
+        assert!(active.sampler_config().bearer_resolver.is_some());
     }
 }
