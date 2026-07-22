@@ -98,6 +98,21 @@ impl AgentMesh360Runtime {
         )
     }
 
+    #[cfg(test)]
+    pub(crate) fn remove_credential_for_host_test(
+        &self,
+        owner_account_id: i64,
+        profile_id: &str,
+    ) -> Result<()> {
+        use credential_vault::CredentialVault as _;
+
+        let profile = provider_profiles::ProviderProfileStore::in_home(&self.state_home)
+            .get(owner_account_id, profile_id)?;
+        let credential_ref = credential_vault::CredentialRef::parse(profile.credential_ref)?;
+        self.credential_vault.delete(&credential_ref)?;
+        Ok(())
+    }
+
     pub(crate) fn registry(&self) -> &AgentRegistry {
         &self.registry
     }
@@ -603,6 +618,34 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
+    async fn serve_bootstrap_sequence(
+        bodies: Vec<String>,
+    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind Core mock sequence");
+        let address = listener.local_addr().expect("Core mock sequence address");
+        let task = tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(bodies.len());
+            for body in bodies {
+                let (mut stream, _) = listener.accept().await.expect("accept Core request");
+                let mut request = vec![0; 4096];
+                let read = stream.read(&mut request).await.expect("read Core request");
+                requests.push(String::from_utf8_lossy(&request[..read]).to_string());
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write Core response");
+            }
+            requests
+        });
+        (format!("http://{address}"), task)
+    }
+
     async fn serve_provider_once() -> (
         String,
         tokio::sync::oneshot::Receiver<(String, String)>,
@@ -1001,6 +1044,244 @@ mod tests {
                 assert!(!routes.to_string().contains("sentinel-provider-secret-5678"));
 
                 provider_task.abort();
+                gateway_task.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn host_acp_failure_matrix_blocks_before_provider_submission() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let denied_home = tempfile::tempdir().expect("denied state home");
+                let denied_body = ACTIVE_BOOTSTRAP
+                    .replace("\"status\":\"active\"", "\"status\":\"expired\"")
+                    .replace("\"can_enter_client\":true", "\"can_enter_client\":false")
+                    .replace("active_subscription", "subscription_expired");
+                let (denied_core_url, denied_core) =
+                    serve_bootstrap_sequence(vec![denied_body]).await;
+                let (denied_agent, _gateway_rx) =
+                    build_host_test_agent(denied_home.path(), denied_core_url);
+                let denied = handle(
+                    &denied_agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "expired-token"}),
+                    ),
+                )
+                .await
+                .expect("denied bootstrap response");
+                assert_eq!(ext_result(denied)["access"]["canEnterClient"], false);
+                let activation_error = handle(
+                    &denied_agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "job-agent"}),
+                    ),
+                )
+                .await
+                .expect_err("denied subscription cannot activate a product Agent");
+                assert_eq!(activation_error.code, acp::Error::auth_required().code);
+                let _ = denied_core.await.expect("denied Core task");
+
+                let state_home = tempfile::tempdir().expect("state home");
+                let account_42 = ACTIVE_BOOTSTRAP
+                    .replace("\"id\":1", "\"id\":2")
+                    .replace("u@example.com", "other@example.com")
+                    .replace("\"account_id\":41", "\"account_id\":42");
+                let (core_base_url, core) =
+                    serve_bootstrap_sequence(vec![ACTIVE_BOOTSTRAP.to_owned(), account_42]).await;
+                let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                let gateway_task = drive_gateway(gateway_rx);
+                agent
+                    .initialize(
+                        acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+                            .client_capabilities(
+                                acp::ClientCapabilities::new()
+                                    .fs(acp::FileSystemCapabilities::new())
+                                    .terminal(false),
+                            )
+                            .meta(
+                                serde_json::json!({
+                                    "startupHints": {
+                                        "nonInteractive": true,
+                                        "skipGitStatus": true,
+                                        "skipProjectLayout": true
+                                    },
+                                    "clientType": "agentmesh360-host-test",
+                                    "clientVersion": "0.0.0-test"
+                                })
+                                .as_object()
+                                .cloned(),
+                            ),
+                    )
+                    .await
+                    .expect("initialize Host ACP agent");
+                let bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "account-41-token"}),
+                    ),
+                )
+                .await
+                .expect("account 41 bootstrap");
+                assert_eq!(ext_result(bootstrap)["account"]["accountId"], 41);
+
+                let job_activation = handle(
+                    &agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "job-agent"}),
+                    ),
+                )
+                .await
+                .expect("activate Job Agent");
+                let job_session = ext_result(job_activation)["agent"]["mainSessionId"]
+                    .as_str()
+                    .expect("Job Agent Main Session")
+                    .to_owned();
+                let missing_assignment = agent
+                    .prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(job_session.clone()),
+                        vec![acp::ContentBlock::from("must fail before Sampling")],
+                    ))
+                    .await
+                    .expect_err("missing Assignment must fail closed");
+                assert_eq!(missing_assignment.code, acp::Error::internal_error().code);
+                assert!(
+                    format!("{missing_assignment:?}")
+                        .contains("agentmesh360_provider_route_required")
+                );
+                let job_routes = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": job_session.clone(),
+                            "role": "main",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("Job Agent Turn Routes");
+                assert_eq!(
+                    ext_result(job_routes)["turnRoutes"]
+                        .as_array()
+                        .map(Vec::len),
+                    Some(0)
+                );
+
+                let provider = handle(
+                    &agent,
+                    &ext_request(
+                        providers::PROVIDERS_CREATE_METHOD,
+                        serde_json::json!({
+                            "profile": {
+                                "presetId": "compatible-openai-responses",
+                                "displayName": "Missing Vault Provider",
+                                "protocol": "openai_responses",
+                                "baseUrl": "http://127.0.0.1:9/v1",
+                                "authKind": "bearer_api_key",
+                                "enabledModels": ["model-main"]
+                            },
+                            "apiKey": "sentinel-provider-secret-missing"
+                        }),
+                    ),
+                )
+                .await
+                .expect("create missing-Vault Provider");
+                let profile_id = ext_result(provider)["profile"]["profileId"]
+                    .as_str()
+                    .expect("profile id")
+                    .to_owned();
+                handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::ASSIGNMENTS_UPSERT_METHOD,
+                        serde_json::json!({
+                            "assignment": {
+                                "scopeKind": "agent",
+                                "scopeId": "deploy-agent",
+                                "role": "main",
+                                "providerProfileId": profile_id,
+                                "modelId": "model-main"
+                            }
+                        }),
+                    ),
+                )
+                .await
+                .expect("upsert Deploy Assignment");
+                let deploy_activation = handle(
+                    &agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "deploy-agent"}),
+                    ),
+                )
+                .await
+                .expect("activate Deploy Agent");
+                let deploy_session = ext_result(deploy_activation)["agent"]["mainSessionId"]
+                    .as_str()
+                    .expect("Deploy Agent Main Session")
+                    .to_owned();
+                agent
+                    .agentmesh360
+                    .remove_credential_for_host_test(41, &profile_id)
+                    .expect("remove test credential");
+                let missing_vault = agent
+                    .prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(deploy_session.clone()),
+                        vec![acp::ContentBlock::from("must not reach Provider")],
+                    ))
+                    .await
+                    .expect_err("missing Vault credential must fail closed");
+                assert_eq!(missing_vault.code, acp::Error::internal_error().code);
+                assert!(
+                    format!("{missing_vault:?}").contains("agentmesh360_provider_route_required")
+                );
+                let deploy_routes = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": deploy_session,
+                            "role": "main",
+                            "agentId": "deploy-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("Deploy Agent Turn Routes");
+                assert_eq!(
+                    ext_result(deploy_routes)["turnRoutes"]
+                        .as_array()
+                        .map(Vec::len),
+                    Some(0)
+                );
+
+                let switched = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "account-42-token"}),
+                    ),
+                )
+                .await
+                .expect("account 42 bootstrap");
+                assert_eq!(ext_result(switched)["account"]["accountId"], 42);
+                let cross_account = agent
+                    .prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(job_session),
+                        vec![acp::ContentBlock::from("must remain hidden")],
+                    ))
+                    .await
+                    .expect_err("old account product Session must be hidden");
+                assert_eq!(cross_account.code, acp::Error::invalid_params().code);
+
+                assert_eq!(core.await.expect("Core sequence task").len(), 2);
                 gateway_task.abort();
             })
             .await;
