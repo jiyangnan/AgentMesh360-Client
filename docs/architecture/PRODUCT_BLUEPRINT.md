@@ -10,13 +10,20 @@
 为避免翻译造成工程歧义，文档保留以下产品与技术术语：Agent、Main Session、
 Host、Harness、BYOK、Provider、Agent Package、ACP。
 
+Provider 覆盖、CC Switch 源码证据、配置差异和经过技术架构复核的实施顺序，详见
+[`CC_SWITCH_PROVIDER_RESEARCH.md`](CC_SWITCH_PROVIDER_RESEARCH.md)。
+Provider Control Plane 与 Host Vault 的已接受决策见
+[`ADR_PROVIDER_CONTROL_PLANE_VAULT.md`](ADR_PROVIDER_CONTROL_PLANE_VAULT.md)。
+
 ## 已确定的产品决策
 
 - AgentMesh360 订阅是进入客户端的硬门槛。用户登录后，如果订阅无效、已过期
   或被暂停，只能看到账号与订阅引导页面，不能进入 Agent 工作区。
 - BYOK 是默认推理模式。用户明确选择模型 Provider，并自行承担 Provider 侧的
-  模型费用。首批目标是 OpenAI、xAI 和 Anthropic；Claude Opus 使用 Anthropic
-  API Key。
+  模型费用。M1 Core 复用 Grok 已有的 OpenAI Responses、OpenAI Chat Completions
+  和 Anthropic Messages 三种 Backend；OpenAI、xAI、Anthropic 及通用兼容端点先
+  完成契约测试。Google Gemini 在专项验证后优先通过官方 OpenAI 兼容端点进入预设
+  扩展，Native/Interactions 能力后置。
 - BYOK 模型调用不消耗 AgentMesh360 credits。Credits 只用于明确标识的
   AgentMesh360 云端动作。
 - Job Agent、LectureCast Agent、Deploy Agent 以及未来的产品 Agent，都是单例、
@@ -25,7 +32,8 @@ Host、Harness、BYOK、Provider、Agent Package、ACP。
 - 所有产品 Agent 共享一套受监管的 Grok Build Harness，而不是分别运行完整
   运行时的副本。Grok 子 Agent 只承担有边界的临时任务。
 - 未来以 Agent Package 作为桌面客户端安装和宿主 Agent Skill 安装的唯一来源。
-  新增产品 Agent 不应要求发布新版客户端。
+  当新 Agent 未超出现有 Package Schema 与 Host Capability 时，不应要求发布新版
+  客户端；新增可执行能力、协议或安全权限仍必须通过受审查的客户端版本发布。
 
 ## 1. 产品结构图
 
@@ -163,7 +171,8 @@ flowchart LR
             AUTHZ["订阅准入与策略执行"]
             PACKAGE["已签名 Agent Package 管理器"]
             REGISTRY["Agent Registry 与 Main Session 映射"]
-            ROUTER["Provider 与动作路由器"]
+            ROUTER["Provider Control Plane\nProfile、Vault、Binding 与 RouteCompiler"]
+            ACTION_ROUTER["AgentMesh360 云端动作路由"]
             EVENTS["事件、审批、通知与审计"]
         end
 
@@ -171,6 +180,7 @@ flowchart LR
             direction TB
             ACP["ACP 与 Session 桥接层"]
             LOOP["Agent Loop、工具、权限、压缩与记忆"]
+            SAMPLING["Grok SamplingClient\nResponses、Chat、Messages"]
             JOB["Job Agent Main Session"]
             LECTURE["LectureCast Agent Main Session"]
             DEPLOY["Deploy Agent Main Session"]
@@ -193,7 +203,8 @@ flowchart LR
         OPENAI["OpenAI API"]
         XAI["xAI API"]
         ANTHROPIC["Anthropic Messages API"]
-        COMPATIBLE["未来的兼容 Provider 或本地模型"]
+        GOOGLE["Google 官方 OpenAI 兼容端点\n契约验证后"]
+        COMPATIBLE["DeepSeek、Kimi 等兼容 Provider\n或本地模型"]
     end
 
     subgraph CLOUD["AgentMesh360 云端服务"]
@@ -221,20 +232,24 @@ flowchart LR
     LECTURE --> WORKERS
     DEPLOY --> WORKERS
     FUTURE --> WORKERS
+    LOOP <--> SAMPLING
+    LOOP --> ACTION_ROUTER
 
     AUTHZ <--> CORE
     PACKAGE <--> PACKAGE_REGISTRY
-    ROUTER --> OPENAI
-    ROUTER --> XAI
-    ROUTER --> ANTHROPIC
-    ROUTER --> COMPATIBLE
-    ROUTER --> CLOUD_ACTIONS
+    ROUTER -->|"PreparedRoute + 内存凭据租约"| SAMPLING
+    SAMPLING --> OPENAI
+    SAMPLING --> XAI
+    SAMPLING --> ANTHROPIC
+    SAMPLING --> GOOGLE
+    SAMPLING --> COMPATIBLE
+    ACTION_ROUTER --> CLOUD_ACTIONS
 
     REGISTRY --> STATE
     PACKAGE --> PACKAGES
     LOOP --> SESSIONS
     LOOP --> WORKSPACES
-    ROUTER --> KEYCHAIN
+    KEYCHAIN -->|"仅 Host 解析秘密"| ROUTER
 ```
 
 ### 职责边界
@@ -376,11 +391,13 @@ flowchart TD
     REQUEST["产品 Agent 请求推理或执行动作"] --> DECLARED["读取 Package 声明的能力要求"]
     DECLARED --> KIND{"请求类型"}
 
-    KIND -->|"模型推理"| MODEL["解析会话级、Agent 级或全局模型选择"]
+    KIND -->|"模型推理"| MODEL["解析独立 Model Assignment\n会话级、Agent 级或全局"]
     MODEL --> CAPABLE{"所选模型是否满足工具、上下文、视觉和输出要求？"}
     CAPABLE -->|"否"| EXPLAIN["说明不兼容原因，并要求用户选择其他模型"]
-    CAPABLE -->|"是"| SECRET["从操作系统安全存储中读取 Provider Key"]
-    SECRET --> DIRECT["直连用户选择的 Provider"]
+    CAPABLE -->|"是"| BINDING["读取或创建不可变 Session Binding\n固定 route revision"]
+    BINDING --> SECRET["常驻 Host 从操作系统安全存储读取 Provider Key"]
+    SECRET --> COMPILE["RouteCompiler 生成 PreparedRoute"]
+    COMPILE --> DIRECT["交给 Grok 现有 Sampling 数据面\n直连用户选择的 Provider"]
     DIRECT --> USAGE["记录本地用量元数据，不扣除 AgentMesh360 credits"]
 
     KIND -->|"本地工具"| POLICY["应用本地权限与 Sandbox 策略"]
@@ -396,8 +413,10 @@ flowchart TD
 ```
 
 客户端不做静默 Provider 降级。切换 Provider 可能改变用户数据的发送位置，因此必须
-由用户明确选择。Provider Adapter 负责统一流式输出、Tool Call、结构化输出、用量、
-能力和错误，同时保留必要的 Provider 专属行为。
+由用户明确选择。Profile 或 Catalog 更新不能改变已有 Session 的 route revision。
+Host Provider Control Plane 负责 Profile、Vault、能力、Assignment、Binding 与路由
+编译；Grok 现有 Sampling 数据面继续负责流式输出、Tool Call、结构化输出、用量、
+错误和必要的 Provider 专属行为。
 
 ## 8. 信任与数据边界图
 
@@ -406,7 +425,7 @@ flowchart LR
     subgraph DEVICE["可信本地设备边界"]
         UI["桌面 UI"]
         HOST["AgentMesh Host 策略层"]
-        HARNESS["Grok Harness 与工具"]
+        HARNESS["Grok Harness、Sampling 数据面与工具"]
         KEYCHAIN["Provider Key 与刷新令牌"]
         LOCAL_DATA["Session、Agent 状态、Workspace 与产物"]
         SANDBOX["操作系统 Sandbox 与明确审批"]
@@ -424,7 +443,6 @@ flowchart LR
     end
 
     UI --> HOST
-    HOST --> HARNESS
     HARNESS --> SANDBOX
     KEYCHAIN -->|"仅在需要时提供凭据"| HOST
     HARNESS <--> LOCAL_DATA
@@ -432,7 +450,8 @@ flowchart LR
     HOST <--> SUBSCRIPTION
     HOST <--> CREDITS
     HOST <--> PACKAGES
-    HOST -->|"直连 BYOK Prompt 与工具上下文"| MODEL
+    HOST -->|"PreparedRoute + 内存凭据租约"| HARNESS
+    HARNESS -->|"经 Grok Sampling 数据面直连"| MODEL
 
     PACKAGES -. "永远不能读取" .-> KEYCHAIN
 ```
@@ -447,7 +466,7 @@ flowchart LR
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：基础能力** | SQLite Agent Registry、确定性 Main Session、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
-| BYOK Provider 层 | **下一阶段目标** | 安全凭据、OpenAI/xAI/Anthropic Adapter、能力校验、模型选择、统一流式响应与错误 |
+| BYOK Provider 层 | **切片 A 基础已实现，其余为目标** | 已实现共享 state.db v2、账户隔离 Provider Profile Store、route revision、macOS Host Keychain Vault、只写秘密 ACP 管理方法和桌面 Host Client；Catalog、Capability、Model Assignment、Session Binding、RouteCompiler、Provider UI 与真实模型路由仍待实现 |
 | 动态 Agent Package | **目标** | Manifest、签名、目录、安装器、迁移、权限变更、回滚、宿主 Skill Adapter |
 | 桌面产品外壳 | **身份外壳与 Agent 首页已实现** | 登录、门禁、账号 / 订阅 / credits、Agent 列表与激活；固定对话、垂直工作区、活动、产物、审批与设置仍是目标 |
 | 后台 Host | **进程与 ACP 桥接已实现** | 桌面按需启动真实 Grok Host，执行订阅策略与 Agent Registry；系统登录自启动、独立 Supervisor、崩溃恢复、通知与完整审计仍是目标 |

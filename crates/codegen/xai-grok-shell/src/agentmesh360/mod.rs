@@ -6,8 +6,12 @@
 //! deterministic main conversation per activated product agent.
 
 mod access;
+mod credential_vault;
 mod profiles;
+mod provider_profiles;
+mod providers;
 pub mod registry;
+mod state;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -29,6 +33,7 @@ pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
 #[derive(Default)]
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
+    providers: providers::ProviderService<credential_vault::SystemCredentialVault>,
     access: access::ClientAccess,
     pinned_sessions: RefCell<HashSet<acp::SessionId>>,
     restore_started: Cell<bool>,
@@ -128,6 +133,14 @@ pub(crate) async fn handle(
             activate(agent, &request.agent_id)
                 .await
                 .and_then(|response| serde_json::to_value(response).map_err(Into::into))
+        }
+        method if method.starts_with("x.agentmesh360/providers/") => {
+            let owner_account_id = agent
+                .agentmesh360
+                .access
+                .current_account_id()
+                .ok_or_else(|| anyhow!("AgentMesh360 account access is unavailable"))?;
+            return providers::handle(&agent.agentmesh360.providers, owner_account_id, args);
         }
         other => Err(anyhow!("unknown AgentMesh360 extension method: {other}")),
     };

@@ -40,6 +40,53 @@ test('Host command resolution prefers explicit and packaged binaries', () => {
   assert.deepEqual(fallback.args, ['agent', '--no-leader', 'stdio']);
 });
 
+test('Provider management uses write-only AgentMesh360 Host extensions', async () => {
+  const received = [];
+  const profile = {
+    presetId: 'openai',
+    displayName: 'Personal OpenAI',
+    protocol: 'openai_responses',
+    baseUrl: 'https://api.openai.com/v1',
+    authKind: 'bearer_api_key',
+    enabledModels: ['model-main'],
+  };
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/providers/list') {
+      return { result: { profiles: [] } };
+    }
+    if (request.method === '_x.agentmesh360/providers/delete') {
+      return { result: { deleted: true } };
+    }
+    return { result: { profile: { profileId: 'pp_1234', credentialLastFour: '1234' } } };
+  });
+  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+
+  await client.listProviderProfiles();
+  const created = await client.createProviderProfile(profile, 'sk-test-1234');
+  await client.updateProviderProfile('pp_1234', { ...profile, displayName: 'Renamed' });
+  await client.replaceProviderSecret('pp_1234', 'sk-replaced-5678');
+  const deleted = await client.deleteProviderProfile('pp_1234');
+
+  assert.equal(created.profile.credentialLastFour, '1234');
+  assert.equal(deleted.deleted, true);
+  assert.deepEqual(
+    received.slice(1).map((request) => request.method),
+    [
+      '_x.agentmesh360/providers/list',
+      '_x.agentmesh360/providers/create',
+      '_x.agentmesh360/providers/update',
+      '_x.agentmesh360/providers/replace-secret',
+      '_x.agentmesh360/providers/delete',
+    ],
+  );
+  assert.deepEqual(received[2].params, { profile, apiKey: 'sk-test-1234' });
+  assert.deepEqual(received[4].params, { profileId: 'pp_1234', apiKey: 'sk-replaced-5678' });
+  assert.ok(received.every((request) => !request.method.includes('get-secret')));
+  await client.stop();
+});
+
 function fakeChild(handler) {
   const child = new EventEmitter();
   child.stdout = new PassThrough();

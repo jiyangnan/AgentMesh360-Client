@@ -80,11 +80,55 @@ pub fn acp_channel_failure(err: &acp::Error) -> Option<AcpChannelFailure> {
 
 /// Compact single-line JSON for gateway debug traces. Plain (uncolored)
 /// output: this feeds `tracing::debug!`, which typically lands in log files
-/// where ANSI colors are noise. Replaces the former `colored_json`-backed
-/// `color_json` (dropped to shrink the shipped dependency tree).
+/// where ANSI colors are noise. Sensitive fields are recursively redacted
+/// before serialization because ACP extension payloads may carry credentials.
 #[doc(hidden)]
 pub fn compact_json<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_string(value).unwrap_or_default()
+    let Ok(mut value) = serde_json::to_value(value) else {
+        return String::new();
+    };
+    redact_sensitive_fields(&mut value);
+    serde_json::to_string(&value).unwrap_or_default()
+}
+
+fn redact_sensitive_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, value) in object {
+                if is_sensitive_key(key) {
+                    *value = serde_json::Value::String("[REDACTED]".into());
+                } else {
+                    redact_sensitive_fields(value);
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                redact_sensitive_fields(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized: String = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    matches!(
+        normalized.as_str(),
+        "apikey"
+            | "authorization"
+            | "accesstoken"
+            | "refreshtoken"
+            | "clientsecret"
+            | "password"
+            | "secret"
+            | "token"
+            | "cookie"
+    )
 }
 
 #[cfg(test)]
@@ -111,5 +155,48 @@ mod channel_failure_tests {
             acp_channel_failure(&acp::Error::invalid_params().data("unknown session id")),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod compact_json_tests {
+    use super::compact_json;
+
+    #[test]
+    fn recursively_redacts_common_secret_fields() {
+        let value = serde_json::json!({
+            "profile": {
+                "displayName": "Personal OpenAI",
+                "nested": [{ "apiKey": "sk-live-secret" }]
+            },
+            "token": "subscription-jwt",
+            "access_token": "oauth-token",
+            "credentialConfigured": true
+        });
+
+        let rendered = compact_json(&value);
+
+        assert!(!rendered.contains("sk-live-secret"));
+        assert!(!rendered.contains("subscription-jwt"));
+        assert!(!rendered.contains("oauth-token"));
+        assert!(rendered.contains("Personal OpenAI"));
+        assert!(rendered.contains("credentialConfigured"));
+        assert_eq!(rendered.matches("[REDACTED]").count(), 3);
+    }
+
+    #[test]
+    fn redacts_secrets_inside_raw_extension_params() {
+        let raw = serde_json::value::to_raw_value(&serde_json::json!({
+            "profileId": "pp_123",
+            "apiKey": "sk-provider-secret"
+        }))
+        .expect("serialize extension params");
+        let request = agent_client_protocol::ExtRequest::new("x.test", raw.into());
+
+        let rendered = compact_json(&request);
+
+        assert!(!rendered.contains("sk-provider-secret"));
+        assert!(rendered.contains("pp_123"));
+        assert!(rendered.contains("[REDACTED]"));
     }
 }

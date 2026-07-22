@@ -82,6 +82,26 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/agents/activate', { agentId });
   }
 
+  async listProviderProfiles() {
+    return this.#extension('x.agentmesh360/providers/list', {});
+  }
+
+  async createProviderProfile(profile, apiKey) {
+    return this.#extension('x.agentmesh360/providers/create', { profile, apiKey });
+  }
+
+  async updateProviderProfile(profileId, profile) {
+    return this.#extension('x.agentmesh360/providers/update', { profileId, profile });
+  }
+
+  async replaceProviderSecret(profileId, apiKey) {
+    return this.#extension('x.agentmesh360/providers/replace-secret', { profileId, apiKey });
+  }
+
+  async deleteProviderProfile(profileId) {
+    return this.#extension('x.agentmesh360/providers/delete', { profileId });
+  }
+
   async invalidate() {
     if (!this.child) return;
     try {

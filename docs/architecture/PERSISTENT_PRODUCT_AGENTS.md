@@ -5,7 +5,9 @@
 最近更新：2026-07-22
 
 相关的产品结构、流程、Package、Provider 与信任边界图见：
-[`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。
+[`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。CC Switch Provider 调研、Host Vault、
+Session Binding 和实施顺序见：
+[`CC_SWITCH_PROVIDER_RESEARCH.md`](CC_SWITCH_PROVIDER_RESEARCH.md)。
 
 ## 核心决策
 
@@ -27,9 +29,10 @@ Worker，不能取代产品 Agent 的长期身份与固定主对话。
 
 ## Runtime 边界
 
-Grok Build 继续负责 Agent Loop、模型访问、工具、权限、对话记录、压缩、记忆、后台
-任务与 subagent 执行。AgentMesh360 只增加产品身份、目录、激活、订阅准入、恢复与
-常驻策略。
+Grok Build 继续负责 Agent Loop、Sampling 数据面、工具、权限、对话记录、压缩、记忆、
+后台任务与 subagent 执行。AgentMesh360 增加产品身份、目录、激活、订阅准入、恢复、
+常驻策略，以及目标 Provider Control Plane；后者只把 Profile/Vault/Binding 编译成
+Grok 现有 Sampling 配置，不重写推理循环。
 
 本地 Registry 位于 `~/.agentmesh360/state.db`。测试和受管安装可以通过
 `AGENTMESH360_HOME` 覆盖根目录。Grok Session 数据仍使用上游 Session Store；
@@ -79,10 +82,16 @@ Extension Result envelope。JWT 只存在于本次请求内存和 HTTPS Authoriz
 
 ## 当前实现边界
 
-本切片完成的是 Core 契约和 Host 强制执行。桌面端登录页面、Refresh Token / Keychain、
-定时与唤醒重验、续费拦截页、官网跳转仍属于下一切片。在这些能力接入前，桌面外壳
-需要在启动、登录成功、从休眠恢复和订阅状态变化后重新调用 bootstrap；Host 会在
-服务端周期截止时自动失效，但无法在周期内主动获知退款或后台暂停。
+Core 契约、Host 强制执行和桌面身份外壳已经接通：桌面端已有邮箱密码登录、Refresh
+Token 轮换、Electron `safeStorage` 加密保存、启动/聚焦/唤醒/定时重验、订阅拦截页和
+官网跳转。这里的 `safeStorage` 服务于桌面身份 Token；Provider 切片 A 已另行实现由
+Host 直接拥有的 macOS Keychain `CredentialVault` 与非秘密 Profile Store，两者不是
+同一个凭据通道。Provider UI、RouteCompiler 和 Sampling 接入仍未实现。
+
+当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
+因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和
+Host 独立访问 Provider Vault 仍属于目标能力。独立 Host/Supervisor 完成前，不能把
+产品状态描述为已经达到最终的“激活即长期在线”。
 
 ## 上游同步规则
 

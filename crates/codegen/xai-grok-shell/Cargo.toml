@@ -50,6 +50,7 @@ serde_ignored = "0.1"
 serde_json = { workspace = true, features = ["preserve_order"] }
 similar = { workspace = true }
 thiserror = { workspace = true }
+zeroize = "1"
 clap = { workspace = true }
 dirs = "6"
 tokio-stream = { workspace = true }
@@ -176,6 +177,9 @@ xai-tool-types = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 nix = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.5.1"
 
 [target.'cfg(windows)'.dependencies]
 siphasher = { workspace = true }

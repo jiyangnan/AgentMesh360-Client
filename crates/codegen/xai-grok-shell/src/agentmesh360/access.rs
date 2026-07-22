@@ -181,6 +181,16 @@ impl ClientAccess {
         }
     }
 
+    pub fn current_account_id(&self) -> Option<i64> {
+        match &*self.state.borrow() {
+            AccessState::Granted {
+                response,
+                valid_until,
+            } if Instant::now() < *valid_until => Some(response.account.account_id),
+            AccessState::Granted { .. } | AccessState::Denied(_) | AccessState::Unverified => None,
+        }
+    }
+
     pub fn require(&self) -> Result<(), acp::Error> {
         match &*self.state.borrow() {
             AccessState::Granted {
@@ -288,6 +298,7 @@ mod tests {
         assert_eq!(client_wire["access"]["canEnterClient"], true);
         assert!(client_wire.get("schema_version").is_none());
         assert!(access.is_granted());
+        assert_eq!(access.current_account_id(), Some(1));
         access.require().expect("granted");
         let request = server.await.expect("server");
         assert!(request.starts_with("GET /v1/account/client-bootstrap HTTP/1.1"));
@@ -312,6 +323,7 @@ mod tests {
 
         assert!(!response.access.can_enter_client);
         assert!(!access.is_granted());
+        assert_eq!(access.current_account_id(), None);
         let error = access.require().expect_err("denied");
         assert_eq!(error.code, acp::Error::auth_required().code);
         let _ = server.await.expect("server");

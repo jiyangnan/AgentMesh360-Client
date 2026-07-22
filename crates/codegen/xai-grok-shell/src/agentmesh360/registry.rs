@@ -7,24 +7,6 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const SCHEMA: &str = r#"
-CREATE TABLE IF NOT EXISTS product_agents (
-    agent_id TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    description TEXT NOT NULL,
-    version TEXT NOT NULL,
-    sort_order INTEGER NOT NULL,
-    desired_state TEXT NOT NULL,
-    runtime_state TEXT NOT NULL,
-    main_session_id TEXT UNIQUE,
-    workspace_dir TEXT,
-    activated_at TEXT,
-    updated_at TEXT NOT NULL,
-    last_error TEXT
-);
-PRAGMA user_version = 1;
-"#;
-
 #[derive(Clone, Copy, Debug)]
 struct BuiltinAgentSpec {
     agent_id: &'static str,
@@ -82,11 +64,7 @@ pub struct AgentRegistry {
 
 impl Default for AgentRegistry {
     fn default() -> Self {
-        let state_home = std::env::var_os("AGENTMESH360_HOME")
-            .map(PathBuf::from)
-            .or_else(|| dirs::home_dir().map(|home| home.join(".agentmesh360")))
-            .unwrap_or_else(|| PathBuf::from(".agentmesh360"));
-        Self::in_home(state_home)
+        Self::in_home(super::state::default_state_home())
     }
 }
 
@@ -192,18 +170,8 @@ impl AgentRegistry {
     }
 
     fn open(&self) -> Result<Connection> {
-        std::fs::create_dir_all(&self.state_home).with_context(|| {
-            format!(
-                "create AgentMesh360 state directory {}",
-                self.state_home.display()
-            )
-        })?;
-        let mode = xai_sqlite_journal::JournalMode::for_db_path(&self.db_path);
-        let conn = mode
-            .open(&self.db_path)
+        let conn = super::state::open(&self.state_home)
             .with_context(|| format!("open AgentMesh360 registry {}", self.db_path.display()))?;
-        conn.execute_batch(SCHEMA)
-            .context("initialize AgentMesh360 product agent registry")?;
         self.seed_builtins(&conn)?;
         Ok(conn)
     }

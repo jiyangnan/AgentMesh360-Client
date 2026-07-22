@@ -16,9 +16,12 @@
 - 订阅有效时，必须由 Core 和本地 Host 双重确认，才显示 Agent 首页；
 - 通过真实 ACP 进程列出、激活 Job Agent、Lecturecast Agent 与 Deploy Agent；
 - 退出登录时删除本机 Refresh Token，并立即撤销 Host 的产品 Agent 准入状态。
+- Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
+  API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
+  引用和最后四位。该管理能力尚未暴露给 Renderer。
 
-本切片尚未实现 OAuth、BYOK Provider 设置、固定对话界面、垂直业务工作区和
-动态 Agent Package。这些能力仍按
+本切片尚未实现 OAuth、BYOK Provider 设置 UI、Catalog/RouteCompiler、真实模型路由、
+固定对话界面、垂直业务工作区和动态 Agent Package。这些能力仍按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。
 
 ## 运行结构
@@ -29,12 +32,14 @@ flowchart LR
     MAIN -->|"HTTPS 登录、刷新与 bootstrap"| CORE["AgentMesh360 Core"]
     MAIN -->|"带下划线前缀的 ACP 扩展方法"| HOST["Grok Build Host"]
     HOST -->|"再次 bootstrap"| CORE
-    MAIN --> SECURE["safeStorage / Keychain"]
-    HOST --> STATE["Registry 与 Grok Session Store"]
+    MAIN --> IDENTITY_STORE["safeStorage\n身份 Refresh Token"]
+    HOST --> PROVIDER_VAULT["macOS Keychain\nProvider API Key"]
+    HOST --> STATE["state.db、Provider Profile\n与 Grok Session Store"]
 ```
 
-渲染进程永远拿不到 Access Token、Refresh Token 或密码。它只能调用白名单 IPC，
-接收 `signed_out`、`checking`、`blocked`、`unavailable` 或 `ready` 等脱敏状态。
+渲染进程在用户登录输入期间会短暂接触邮箱和密码，但不得持久化或读回 Access Token、
+Refresh Token、密码或 Provider API Key。它只能调用白名单 IPC，接收 `signed_out`、
+`checking`、`blocked`、`unavailable` 或 `ready` 等脱敏状态。
 外部跳转只允许 `https://agentmesh360.com`，窗口导航、下载和浏览器权限全部默认拒绝。
 
 ## 本地开发

@@ -13714,6 +13714,7 @@ dependencies = [
  "rusqlite",
  "rustls",
  "rustls-native-certs",
+ "security-framework",
  "semver",
  "serde",
  "serde_ignored",
@@ -13793,6 +13794,7 @@ dependencies = [
  "xai-tool-types",
  "xai-tracing-macros",
  "xai-tty-utils",
+ "zeroize",
  "zstd",
 ]
 
