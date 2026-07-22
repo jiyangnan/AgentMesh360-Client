@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C 已实现，切片 D0 开发中
+状态：调研完成，切片 A/B/C/D0 已实现，切片 D1a 开发中
 
 调研日期：2026-07-22
 
@@ -16,12 +16,13 @@
 切片 A 已接受的实现决策见
 [`ADR_PROVIDER_CONTROL_PLANE_VAULT.md`](ADR_PROVIDER_CONTROL_PLANE_VAULT.md)。
 
-实现进度（2026-07-23）：切片 A/B/C 已经落地，包括共享 `state.db v5`、账户隔离的
+实现进度（2026-07-23）：切片 A/B/C/D0 已经落地，包括共享 `state.db v5`、账户隔离的
 Provider Profile Store、macOS Host Keychain Vault、声明式内置 Catalog、Capability、
 Model Policy、三层 Model Assignment、非秘密 RouteCompiler，以及对应 ACP/桌面 Host
 Client 方法；产品 Agent/Main Session/Workspace 已按账户隔离，不可变 Session Binding、
-revision、回滚和实际 Turn Route 的可信存储接口也已实现。Turn 接口尚未接到 Sampling，
-Provider UI 与真实模型路由仍是目标能力。
+revision、回滚和实际 Turn Route 的可信存储接口也已实现。D0 已清除 Sampling、工具、
+subagent、认证恢复、上传和错误链路中的凭据片段/秘密 URL，并建立 sentinel 回归。Turn
+接口尚未接到 Sampling，Credential Lease、Provider UI 与真实模型路由仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -893,11 +894,16 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
 
 ### 切片 D：投影到 Grok 现有三协议 Backend
 
-- D0 先清除 Sampling/subagent 中认证值片段日志，并建立 sentinel Key 泄露回归；
+- D0 已清除 Sampling、subagent、工具、上传、认证恢复与错误路径中的认证值片段、秘密
+  URL/Header/响应正文，并建立 sentinel Key 泄露回归；
+- D1a 由 Host 解析不可变 Binding、Profile revision 与 Vault，生成不可序列化的短生命
+  周期 Credential Lease；
 - 把 `PreparedRoute` 投影到现有 `ModelEntry / SamplingConfig`；
 - 为 OpenAI、xAI、Anthropic 和三种 Compatible Profile 建立契约测试；
 - 复用现有 Streaming、Tool Call、Usage 和错误分类；
 - 不创建平行 Sampling/Agent Loop。
+
+D1a 仍然只做无网络契约测试；真实请求提交与 `TurnRouteRecord` 的原子时序属于 D1b。
 
 ### 切片 E：最小 Provider UI 与分级 Probe
 

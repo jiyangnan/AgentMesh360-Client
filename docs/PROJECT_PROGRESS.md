@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding | 切片 D0：认证日志安全门槛 |
-| Provider Sampling | 仍使用 Grok 原有配置路径；Turn Route 只有可信存储接口，尚无实际记录 | 切片 D0 清除认证片段日志后，再把 Binding 投影到现有三协议 Backend |
+| Provider Control Plane | 切片 A/B/C/D0 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛 | 切片 D1：Host Credential Lease 与三协议路由投影 |
+| Provider Sampling | 仍使用 Grok 原有配置路径；Turn Route 只有可信存储接口，尚无实际记录 | 用短生命周期内存 Lease 把 Binding 投影到现有三协议 Backend，不建立平行 Sampling 栈 |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -250,19 +250,71 @@ Renderer 设置 UI。
 
 ### 循环 4：Provider 切片 D0——认证日志安全门槛
 
+状态：已完成
+
+本地提交：`260d5c1 fix: remove credential material from harness diagnostics`
+
+已经实现：
+
+- 清除了 Sampling、subagent、认证恢复、OIDC、工具、文件上传、relay、billing 与 feedback
+  路径中认证值的前缀、后缀、Header value、响应正文和秘密 URL 日志；
+- tracing、统一日志和错误只保留 `credential_present`、认证类型、来源、相等性、状态码、
+  响应字节数和 endpoint 是否配置等非秘密信号；
+- 为 `GrokAuth`、`GrokAuthCredentials`、`SamplerConfig`、`SamplingClient`、Provider/模型
+  配置、上传配置以及图像、视频、搜索配置补充安全 `Debug`；
+- 401 attribution 只允许在内存中瞬时比较本次发送凭据，接口文档明确禁止格式化、记录或
+  持久化；`DiagnosticUploader` 改为自己解析实时凭据，不再接收凭据片段；
+- Provider 错误正文会清除活动凭据和默认 Header 值，reqwest 错误去除 URL；OIDC 日志只
+  保留 Origin，并清除本次发送的 code/refresh token；
+- Web Search 的脱敏副本同时清除 endpoint 路径、查询、userinfo 和所有额外 Header 值；
+- 建立高辨识度 sentinel 回归，覆盖 Sampling、OIDC、billing、Provider Config、上传配置、
+  工具配置和认证对象，断言完整秘密及稳定片段均不进入 Debug 或诊断文本。
+
+验证证据：
+
+- `cargo fmt --all -- --check`：通过；
+- `cargo clippy --manifest-path crates/codegen/xai-grok-shell/Cargo.toml --all-targets -- -D warnings`：通过；
+- `xai-grok-sampler --lib`：156 项通过；
+- `xai-file-utils --lib`：233 项通过、6 项忽略；
+- `xai-grok-tools --lib`：2674 项在沙箱内通过、6 项忽略；仅两项 wiremock 测试因沙箱
+  禁止绑定端口失败，放宽该限制后两项均通过；
+- 四项新增 Shell sentinel 定向测试全部通过；
+- 旧认证前缀/后缀模式、Sampling `body_preview/raw_body` 静态扫描无秘密命中；唯一
+  `key_prefix` 命中是视频对象存储的普通路径前缀，不是凭据片段。
+
+计划复盘：
+
+- 没有读取 AgentMesh360 Vault、注入用户真实 Key 或调用外部 Provider；
+- 没有降低日志级别来掩盖泄露，也没有建立第二套 Sampling/Agent Loop；
+- URL、Header、错误正文和 `Debug` 被纳入同一安全边界，修复范围比最初只检查
+  Sampling/subagent 更完整，但没有改变 Provider 路由职责；
+- 完整 auth 测试套件仍有 23 项受进程全局 `jsonwebtoken CryptoProvider` 初始化冲突
+  影响；对应 manager 定向套件 109 项已通过。该已知测试隔离问题不冒充 D0 回归，也不
+  在本轮顺手扩张修复范围。
+
+本轮非目标保持不变：不注入用户真实 Key、不调用外部 Provider、不实现 UI、不把日志
+级别降低当作修复。
+
+### 循环 5：Provider 切片 D1a——Credential Lease 与无网络路由投影
+
 状态：已启动
 
 本轮目标：
 
-1. 枚举 Grok Sampling、subagent、配置和错误路径中所有认证值前缀/后缀日志；
-2. 改为只记录 `credential_present`、认证类型、来源分类和相等性等非秘密信号；
-3. 用高辨识度 sentinel Key 建立日志泄露回归，断言完整 Key 及任意稳定片段均不出现；
-4. 复核错误对象、Debug 实现和 tracing fields，防止 API Key、Authorization Header、
-   Credential Ref 从非 debug 日志路径泄露；
-5. 安全门槛通过后，再规划 D1 的短生命周期内存 Credential Lease 与 Sampling 投影。
+1. 在 Host 内建立不可序列化、不可克隆且 `Debug` 安全的短生命周期
+   `CredentialLease`；
+2. 由账户范围的 Session Binding 解析当前 Profile，校验 owner、route revision 和
+   Credential Ref，再从 Host Vault 读取秘密；
+3. 把 `PreparedRoute + CredentialLease` 投影到 Grok 现有 Responses、Chat
+   Completions、Anthropic Messages Sampling 配置；
+4. 用纯内存/假 Vault 契约测试覆盖缺失凭据、跨账户、revision 不一致和三协议投影，
+   不发真实请求；
+5. 为 D1b 保留唯一的真实请求提交边界，只有请求确实交给 Sampling 后才能写
+   `TurnRouteRecord`。
 
-验收条件：覆盖三种现有协议与 subagent 关键路径；测试失败时能明确指出泄露位置；
-Rustfmt、Clippy 和相关 Host 回归通过；不得为测试发起真实或可能计费的模型请求。
+验收条件：秘密不能出现在持久结构、序列化、`Debug`、错误和 Renderer/Package API；
+绑定或 Vault 解析失败必须关闭执行；三协议投影复用现有 `SamplingClient`，不创建平行
+HTTP 客户端；相关 Rustfmt、Clippy 和单元测试通过。
 
-本轮非目标：不注入用户真实 Key、不调用外部 Provider、不实现 UI、不把日志级别降低
-当作修复。
+本轮非目标：不发送真实或计费请求，不实现 Gemini/Bedrock Native 协议，不实现
+Provider UI、动态 Package Policy 或 compatible migration 的历史状态转换。

@@ -1,6 +1,6 @@
 # ADR：Provider Control Plane、Host Vault 与 Profile 生命周期
 
-状态：已接受，切片 A 实施依据
+状态：已接受，切片 A-D1 实施依据
 
 日期：2026-07-23
 
@@ -136,7 +136,9 @@ URL 或操作系统安全存储原始错误体。
 
 当前实现还在共享 ACP Gateway 的 debug 序列化层递归脱敏 `apiKey`、`token`、
 `authorization`、`password`、`secret` 等常见秘密字段，覆盖 Provider 管理请求和
-订阅 bootstrap 请求。业务 Handler 仍不得依赖该兜底去主动记录完整参数。
+订阅 bootstrap 请求。D0 已把同一边界扩展到 Sampling、subagent、工具、上传、认证
+恢复、OIDC、配置 `Debug`、错误正文和 URL；业务 Handler 仍不得依赖该兜底去主动记录
+完整参数。
 
 ## 后果
 
@@ -152,4 +154,5 @@ URL 或操作系统安全存储原始错误体。
 - Vault 与 SQLite 不能共享原子事务，需要遵守补偿顺序；
 - Windows/Linux 客户端在各自 Vault Backend 完成前不能配置 BYOK；
 - 独立 Host/Supervisor 完成前，进程生命周期仍未达到最终常驻目标；
-- Catalog、Assignment、Binding、RouteCompiler 和 Provider UI 仍需后续切片实现。
+- Catalog、Assignment、Binding、RouteCompiler 已实现；Credential Lease、真实 Sampling
+  提交、Turn Route 写入和 Provider UI 仍需后续切片实现。
