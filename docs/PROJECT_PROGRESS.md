@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛、Host Credential Lease | D1b：建立唯一请求提交协调器和 Turn Route 时序契约 |
-| Provider Sampling | Binding 已能经内存 Lease 无网络投影到现有三协议 SamplingClient；尚未接入产品 Session 的真实 Turn | D1b 先固化“提交成功后记录”的协调器，D1c 再接 SessionActor |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛、Host Credential Lease、提交时序 | D1c0：同一 Turn 的绑定上下文复用 |
+| Provider Sampling | Binding 已能经内存 Lease 投影到现有三协议，Sampler actor 接收后才写 Turn Route；尚未贯通产品 Prompt 队列 | D1c0 固化 tool/retry 多次模型调用的同路由复用，D1c1 接 SessionActor |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -344,23 +344,61 @@ Renderer 设置 UI。
 
 ### 循环 6：Provider 切片 D1b——请求提交协调器与 Turn Route 时序
 
+状态：已完成
+
+本地提交：`6cbd824 feat: record routes after sampler acceptance`
+
+已经实现：
+
+- Grok `SamplerHandle` 新增同步 `begin_submit_and_collect(_with_config)`：只有 Submit 命令
+  成功进入 actor channel 才返回 `PendingSamplingRequest`；
+- `PendingSamplingRequest` 保持原有 RAII 语义，等待完成期间被 drop 会向 actor 发送取消；
+- 原 `submit_and_collect` 已复用 begin + collect，不改变现有调用方行为；
+- Host `BoundTurnSubmission` 把账户、turn ID、Lease 投影、不可变 Binding 和可信
+  `TurnRouteStore` 保持在同一对象中；
+- 写 Turn Route 前先检查同 turn 是否已被另一 Binding 占用，避免明知冲突仍提交；并发
+  竞争仍由提交后的事务检查兜底；
+- 提交器返回成功后才写记录；准备失败、actor channel 拒绝或提交器失败均不产生幽灵
+  Turn；若提交已接收但审计写入失败，Pending receipt 被 drop 并取消请求；
+- 同一 turn、同一 Binding 的重试返回原记录，不插入第二条；不同 Binding 不能覆盖。
+
+验证证据：
+
+- `BoundTurnSubmission` 时序契约 5 项全部通过；
+- Sampler acceptance/RAII 契约 2 项通过，Sampler 全套 158 项通过；
+- AgentMesh360 回归 51 项全部通过；
+- Shell 全 target Clippy `-D warnings`、Rustfmt 和 diff 检查通过；
+- 所有测试使用假提交器或 actor channel，不访问外部 Provider、不产生费用。
+
+计划复盘：
+
+- `TurnRouteRecord` 现在证明命令已进入 Sampling actor，不再把“已准备配置”误记成提交；
+- 协调器仍在 Host 私有模块，Renderer、Agent Package 和普通 Session 不能拿到 Lease；
+- D1b 没有修改 `SessionActor` 或 Prompt 队列，避免尚未解决多模型调用生命周期时提前
+  扩散接入；
+- 一个 Prompt Turn 可能包含 tool loop、401 retry、compaction resubmit 和 completion
+  recovery。D1c 不能只消费一次 Lease 后让后续请求退回 Grok 默认路由；必须先建立同一
+  Turn 的可复用绑定上下文，再贯通队列。
+
+本轮非目标保持不变：不直接改造全部 SessionActor 构造器，不发送真实模型请求，不
+处理 Usage/计费，不实现 UI 或新的协议 Backend。
+
+### 循环 7：Provider 切片 D1c0——同一 Turn 的绑定上下文复用
+
 状态：已启动
 
 本轮目标：
 
-1. 建立 Host 内部 `BoundTurnSubmission`，组合账户、turn ID、不可变 Binding、Lease
-   投影和可信 `TurnRouteStore`；
-2. 只有 Sampling submit future 已经被调用并返回“已接收”后，才写
-   `TurnRouteRecord`；准备失败、提交前失败或 submit 返回失败均不得写记录；
-3. 同一 turn 重试必须幂等，禁止用新 Binding 覆盖已经记录的 Turn；
-4. 用假提交器验证成功、失败、重复提交、跨账户和 Binding 不一致时序，不访问外部
-   Provider；
-5. 明确 D1c 接到 `SessionActor::run_turn_via_sampler` 的最小字段与生命周期，不在 D1b
-   扩散修改所有 Session 构造路径。
+1. 首次 actor acceptance 和 Turn Route 写入后，返回不可序列化的 `ActiveBoundTurn`；
+2. `ActiveBoundTurn` 可为同一 Prompt 的 tool loop、401/compaction resubmit 和 completion
+   recovery 生成同一绑定的 per-request config，但不能改变 Binding 或重复写记录；
+3. 复用的 config 继续只通过 serde 跳过的 resolver 持有秘密，Debug/序列化不泄露；
+4. 测试首次提交与多次重提只产生一条 Turn Route，并保持协议、模型、endpoint 与认证
+   Lease 一致；
+5. 完成后规划 D1c1：将可选 Bound Turn 从 `MvpAgent::prompt` 经 `SessionCommand::Prompt`
+   和 `InputItem` 传到真实 `run_turn_via_sampler`。
 
-验收条件：存储中每条 Turn Route 都对应一次已经进入 Sampling actor 的提交；失败尝试
-不产生“幽灵 Turn”；协调器不持久化/格式化 Lease；相关格式、Clippy、AgentMesh 回归
-通过。
+验收条件：同一 Turn 所有模型调用都保持同一不可变 Binding；重提不重新解析 Assignment
+或静默回到默认模型；秘密仍不进入持久化/日志；测试无外部请求。
 
-本轮非目标：不直接改造全部 SessionActor 构造器，不发送真实模型请求，不处理 Usage/
-计费，不实现 UI 或新的协议 Backend。
+本轮非目标：不在本切片修改 Prompt 队列和全部测试构造器，不发送真实请求，不处理 UI。

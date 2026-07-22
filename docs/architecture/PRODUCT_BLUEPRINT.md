@@ -470,7 +470,7 @@ flowchart LR
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
-| BYOK Provider 层 | **切片 A/B/C/D0/D1a 已实现，切片 D1b 开发中** | 已实现共享 state.db v5、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease 和三协议无网络投影；当前固化提交后写 Turn Route 的时序，再接产品 Session 真实模型路由；Provider UI 仍待实现 |
+| BYOK Provider 层 | **切片 A/B/C/D0/D1a/D1b 已实现，切片 D1c0 开发中** | 已实现共享 state.db v5、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影和 actor 接收后写 Turn Route 的提交时序；当前固化同一 Turn 多次调用的路由复用，再接产品 Session；Provider UI 仍待实现 |
 | 动态 Agent Package | **目标** | Manifest、签名、目录、安装器、迁移、权限变更、回滚、宿主 Skill Adapter |
 | 桌面产品外壳 | **身份外壳与 Agent 首页已实现** | 登录、门禁、账号 / 订阅 / credits、Agent 列表与激活；固定对话、垂直工作区、活动、产物、审批与设置仍是目标 |
 | 后台 Host | **进程与 ACP 桥接已实现** | 桌面按需启动真实 Grok Host，执行订阅策略与 Agent Registry；系统登录自启动、独立 Supervisor、崩溃恢复、通知与完整审计仍是目标 |
