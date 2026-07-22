@@ -99,8 +99,9 @@ D1c1 已以 Host 可信 Session Route Context 接到产品 Session 主 Prompt �
 账户、Assignment 与 Vault 失败矩阵也已通过。图片、权限分类、压缩、后台任务和 subagent
 等辅助推理旁路正按 D1d 统一 Authority 计划收口；其中 D1d0 已实现辅助 role 的 main
 Assignment fallback、实际 assignment role 审计和 Host role-aware Authority；D1d1 已验证
-当前模板的图片随 main 多模态 Binding 提交，并加固休眠 Cursor twin 的 `vision` 路由，
-正在接入权限分类和必要压缩。Provider UI 和真实 Provider E2E 仍未实现。
+当前模板的图片随 main 多模态 Binding 提交，并加固休眠 Cursor twin 的 `vision` 路由；
+自动权限分类已接入 `permission_classifier` Binding 且失败只回退本地策略，当前正在接入
+必要压缩。Provider UI 和真实 Provider E2E 仍未实现。
 
 当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
 因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和

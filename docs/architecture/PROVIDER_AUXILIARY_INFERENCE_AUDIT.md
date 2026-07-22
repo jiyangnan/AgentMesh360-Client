@@ -137,13 +137,20 @@ turn 和 subagent invocation id 形成可追踪的逻辑 turn id。
 
 1. ~~审计 active 图片路径，并将休眠 Cursor twin 的 route 准备提前到图片描述之前，
    仍只在 actor 接受后写审计；~~ 已完成（`7acc26f`）
-2. 图片描述、权限分类和必要压缩改经现有 SamplerActor；
+2. 图片描述与权限分类已改经现有 SamplerActor side-query；必要压缩待接入；
 3. 覆盖有/无专用 role Assignment、Vault 丢失、订阅失效与重试不漂移。
 
 图片路径复核结论（2026-07-23）：当前构建并不执行独立图片描述，图片随 main 多模态
 请求提交；Host E2E 已固定“一次 main Provider 请求、一条 main Turn Route、零 vision
 幽灵记录”。Cursor twin 已接入 `vision` Authority，并通过不广播主事件的 SamplerActor
 side-query 命令收集结果；该命令仍走现有 actor/HTTP/retry 栈，不创建常驻 actor 副本。
+
+权限分类接入结论（2026-07-23）：产品 Session 每次分类都重新检查 Access Guard，并用
+`permission_classifier` Binding/Lease 提交；成功后写该 role 的 Turn Route。失败只回退
+既有本地保守/启发式分类，不调用 Grok default Provider。E2E 已覆盖 main Assignment
+fallback、真实 Bearer/model、订阅失效和 Vault 丢失，失败路径零网络请求、零幽灵记录。
+在 Host 尚未把 role capability 暴露给 Session 前，产品分类请求不继承 Grok session 的
+`reasoning_effort`。
 
 ### D1d2：后台消费者
 

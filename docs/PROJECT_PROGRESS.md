@@ -602,11 +602,12 @@ Renderer 设置 UI。
 
 ### 循环 11：Provider 切片 D1d1——Prompt 内 P0 辅助推理
 
-状态：开发中；D1d1a 图片路径已完成，D1d1b 权限分类进行中
+状态：开发中；D1d1a 图片路径与 D1d1b 权限分类已完成，D1d1c 必要压缩进行中
 
 阶段提交：
 
 - `7acc26f feat: bind auxiliary image sampling`
+- `a41b05b feat: bind automatic permission classification`
 
 已完成子模块 D1d1a：
 
@@ -638,16 +639,47 @@ Renderer 设置 UI。
   计划已修正为“验证 active main 多模态路径 + 加固未来可能启用的 vision 路径”；
 - side-query 是同一个 SamplerActor 的显式命令语义，不是常驻副本，也不复制 credential，
   因此没有背离单一 Harness 和低内存目标；
-- D1d1 尚未完成：下一入口是运行中的自动权限分类，其失败必须只回退本地策略，不能
-  回退 Grok default Provider；之后再处理必要压缩。
+- D1d1a 完成时确认下一入口是运行中的自动权限分类，其失败必须只回退本地策略，不能
+  回退 Grok default Provider；该入口现已按这一约束完成，随后处理必要压缩。
+
+已完成子模块 D1d1b：
+
+- 产品 Session 的自动权限分类不再在 wiring 时创建 Grok/aux `SamplingClient`；每次需要
+  LLM 判定时，由实时 `ClientAccessGuard` 为 `permission_classifier` role 准备
+  Binding、Credential Lease 和 synthetic/当前 logical turn；
+- 权限分类请求通过 SamplerActor side-query 命令提交，实际 model 强制来自 Binding；
+  role 未单独配置时按 D1d0 契约回退 main Assignment，但仍生成独立 role Binding/Route；
+- 远端成功结果继续进入既有 `LlmPermissionClassifier` JSON 解析；Authority、订阅、Vault、
+  网络或解析失败时只触发现有本地保守/启发式策略，不尝试 Grok default Provider；
+- 产品 role 的真实能力尚未暴露到 Session 时，不再从 Grok 默认 session model 推断并发送
+  `reasoning_effort`，避免把不支持的 Grok 参数注入用户 BYOK endpoint；
+- 新增真实产品分类 E2E：有效订阅下请求使用绑定 Bearer/model、写一条
+  `permission_classifier` Turn Route；订阅失效和 Vault secret 删除后均零网络请求、零幽灵
+  Route，恢复订阅不会恢复已删除秘密；bootstrap token 和 Provider secret 不进入请求正文。
+
+D1d1b 验证：
+
+- permission auto-mode 回归 16 项全部通过；
+- AgentMesh360 模块回归 59 项全部通过；
+- 产品权限分类 E2E 成功、订阅失效与 Vault 丢失矩阵通过，只使用本机 mock；
+- Rustfmt、`git diff --check` 和 library + tests Clippy `-D warnings` 通过。
+
+D1d1b 计划复盘：
+
+- 分类器仍使用 Grok Harness 原有 Permission Manager、分类 prompt、JSON schema 和本地
+  heuristic，只替换产品 Session 的 Sampling 授权入口，没有另建权限系统；
+- Access Guard 在每次分类而不是 wiring 时检查，满足长期在线 Session 中订阅状态可变化
+  的约束；失败保留对话与本地判断能力；
+- side-query 的远端失败不会污染主 Session 的流式事件，也不会改变 main Binding；
+- 下一轮只接必要压缩 `compaction` role；D1d1 完成前仍不能进入后台任务或 subagent。
 
 本轮目标：
 
 1. ~~审计并加固用户图片路径：当前模板验证图片随 main Binding 提交；休眠的 Cursor
    描述路径通过 `vision` Authority 获取 per-request config，并在 actor 接受后记录对应
    Turn Route；~~ 已完成
-2. 接入 `permission_classifier`，远端失败时只使用既有本地保守/启发式策略，不切换
-   Provider；
+2. ~~接入 `permission_classifier`，远端失败时只使用既有本地保守/启发式策略，不切换
+   Provider；~~ 已完成
 3. 接入必要压缩的 `compaction` role，保证同一次压缩的多阶段调用复用同一 Binding；
 4. 用 Host E2E 覆盖专用 role Assignment、main fallback、订阅失效、Vault 丢失和重试
    不漂移，并确认普通 Grok Session 不受影响。
