@@ -258,6 +258,42 @@ async fn submit_and_collect_returns_response() {
     assert_eq!(a.content.as_ref(), "collected response");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn side_query_collects_without_broadcasting_session_events() {
+    let app = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            let events = sse::chat_completion_events("side response", "side-model");
+            Sse::new(stream::iter(
+                events.into_iter().map(Ok::<_, std::convert::Infallible>),
+            ))
+        }),
+    );
+    let server = MockServer::spawn(app).await;
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let cfg = test_config(server.base_url(), "default-model");
+    let handle = SamplerActor::spawn(cfg.clone(), RetryPolicy::default(), event_tx);
+    let mut side_config = cfg;
+    side_config.model = "side-model".into();
+
+    let pending = handle
+        .begin_side_query_and_collect_with_config(
+            RequestId::from("req-side-query"),
+            user_request("classify quietly"),
+            side_config,
+        )
+        .expect("side query accepted");
+    let (response, _metrics) = pending.collect().await.expect("side query collected");
+    assert_eq!(response.assistant_text(), "side response");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), event_rx.recv())
+            .await
+            .is_err(),
+        "side-query streaming events must not enter the main session channel"
+    );
+    server.shutdown();
+}
+
 // ---------------------------------------------------------------------------
 // Cancellation
 // ---------------------------------------------------------------------------

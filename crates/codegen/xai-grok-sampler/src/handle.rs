@@ -92,6 +92,7 @@ impl SamplerHandle {
             request_id,
             request: Box::new(request),
             config: None,
+            broadcast_events: true,
             completion_tx: None,
         });
     }
@@ -108,6 +109,7 @@ impl SamplerHandle {
             request_id,
             request: Box::new(request),
             config: Some(Box::new(config)),
+            broadcast_events: true,
             completion_tx: None,
         });
     }
@@ -172,7 +174,7 @@ impl SamplerHandle {
         request_id: RequestId,
         request: ConversationRequest,
     ) -> Result<PendingSamplingRequest, SamplingError> {
-        self.begin_submit_and_collect_inner(request_id, request, None)
+        self.begin_submit_and_collect_inner(request_id, request, None, true)
     }
 
     /// Enqueue a request with a per-request config and return the exact actor
@@ -188,7 +190,20 @@ impl SamplerHandle {
         // leaving it intact would send that model to the leased endpoint while
         // the Host audit records `config.model`.
         request.model = Some(config.model.clone());
-        self.begin_submit_and_collect_inner(request_id, request, Some(config))
+        self.begin_submit_and_collect_inner(request_id, request, Some(config), true)
+    }
+
+    /// Enqueue an auxiliary request with a per-request config without
+    /// broadcasting its stream on the session's main event channel. The
+    /// completion receipt still carries the full response and metrics.
+    pub fn begin_side_query_and_collect_with_config(
+        &self,
+        request_id: RequestId,
+        mut request: ConversationRequest,
+        config: SamplerConfig,
+    ) -> Result<PendingSamplingRequest, SamplingError> {
+        request.model = Some(config.model.clone());
+        self.begin_submit_and_collect_inner(request_id, request, Some(config), false)
     }
 
     fn begin_submit_and_collect_inner(
@@ -196,6 +211,7 @@ impl SamplerHandle {
         request_id: RequestId,
         request: ConversationRequest,
         config: Option<SamplerConfig>,
+        broadcast_events: bool,
     ) -> Result<PendingSamplingRequest, SamplingError> {
         let (completion_tx, completion_rx) = oneshot::channel();
         let cancel_id = request_id.clone();
@@ -204,6 +220,7 @@ impl SamplerHandle {
                 request_id,
                 request: Box::new(request),
                 config: config.map(Box::new),
+                broadcast_events,
                 completion_tx: Some(completion_tx),
             })
             .map_err(|_| {

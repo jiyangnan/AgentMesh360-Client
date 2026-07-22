@@ -645,7 +645,7 @@ impl SessionActor {
         let user_message = if user_images.is_empty() {
             user_message
         } else if self.is_cursor_harness() {
-            self.transcribe_user_images(user_message, &user_images)
+            self.transcribe_user_images(user_message, &user_images, prompt_id)
                 .await?
         } else {
             let session_dir =

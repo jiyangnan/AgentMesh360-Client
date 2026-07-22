@@ -814,6 +814,7 @@ impl SessionActor {
         &self,
         original_user_message: String,
         images: &[agent_client_protocol::ImageContent],
+        logical_turn_id: &str,
     ) -> Result<String, acp::Error> {
         let prior = self.chat_state_handle.get_conversation().await;
         let outline = crate::session::image_describe::build_conversation_outline(&prior);
@@ -833,23 +834,46 @@ impl SessionActor {
         let current_query = crate::session::image_describe::strip_template_context_tags(
             &xai_chat_state::compaction_utils::extract_user_query(&original_user_message),
         );
-        let active_session_config = self.reconstruct_full_config().await;
-        let resolved_describe = self
-            .resolve_aux_sampler_config(&self.image_description_model)
-            .await;
-        let (describe_model, sampler_config) =
-            crate::agent::config::finalize_image_describe_sampler_config(
-                resolved_describe,
-                &active_session_config,
-                self.client_identifier.clone(),
-                Some(self.max_retries),
-            );
-        let client = xai_grok_sampler::SamplingClient::new(sampler_config).map_err(|e| {
-            acp::Error::internal_error().data(format!(
-                "failed to build image-describe sampling client: {e}"
-            ))
-        })?;
-        let model = &describe_model;
+        let mut product_vision_route = self
+            .startup_hints
+            .agentmesh360_route
+            .as_ref()
+            .map(|context| {
+                context.prepare_turn_for_role(
+                    self.session_info.id.0.as_ref(),
+                    "vision",
+                    logical_turn_id,
+                )
+            })
+            .transpose()
+            .map_err(|error| {
+                acp::Error::internal_error().data(serde_json::json!({
+                    "code": "agentmesh360_provider_route_required",
+                    "role": "vision",
+                    "message": error.to_string(),
+                }))
+            })?;
+        let ordinary_describer = if product_vision_route.is_none() {
+            let active_session_config = self.reconstruct_full_config().await;
+            let resolved_describe = self
+                .resolve_aux_sampler_config(&self.image_description_model)
+                .await;
+            let (describe_model, sampler_config) =
+                crate::agent::config::finalize_image_describe_sampler_config(
+                    resolved_describe,
+                    &active_session_config,
+                    self.client_identifier.clone(),
+                    Some(self.max_retries),
+                );
+            let client = xai_grok_sampler::SamplingClient::new(sampler_config).map_err(|e| {
+                acp::Error::internal_error().data(format!(
+                    "failed to build image-describe sampling client: {e}"
+                ))
+            })?;
+            Some((client, describe_model))
+        } else {
+            None
+        };
         let limit = crate::session::image_describe::IMAGE_DESCRIPTION_PROCESSING_LIMIT;
         let skip_count = persisted.len().saturating_sub(limit);
         if skip_count > 0 {
@@ -864,22 +888,75 @@ impl SessionActor {
             let part = if i < skip_count {
                 crate::session::image_describe::SKIPPED_IMAGE_MARKER.to_owned()
             } else {
-                self.image_describe_cache
-                    .get_or_describe(
-                        client.clone(),
-                        model,
-                        &p.raw_bytes,
-                        &p.mime_type,
-                        outline.as_deref(),
-                        &current_query,
-                        crate::session::image_describe::ImageDescribeSource::UserAttachment,
-                        "",
-                    )
-                    .await
-                    .map_err(|e| {
-                        acp::Error::internal_error()
-                            .data(format!("image transcription failed: {e}"))
-                    })?
+                let described = if let Some(route) = product_vision_route.as_mut() {
+                    let sampler_handle = self.sampler_handle.clone();
+                    let request_model = self.image_description_model.clone();
+                    self.image_describe_cache
+                        .get_or_describe_with(
+                            &p.raw_bytes,
+                            &p.mime_type,
+                            outline.as_deref(),
+                            &current_query,
+                            crate::session::image_describe::ImageDescribeSource::UserAttachment,
+                            "",
+                            move |prompt_text, image_url| async move {
+                                let request =
+                                    crate::session::image_describe::build_describe_request(
+                                        &request_model,
+                                        prompt_text,
+                                        &[image_url],
+                                    );
+                                let request_id = xai_grok_sampler::RequestId::random();
+                                let pending = route
+                                    .submit(|config| {
+                                        sampler_handle
+                                            .begin_side_query_and_collect_with_config(
+                                                request_id, request, config,
+                                            )
+                                            .map_err(anyhow::Error::new)
+                                    })
+                                    .map_err(|error| {
+                                        crate::session::image_describe::DescribeError::Sampling(
+                                            error.to_string(),
+                                        )
+                                    })?;
+                                let (response, _) = tokio::time::timeout(
+                                    crate::session::image_describe::describe_timeout(),
+                                    pending.collect(),
+                                )
+                                .await
+                                .map_err(|_| {
+                                    crate::session::image_describe::describe_timeout_error()
+                                })?
+                                .map_err(|error| {
+                                    crate::session::image_describe::DescribeError::Sampling(
+                                        error.to_string(),
+                                    )
+                                })?;
+                                crate::session::image_describe::description_from_response(response)
+                            },
+                        )
+                        .await
+                } else {
+                    let (client, model) = ordinary_describer
+                        .as_ref()
+                        .expect("ordinary image describer exists without product route");
+                    self.image_describe_cache
+                        .get_or_describe(
+                            client.clone(),
+                            model,
+                            &p.raw_bytes,
+                            &p.mime_type,
+                            outline.as_deref(),
+                            &current_query,
+                            crate::session::image_describe::ImageDescribeSource::UserAttachment,
+                            "",
+                        )
+                        .await
+                };
+                described.map_err(|e| {
+                    acp::Error::internal_error().data(format!("image transcription failed: {e}"))
+                })?
             };
             if persisted.len() > 1 {
                 description_parts.push(format!("Image {}: {}", i + 1, part));

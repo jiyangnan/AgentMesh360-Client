@@ -301,6 +301,37 @@ impl ImageDescribeCache {
         source: ImageDescribeSource,
         path_key: &str,
     ) -> Result<String, DescribeError> {
+        self.get_or_describe_with(
+            raw_bytes,
+            mime_type,
+            outline,
+            current_query,
+            source,
+            path_key,
+            |prompt_text, image_url| async move {
+                describe_user_images(client, model, prompt_text, &[image_url]).await
+            },
+        )
+        .await
+    }
+
+    /// Variant used by Host-authorized product sessions. Cache ownership and
+    /// prompt construction stay here, while the caller chooses the trusted
+    /// Sampling submission boundary.
+    pub(crate) async fn get_or_describe_with<F, Fut>(
+        &self,
+        raw_bytes: &[u8],
+        mime_type: &str,
+        outline: Option<&str>,
+        current_query: &str,
+        source: ImageDescribeSource,
+        path_key: &str,
+        describe: F,
+    ) -> Result<String, DescribeError>
+    where
+        F: FnOnce(String, String) -> Fut,
+        Fut: std::future::Future<Output = Result<String, DescribeError>>,
+    {
         let content_fp = content_fingerprint(raw_bytes);
         let prompt_fp = describe_prompt_fingerprint(outline, current_query);
         let cache_key = (source, path_key.to_owned(), content_fp, prompt_fp);
@@ -313,8 +344,7 @@ impl ImageDescribeCache {
             base64::engine::general_purpose::STANDARD.encode(raw_bytes)
         );
         let prompt_text = build_describe_prompt(outline, current_query);
-        let description =
-            describe_user_images(client, model, prompt_text, std::slice::from_ref(&url)).await?;
+        let description = describe(prompt_text, url).await?;
         self.inner.lock().insert(cache_key, description.clone());
         Ok(description)
     }
@@ -443,6 +473,21 @@ pub async fn describe_user_images(
     prompt_text: String,
     image_urls: &[String],
 ) -> Result<String, DescribeError> {
+    let request = build_describe_request(model, prompt_text, image_urls);
+    let response = tokio::time::timeout(describe_timeout(), client.conversation_collect(request))
+        .await
+        .map_err(|_| describe_timeout_error())?
+        .map_err(|e| DescribeError::Sampling(format!("{e}")))?;
+    description_from_response(response)
+}
+
+/// Build the exact request used by both ordinary image description and the
+/// AgentMesh360 Host-authorized SamplerActor path.
+pub(crate) fn build_describe_request(
+    model: &str,
+    prompt_text: String,
+    image_urls: &[String],
+) -> ConversationRequest {
     let mut user_item = ConversationItem::User(UserItem {
         content: vec![ContentPart::Text {
             text: std::sync::Arc::<str>::from(prompt_text),
@@ -457,20 +502,26 @@ pub async fn describe_user_images(
             });
         }
     }
-    let request = ConversationRequest::from_items(vec![user_item])
+    ConversationRequest::from_items(vec![user_item])
         .with_model(model)
         .with_temperature(0.2)
-        .with_max_output_tokens(4_096);
-    const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(240);
-    let response = tokio::time::timeout(DESCRIBE_TIMEOUT, client.conversation_collect(request))
-        .await
-        .map_err(|_| {
-            DescribeError::Sampling(format!(
-                "image describe call timed out after {}s",
-                DESCRIBE_TIMEOUT.as_secs()
-            ))
-        })?
-        .map_err(|e| DescribeError::Sampling(format!("{e}")))?;
+        .with_max_output_tokens(4_096)
+}
+
+pub(crate) fn describe_timeout() -> std::time::Duration {
+    std::time::Duration::from_secs(240)
+}
+
+pub(crate) fn describe_timeout_error() -> DescribeError {
+    DescribeError::Sampling(format!(
+        "image describe call timed out after {}s",
+        describe_timeout().as_secs()
+    ))
+}
+
+pub(crate) fn description_from_response(
+    response: crate::sampling::ConversationResponse,
+) -> Result<String, DescribeError> {
     let text = response
         .assistant()
         .map(|a| a.content.as_ref().to_owned())
@@ -524,6 +575,50 @@ pub fn persist_and_prepend_image_files(
 mod tests {
     use super::*;
     use xai_grok_sampling_types::conversation::{ConversationItem, UserItem};
+
+    #[tokio::test]
+    async fn injected_describer_uses_the_same_cache_contract() {
+        let cache = ImageDescribeCache::new();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let first_calls = std::sync::Arc::clone(&calls);
+        let first = cache
+            .get_or_describe_with(
+                b"image-bytes",
+                "image/png",
+                Some("prior context"),
+                "current task",
+                ImageDescribeSource::UserAttachment,
+                "image-1",
+                move |prompt, image_url| async move {
+                    first_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    assert!(prompt.contains("current task"));
+                    assert!(image_url.starts_with("data:image/png;base64,"));
+                    Ok("cached description".to_owned())
+                },
+            )
+            .await
+            .expect("first description");
+        let second_calls = std::sync::Arc::clone(&calls);
+        let second = cache
+            .get_or_describe_with(
+                b"image-bytes",
+                "image/png",
+                Some("prior context"),
+                "current task",
+                ImageDescribeSource::UserAttachment,
+                "image-1",
+                move |_prompt, _image_url| async move {
+                    second_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    Ok("must not replace cache".to_owned())
+                },
+            )
+            .await
+            .expect("cached description");
+        assert_eq!(first, "cached description");
+        assert_eq!(second, first);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+
     #[test]
     fn persist_and_prepend_image_files_writes_assets_and_lists_paths() {
         let dir = tempfile::tempdir().unwrap();

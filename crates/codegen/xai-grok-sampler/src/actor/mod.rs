@@ -101,6 +101,7 @@ impl SamplerActor {
                 request_id,
                 request,
                 config,
+                broadcast_events,
                 completion_tx,
             } => {
                 let cancel_token = CancellationToken::new();
@@ -115,7 +116,12 @@ impl SamplerActor {
                 let effective_config = config
                     .map(|b| *b)
                     .unwrap_or_else(|| self.state.config.clone());
-                let event_tx = self.event_tx.clone();
+                let event_tx = if broadcast_events {
+                    self.event_tx.clone()
+                } else {
+                    let (side_query_tx, _side_query_rx) = mpsc::unbounded_channel();
+                    side_query_tx
+                };
                 let retry_policy = self.state.retry_policy.clone();
                 let request_inner = *request;
                 self.tasks.spawn(request_task::run_request_task(

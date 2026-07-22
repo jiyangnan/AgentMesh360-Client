@@ -134,7 +134,16 @@ impl SessionActor {
             return images;
         }
         if !images.is_empty() {
-            match self.transcribe_user_images(wrapped.clone(), &images).await {
+            let logical_turn_id = self
+                .current_prompt_id
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .unwrap_or_else(|| format!("aux:vision:{}", uuid::Uuid::new_v4()));
+            match self
+                .transcribe_user_images(wrapped.clone(), &images, &logical_turn_id)
+                .await
+            {
                 Ok(new_text) => *wrapped = new_text,
                 Err(e) => {
                     tracing::warn!(?e, "interjection image processing failed; dropping images");

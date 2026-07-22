@@ -646,32 +646,29 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
-    async fn serve_provider_once() -> (
+    async fn serve_provider_requests() -> (
         String,
-        tokio::sync::oneshot::Receiver<(String, String)>,
+        tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
         tokio::task::JoinHandle<()>,
     ) {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind Provider mock");
         let address = listener.local_addr().expect("Provider mock address");
-        let (request_tx, request_rx) = tokio::sync::oneshot::channel();
-        let request_tx = Arc::new(parking_lot::Mutex::new(Some(request_tx)));
+        let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
         let app = Router::new().route(
             "/v1/responses",
             post({
-                let request_tx = Arc::clone(&request_tx);
+                let request_tx = request_tx.clone();
                 move |headers: HeaderMap, body: String| {
-                    let request_tx = Arc::clone(&request_tx);
+                    let request_tx = request_tx.clone();
                     async move {
                         let authorization = headers
                             .get("authorization")
                             .and_then(|value| value.to_str().ok())
                             .unwrap_or_default()
                             .to_owned();
-                        if let Some(sender) = request_tx.lock().take() {
-                            let _ = sender.send((authorization, body));
-                        }
+                        let _ = request_tx.send((authorization, body));
                         let events = xai_grok_test_support::sse::responses_api_events_exact(
                             "host-e2e-ok",
                             "model-main",
@@ -902,8 +899,8 @@ mod tests {
             .run_until(async {
                 let state_home = tempfile::tempdir().expect("state home");
                 let (core_base_url, core) = serve_bootstrap_once().await;
-                let (provider_base_url, provider_request, provider_task) =
-                    serve_provider_once().await;
+                let (provider_base_url, mut provider_requests, provider_task) =
+                    serve_provider_requests().await;
                 let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
                 let gateway_task = drive_gateway(gateway_rx);
 
@@ -1029,27 +1026,56 @@ mod tests {
                     .to_owned();
                 assert_eq!(activation["agent"]["runtimeState"], "resident");
 
+                use base64::Engine as _;
+                use image::{ImageBuffer, Rgba};
+                let image: ImageBuffer<Rgba<u8>, Vec<u8>> =
+                    ImageBuffer::from_pixel(32, 32, Rgba([128, 64, 32, 255]));
+                let mut image_bytes = Vec::new();
+                image
+                    .write_to(
+                        &mut std::io::Cursor::new(&mut image_bytes),
+                        image::ImageFormat::Png,
+                    )
+                    .expect("encode Host E2E image");
+                let image = acp::ImageContent::new(
+                    base64::engine::general_purpose::STANDARD.encode(image_bytes),
+                    "image/png",
+                );
+
                 tokio::time::timeout(
                     Duration::from_secs(30),
                     agent.prompt(acp::PromptRequest::new(
                         acp::SessionId::new(session_id.clone()),
-                        vec![acp::ContentBlock::from("Return the Host E2E marker.")],
+                        vec![
+                            acp::ContentBlock::from("Describe the image, then return the marker."),
+                            acp::ContentBlock::Image(image),
+                        ],
                     )),
                 )
                 .await
                 .expect("product Prompt timed out")
                 .expect("product Prompt response");
 
-                let (authorization, request_body) =
-                    tokio::time::timeout(Duration::from_secs(5), provider_request)
+                let (main_authorization, main_request_body) =
+                    tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
                         .await
-                        .expect("Provider request timed out")
-                        .expect("Provider request capture");
-                assert_eq!(authorization, "Bearer sentinel-provider-secret-5678");
+                        .expect("main Provider request timed out")
+                        .expect("main Provider request capture");
+                assert_eq!(main_authorization, "Bearer sentinel-provider-secret-5678");
                 assert_eq!(
-                    serde_json::from_str::<serde_json::Value>(&request_body)
-                        .expect("Provider request JSON")["model"],
+                    serde_json::from_str::<serde_json::Value>(&main_request_body)
+                        .expect("main Provider request JSON")["model"],
                     "model-main"
+                );
+                assert!(
+                    main_request_body.contains("data:image/png;base64,"),
+                    "the active Grok template must keep image data on the bound main request"
+                );
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
+                        .await
+                        .is_err(),
+                    "the current non-Cursor template must not issue a separate vision request"
                 );
 
                 let routes = handle(
@@ -1069,6 +1095,26 @@ mod tests {
                 assert_eq!(routes["turnRoutes"].as_array().map(Vec::len), Some(1));
                 assert_eq!(routes["turnRoutes"][0]["modelId"], "model-main");
                 assert!(!routes.to_string().contains("sentinel-provider-secret-5678"));
+
+                let vision_routes = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "vision",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("vision Turn Route history response");
+                let vision_routes = ext_result(vision_routes);
+                assert_eq!(
+                    vision_routes["turnRoutes"].as_array().map(Vec::len),
+                    Some(0),
+                    "the inactive Cursor transcription path must not create a ghost route"
+                );
 
                 provider_task.abort();
                 gateway_task.abort();

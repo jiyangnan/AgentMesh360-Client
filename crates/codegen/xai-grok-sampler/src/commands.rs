@@ -25,6 +25,9 @@ pub(crate) enum SamplerCommand {
         request_id: RequestId,
         request: Box<ConversationRequest>,
         config: Option<Box<SamplerConfig>>,
+        /// Whether streamed events should reach the session's shared event
+        /// channel. Side queries collect through `completion_tx` only.
+        broadcast_events: bool,
         completion_tx: Option<
             oneshot::Sender<Result<(ConversationResponse, InferenceLatencyStats), SamplingError>>,
         >,
