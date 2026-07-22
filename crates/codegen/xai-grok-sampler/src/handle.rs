@@ -9,6 +9,51 @@ use crate::config::SamplerConfig;
 use crate::metrics::InferenceLatencyStats;
 use crate::types::RequestId;
 
+struct CancelOnDrop {
+    cmd_tx: mpsc::UnboundedSender<SamplerCommand>,
+    request_id: RequestId,
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        let _ = self.cmd_tx.send(SamplerCommand::Cancel {
+            request_id: self.request_id.clone(),
+        });
+    }
+}
+
+/// A request that has been accepted by the sampler actor command channel.
+///
+/// Dropping this value cancels the in-flight request. Keeping acceptance and
+/// completion separate gives trusted hosts an exact boundary for durable route
+/// auditing without claiming that a merely prepared request was submitted.
+pub struct PendingSamplingRequest {
+    completion_rx:
+        oneshot::Receiver<Result<(ConversationResponse, InferenceLatencyStats), SamplingError>>,
+    _cancel_on_drop: CancelOnDrop,
+}
+
+impl std::fmt::Debug for PendingSamplingRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingSamplingRequest")
+            .field("accepted", &true)
+            .finish()
+    }
+}
+
+impl PendingSamplingRequest {
+    pub async fn collect(
+        self,
+    ) -> Result<(ConversationResponse, InferenceLatencyStats), SamplingError> {
+        self.completion_rx.await.unwrap_or_else(|_| {
+            Err(SamplingError::Auth(
+                "sampler actor dropped before completion".to_string(),
+            ))
+        })
+    }
+}
+
 /// Cheaply-cloneable handle to the sampler actor.
 ///
 /// Internally just an `mpsc::UnboundedSender<SamplerCommand>`. All
@@ -115,43 +160,112 @@ impl SamplerHandle {
         request_id: RequestId,
         request: ConversationRequest,
     ) -> Result<(ConversationResponse, InferenceLatencyStats), SamplingError> {
-        // RAII guard: when this future is dropped (cancel, panic, or normal return),
-        // tell the sampler actor to cancel the in-flight request_id. No-op if the
-        // actor already finished and removed it from its active set.
-        struct CancelOnDrop {
-            cmd_tx: mpsc::UnboundedSender<SamplerCommand>,
-            request_id: RequestId,
-        }
-        impl Drop for CancelOnDrop {
-            fn drop(&mut self) {
-                // fire-and-forget the send.
-                let _ = self.cmd_tx.send(SamplerCommand::Cancel {
-                    request_id: self.request_id.clone(),
-                });
-            }
-        }
+        self.begin_submit_and_collect(request_id, request)?
+            .collect()
+            .await
+    }
 
+    /// Enqueue a request and return as soon as the sampler actor command
+    /// channel accepts it. No network completion is awaited here.
+    pub fn begin_submit_and_collect(
+        &self,
+        request_id: RequestId,
+        request: ConversationRequest,
+    ) -> Result<PendingSamplingRequest, SamplingError> {
+        self.begin_submit_and_collect_inner(request_id, request, None)
+    }
+
+    /// Enqueue a request with a per-request config and return the exact actor
+    /// acceptance receipt used by AgentMesh360 bound-turn routing.
+    pub fn begin_submit_and_collect_with_config(
+        &self,
+        request_id: RequestId,
+        request: ConversationRequest,
+        config: SamplerConfig,
+    ) -> Result<PendingSamplingRequest, SamplingError> {
+        self.begin_submit_and_collect_inner(request_id, request, Some(config))
+    }
+
+    fn begin_submit_and_collect_inner(
+        &self,
+        request_id: RequestId,
+        request: ConversationRequest,
+        config: Option<SamplerConfig>,
+    ) -> Result<PendingSamplingRequest, SamplingError> {
         let (completion_tx, completion_rx) = oneshot::channel();
         let cancel_id = request_id.clone();
-
-        // Only arm the guard if Submit actually reached the actor.
-        let _guard = self
-            .cmd_tx
+        self.cmd_tx
             .send(SamplerCommand::Submit {
                 request_id,
                 request: Box::new(request),
-                config: None,
+                config: config.map(Box::new),
                 completion_tx: Some(completion_tx),
             })
-            .ok()
-            .map(|_| CancelOnDrop {
+            .map_err(|_| {
+                SamplingError::Auth("sampler actor dropped before submission".to_string())
+            })?;
+        Ok(PendingSamplingRequest {
+            completion_rx,
+            _cancel_on_drop: CancelOnDrop {
                 cmd_tx: self.cmd_tx.clone(),
                 request_id: cancel_id,
-            });
-        completion_rx.await.unwrap_or_else(|_| {
-            Err(SamplingError::Auth(
-                "sampler actor dropped before completion".to_string(),
-            ))
+            },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn begin_fails_when_the_actor_command_channel_is_closed() {
+        let handle = SamplerHandle::noop();
+        let error = handle
+            .begin_submit_and_collect(RequestId::random(), ConversationRequest::default())
+            .expect_err("closed actor channel must reject submission");
+        assert!(error.to_string().contains("before submission"));
+    }
+
+    #[tokio::test]
+    async fn begin_returns_only_after_submit_is_enqueued_and_drop_cancels() {
+        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel();
+        let handle = SamplerHandle::new(cmd_tx);
+        let request_id = RequestId::random();
+        let pending = handle
+            .begin_submit_and_collect_with_config(
+                request_id.clone(),
+                ConversationRequest::default(),
+                SamplerConfig {
+                    model: "bound-model".into(),
+                    ..SamplerConfig::default()
+                },
+            )
+            .expect("actor accepts submit command");
+
+        let command = cmd_rx.recv().await.expect("submit command");
+        match command {
+            SamplerCommand::Submit {
+                request_id: accepted_id,
+                config,
+                completion_tx,
+                ..
+            } => {
+                assert_eq!(accepted_id, request_id);
+                assert_eq!(
+                    config.as_ref().map(|config| config.model.as_str()),
+                    Some("bound-model")
+                );
+                assert!(completion_tx.is_some());
+            }
+            _ => panic!("expected submit command"),
+        }
+
+        drop(pending);
+        let cancel = cmd_rx.recv().await.expect("cancel command");
+        assert!(matches!(
+            cancel,
+            SamplerCommand::Cancel { request_id: id } if id == request_id
+        ));
     }
 }

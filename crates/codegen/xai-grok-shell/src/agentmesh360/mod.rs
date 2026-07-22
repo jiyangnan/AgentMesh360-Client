@@ -19,6 +19,7 @@ pub mod registry;
 mod session_bindings;
 mod state;
 mod turn_routes;
+mod turn_submission;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;

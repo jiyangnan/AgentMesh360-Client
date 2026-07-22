@@ -86,6 +86,10 @@ impl LeasedSamplingRoute {
         Ok((client, self.binding))
     }
 
+    pub(super) fn into_parts(self) -> (SamplerConfig, SessionProviderBinding) {
+        (self.sampler_config, self.binding)
+    }
+
     #[cfg(test)]
     fn sampler_config(&self) -> &SamplerConfig {
         &self.sampler_config

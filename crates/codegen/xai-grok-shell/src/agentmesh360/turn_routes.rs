@@ -47,6 +47,34 @@ impl TurnRouteStore {
         }
     }
 
+    /// Fail before Sampling submission when this turn is already bound to a
+    /// different immutable route. A concurrent writer is checked again by
+    /// `record_submitted` after actor acceptance.
+    pub fn validate_submission(
+        &self,
+        owner_account_id: i64,
+        turn_id: &str,
+        binding: &SessionProviderBinding,
+    ) -> Result<()> {
+        if binding.owner_account_id != owner_account_id {
+            bail!("Turn route account does not match Binding owner");
+        }
+        let turn_id = normalize_id(turn_id, "turn id")?;
+        let conn = super::state::open(&self.state_home)?;
+        if let Some(record) = query_turn(
+            &conn,
+            owner_account_id,
+            &binding.session_id,
+            &binding.role,
+            &turn_id,
+        )? && (record.binding_revision != binding.binding_revision
+            || record.binding_snapshot_hash != binding.snapshot_hash)
+        {
+            bail!("Turn is already recorded with a different Binding revision");
+        }
+        Ok(())
+    }
+
     /// This is intentionally not called while merely preparing or displaying a route.
     /// Slice D must call it only at the Sampling request submission boundary.
     #[allow(dead_code)]
