@@ -274,6 +274,28 @@ const DISCOVERY_CACHE_TTL: StdDuration = StdDuration::from_secs(3600);
 /// pointed at the same IdP share one entry.
 static DISCOVERY_CACHE: LazyLock<RwLock<HashMap<String, (Discovery, Instant)>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
+
+/// Preserve enough endpoint context for diagnostics while stripping userinfo,
+/// path, query, and fragment, any of which may contain provider credentials.
+fn redacted_endpoint(raw: &str) -> String {
+    let Ok(url) = reqwest::Url::parse(raw) else {
+        return "<configured>".to_owned();
+    };
+    let Some(host) = url.host_str() else {
+        return "<configured>".to_owned();
+    };
+    match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    }
+}
+
+fn redact_sent_secret(mut body: String, secret: &str) -> String {
+    if !secret.is_empty() {
+        body = body.replace(secret, "[REDACTED]");
+    }
+    body
+}
 pub(super) async fn discover(issuer: &str) -> anyhow::Result<Discovery> {
     let issuer_key = issuer.trim_end_matches('/').to_owned();
     if let Some((doc, at)) = DISCOVERY_CACHE.read().get(&issuer_key)
@@ -303,7 +325,8 @@ fn discovery_retry_policy() -> backon::ExponentialBuilder {
 }
 async fn discover_once(issuer_key: &str) -> anyhow::Result<Discovery> {
     let url = format!("{issuer_key}/.well-known/openid-configuration");
-    tracing::debug!(url = % url, "OIDC: fetching discovery document");
+    let diagnostic_endpoint = redacted_endpoint(&url);
+    tracing::debug!(endpoint = %diagnostic_endpoint, "OIDC: fetching discovery document");
     let resp = with_alpha_test_key(
         crate::http::shared_client()
             .get(&url)
@@ -315,13 +338,14 @@ async fn discover_once(issuer_key: &str) -> anyhow::Result<Discovery> {
     if !resp.status().is_success() {
         return Err(anyhow::Error::new(OidcError::DiscoveryHttp {
             status: resp.status().as_u16(),
-            url,
+            url: diagnostic_endpoint,
         }));
     }
     let doc: Discovery = resp.json().await?;
     tracing::debug!(
-        authorization_endpoint = % doc.authorization_endpoint, token_endpoint = % doc
-        .token_endpoint, jwks_uri = ? doc.jwks_uri, id_token_algs = ? doc
+        authorization_endpoint = % redacted_endpoint(&doc.authorization_endpoint),
+        token_endpoint = % redacted_endpoint(&doc.token_endpoint),
+        jwks_configured = doc.jwks_uri.is_some(), id_token_algs = ? doc
         .id_token_signing_alg_values_supported, "OIDC: discovery complete"
     );
     Ok(doc)
@@ -406,7 +430,8 @@ pub(super) async fn exchange_code(
     code_verifier: &str,
 ) -> anyhow::Result<TokenResponse> {
     tracing::debug!(
-        token_endpoint = % token_endpoint, "OIDC: exchanging code for tokens"
+        token_endpoint = %redacted_endpoint(token_endpoint),
+        "OIDC: exchanging code for tokens"
     );
     let resp = with_alpha_test_key(
         crate::http::shared_client()
@@ -426,7 +451,7 @@ pub(super) async fn exchange_code(
     .await?;
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
-        let body = resp.text().await.unwrap_or_default();
+        let body = redact_sent_secret(resp.text().await.unwrap_or_default(), code);
         return Err(anyhow::Error::new(OidcError::TokenExchangeHttp {
             status,
             body,
@@ -472,7 +497,7 @@ pub(super) async fn refresh_tokens(
 ) -> anyhow::Result<TokenResponse> {
     use backon::Retryable;
     tracing::debug!(
-        token_endpoint = % token_endpoint, principal_type = ? principal_type,
+        token_endpoint = % redacted_endpoint(token_endpoint), principal_type = ? principal_type,
         principal_id = ? principal_id, "OIDC: refreshing token"
     );
     (|| {
@@ -520,13 +545,13 @@ async fn refresh_tokens_once(
     .await?;
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
-        let body = resp.text().await.unwrap_or_default();
+        let body = redact_sent_secret(resp.text().await.unwrap_or_default(), refresh_token);
         let error_code = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
             .and_then(|v| v.get("error")?.as_str().map(str::to_owned));
         tracing::warn!(
-            http_status = status, oauth2_error = ? error_code, rt_prefix = crate
-            ::auth::token_suffix(refresh_token), client_id = % client_id, principal_type
+            http_status = status, oauth2_error = ? error_code,
+            refresh_credential_present = !refresh_token.is_empty(), client_id = % client_id, principal_type
             = ? principal_type, "OIDC: token refresh HTTP error"
         );
         return Err(anyhow::Error::new(OidcError::TokenRefreshHttp {
@@ -746,6 +771,29 @@ pub(super) async fn extract_user_info(
 mod tests {
     use super::super::test_helpers::*;
     use super::*;
+    #[test]
+    fn oidc_diagnostics_strip_url_credentials_and_sent_secrets() {
+        let sentinel = "AM360_OIDC_SENTINEL_4c8a1e09d75fb263";
+        let endpoint = redacted_endpoint(&format!(
+            "https://{sentinel}@idp.example/token/{sentinel}?secret={sentinel}#{sentinel}"
+        ));
+        let body = redact_sent_secret(
+            format!(r#"{{"error":"invalid_grant","description":"{sentinel}"}}"#),
+            sentinel,
+        );
+
+        assert_eq!(endpoint, "https://idp.example");
+        assert!(body.contains("invalid_grant"));
+        for rendered in [&endpoint, &body] {
+            for forbidden in [sentinel, "AM360_OIDC_SENTINEL", "4c8a1e09", "d75fb263"] {
+                assert!(
+                    !rendered.contains(forbidden),
+                    "OIDC diagnostic leaked credential material: {rendered}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn pkce_s256_challenge_matches_verifier() {
         let pkce = generate_pkce();

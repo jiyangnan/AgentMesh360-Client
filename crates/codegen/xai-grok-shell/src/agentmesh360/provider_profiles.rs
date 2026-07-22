@@ -409,7 +409,10 @@ mod tests {
             )
             .expect("insert profile");
 
-        assert_eq!(store.list(11).expect("owner profiles"), [record.clone()]);
+        assert_eq!(
+            store.list(11).expect("owner profiles"),
+            std::slice::from_ref(&record)
+        );
         assert!(store.list(12).expect("other owner profiles").is_empty());
         let json = serde_json::to_string(&record).expect("serialize response");
         assert!(!json.contains("h-secret-handle"));

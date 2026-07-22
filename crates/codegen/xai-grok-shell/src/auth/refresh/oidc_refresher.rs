@@ -106,8 +106,8 @@ impl OidcRefresher {
                 "oidc refresh: disk has valid AT, adopting instead of consuming RT",
                 None,
                 Some(serde_json::json!({
-                    "disk_key_prefix": crate::auth::token_suffix(&disk_now.key),
-                    "tried_key_prefix": crate::auth::token_suffix(&tried.key),
+                    "disk_credential_present": !disk_now.key.is_empty(),
+                    "tried_credential_present": !tried.key.is_empty(),
                 })),
             );
             self.note_refresh_progress();
@@ -124,14 +124,9 @@ impl OidcRefresher {
             "oidc refresh retrying with disk token",
             None,
             Some(serde_json::json!({
-                "tried_rt_prefix": tried
-                    .refresh_token
-                    .as_deref()
-                    .map(crate::auth::token_suffix),
-                "disk_rt_prefix": disk_now
-                    .refresh_token
-                    .as_deref()
-                    .map(crate::auth::token_suffix),
+                "tried_refresh_credential_present": tried.refresh_token.is_some(),
+                "disk_refresh_credential_present": disk_now.refresh_token.is_some(),
+                "refresh_credentials_match": tried.refresh_token == disk_now.refresh_token,
             })),
         );
 
@@ -185,7 +180,7 @@ impl TokenRefresher for OidcRefresher {
                 "oidc refresh: sibling refreshed, adopting valid disk AT",
                 None,
                 Some(serde_json::json!({
-                    "disk_key_prefix": crate::auth::token_suffix(&d.key),
+                    "credential_present": !d.key.is_empty(),
                 })),
             );
             self.note_refresh_progress();
@@ -214,8 +209,7 @@ impl TokenRefresher for OidcRefresher {
             })),
         );
 
-        // Snapshot for diagnostic upload on failure (user id, never email).
-        let pre_token = crate::auth::model::token_suffix(&auth.key).to_owned();
+        // Snapshot the non-secret diagnostic path identity (user id, never email).
         let pre_user_id = if auth.user_id.is_empty() {
             "unknown".into()
         } else {
@@ -237,12 +231,7 @@ impl TokenRefresher for OidcRefresher {
                 }
 
                 if let Some(uploader) = &self.diagnostic_uploader {
-                    spawn_diagnostic_upload(
-                        uploader,
-                        pre_token,
-                        pre_user_id,
-                        &self.upload_in_flight,
-                    );
+                    spawn_diagnostic_upload(uploader, pre_user_id, &self.upload_in_flight);
                 }
                 RefreshOutcome::permanent(reason, Some(auth.key.clone()))
             }
@@ -268,12 +257,7 @@ impl TokenRefresher for OidcRefresher {
                     })),
                 );
                 if let Some(uploader) = &self.diagnostic_uploader {
-                    spawn_diagnostic_upload(
-                        uploader,
-                        pre_token,
-                        pre_user_id,
-                        &self.upload_in_flight,
-                    );
+                    spawn_diagnostic_upload(uploader, pre_user_id, &self.upload_in_flight);
                 }
                 self.record_transient_failure(
                     "OIDC token refresh failed".into(),
@@ -288,7 +272,6 @@ impl TokenRefresher for OidcRefresher {
 /// `user_id` is the GCS path segment (never email).
 fn spawn_diagnostic_upload(
     uploader: &DiagnosticUploader,
-    auth_token: String,
     user_id: String,
     in_flight: &Arc<AtomicBool>,
 ) {
@@ -325,7 +308,7 @@ fn spawn_diagnostic_upload(
             }
         };
 
-        uploader(log_bytes, auth_token, user_id).await;
+        uploader(log_bytes, user_id).await;
         in_flight.store(false, Ordering::Release);
     });
 }

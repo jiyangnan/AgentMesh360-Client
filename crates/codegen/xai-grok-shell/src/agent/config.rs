@@ -138,7 +138,7 @@ impl std::fmt::Display for EnvKeys {
     }
 }
 /// Configuration for API endpoints.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EndpointsConfig {
     /// cli chat proxy base URL. `None` = unset (resolvers apply the default);
@@ -246,6 +246,54 @@ pub struct EndpointsConfig {
     /// Read by `load_gcs_service_account_key_sync()`. Declared for `serde_ignored`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gcs_service_account_key: Option<String>,
+}
+impl std::fmt::Debug for EndpointsConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EndpointsConfig")
+            .field(
+                "cli_chat_proxy_configured",
+                &self.cli_chat_proxy_base_url.is_some(),
+            )
+            .field("xai_api_configured", &!self.xai_api_base_url.is_empty())
+            .field("models_base_configured", &self.models_base_url.is_some())
+            .field("models_list_configured", &self.models_list_url.is_some())
+            .field("feedback_configured", &self.feedback_base_url.is_some())
+            .field("trace_upload_configured", &self.trace_upload_url.is_some())
+            .field(
+                "alpha_test_credential_present",
+                &self.alpha_test_key.is_some(),
+            )
+            .field(
+                "deployment_credential_present",
+                &self.deployment_key.is_some(),
+            )
+            .field(
+                "management_credential_present",
+                &self.management_api_key.is_some(),
+            )
+            .field(
+                "gcs_credential_present",
+                &self.gcs_service_account_key.is_some(),
+            )
+            .field(
+                "trace_upload_credential_present",
+                &(self.trace_upload_credentials.is_some()
+                    || self.trace_upload_credentials_file.is_some()),
+            )
+            .field(
+                "internal_otel_headers_present",
+                &self.grok_internal_otlp_headers.is_some(),
+            )
+            .field(
+                "external_otel_headers_present",
+                &self.otel_exporter_otlp_headers.is_some(),
+            )
+            .field(
+                "external_otel_master_switch",
+                &self.external_otel_master_switch,
+            )
+            .finish_non_exhaustive()
+    }
 }
 pub(crate) fn default_asset_server_url() -> String {
     std::env::var("GROK_ASSET_SERVER_URL").unwrap_or_else(|_| ASSET_SERVER_URL_DEFAULT.to_owned())
@@ -1079,11 +1127,18 @@ pub struct RelayConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RemoteConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret: Option<String>,
+}
+impl std::fmt::Debug for RemoteConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RemoteConfig")
+            .field("credential_present", &self.secret.is_some())
+            .finish()
+    }
 }
 /// `[hub]` section from config.toml.
 ///
@@ -3283,8 +3338,8 @@ pub fn resolve_model_list(
     let mut resolved: IndexMap<String, ModelEntry> = IndexMap::new();
     if cfg.endpoints.has_custom_endpoint() {
         tracing::info!(
-            models_base_url = ? cfg.endpoints.models_base_url, models_list_url = ? cfg
-            .endpoints.models_list_url,
+            models_base_configured = cfg.endpoints.models_base_url.is_some(),
+            models_list_configured = cfg.endpoints.models_list_url.is_some(),
             "custom models endpoint active, skipping built-in defaults",
         );
     } else {
@@ -3342,7 +3397,7 @@ pub fn resolve_model_list(
         }
         let entry = model_override.apply(key, base, &cfg.endpoints);
         tracing::debug!(
-            model_key = % key, base_url = % entry.info.base_url, has_api_key = entry
+            model_key = % key, endpoint_configured = ! entry.info.base_url.trim().is_empty(), has_api_key = entry
             .api_key.is_some(), env_key = ? entry.env_key, auth_provider = entry
             .auth_provider.as_ref().map(| p | p.name.as_str()), had_base,
             "config model override applied"
@@ -3598,7 +3653,7 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
         })
         .collect()
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ModelEntryConfig {
     /// Stable unique identifier for this catalog entry. When present,
     /// used as the catalog map key. Falls back to `model` when absent.
@@ -3717,6 +3772,26 @@ pub struct ModelEntryConfig {
     #[serde(default, skip_serializing_if = "is_default_laziness_detector")]
     pub laziness_detector: LazinessDetectorPerModelConfig,
 }
+impl std::fmt::Debug for ModelEntryConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelEntryConfig")
+            .field("id", &self.id)
+            .field("model", &self.model)
+            .field("name", &self.name)
+            .field("api_backend", &self.api_backend)
+            .field("auth_scheme", &self.auth_scheme)
+            .field(
+                "credential_present",
+                &self.api_key.as_deref().is_some_and(|key| !key.is_empty()),
+            )
+            .field("credential_env_configured", &self.env_key.is_some())
+            .field("extra_header_count", &self.extra_headers.len())
+            .field("context_window", &self.context_window)
+            .field("hidden", &self.hidden)
+            .field("supported_in_api", &self.supported_in_api)
+            .finish_non_exhaustive()
+    }
+}
 /// True when `cfg` equals the all-disabled default. Derives `PartialEq`
 /// on `f32`, which is fine for the current shape because both `f32`
 /// fields default to `None` — there's no parsed-vs-literal `0.7` float
@@ -3732,7 +3807,7 @@ fn is_default_laziness_detector(cfg: &LazinessDetectorPerModelConfig) -> bool {
 /// from defaults/prefetched"; the collection fields (`extra_headers`,
 /// `reasoning_efforts`) merge only when non-empty and so cannot express
 /// "override to empty."
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ConfigModelOverride {
     pub model: Option<String>,
@@ -3778,6 +3853,23 @@ pub struct ConfigModelOverride {
     pub compaction_at_tokens: Option<CompactionAtTokens>,
     pub show_model_fingerprint: Option<bool>,
     pub stream_tool_calls: Option<bool>,
+}
+impl std::fmt::Debug for ConfigModelOverride {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfigModelOverride")
+            .field("model", &self.model)
+            .field("name", &self.name)
+            .field("api_backend", &self.api_backend)
+            .field(
+                "credential_present",
+                &self.api_key.as_deref().is_some_and(|key| !key.is_empty()),
+            )
+            .field("credential_env_configured", &self.env_key.is_some())
+            .field("auth_provider_configured", &self.auth_provider.is_some())
+            .field("extra_header_count", &self.extra_headers.len())
+            .field("context_window", &self.context_window)
+            .finish_non_exhaustive()
+    }
 }
 impl ConfigModelOverride {
     pub(crate) fn apply(
@@ -4061,7 +4153,7 @@ impl ModelInfo {
 }
 /// Flat struct so credential and endpoint fields coexist after deep-merge.
 /// Routing reads fields, not provenance.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModelEntry {
     pub info: ModelInfo,
     pub api_key: Option<String>,
@@ -4073,6 +4165,21 @@ pub struct ModelEntry {
     pub auth_provider: Option<crate::auth::AuthProviderRef>,
     /// When set, `base_url` is used for session auth, `api_base_url` for API-key auth.
     pub api_base_url: Option<String>,
+}
+impl std::fmt::Debug for ModelEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ModelEntry")
+            .field("model", &self.info.model)
+            .field("api_backend", &self.info.api_backend)
+            .field(
+                "credential_present",
+                &self.api_key.as_deref().is_some_and(|key| !key.is_empty()),
+            )
+            .field("credential_env_configured", &self.env_key.is_some())
+            .field("auth_provider_configured", &self.auth_provider.is_some())
+            .field("api_base_url_configured", &self.api_base_url.is_some())
+            .finish_non_exhaustive()
+    }
 }
 impl ModelEntry {
     /// Minimal fallback entry for an unknown model slug.
@@ -5156,6 +5263,64 @@ mod tests {
     use super::*;
     use serial_test::serial;
     use xai_grok_test_support::EnvGuard;
+    #[test]
+    fn provider_config_debug_never_renders_credentials_headers_or_secret_urls() {
+        let sentinel = "AM360_PROVIDER_CONFIG_SENTINEL_4c8a1e09d75fb263";
+
+        let endpoints = EndpointsConfig {
+            xai_api_base_url: format!("https://{sentinel}@provider.example/?k={sentinel}"),
+            alpha_test_key: Some(sentinel.to_owned()),
+            deployment_key: Some(sentinel.to_owned()),
+            otel_exporter_otlp_headers: Some(format!("authorization={sentinel}")),
+            ..EndpointsConfig::default()
+        };
+
+        let model_config: ModelEntryConfig = serde_json::from_value(serde_json::json!({
+            "model": "safe-model",
+            "base_url": format!("https://{sentinel}@provider.example/v1"),
+            "api_key": sentinel,
+            "extra_headers": { "Authorization": format!("Bearer {sentinel}") },
+            "context_window": 128000
+        }))
+        .expect("model config");
+
+        let model_override = ConfigModelOverride {
+            base_url: Some(format!("https://provider.example/?token={sentinel}")),
+            api_key: Some(sentinel.to_owned()),
+            extra_headers: IndexMap::from([(
+                "Authorization".to_owned(),
+                format!("Bearer {sentinel}"),
+            )]),
+            ..ConfigModelOverride::default()
+        };
+
+        let mut model_entry = ModelEntry::fallback("safe-model", &endpoints);
+        model_entry.info.base_url = format!("https://provider.example/?token={sentinel}");
+        model_entry.api_key = Some(sentinel.to_owned());
+
+        let remote = RemoteConfig {
+            secret: Some(sentinel.to_owned()),
+        };
+
+        let rendered =
+            format!("{endpoints:?} {model_config:?} {model_override:?} {model_entry:?} {remote:?}");
+        for forbidden in [
+            sentinel,
+            "AM360_PROVIDER_CONFIG",
+            "4c8a1e09",
+            "d75fb263",
+            "Authorization",
+            "Bearer",
+            "provider.example",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "provider config Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
+    }
+
     #[test]
     fn main_cli_tools_override_preserves_profile_injection_policy() {
         let overrides = CliAgentOverrides {

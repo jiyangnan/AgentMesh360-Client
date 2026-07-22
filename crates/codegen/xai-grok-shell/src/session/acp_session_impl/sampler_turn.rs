@@ -663,8 +663,8 @@ impl SessionActor {
             Some(serde_json::json!(
                 { "error_type" : error_type, "status_code" : status_code,
                 "reauthable" : reauthable, "auth_mode" : auth.as_ref().map(| a |
-                format!("{:?}", a.auth_mode)), "key_prefix" : auth.as_ref().map(| a |
-                crate ::auth::token_suffix(& a.key).to_owned()), "expires_at" : auth
+                format!("{:?}", a.auth_mode)), "credential_present" : auth.as_ref().map(| a |
+                ! a.key.is_empty()), "expires_at" : auth
                 .as_ref().and_then(| a | a.expires_at.map(| e | e.to_rfc3339())),
                 "message" : crate ::util::truncate(message, 300), }
             )),

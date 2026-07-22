@@ -523,19 +523,26 @@ fn manager_collection_predicates_fail_directions() {
     );
 }
 
-// -- token_suffix ----------------------------------------------------------------
-
 #[test]
-fn token_suffix_matrix() {
-    let cases: &[(&str, &str)] = &[
-        ("abcdefghijklmnop", "efghijklmnop"), // takes last 12
-        ("short", "short"),                   // short unchanged
-        ("", ""),                             // empty
-        ("123456789012", "123456789012"),     // exact 12
-    ];
-    for (input, expected) in cases {
-        assert_eq!(token_suffix(input), *expected, "input={input:?}");
+fn grok_auth_debug_never_contains_credential_material() {
+    let access = "AM360_ACCESS_SENTINEL_1b6f849dc3a072e5";
+    let refresh = "AM360_REFRESH_SENTINEL_6e28d04bf19ca753";
+    let auth = GrokAuth {
+        key: access.to_owned(),
+        refresh_token: Some(refresh.to_owned()),
+        ..GrokAuth::test_default()
+    };
+    let rendered = format!("{auth:?}");
+    for forbidden in [
+        access, refresh, "1b6f849d", "c3a072e5", "6e28d04b", "f19ca753",
+    ] {
+        assert!(
+            !rendered.contains(forbidden),
+            "GrokAuth Debug leaked credential material: {rendered}"
+        );
     }
+    assert!(rendered.contains("credential_present: true"));
+    assert!(rendered.contains("refresh_credential_present: true"));
 }
 
 // -- read_disk_auth ----------------------------------------------------------

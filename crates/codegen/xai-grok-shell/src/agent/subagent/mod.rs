@@ -895,15 +895,9 @@ async fn resolve_effective_model_config(
     }
     resolve_subagent_sampling_config(subagent_type, definition_model, ctx).await
 }
-/// Truncate an API key to a safe prefix for logging.
-fn key_prefix(key: &Option<String>) -> String {
-    match key {
-        Some(k) => {
-            let len = k.len().min(8);
-            k[..len].to_string()
-        }
-        None => "<none>".to_string(),
-    }
+/// Report credential presence without formatting any credential material.
+fn credential_present(key: &Option<String>) -> bool {
+    key.as_deref().is_some_and(|value| !value.is_empty())
 }
 /// Emit a unified log entry recording which model and credentials a subagent
 /// resolved to, and how they compare to the parent's.
@@ -914,18 +908,18 @@ fn log_subagent_model_resolution(
     resolved_id: &acp::ModelId,
     parent: &xai_grok_sampler::SamplerConfig,
 ) {
-    let child_key = key_prefix(&resolved.api_key);
-    let parent_key = key_prefix(&parent.api_key);
     let keys_match = resolved.api_key == parent.api_key;
     xai_grok_telemetry::unified_log::debug(
         "subagent model resolved",
         None,
         Some(serde_json::json!(
             { "agent" : agent_name, "priority" : priority, "child_model" :
-            resolved_id.0.as_ref(), "child_base_url" : & resolved.base_url,
-            "child_key_prefix" : child_key, "parent_model" : & parent.model,
-            "parent_base_url" : & parent.base_url, "parent_key_prefix" : parent_key,
-            "keys_match" : keys_match, }
+            resolved_id.0.as_ref(), "child_endpoint_configured" : ! resolved.base_url
+            .trim().is_empty(), "child_credential_present" : credential_present(& resolved
+            .api_key), "parent_model" : & parent.model, "parent_endpoint_configured" : !
+            parent.base_url.trim().is_empty(),
+            "parent_credential_present" : credential_present(& parent.api_key),
+            "credentials_match" : keys_match, }
         )),
     );
 }
@@ -991,9 +985,9 @@ async fn read_parent_sampling_config(
                 "subagent read parent config (live)",
                 None,
                 Some(serde_json::json!(
-                    { "parent_model" : & inherited.model, "parent_base_url" : &
-                    inherited.base_url, "parent_key_prefix" : key_prefix(& inherited
-                    .api_key), "session_model_id" : model_id.0.as_ref(),
+                    { "parent_model" : & inherited.model, "parent_endpoint_configured" : !
+                    inherited.base_url.trim().is_empty(), "parent_credential_present" : credential_present(&
+                    inherited.api_key), "session_model_id" : model_id.0.as_ref(),
                     "global_model_id" : global_model_id.0.as_ref(), "source" :
                     "chat_state", }
                 )),
@@ -1009,8 +1003,8 @@ async fn read_parent_sampling_config(
         "subagent read parent config (fallback)",
         None,
         Some(serde_json::json!(
-            { "parent_model" : & ctx.sampling_config.model, "parent_base_url" : & ctx
-            .sampling_config.base_url, "parent_key_prefix" : key_prefix(& ctx
+            { "parent_model" : & ctx.sampling_config.model, "parent_endpoint_configured" : ! ctx
+            .sampling_config.base_url.trim().is_empty(), "parent_credential_present" : credential_present(& ctx
             .sampling_config.api_key), "source" : "spawn_context_baseline",
             "has_chat_state" : ctx.parent_chat_state.is_some(), }
         )),
@@ -1073,8 +1067,8 @@ fn resolve_model_override_to_config(
         None,
         Some(serde_json::json!(
             { "model_id" : model_id, "canonical_model" : canonical_model_id.0
-            .as_ref(), "resolved_model_raw" : & config.model, "base_url" : & config
-            .base_url, "key_prefix" : key_prefix(& config.api_key),
+            .as_ref(), "resolved_model_raw" : & config.model, "endpoint_configured" : ! config
+            .base_url.trim().is_empty(), "credential_present" : credential_present(& config.api_key),
             "has_own_credentials" : entry.has_own_credentials(), "has_session_key" :
             has_session_key, "auth_type" : format!("{:?}", resolved_auth_type),
             "auth_method_id" : ctx.auth_method_id.0.as_ref(), }

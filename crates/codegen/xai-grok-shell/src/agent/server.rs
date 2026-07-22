@@ -57,12 +57,21 @@ const MAX_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 const KEEPALIVE_INTERVAL_SECS: u64 = 15;
 
 /// Configuration for the agent WebSocket server.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ServerConfig {
     /// Address to bind the server to
     pub bind_addr: SocketAddr,
     /// Secret token for client authentication (required)
     pub secret: String,
+}
+
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("bind_addr", &self.bind_addr)
+            .field("credential_present", &!self.secret.is_empty())
+            .finish()
+    }
 }
 
 /// Shared state for the WebSocket server.
@@ -484,4 +493,26 @@ pub async fn run_agent_server(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod credential_debug_tests {
+    use super::*;
+
+    #[test]
+    fn server_config_debug_redacts_secret() {
+        let secret = "AM360_SERVER_SENTINEL_f7349b2d16c08ae5";
+        let config = ServerConfig {
+            bind_addr: "127.0.0.1:9876".parse().expect("socket address"),
+            secret: secret.to_owned(),
+        };
+        let rendered = format!("{config:?}");
+        for forbidden in [secret, "AM360_SERVER", "f7349b2d", "16c08ae5"] {
+            assert!(
+                !rendered.contains(forbidden),
+                "ServerConfig Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
+    }
 }

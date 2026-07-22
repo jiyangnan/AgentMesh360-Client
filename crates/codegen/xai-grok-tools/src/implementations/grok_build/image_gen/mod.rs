@@ -262,7 +262,7 @@ impl ImageGenClient {
 }
 
 /// `Enabled` means credentials are present; each tool has its own gate.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub enum ImageGenConfig {
     #[default]
     Disabled,
@@ -285,6 +285,32 @@ pub enum ImageGenConfig {
         /// API-key / workspace callers.
         tier_restricted: bool,
     },
+}
+
+impl std::fmt::Debug for ImageGenConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disabled => f.write_str("ImageGenConfig::Disabled"),
+            Self::Enabled {
+                api_key,
+                base_url,
+                extra_headers,
+                image_gen_enabled,
+                image_edit_enabled,
+                model_override,
+                tier_restricted,
+            } => f
+                .debug_struct("ImageGenConfig::Enabled")
+                .field("credential_present", &!api_key.trim().is_empty())
+                .field("base_url_configured", &!base_url.trim().is_empty())
+                .field("extra_header_count", &extra_headers.len())
+                .field("image_gen_enabled", image_gen_enabled)
+                .field("image_edit_enabled", image_edit_enabled)
+                .field("model_override_configured", &model_override.is_some())
+                .field("tier_restricted", tier_restricted)
+                .finish(),
+        }
+    }
 }
 
 impl ImageGenConfig {
@@ -491,6 +517,40 @@ mod tests {
         assert_eq!(cfg.model_override(), Some("grok-imagine-image"));
 
         assert!(!ImageGenConfig::Disabled.has_credentials());
+    }
+
+    #[test]
+    fn image_gen_config_debug_never_renders_credentials_headers_or_secret_urls() {
+        let sentinel = "AM360_IMAGE_SENTINEL_4c8a1e09d75fb263";
+        let cfg = ImageGenConfig::Enabled {
+            api_key: sentinel.into(),
+            base_url: format!("https://{sentinel}@image.example/?k={sentinel}"),
+            extra_headers: indexmap::IndexMap::from([(
+                "Authorization".into(),
+                format!("Bearer {sentinel}"),
+            )]),
+            image_gen_enabled: true,
+            image_edit_enabled: true,
+            model_override: Some(sentinel.into()),
+            tier_restricted: false,
+        };
+        let rendered = format!("{cfg:?}");
+        for forbidden in [
+            sentinel,
+            "AM360_IMAGE_SENTINEL",
+            "4c8a1e09",
+            "d75fb263",
+            "Authorization",
+            "Bearer",
+            "image.example",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "image config Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
+        assert!(rendered.contains("extra_header_count: 1"));
     }
 
     #[test]

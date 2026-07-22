@@ -594,7 +594,7 @@ pub(crate) async fn upload_artifact_to_gcs(
             record_upload_success(ctx);
             tracing::info!(
                 session_id = % ctx.session_info.id.0, turn_number = ctx.turn_number,
-                artifact, gcs_url = % gcs_url, bytes = content.len(),
+                artifact, upload_location_returned = !gcs_url.is_empty(), bytes = content.len(),
                 "Artifact uploaded to GCS",
             );
             Some(gcs_url)

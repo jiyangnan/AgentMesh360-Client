@@ -58,9 +58,8 @@ impl acp::Agent for MvpAgent {
                 Some(
                     serde_json::json!(
                         { "user_id" : user_id, "needs_user_info" : needs_user_info,
-                        "key_prefix" : crate ::auth::token_suffix(& auth.key),
-                        "rt_prefix" : auth.refresh_token.as_deref().map(crate
-                        ::auth::token_suffix), }
+                        "credential_present" : ! auth.key.is_empty(),
+                        "refresh_credential_present" : auth.refresh_token.is_some(), }
                     ),
                 ),
             );
@@ -141,37 +140,24 @@ impl acp::Agent for MvpAgent {
         if self.initialize_request.set(arguments).is_err() {
             tracing::info!("Initialize called on reconnect (already initialized)");
         }
-        let pre = self
-            .auth_manager
-            .current()
-            .map(|a| (
-                crate::auth::token_suffix(&a.key).to_owned(),
-                a
-                    .refresh_token
-                    .as_deref()
-                    .map(|t| crate::auth::token_suffix(t).to_owned()),
-            ));
+        let pre = self.auth_manager.current();
         self.auth_manager.force_reload_from_disk();
-        let post = self
-            .auth_manager
-            .current()
-            .map(|a| (
-                crate::auth::token_suffix(&a.key).to_owned(),
-                a
-                    .refresh_token
-                    .as_deref()
-                    .map(|t| crate::auth::token_suffix(t).to_owned()),
-            ));
+        let post = self.auth_manager.current();
         xai_grok_telemetry::unified_log::info(
             "auth init disk refresh",
             None,
             Some(
                 serde_json::json!(
-                    { "pre_key" : pre.as_ref().map(| p | & p.0), "pre_rt" : pre.as_ref()
-                    .and_then(| p | p.1.as_deref()), "post_key" : post.as_ref().map(| p |
-                    & p.0), "post_rt" : post.as_ref().and_then(| p | p.1.as_deref()),
-                    "changed" : pre.as_ref().map(| p | & p.0) != post.as_ref().map(| p |
-                    & p.0), }
+                    { "pre_credential_present" : pre.as_ref().is_some_and(| auth |
+                    ! auth.key.is_empty()), "pre_refresh_credential_present" : pre.as_ref()
+                    .is_some_and(| auth | auth.refresh_token.is_some()),
+                    "post_credential_present" : post.as_ref().is_some_and(| auth |
+                    ! auth.key.is_empty()), "post_refresh_credential_present" : post.as_ref()
+                    .is_some_and(| auth | auth.refresh_token.is_some()), "changed" : pre
+                    .as_ref().map(| auth | & auth.key) != post.as_ref().map(| auth |
+                    & auth.key), "refresh_credential_changed" : pre.as_ref().and_then(| auth |
+                    auth.refresh_token.as_ref()) != post.as_ref().and_then(| auth |
+                    auth.refresh_token.as_ref()), }
                 ),
             ),
         );

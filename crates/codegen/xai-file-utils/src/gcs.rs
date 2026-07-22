@@ -141,7 +141,7 @@ pub async fn upload_bytes<C: StorageConfig>(
         } => {
             // For proxy mode, bucket is determined by proxy from user ACLs
             tracing::debug!(
-                proxy_base_url = %proxy_base_url,
+                proxy_configured = !proxy_base_url.trim().is_empty(),
                 object_path = %object_path,
                 "Uploading bytes to GCS via proxy (bucket determined by proxy from ACLs)"
             );
@@ -207,7 +207,7 @@ pub async fn upload_bytes_signed<C: StorageConfig>(
             alpha_test_key: _,
         } => {
             tracing::debug!(
-                proxy_base_url = %proxy_base_url,
+                proxy_configured = !proxy_base_url.trim().is_empty(),
                 object_path = %object_path,
                 bytes = content.len(),
                 "Uploading bytes to GCS via signed URL (bypasses proxy body limits)"
@@ -604,12 +604,7 @@ async fn upload_bytes_via_proxy(
     let response = storage_client
         .upload(object_path, content, content_type)
         .await
-        .with_context(|| {
-            format!(
-                "Failed to upload to storage proxy: {} (path: {})",
-                proxy_base_url, object_path
-            )
-        })?;
+        .with_context(|| format!("Failed to upload to storage proxy (path: {object_path})"))?;
 
     // Return the full GCS URL
     Ok(format!("gs://{}/{}", response.bucket, response.path))
@@ -647,12 +642,7 @@ pub async fn upload_bytes_via_signed_url(
     let signed = storage_client
         .upload_bytes_signed(object_path, content, content_type)
         .await
-        .with_context(|| {
-            format!(
-                "Failed to upload via signed URL: {} (path: {})",
-                proxy_base_url, object_path
-            )
-        })?;
+        .with_context(|| format!("Failed to upload via signed URL (path: {object_path})"))?;
 
     Ok(format!("gs://{}/{}", signed.bucket, signed.path))
 }

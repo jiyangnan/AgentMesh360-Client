@@ -138,7 +138,7 @@ pub(crate) async fn oidc_token_exchange(auth: &GrokAuth) -> OidcRefreshResult {
                     Some(serde_json::json!({
                         "error_code": error_code,
                         "client_id": client_id,
-                        "tried_rt_prefix": auth.refresh_token.as_deref().map(crate::auth::token_suffix),
+                        "refresh_credential_present": auth.refresh_token.is_some(),
                         "error_description": serde_json::from_str::<serde_json::Value>(body)
                             .ok()
                             .and_then(|v| v.get("error_description").cloned()),
@@ -213,7 +213,7 @@ pub(crate) async fn oidc_token_exchange(auth: &GrokAuth) -> OidcRefreshResult {
     }
     tracing::debug!(
         idp_rotated,
-        key_prefix = crate::auth::token_suffix(&new_auth.key),
+        credential_present = !new_auth.key.is_empty(),
         "oidc try_refresh_pure token obtained"
     );
     let (mono_ms, wall_ms, suspended_ms, suspected_suspend) = timing();

@@ -124,7 +124,7 @@ impl std::fmt::Debug for ZdrVideoOutputS3Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZdrVideoOutputS3Config")
             .field("bucket", &self.bucket)
-            .field("endpoint", &self.endpoint)
+            .field("endpoint_configured", &!self.endpoint.trim().is_empty())
             .field("region", &self.region)
             .field("key_prefix", &self.key_prefix)
             .field("expires_secs", &self.expires_secs)
@@ -670,7 +670,7 @@ fn is_http_url(raw: &str) -> bool {
 /// Session-level configuration. Same shape as [`ImageGenConfig`].
 ///
 /// [`ImageGenConfig`]: super::image_gen::ImageGenConfig
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub enum VideoGenConfig {
     #[default]
     Disabled,
@@ -685,6 +685,31 @@ pub enum VideoGenConfig {
         /// the subscription tier; always `false` for team / API-key / workspace.
         tier_restricted: bool,
     },
+}
+
+impl std::fmt::Debug for VideoGenConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disabled => f.write_str("VideoGenConfig::Disabled"),
+            Self::Enabled {
+                api_key,
+                base_url,
+                extra_headers,
+                zdr_video_output_s3,
+                tier_restricted,
+            } => f
+                .debug_struct("VideoGenConfig::Enabled")
+                .field("credential_present", &!api_key.trim().is_empty())
+                .field("base_url_configured", &!base_url.trim().is_empty())
+                .field("extra_header_count", &extra_headers.len())
+                .field(
+                    "zdr_video_output_s3_configured",
+                    &zdr_video_output_s3.is_some(),
+                )
+                .field("tier_restricted", tier_restricted)
+                .finish(),
+        }
+    }
 }
 
 impl VideoGenConfig {
@@ -1185,6 +1210,52 @@ impl xai_tool_runtime::Tool for ReferenceToVideoTool {
 mod tests {
     use super::*;
     use crate::types::tool_metadata::test_ctx_with_call_id;
+
+    #[test]
+    fn video_config_debug_never_renders_credentials_headers_or_secret_urls() {
+        let sentinel = "AM360_VIDEO_SENTINEL_4c8a1e09d75fb263";
+        let s3 = ZdrVideoOutputS3Config {
+            bucket: "safe-bucket".into(),
+            endpoint: format!("https://{sentinel}@s3.example/?k={sentinel}"),
+            region: "safe-region".into(),
+            key_prefix: "safe-prefix/".into(),
+            expires_secs: 900,
+            read_write: S3AccessCredentials {
+                access_key_id: sentinel.into(),
+                secret_access_key: sentinel.into(),
+            },
+            read_only: None,
+        };
+        let cfg = VideoGenConfig::Enabled {
+            api_key: sentinel.into(),
+            base_url: format!("https://{sentinel}@video.example/?k={sentinel}"),
+            extra_headers: indexmap::IndexMap::from([(
+                "Authorization".into(),
+                format!("Bearer {sentinel}"),
+            )]),
+            zdr_video_output_s3: Some(Box::new(s3)),
+            tier_restricted: false,
+        };
+        let rendered = format!("{cfg:?}");
+        for forbidden in [
+            sentinel,
+            "AM360_VIDEO_SENTINEL",
+            "4c8a1e09",
+            "d75fb263",
+            "Authorization",
+            "Bearer",
+            "video.example",
+            "s3.example",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "video config Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
+        assert!(rendered.contains("extra_header_count: 1"));
+        assert!(rendered.contains("zdr_video_output_s3_configured: true"));
+    }
 
     #[test]
     fn image_to_video_name_and_description() {

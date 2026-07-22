@@ -10,6 +10,14 @@ use serde::{Deserialize, Serialize};
 use super::{ExtResult, to_raw_response};
 use crate::agent::MvpAgent;
 
+fn redact_known_credential(text: String, credential: &str) -> String {
+    if credential.is_empty() {
+        text
+    } else {
+        text.replace(credential, "[REDACTED]")
+    }
+}
+
 /// Billing period cycle identifier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -227,24 +235,39 @@ async fn handle_get_billing(agent: &MvpAgent) -> ExtResult {
         .send()
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "billing: upstream request failed");
+            let e = e.without_url();
+            tracing::error!(
+                status = e.status().map(|status| status.as_u16()),
+                is_timeout = e.is_timeout(),
+                is_connect = e.is_connect(),
+                "billing: upstream request failed"
+            );
             xai_grok_telemetry::unified_log::warn(
                 "billing: upstream request failed",
                 None,
-                Some(serde_json::json!({ "error": e.to_string() })),
+                Some(serde_json::json!({
+                    "status": e.status().map(|status| status.as_u16()),
+                    "is_timeout": e.is_timeout(),
+                    "is_connect": e.is_connect(),
+                })),
             );
-            acp::Error::internal_error().data(format!("Failed to fetch billing data: {e}"))
+            acp::Error::internal_error().data("Failed to fetch billing data")
         })?;
 
     if !credits_resp.status().is_success() {
         let status = credits_resp.status().as_u16();
         let body = credits_resp.text().await.unwrap_or_default();
-        tracing::warn!(status, url = %credits_url, "billing: upstream error");
+        tracing::warn!(
+            status,
+            endpoint_configured = !credits_url.trim().is_empty(),
+            "billing: upstream error"
+        );
 
         let detail = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
             .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
             .unwrap_or_else(|| format!("HTTP {status}"));
+        let detail = redact_known_credential(detail, &auth.key);
 
         xai_grok_telemetry::unified_log::warn(
             "billing: upstream error",
@@ -318,19 +341,30 @@ async fn handle_get_auto_topup_rule(agent: &MvpAgent) -> ExtResult {
         .send()
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "auto-topup: upstream request failed");
-            acp::Error::internal_error().data(format!("Failed to fetch auto top-up rule: {e}"))
+            let e = e.without_url();
+            tracing::error!(
+                status = e.status().map(|status| status.as_u16()),
+                is_timeout = e.is_timeout(),
+                is_connect = e.is_connect(),
+                "auto-topup: upstream request failed"
+            );
+            acp::Error::internal_error().data("Failed to fetch auto top-up rule")
         })?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let body = response.text().await.unwrap_or_default();
-        tracing::warn!(status, url = %url, "auto-topup: upstream error");
+        tracing::warn!(
+            status,
+            endpoint_configured = !url.trim().is_empty(),
+            "auto-topup: upstream error"
+        );
 
         let detail = serde_json::from_str::<serde_json::Value>(&body)
             .ok()
             .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(String::from))
             .unwrap_or_else(|| format!("HTTP {status}"));
+        let detail = redact_known_credential(detail, &auth.key);
 
         return Err(
             acp::Error::internal_error().data(format!("Auto top-up service error: {detail}"))
@@ -348,6 +382,16 @@ async fn handle_get_auto_topup_rule(agent: &MvpAgent) -> ExtResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn billing_error_detail_never_keeps_known_credential() {
+        let sentinel = "AM360_BILLING_SENTINEL_4c8a1e09d75fb263";
+        let rendered =
+            redact_known_credential(format!("provider echoed bearer {sentinel}"), sentinel);
+        for forbidden in [sentinel, "AM360_BILLING_SENTINEL", "4c8a1e09", "d75fb263"] {
+            assert!(!rendered.contains(forbidden));
+        }
+    }
 
     #[test]
     fn auto_topup_disabled_rule_omits_enabled_field() {

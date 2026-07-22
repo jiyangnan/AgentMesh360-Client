@@ -1487,7 +1487,7 @@ pub async fn run_leader(
                     match update {
                         ConfigUpdate::Auth(auth) => {
                             info!(
-                                key_len = auth.key.len(),
+                                credential_present = !auth.key.is_empty(),
                                 expires_at = ?auth.expires_at,
                                 "Auth token hot-reloaded from config watcher"
                             );
@@ -1495,7 +1495,7 @@ pub async fn run_leader(
                                 "auth hot-swapped from disk",
                                 None,
                                 Some(serde_json::json!({
-                                    "key_len": auth.key.len(),
+                                    "credential_present": !auth.key.is_empty(),
                                     "expires_at": auth.expires_at.map(|e| e.to_rfc3339()),
                                 })),
                             );

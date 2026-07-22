@@ -2917,23 +2917,23 @@ async fn subagent_override_provider_model_spawns_cache_only_credentials() {
     assert_eq!(config.base_url, "https://gateway.example/v1");
 }
 #[test]
-fn key_prefix_truncates_to_8_chars() {
+fn credential_presence_hides_non_empty_key_material() {
     let key = Some("eyJ0eXAiOiJhbGciOiJSUzI1NiJ9".to_string());
-    assert_eq!(key_prefix(& key), "eyJ0eXAi");
+    assert!(credential_present(&key));
 }
 #[test]
-fn key_prefix_short_key_not_truncated() {
+fn credential_presence_handles_short_key() {
     let key = Some("abc".to_string());
-    assert_eq!(key_prefix(& key), "abc");
+    assert!(credential_present(&key));
 }
 #[test]
-fn key_prefix_none_returns_placeholder() {
-    assert_eq!(key_prefix(& None), "<none>");
+fn credential_presence_is_false_for_none() {
+    assert!(!credential_present(&None));
 }
 #[test]
-fn key_prefix_empty_string() {
+fn credential_presence_is_false_for_empty_string() {
     let key = Some(String::new());
-    assert_eq!(key_prefix(& key), "");
+    assert!(!credential_present(&key));
 }
 #[test]
 fn non_cursor_persona_injected_as_system_reminder() {

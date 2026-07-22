@@ -211,8 +211,8 @@ async fn attempt_auth_recovery(
                 "auth recovery: relay token unchanged, backing off",
                 None,
                 Some(serde_json::json!(
-                    { "context" : context, "key_prefix" : crate
-                    ::auth::token_suffix(& new_auth.key), }
+                    { "context" : context, "credential_present" : ! new_auth.key
+                    .is_empty(), }
                 )),
             );
             false
@@ -223,8 +223,8 @@ async fn attempt_auth_recovery(
                 "auth recovery: relay recovered",
                 None,
                 Some(serde_json::json!(
-                    { "context" : context, "new_key_prefix" : crate
-                    ::auth::token_suffix(& new_auth.key), }
+                    { "context" : context, "credential_present" : ! new_auth.key
+                    .is_empty(), }
                 )),
             );
             config.auth = new_auth;
@@ -280,14 +280,14 @@ async fn run_relay_loop(
             break;
         }
         tracing::info!(
-            target : crate ::instrumentation::TARGET, event = "relay_connecting", ws_url
-            = % config.ws_url, attempt = reconnect_attempts,
+            target : crate ::instrumentation::TARGET, event = "relay_connecting",
+            endpoint_configured = !config.ws_url.trim().is_empty(), attempt = reconnect_attempts,
         );
         match connect_to_relay(&config, proxy_url.as_deref(), &cancel).await {
             Ok(ws) => {
                 tracing::info!(
                     target : crate ::instrumentation::TARGET, event = "relay_connected",
-                    ws_url = % config.ws_url,
+                    endpoint_configured = !config.ws_url.trim().is_empty(),
                 );
                 reconnect_attempts = 0;
                 delay_secs = BASE_DELAY_SECS;
@@ -317,7 +317,7 @@ async fn run_relay_loop(
                 }
                 tracing::info!(
                     target : crate ::instrumentation::TARGET, event =
-                    "relay_disconnected", ws_url = % config.ws_url,
+                    "relay_disconnected", endpoint_configured = !config.ws_url.trim().is_empty(),
                 );
                 tprintln!("Disconnected from Grok WebSocket server");
                 info!("WebSocket disconnected, will reconnect");
@@ -326,7 +326,7 @@ async fn run_relay_loop(
                 let handshake_401 = is_handshake_unauthorized(&e);
                 tracing::info!(
                     target : crate ::instrumentation::TARGET, event =
-                    "relay_connection_failed", ws_url = % config.ws_url, error = % e,
+                    "relay_connection_failed", endpoint_configured = !config.ws_url.trim().is_empty(),
                     handshake_401,
                 );
                 if handshake_401 {
@@ -334,7 +334,7 @@ async fn run_relay_loop(
                         continue;
                     }
                 } else {
-                    warn!(error = % e, "Failed to connect to WebSocket server");
+                    warn!(handshake_401, "Failed to connect to WebSocket server");
                 }
             }
         }

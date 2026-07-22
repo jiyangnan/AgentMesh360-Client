@@ -109,14 +109,11 @@ pub struct GrokAuth {
 impl std::fmt::Debug for GrokAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GrokAuth")
-            .field("key", &token_suffix(&self.key))
+            .field("credential_present", &!self.key.is_empty())
             .field("auth_mode", &self.auth_mode)
             .field("user_id", &self.user_id)
             .field("expires_at", &self.expires_at)
-            .field(
-                "refresh_token",
-                &self.refresh_token.as_deref().map(token_suffix),
-            )
+            .field("refresh_credential_present", &self.refresh_token.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -297,16 +294,6 @@ pub(crate) struct UserInfo {
     /// `?include=subscription` is passed to `/user`).
     #[serde(default)]
     pub(crate) subscription_tier: Option<String>,
-}
-
-/// Last 12 chars of a token string, safe for diagnostic logging.
-/// Uses the tail because JWT access tokens all share the same base64
-/// header prefix (`eyJ0eXAiOiJh…`); the tail (signature bytes) is
-/// unique per token and makes `key_changed` / `is_stale_snapshot`
-/// diagnostics meaningful.
-pub(crate) fn token_suffix(t: &str) -> &str {
-    let len = t.len();
-    if len > 12 { &t[len - 12..] } else { t }
 }
 
 /// Look up auth from the store by scope key.

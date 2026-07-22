@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Method for uploading to object storage.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum UploadMethod {
     Direct {
         service_account_key: Option<String>,
@@ -26,8 +26,47 @@ pub enum UploadMethod {
     },
 }
 
+impl std::fmt::Debug for UploadMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Direct {
+                service_account_key,
+            } => f
+                .debug_struct("Direct")
+                .field("credential_present", &service_account_key.is_some())
+                .finish(),
+            Self::Proxy {
+                proxy_base_url,
+                user_token,
+                deployment_key,
+                alpha_test_key,
+            } => f
+                .debug_struct("Proxy")
+                .field("proxy_configured", &!proxy_base_url.trim().is_empty())
+                .field("user_credential_present", &!user_token.trim().is_empty())
+                .field("deployment_credential_present", &deployment_key.is_some())
+                .field("alpha_test_credential_present", &alpha_test_key.is_some())
+                .finish(),
+            Self::S3 {
+                bucket,
+                region,
+                credentials_file,
+                credentials_content,
+                endpoint_url,
+            } => f
+                .debug_struct("S3")
+                .field("bucket_configured", &!bucket.trim().is_empty())
+                .field("region_configured", &!region.trim().is_empty())
+                .field("credentials_file_configured", &credentials_file.is_some())
+                .field("credential_present", &credentials_content.is_some())
+                .field("endpoint_configured", &endpoint_url.is_some())
+                .finish(),
+        }
+    }
+}
+
 /// Configuration for object-storage export.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TraceExportConfig {
     pub bucket_url: Option<String>,
     pub service_account_key: Option<String>,
@@ -36,6 +75,26 @@ pub struct TraceExportConfig {
     pub gcs_prefix: Option<String>,
     pub absolute_paths: bool,
     pub archive_name_override: Option<String>,
+}
+
+impl std::fmt::Debug for TraceExportConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TraceExportConfig")
+            .field("bucket_configured", &self.bucket_url.is_some())
+            .field(
+                "service_account_credential_present",
+                &self.service_account_key.is_some(),
+            )
+            .field("upload_method", &self.upload_method)
+            .field("prefix_dir_configured", &self.prefix_dir.is_some())
+            .field("gcs_prefix_configured", &self.gcs_prefix.is_some())
+            .field("absolute_paths", &self.absolute_paths)
+            .field(
+                "archive_name_override_configured",
+                &self.archive_name_override.is_some(),
+            )
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,4 +222,58 @@ pub struct DedupMetadata {
     pub file_references: HashMap<String, FileReference>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub excluded: Vec<ExcludedContent>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_config_debug_never_renders_credentials_or_secret_urls() {
+        let sentinel = "AM360_UPLOAD_SENTINEL_4c8a1e09d75fb263";
+        let methods = [
+            UploadMethod::Direct {
+                service_account_key: Some(sentinel.to_owned()),
+            },
+            UploadMethod::Proxy {
+                proxy_base_url: format!("https://{sentinel}@proxy.example/?k={sentinel}"),
+                user_token: sentinel.to_owned(),
+                deployment_key: Some(sentinel.to_owned()),
+                alpha_test_key: Some(sentinel.to_owned()),
+            },
+            UploadMethod::S3 {
+                bucket: sentinel.to_owned(),
+                region: sentinel.to_owned(),
+                credentials_file: Some(format!("/tmp/{sentinel}")),
+                credentials_content: Some(sentinel.to_owned()),
+                endpoint_url: Some(format!("https://{sentinel}@s3.example/?k={sentinel}")),
+            },
+        ];
+        let trace = TraceExportConfig {
+            bucket_url: Some(format!("gs://{sentinel}")),
+            service_account_key: Some(sentinel.to_owned()),
+            upload_method: methods[1].clone(),
+            prefix_dir: Some(sentinel.to_owned()),
+            gcs_prefix: Some(sentinel.to_owned()),
+            absolute_paths: false,
+            archive_name_override: Some(sentinel.to_owned()),
+        };
+
+        let rendered = format!("{methods:?} {trace:?}");
+        for forbidden in [
+            sentinel,
+            "AM360_UPLOAD_SENTINEL",
+            "4c8a1e09",
+            "d75fb263",
+            "proxy.example",
+            "s3.example",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "upload config Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
+        assert!(rendered.contains("proxy_configured: true"));
+    }
 }

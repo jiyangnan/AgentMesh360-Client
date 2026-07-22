@@ -2147,7 +2147,6 @@ impl MvpAgent {
         Some(
             std::sync::Arc::new(move |
                 log_bytes: Vec<u8>,
-                auth_token: String,
                 user_id: String|
             {
                 let proxy_base_url = proxy_base_url.clone();
@@ -2164,9 +2163,17 @@ impl MvpAgent {
                         );
                         return;
                     }
+                    let user_token = if deployment_key.is_none() {
+                        auth_manager
+                            .current_or_expired()
+                            .filter(|auth| auth.is_xai_auth())
+                            .map(|auth| auth.key)
+                    } else {
+                        None
+                    };
                     let upload_method = crate::session::repo_changes::UploadMethod::Proxy {
                         proxy_base_url,
-                        user_token: auth_token,
+                        user_token: user_token.unwrap_or_default(),
                         deployment_key,
                         alpha_test_key,
                     };
@@ -3188,7 +3195,8 @@ impl MvpAgent {
             (None, None, None, None)
         };
         tracing::info!(
-            session_id = % session_info.id.0, feedback_url = ? feedback_proxy_url,
+            session_id = % session_info.id.0,
+            feedback_endpoint_configured = feedback_proxy_url.is_some(),
             authenticated = feedback_user_token.is_some(),
             "Initializing feedback manager for session"
         );

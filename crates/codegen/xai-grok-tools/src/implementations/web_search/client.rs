@@ -139,38 +139,30 @@ impl WebSearchClient {
         if let Some(ref key) = sent_bearer {
             req = req.header(AUTHORIZATION, format!("Bearer {key}"));
         }
-        let response = req.send().await.map_err(|e| {
+        let response = req.send().await.map_err(|_| {
             xai_tool_runtime::ToolError::execution(
                 xai_tool_protocol::ToolId::new("web_search").expect("valid"),
-                format!("HTTP request failed: {e}"),
+                "HTTP request failed".to_owned(),
             )
         })?;
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             self.record_401_attribution(sent_bearer.as_deref());
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Failed to read error body".to_string());
-            return Err(xai_tool_runtime::ToolError::unauthorized(format!(
-                "Responses API returned 401 Unauthorized: {body}"
-            ))
+            return Err(xai_tool_runtime::ToolError::unauthorized(
+                "Responses API returned 401 Unauthorized".to_owned(),
+            )
             .with_details(serde_json::json!({ "tool_id" : "web_search", "status" : 401, })));
         }
         if !status.is_success() {
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Failed to read error body".to_string());
             return Err(xai_tool_runtime::ToolError::execution(
                 xai_tool_protocol::ToolId::new("web_search").expect("valid"),
-                format!("Responses API returned {status}: {body}"),
+                format!("Responses API returned {status}"),
             ));
         }
-        let bytes = response.bytes().await.map_err(|e| {
+        let bytes = response.bytes().await.map_err(|_| {
             xai_tool_runtime::ToolError::execution(
                 xai_tool_protocol::ToolId::new("web_search").expect("valid"),
-                format!("Failed to read response body: {e}"),
+                "Failed to read response body".to_owned(),
             )
         })?;
         let response_obj: rs::Response = serde_json::from_slice(&bytes).map_err(|e| {
@@ -227,38 +219,30 @@ impl WebSearchClient {
         if let Some(ref key) = sent_bearer {
             req = req.header(AUTHORIZATION, format!("Bearer {key}"));
         }
-        let response = req.send().await.map_err(|e| {
+        let response = req.send().await.map_err(|_| {
             xai_tool_runtime::ToolError::execution(
                 xai_tool_protocol::ToolId::new("web_search").expect("valid"),
-                format!("HTTP request failed: {e}"),
+                "HTTP request failed".to_owned(),
             )
         })?;
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             self.record_401_attribution(sent_bearer.as_deref());
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Failed to read error body".to_string());
-            return Err(xai_tool_runtime::ToolError::unauthorized(format!(
-                "Responses API returned 401 Unauthorized: {body}"
-            ))
+            return Err(xai_tool_runtime::ToolError::unauthorized(
+                "Responses API returned 401 Unauthorized".to_owned(),
+            )
             .with_details(serde_json::json!({ "tool_id" : "web_search", "status" : 401, })));
         }
         if !status.is_success() {
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Failed to read error body".to_string());
             return Err(xai_tool_runtime::ToolError::execution(
                 xai_tool_protocol::ToolId::new("web_search").expect("valid"),
-                format!("Responses API returned {status}: {body}"),
+                format!("Responses API returned {status}"),
             ));
         }
-        let bytes = response.bytes().await.map_err(|e| {
+        let bytes = response.bytes().await.map_err(|_| {
             xai_tool_runtime::ToolError::execution(
                 xai_tool_protocol::ToolId::new("web_search").expect("valid"),
-                format!("Failed to read response body: {e}"),
+                "Failed to read response body".to_owned(),
             )
         })?;
         let response_obj: rs::Response = serde_json::from_slice(&bytes).map_err(|e| {
@@ -360,18 +344,17 @@ mod tests {
         invocations: std::sync::Mutex<Vec<(ToolConsumer, Option<String>)>>,
     }
     impl crate::attribution::Auth401AttributionCallback for CountingCallback {
-        fn record_401(&self, consumer: ToolConsumer, sent_bearer_prefix: Option<&str>) {
+        fn record_401(&self, consumer: ToolConsumer, sent_credential: Option<&str>) {
             self.invocations
                 .lock()
                 .unwrap()
-                .push((consumer, sent_bearer_prefix.map(|s| s.to_string())));
+                .push((consumer, sent_credential.map(|s| s.to_string())));
         }
     }
     /// `record_401_attribution` invokes the wired callback with
-    /// `ToolConsumer::WebSearch` and the truncated bearer prefix.
-    /// The full bearer never crosses the trait boundary.
+    /// `ToolConsumer::WebSearch` and the transient credential.
     #[test]
-    fn record_401_attribution_passes_truncated_prefix_to_callback() {
+    fn record_401_attribution_passes_transient_credential_to_callback() {
         let cb = std::sync::Arc::new(CountingCallback::default());
         let cb_dyn: crate::attribution::SharedAttributionCallback = cb.clone();
         let config = WebSearchConfig::Enabled {
@@ -388,10 +371,9 @@ mod tests {
         let calls = cb.invocations.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, ToolConsumer::WebSearch);
-        assert_eq!(calls[0].1.as_deref(), Some("bearer-with-"));
         assert_eq!(
-            calls[0].1.as_deref().map(str::len),
-            Some(crate::attribution::SENT_BEARER_PREFIX_LEN),
+            calls[0].1.as_deref(),
+            Some("bearer-with-long-tail-aaaaaaaaaa")
         );
     }
     /// `record_401_attribution` is a no-op when no callback is wired

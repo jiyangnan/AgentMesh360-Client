@@ -4,7 +4,7 @@ use indexmap::IndexMap;
 ///
 /// Use `Disabled` when no API key is available or web search should be turned off.
 /// Use `Enabled { … }` to provide credentials and endpoint configuration.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum WebSearchConfig {
     #[default]
@@ -18,6 +18,45 @@ pub enum WebSearchConfig {
         #[serde(skip_serializing_if = "Option::is_none")]
         alpha_test_key: Option<String>,
     },
+}
+
+fn redacted_endpoint(raw: &str) -> String {
+    let Ok(url) = reqwest::Url::parse(raw) else {
+        return if raw.trim().is_empty() {
+            String::new()
+        } else {
+            "<configured>".to_owned()
+        };
+    };
+    let Some(host) = url.host_str() else {
+        return "<configured>".to_owned();
+    };
+    match url.port() {
+        Some(port) => format!("{}://{host}:{port}", url.scheme()),
+        None => format!("{}://{host}", url.scheme()),
+    }
+}
+
+impl std::fmt::Debug for WebSearchConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disabled => f.write_str("WebSearchConfig::Disabled"),
+            Self::Enabled {
+                api_key,
+                base_url,
+                model,
+                extra_headers,
+                alpha_test_key,
+            } => f
+                .debug_struct("WebSearchConfig::Enabled")
+                .field("credential_present", &!api_key.trim().is_empty())
+                .field("endpoint_configured", &!base_url.trim().is_empty())
+                .field("model", model)
+                .field("extra_header_count", &extra_headers.len())
+                .field("alpha_test_credential_present", &alpha_test_key.is_some())
+                .finish(),
+        }
+    }
 }
 
 impl WebSearchConfig {
@@ -40,9 +79,12 @@ impl WebSearchConfig {
                 ..
             } => Self::Enabled {
                 api_key: "***REDACTED***".to_string(),
-                base_url: base_url.clone(),
+                base_url: redacted_endpoint(base_url),
                 model: model.clone(),
-                extra_headers: extra_headers.clone(),
+                extra_headers: extra_headers
+                    .keys()
+                    .map(|name| (name.clone(), "***REDACTED***".to_owned()))
+                    .collect(),
                 alpha_test_key: None,
             },
         }
@@ -92,13 +134,38 @@ mod tests {
                 alpha_test_key,
             } => {
                 assert_eq!(api_key, "***REDACTED***");
-                assert_eq!(base_url, "https://api.x.ai/v1");
+                assert_eq!(base_url, "https://api.x.ai");
                 assert_eq!(model, "test-web-search-model");
-                assert_eq!(extra_headers.get("X-Custom").unwrap(), "value");
+                assert_eq!(extra_headers.get("X-Custom").unwrap(), "***REDACTED***");
                 assert!(alpha_test_key.is_none());
             }
             _ => panic!("Expected Enabled variant"),
         }
+    }
+
+    #[test]
+    fn config_debug_and_redacted_copy_never_render_credential_material() {
+        let sentinel = "AM360_WEB_SEARCH_SENTINEL_4c8a1e09d75fb263";
+        let config = WebSearchConfig::Enabled {
+            api_key: sentinel.into(),
+            base_url: format!("https://{sentinel}@search.example/v1/{sentinel}?k={sentinel}"),
+            model: "safe-model".into(),
+            extra_headers: IndexMap::from([("X-Custom".into(), sentinel.into())]),
+            alpha_test_key: Some(sentinel.into()),
+        };
+        let rendered = format!("{config:?} {:?}", config.redacted());
+        for forbidden in [
+            sentinel,
+            "AM360_WEB_SEARCH_SENTINEL",
+            "4c8a1e09",
+            "d75fb263",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "WebSearchConfig leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
     }
 
     #[test]

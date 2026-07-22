@@ -329,7 +329,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                     tracing::info!(
                         request_id = %response.request_id,
                         status = %response.status,
-                        feedback_url = %feedback_base_url,
+                        feedback_endpoint_configured = !feedback_base_url.trim().is_empty(),
                         "Feedback request dismissed"
                     );
                     let value = serde_json::to_value(&response)
@@ -342,7 +342,7 @@ async fn handle_feedback(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult 
                     tracing::warn!(
                         error = %e,
                         request_id = %request_id,
-                        feedback_url = %feedback_base_url,
+                        feedback_endpoint_configured = !feedback_base_url.trim().is_empty(),
                         "Failed to dismiss feedback request"
                     );
                     Err(acp::Error::internal_error()
@@ -410,7 +410,10 @@ async fn handle_review(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                     .await
                     {
                         Ok(gcs_url) => {
-                            tracing::info!(gcs_url = %gcs_url, "Comment uploaded to GCS");
+                            tracing::info!(
+                                upload_location_returned = !gcs_url.is_empty(),
+                                "Comment uploaded to GCS"
+                            );
                         }
                         Err(e) => {
                             tracing::warn!(error = %e, gcs_path, "Failed to upload comment to GCS");
@@ -470,7 +473,10 @@ async fn handle_review(agent: &MvpAgent, args: &acp::ExtRequest) -> ExtResult {
                     .await
                     {
                         Ok(gcs_url) => {
-                            tracing::info!(gcs_url = %gcs_url, "Comment delete event uploaded to GCS");
+                            tracing::info!(
+                                upload_location_returned = !gcs_url.is_empty(),
+                                "Comment delete event uploaded to GCS"
+                            );
                         }
                         Err(e) => {
                             tracing::warn!(error = %e, gcs_path, "Failed to upload comment delete event to GCS");

@@ -32,6 +32,10 @@ impl std::fmt::Debug for GrokAuthCredentials {
                 &self.deployment_key.as_ref().map(|_| "<redacted>"),
             )
             .field(
+                "alpha_test_key",
+                &self.alpha_test_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
                 "mode",
                 &if self.auth_manager.is_some() {
                     "live"
@@ -188,5 +192,24 @@ mod tests {
         let mgr = Arc::new(AuthManager::new(dir.path(), GrokComConfig::default()));
         let creds = GrokAuthCredentials::new(None).with_auth_manager(mgr);
         assert!(creds.resolve().user_token.is_none());
+    }
+
+    #[test]
+    fn debug_never_renders_any_credential_material() {
+        let sentinel = "AM360_GROK_AUTH_SENTINEL_4c8a1e09d75fb263";
+        let creds = GrokAuthCredentials {
+            user_token: Some(sentinel.into()),
+            deployment_key: Some(sentinel.into()),
+            alpha_test_key: Some(sentinel.into()),
+            auth_manager: None,
+        };
+        let rendered = format!("{creds:?}");
+        for forbidden in [sentinel, "AM360_GROK_AUTH_SENTINEL", "4c8a1e09", "d75fb263"] {
+            assert!(
+                !rendered.contains(forbidden),
+                "GrokAuthCredentials Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("<redacted>"));
     }
 }

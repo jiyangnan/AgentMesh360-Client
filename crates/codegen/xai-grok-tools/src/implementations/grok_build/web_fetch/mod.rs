@@ -158,7 +158,11 @@ impl xai_tool_runtime::Tool for WebFetchTool {
         }
     }
 
-    #[tracing::instrument(name = "tool.web_fetch", skip_all, fields(url = %input.url))]
+    #[tracing::instrument(
+        name = "tool.web_fetch",
+        skip_all,
+        fields(endpoint_configured = !input.url.trim().is_empty())
+    )]
     async fn run(
         &self,
         ctx: xai_tool_runtime::ToolCallContext,

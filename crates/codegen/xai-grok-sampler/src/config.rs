@@ -45,7 +45,7 @@ pub enum AuthScheme {
 /// `SamplerConfig` is handed to the actor. Auth is selected separately
 /// via `auth_scheme`, while `api_backend` controls only the request/response
 /// protocol shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SamplerConfig {
     pub api_key: Option<String>,
     pub base_url: String,
@@ -124,6 +124,46 @@ pub struct SamplerConfig {
     /// Per-request header injector (e.g. OTel traceparent). Called in `post()`.
     #[serde(skip)]
     pub header_injector: Option<SharedHeaderInjector>,
+}
+
+impl std::fmt::Debug for SamplerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SamplerConfig")
+            .field(
+                "credential_present",
+                &self.api_key.as_deref().is_some_and(|key| !key.is_empty()),
+            )
+            .field("base_url_configured", &!self.base_url.is_empty())
+            .field("model", &self.model)
+            .field("max_completion_tokens", &self.max_completion_tokens)
+            .field("temperature", &self.temperature)
+            .field("top_p", &self.top_p)
+            .field("api_backend", &self.api_backend)
+            .field("auth_scheme", &self.auth_scheme)
+            .field("extra_header_count", &self.extra_headers.len())
+            .field("context_window", &self.context_window)
+            .field("force_http1", &self.force_http1)
+            .field("max_retries", &self.max_retries)
+            .field("stream_tool_calls", &self.stream_tool_calls)
+            .field("idle_timeout_secs", &self.idle_timeout_secs)
+            .field("reasoning_effort", &self.reasoning_effort)
+            .field("origin_client", &self.origin_client)
+            .field("client_identifier", &self.client_identifier)
+            .field("deployment_id", &self.deployment_id)
+            .field("user_id", &self.user_id)
+            .field("client_version", &self.client_version)
+            .field(
+                "has_attribution_callback",
+                &self.attribution_callback.is_some(),
+            )
+            .field("has_bearer_resolver", &self.bearer_resolver.is_some())
+            .field("supports_backend_search", &self.supports_backend_search)
+            .field("compactions_remaining", &self.compactions_remaining)
+            .field("compaction_at_tokens", &self.compaction_at_tokens)
+            .field("doom_loop_recovery", &self.doom_loop_recovery)
+            .field("has_header_injector", &self.header_injector.is_some())
+            .finish()
+    }
 }
 
 impl Default for SamplerConfig {
@@ -216,6 +256,36 @@ mod tests {
             policy.rate_limit_retry_threshold,
             RATE_LIMIT_RETRY_THRESHOLD
         );
+    }
+
+    #[test]
+    fn sampler_config_debug_redacts_credentials_headers_and_url_secrets() {
+        let sentinel = "AM360_CONFIG_SENTINEL_82fb30cd9146ae75";
+        let mut config = SamplerConfig {
+            api_key: Some(sentinel.to_owned()),
+            base_url: format!("https://{sentinel}@provider.example/v1?token={sentinel}"),
+            ..SamplerConfig::default()
+        };
+        config
+            .extra_headers
+            .insert("Authorization".to_owned(), format!("Bearer {sentinel}"));
+
+        let rendered = format!("{config:?}");
+        for forbidden in [
+            sentinel,
+            "AM360_CONFIG",
+            "82fb30cd",
+            "9146ae75",
+            "Authorization",
+            "provider.example",
+        ] {
+            assert!(
+                !rendered.contains(forbidden),
+                "SamplerConfig Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("credential_present: true"));
+        assert!(rendered.contains("extra_header_count: 1"));
     }
 
     /// Configs serialized before the field existed must keep deserializing.

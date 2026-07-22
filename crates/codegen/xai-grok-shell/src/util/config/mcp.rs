@@ -27,7 +27,7 @@ pub use xai_grok_config_types::{McpConfig, RelaySyncConfig};
 pub use xai_grok_config_types::PoolConfig;
 
 /// TUI/CLI settings. Composed from typed section configs defined in `agent::config`.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Config {
     pub cli: crate::agent::config::CliConfig,
     pub models: crate::agent::config::ModelsConfig,
@@ -49,6 +49,43 @@ pub struct Config {
     /// the settings modal writes; the rest of `[toolset]` never round-trips
     /// (it carries runtime-only structs whose defaults must not hit disk).
     pub ask_user_question: crate::tools::config::AskUserQuestionToolConfig,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field(
+                "management_credential_present",
+                &self
+                    .management_api_key
+                    .as_deref()
+                    .is_some_and(|key| !key.is_empty()),
+            )
+            .field("permission_configured", &self.permission.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod credential_debug_tests {
+    use super::*;
+
+    #[test]
+    fn settings_config_debug_redacts_management_key() {
+        let secret = "AM360_MANAGEMENT_SENTINEL_8e1b74c209da563f";
+        let config = Config {
+            management_api_key: Some(secret.to_owned()),
+            ..Config::default()
+        };
+        let rendered = format!("{config:?}");
+        for forbidden in [secret, "AM360_MANAGEMENT", "8e1b74c2", "09da563f"] {
+            assert!(
+                !rendered.contains(forbidden),
+                "settings Config Debug leaked credential material: {rendered}"
+            );
+        }
+        assert!(rendered.contains("management_credential_present: true"));
+    }
 }
 
 pub fn get_mcp_server_config(name: &str) -> Option<McpServerConfig> {

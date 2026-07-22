@@ -55,12 +55,10 @@ fn storage_breaker_config() -> BreakerConfig {
 /// a bridge implementation that wires into
 /// `crate::auth::attribution::record_consumer_401`.
 ///
-/// `sent_bearer_prefix` is the first-N characters of the bearer that was
-/// actually sent on the wire (extracted at the trait boundary so the full
-/// bearer never escapes `StorageClient`). `None` indicates no bearer was
-/// configured (the unauthenticated test/CI path).
+/// `sent_credential` may be compared transiently in memory, but callbacks must
+/// never persist, format, or log it. `None` indicates no credential was configured.
 pub trait Auth401AttributionCallback: Send + Sync + std::fmt::Debug {
-    fn record_401(&self, operation: &str, sent_bearer_prefix: Option<&str>);
+    fn record_401(&self, operation: &str, sent_credential: Option<&str>);
 }
 
 // ============================================================================
@@ -220,13 +218,12 @@ impl ResponseCheck {
         let status = response.status();
         let status_code = status.as_u16();
         let retry_after = parse_retry_after(&response);
-        let error_body = response.text().await.unwrap_or_default();
 
         Self {
             is_retryable: is_retryable_status(status_code),
             retry_after,
             status_code,
-            message: format!("{}: HTTP {} - {}", operation, status, error_body),
+            message: format!("{operation}: HTTP {status}"),
         }
     }
 
@@ -251,16 +248,15 @@ async fn wait_for_network_retry(
     retry_config: &RetryConfig,
     operation: &str,
     attempt: u32,
-    error: &(dyn std::fmt::Display + Send + Sync),
+    _error: &(dyn std::fmt::Display + Send + Sync),
 ) {
     let delay = retry_config.calculate_delay(attempt);
     tracing::warn!(
-        "{} request failed (attempt {}/{}), retrying in {:?}: {}",
         operation,
-        attempt + 1,
-        retry_config.max_retries,
-        delay,
-        error
+        attempt = attempt + 1,
+        max_retries = retry_config.max_retries,
+        ?delay,
+        "storage request failed; retrying"
     );
     tokio::time::sleep(delay).await;
 }
@@ -428,8 +424,8 @@ pub struct StorageClient {
     /// can record auth-attribution telemetry. Shell installs a bridge here;
     /// bins/tests typically leave it `None`.
     attribution: Option<Arc<dyn Auth401AttributionCallback>>,
-    /// Credential provider used to snapshot the bearer prefix at 401 sites
-    /// for attribution telemetry.
+    /// Credential provider used for transient in-memory equality checks at
+    /// 401 attribution sites. Credential material is never emitted.
     credentials: Arc<dyn AuthCredentialProvider>,
 
     /// Client identity forwarded to cli-chat-proxy (for logging + metrics).
@@ -599,23 +595,19 @@ impl StorageClient {
         let url = format!("{}/storage/limits", self.base_url);
         let request = self.add_common_headers(self.http_client.get(&url));
 
-        let response = request.send().await.context("Fetching upload limits")?;
+        let response = request
+            .send()
+            .await
+            .map_err(|_| anyhow::anyhow!("Fetching upload limits failed"))?;
         if !response.status().is_success() {
             let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!(
-                "Upload limits fetch failed with status {}: {}",
-                status,
-                body
-            );
+            anyhow::bail!("Upload limits fetch failed with status {status}");
         }
 
         response
             .json()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to parse upload limits response")
     }
 
@@ -632,8 +624,8 @@ impl StorageClient {
     /// send and 401 response, though in practice this is rare).
     fn fire_401_attribution(&self, operation: &str) {
         if let Some(ref cb) = self.attribution {
-            let bearer_prefix = self.credentials.snapshot().token;
-            cb.record_401(operation, bearer_prefix.as_deref());
+            let sent_credential = self.credentials.snapshot().token;
+            cb.record_401(operation, sent_credential.as_deref());
         }
     }
 
@@ -660,8 +652,8 @@ impl StorageClient {
                         self.breaker.record(Outcome::Success);
                         ExistsResult::Found(payload)
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to parse check_exists response: {e}");
+                    Err(_) => {
+                        tracing::warn!("Failed to parse check_exists response");
                         ExistsResult::ProbeFailed
                     }
                 }
@@ -682,8 +674,8 @@ impl StorageClient {
                 tracing::warn!("check_exists returned {}", resp.status());
                 ExistsResult::ProbeFailed
             }
-            Err(e) => {
-                tracing::warn!("check_exists request failed: {e}");
+            Err(_) => {
+                tracing::warn!("check_exists request failed");
                 ExistsResult::ProbeFailed
             }
         }
@@ -743,8 +735,8 @@ impl StorageClient {
                         self.breaker.record(Outcome::Success);
                         ExistsResult::Found(r.exists.into_iter().collect())
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to parse batch_exists response: {e}");
+                    Err(_) => {
+                        tracing::warn!("Failed to parse batch_exists response");
                         ExistsResult::ProbeFailed
                     }
                 }
@@ -753,8 +745,8 @@ impl StorageClient {
                 tracing::warn!("batch_exists returned {}", resp.status());
                 ExistsResult::ProbeFailed
             }
-            Err(e) => {
-                tracing::warn!("batch_exists request failed: {e}");
+            Err(_) => {
+                tracing::warn!("batch_exists request failed");
                 ExistsResult::ProbeFailed
             }
         }
@@ -838,8 +830,8 @@ impl StorageClient {
                         .await
                     {
                         Ok(r) => Some(r.results),
-                        Err(e) => {
-                            tracing::warn!("Failed to parse batch_upload response: {e}");
+                        Err(_) => {
+                            tracing::warn!("Failed to parse batch_upload response");
                             None
                         }
                     };
@@ -860,7 +852,7 @@ impl StorageClient {
                         attempt += 1;
                         continue;
                     }
-                    tracing::warn!("batch_upload request failed after retries: {e}");
+                    tracing::warn!("batch_upload request failed after retries");
                     return None;
                 }
             }
@@ -965,8 +957,8 @@ impl StorageClient {
                         .await
                     {
                         Ok(r) => Some(r.results),
-                        Err(e) => {
-                            tracing::warn!("Failed to parse batch_upload_json response: {e}");
+                        Err(_) => {
+                            tracing::warn!("Failed to parse batch_upload_json response");
                             None
                         }
                     };
@@ -987,7 +979,7 @@ impl StorageClient {
                         attempt += 1;
                         continue;
                     }
-                    tracing::warn!("batch_upload_json request failed after retries: {e}");
+                    tracing::warn!("batch_upload_json request failed after retries");
                     return None;
                 }
             }
@@ -1015,7 +1007,7 @@ impl StorageClient {
             .header("X-Storage-Path", storage_path)
             .send()
             .await
-            .context("Failed to contact storage download endpoint")?;
+            .map_err(|_| anyhow::anyhow!("Failed to contact storage download endpoint"))?;
 
         if resp.status() == reqwest::StatusCode::FORBIDDEN {
             anyhow::bail!(
@@ -1027,11 +1019,7 @@ impl StorageClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Storage download endpoint returned {status} for '{}': {body}",
-                storage_path
-            );
+            anyhow::bail!("Storage download endpoint returned {status} for '{storage_path}'");
         }
 
         #[derive(serde::Deserialize)]
@@ -1042,6 +1030,7 @@ impl StorageClient {
         let download_resp: DownloadResponse = resp
             .json()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to parse storage download response")?;
 
         // Step 2: fetch the object via the signed URL, streaming to dest.
@@ -1052,15 +1041,12 @@ impl StorageClient {
             .get(&download_resp.signed_url)
             .send()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to fetch blob from signed URL")?;
 
         if !object_resp.status().is_success() {
             let status = object_resp.status();
-            let body = object_resp.text().await.unwrap_or_default();
-            anyhow::bail!(
-                "Signed URL download failed with {status} for '{}': {body}",
-                storage_path
-            );
+            anyhow::bail!("Signed URL download failed with {status} for '{storage_path}'");
         }
 
         // Create parent directories if needed.
@@ -1079,7 +1065,7 @@ impl StorageClient {
         use tokio::io::AsyncWriteExt as _;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk
-                .with_context(|| format!("Error reading blob stream for '{}'", storage_path))?;
+                .map_err(|_| anyhow::anyhow!("Error reading blob stream for '{storage_path}'"))?;
             file.write_all(&chunk)
                 .await
                 .with_context(|| format!("Failed to write chunk to {}", dest.display()))?;
@@ -1188,7 +1174,8 @@ impl StorageClient {
                     return response
                         .json()
                         .await
-                        .map_err(|e| anyhow::anyhow!("Failed to parse upload response: {}", e));
+                        .map_err(|e| e.without_url())
+                        .context("Failed to parse upload response");
                 }
                 Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => {
                     self.fire_401_attribution("upload");
@@ -1200,11 +1187,10 @@ impl StorageClient {
                     .into());
                 }
                 Ok(response) if response.status() == reqwest::StatusCode::FORBIDDEN => {
-                    let body = response.text().await.unwrap_or_default();
-                    tracing::warn!("storage upload rejected (403): {body}");
+                    tracing::warn!("storage upload rejected (403)");
                     return Err(HttpUploadError {
                         status_code: 403,
-                        message: format!("{operation}: HTTP 403 Forbidden - {body}"),
+                        message: format!("{operation}: HTTP 403 Forbidden"),
                     }
                     .into());
                 }
@@ -1227,7 +1213,7 @@ impl StorageClient {
                         attempt += 1;
                         continue;
                     }
-                    return Err(anyhow::anyhow!("{} failed: {}", operation, e));
+                    return Err(e.without_url()).with_context(|| format!("{operation} failed"));
                 }
             }
         }
@@ -1312,7 +1298,8 @@ impl StorageClient {
                     return response
                         .json()
                         .await
-                        .map_err(|e| anyhow::anyhow!("Failed to parse upload response: {}", e));
+                        .map_err(|e| e.without_url())
+                        .context("Failed to parse upload response");
                 }
                 Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => {
                     self.fire_401_attribution("upload_file");
@@ -1324,11 +1311,10 @@ impl StorageClient {
                     .into());
                 }
                 Ok(response) if response.status() == reqwest::StatusCode::FORBIDDEN => {
-                    let body = response.text().await.unwrap_or_default();
-                    tracing::warn!("storage upload_file rejected (403): {body}");
+                    tracing::warn!("storage upload_file rejected (403)");
                     return Err(HttpUploadError {
                         status_code: 403,
-                        message: format!("{operation}: HTTP 403 Forbidden - {body}"),
+                        message: format!("{operation}: HTTP 403 Forbidden"),
                     }
                     .into());
                 }
@@ -1351,7 +1337,7 @@ impl StorageClient {
                         attempt += 1;
                         continue;
                     }
-                    return Err(anyhow::anyhow!("{} failed: {}", operation, e));
+                    return Err(e.without_url()).with_context(|| format!("{operation} failed"));
                 }
             }
         }
@@ -1407,6 +1393,7 @@ impl StorageClient {
             .body(body)
             .send()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to send streaming upload request")?;
 
         let status = response.status();
@@ -1416,21 +1403,19 @@ impl StorageClient {
             anyhow::bail!("Failed to upload to '{}': HTTP 401 Unauthorized", path);
         }
         if status == reqwest::StatusCode::FORBIDDEN {
-            let body = response.text().await.unwrap_or_default();
-            tracing::warn!("storage upload_stream rejected (403): {body}");
+            tracing::warn!("storage upload_stream rejected (403)");
             return Err(HttpUploadError {
                 status_code: 403,
-                message: format!("Failed to upload to '{path}': HTTP 403 Forbidden - {body}"),
+                message: format!("Failed to upload to '{path}': HTTP 403 Forbidden"),
             }
             .into());
         }
         if !status.is_success() {
-            let error_body = response.text().await.unwrap_or_default();
             // Structured so the queue worker can classify terminal 400/404 by
             // status code rather than scraping the message string.
             return Err(HttpUploadError {
                 status_code: status.as_u16(),
-                message: format!("Failed to upload to '{path}': HTTP {status} - {error_body}"),
+                message: format!("Failed to upload to '{path}': HTTP {status}"),
             }
             .into());
         }
@@ -1440,6 +1425,7 @@ impl StorageClient {
         let upload_response: UploadResponse = response
             .json()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to parse upload response")?;
 
         Ok(upload_response)
@@ -1747,6 +1733,7 @@ impl StorageClient {
                     return response
                         .json()
                         .await
+                        .map_err(|e| e.without_url())
                         .context("Failed to parse multipart init response");
                 }
                 Ok(response) if response.status() == reqwest::StatusCode::FORBIDDEN => {
@@ -1778,7 +1765,7 @@ impl StorageClient {
                         attempt += 1;
                         continue;
                     }
-                    return Err(e).context("Failed to initialize multipart upload");
+                    return Err(e.without_url()).context("Failed to initialize multipart upload");
                 }
             }
         }
@@ -1811,6 +1798,7 @@ impl StorageClient {
                     return response
                         .json()
                         .await
+                        .map_err(|e| e.without_url())
                         .context("Failed to parse multipart complete response");
                 }
                 Ok(response) => {
@@ -1832,7 +1820,7 @@ impl StorageClient {
                         attempt += 1;
                         continue;
                     }
-                    return Err(e).context("Failed to complete multipart upload");
+                    return Err(e.without_url()).context("Failed to complete multipart upload");
                 }
             }
         }
@@ -1864,6 +1852,7 @@ impl StorageClient {
             )
             .send()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to request signed upload URL")?;
 
         if response.status() == reqwest::StatusCode::FORBIDDEN {
@@ -1878,13 +1867,13 @@ impl StorageClient {
         }
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Signed upload URL request failed: {status} - {body}");
+            anyhow::bail!("Signed upload URL request failed: {status}");
         }
 
         response
             .json::<prod_mc_cli_chat_proxy_types::SignedUploadUrlResponse>()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to parse signed upload URL response")
     }
 
@@ -1905,12 +1894,12 @@ impl StorageClient {
             .body(data.to_vec())
             .send()
             .await
+            .map_err(|e| e.without_url())
             .context("Failed to upload via signed URL")?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Signed URL upload failed: {status} - {body}");
+            anyhow::bail!("Signed URL upload failed: {status}");
         }
 
         Ok(())
@@ -2025,7 +2014,7 @@ async fn upload_part_streaming(
                     attempt += 1;
                     continue;
                 }
-                return Err(anyhow::anyhow!("{} failed: {}", operation, e));
+                return Err(e.without_url()).with_context(|| format!("{operation} failed"));
             }
         }
     }
@@ -2104,7 +2093,7 @@ async fn upload_part_direct(
                     attempt += 1;
                     continue;
                 }
-                return Err(anyhow::anyhow!("{} failed: {}", operation, e));
+                return Err(e.without_url()).with_context(|| format!("{operation} failed"));
             }
         }
     }
