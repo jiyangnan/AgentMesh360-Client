@@ -268,6 +268,17 @@ mod tests {
         TurnSubmissionCoordinator,
         SessionBindingStore,
     ) {
+        setup_with_base_url("https://turn.example/v1")
+    }
+
+    fn setup_with_base_url(
+        base_url: &str,
+    ) -> (
+        tempfile::TempDir,
+        CredentialLeaseResolver<MemoryCredentialVault>,
+        TurnSubmissionCoordinator,
+        SessionBindingStore,
+    ) {
         let temp = tempfile::tempdir().expect("tempdir");
         let credential_ref = CredentialRef::generate();
         let vault = MemoryCredentialVault::default();
@@ -287,7 +298,7 @@ mod tests {
                     preset_id: None,
                     display_name: "Turn Provider".into(),
                     protocol: ProviderProtocol::OpenaiResponses,
-                    base_url: "https://turn.example/v1".into(),
+                    base_url: base_url.into(),
                     auth_kind: ProviderAuthKind::BearerApiKey,
                     enabled_models: vec!["turn-model".into()],
                 }
@@ -302,7 +313,7 @@ mod tests {
                 "session-turn",
                 "main",
                 Some("job-agent"),
-                &route(1, "https://turn.example/v1"),
+                &route(1, base_url),
             )
             .expect("binding");
         let resolver = CredentialLeaseResolver::in_home(temp.path(), vault);
@@ -513,5 +524,76 @@ mod tests {
         assert!(matches!(route, ProductTurnRoute::Active(_)));
         assert_eq!(route_history(&temp).len(), 1);
         assert!(!format!("{route:?}").contains(SECRET));
+    }
+
+    #[tokio::test]
+    async fn real_sampler_actor_acceptance_writes_route_before_provider_result() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock Provider");
+        let address = listener.local_addr().expect("mock address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept request");
+            let mut bytes = vec![0; 16 * 1024];
+            let read = stream.read(&mut bytes).await.expect("read request");
+            let request = String::from_utf8_lossy(&bytes[..read]).to_string();
+            let body = r#"{"error":{"message":"rejected by mock"}}"#;
+            let response = format!(
+                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("write response");
+            request
+        });
+        let base_url = format!("http://{address}/v1");
+        let (temp, resolver, coordinator, _) = setup_with_base_url(&base_url);
+        let prepared = coordinator
+            .prepare(
+                &resolver,
+                ACCOUNT_ID,
+                "session-turn",
+                "main",
+                "turn-real-actor",
+            )
+            .expect("prepare bound route");
+        let mut route = ProductTurnRoute::Prepared(Some(Box::new(prepared)));
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = xai_grok_sampler::SamplerActor::spawn(
+            SamplerConfig::default(),
+            xai_grok_sampler::RetryPolicy {
+                max_retries: 0,
+                rate_limit_retry_threshold: 0,
+            },
+            event_tx,
+        );
+
+        let pending = route
+            .submit(|config| {
+                handle
+                    .begin_submit_and_collect_with_config(
+                        xai_grok_sampler::RequestId::random(),
+                        xai_grok_sampling_types::ConversationRequest::default(),
+                        config,
+                    )
+                    .map_err(anyhow::Error::new)
+            })
+            .expect("sampler actor accepts request");
+        assert_eq!(route_history(&temp).len(), 1);
+
+        let provider_error = pending.collect().await.expect_err("mock returns 401");
+        assert!(provider_error.to_string().contains("Unauthorized"));
+        let request = server.await.expect("mock Provider task");
+        assert!(request.starts_with("POST /v1/responses HTTP/1.1"));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains(&format!("authorization: bearer {SECRET}").to_ascii_lowercase())
+        );
+        assert_eq!(route_history(&temp)[0].turn_id, "turn-real-actor");
     }
 }
