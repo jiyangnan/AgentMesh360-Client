@@ -162,7 +162,7 @@ Keychain 做破坏性验证。
 
 状态：已完成
 
-本地提交：待 C0 检查点提交后回填
+本地提交：`29fa33f feat: isolate persistent agents by account`
 
 已经实现：
 
