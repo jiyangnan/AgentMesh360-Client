@@ -108,6 +108,7 @@ pub(crate) async fn handle(
         ACCOUNT_BOOTSTRAP_METHOD => {
             let request: BootstrapRequest = crate::extensions::parse_params(args)?;
             let access_generation = agent.agentmesh360.next_access_generation();
+            let previous_account_id = agent.agentmesh360.access.current_account_id();
             match agent
                 .agentmesh360
                 .access
@@ -116,6 +117,25 @@ pub(crate) async fn handle(
             {
                 Ok(response) => {
                     if agent.agentmesh360.access.is_granted() {
+                        let owner_account_id = response.account.account_id;
+                        if previous_account_id != Some(owner_account_id) {
+                            suspend_product_agents(agent, true);
+                        }
+                        if let Err(error) = agent
+                            .agentmesh360
+                            .registry()
+                            .claim_legacy_and_seed(owner_account_id)
+                        {
+                            agent.agentmesh360.access.invalidate();
+                            suspend_product_agents(agent, true);
+                            tracing::error!(
+                                %error,
+                                owner_account_id,
+                                "failed to initialize account-scoped AgentMesh360 agents"
+                            );
+                            return Err(acp::Error::internal_error()
+                                .data("failed to initialize AgentMesh360 account state"));
+                        }
                         spawn_restore_activated_agents(agent);
                         spawn_access_expiry(agent, access_generation);
                     } else {
@@ -189,7 +209,7 @@ fn suspend_product_agents(agent: &MvpAgent, force_notify: bool) {
     let removed = agent
         .agentmesh360
         .registry()
-        .main_session_ids()
+        .all_main_session_ids()
         .map(|ids| ids.into_iter().collect())
         .unwrap_or_default();
     agent.emit_roster_changed(Vec::new(), removed);
@@ -205,35 +225,57 @@ pub(crate) fn require_product_session_access(
     agent: &MvpAgent,
     session_id: &acp::SessionId,
 ) -> Result<(), acp::Error> {
-    let is_product_session = agent
+    let owner_account_id = agent
         .agentmesh360
         .registry()
-        .contains_main_session(session_id.0.as_ref())
+        .main_session_owner(session_id.0.as_ref())
         .map_err(|_| {
             acp::Error::internal_error().data("failed to verify AgentMesh360 session identity")
         })?;
-    if is_product_session {
-        require_runtime_access(agent)?;
+    let Some(owner_account_id) = owner_account_id else {
+        return Ok(());
+    };
+
+    require_runtime_access(agent)?;
+    let current_account_id = agent
+        .agentmesh360
+        .access
+        .current_account_id()
+        .ok_or_else(|| acp::Error::auth_required().data("AgentMesh360 access is unavailable"))?;
+    if owner_account_id != Some(current_account_id) {
+        return Err(acp::Error::invalid_params().data("session not found"));
     }
     Ok(())
 }
 
 pub(crate) fn hidden_product_session_ids(agent: &MvpAgent) -> Result<HashSet<String>, acp::Error> {
-    if agent.agentmesh360.access.is_granted() {
-        return Ok(HashSet::new());
-    }
-    suspend_product_agents(agent, false);
-    agent
+    let all_product_sessions = agent
         .agentmesh360
         .registry()
-        .main_session_ids()
+        .all_main_session_ids()
         .map_err(|_| {
             acp::Error::internal_error().data("failed to protect AgentMesh360 session history")
-        })
+        })?;
+    let Some(owner_account_id) = agent.agentmesh360.access.current_account_id() else {
+        suspend_product_agents(agent, false);
+        return Ok(all_product_sessions);
+    };
+    let visible_sessions = agent
+        .agentmesh360
+        .registry()
+        .main_session_ids(owner_account_id)
+        .map_err(|_| {
+            acp::Error::internal_error().data("failed to read AgentMesh360 account sessions")
+        })?;
+    Ok(all_product_sessions
+        .difference(&visible_sessions)
+        .cloned()
+        .collect())
 }
 
 fn list_agents(agent: &MvpAgent) -> Result<Vec<ProductAgentRecord>> {
-    let mut records = agent.agentmesh360.registry().list()?;
+    let owner_account_id = current_account_id(agent)?;
+    let mut records = agent.agentmesh360.registry().list(owner_account_id)?;
     for record in &mut records {
         refresh_runtime_view(agent, record);
     }
@@ -241,7 +283,11 @@ fn list_agents(agent: &MvpAgent) -> Result<Vec<ProductAgentRecord>> {
 }
 
 async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> {
-    let record = agent.agentmesh360.registry().prepare_activation(agent_id)?;
+    let owner_account_id = current_account_id(agent)?;
+    let record = agent
+        .agentmesh360
+        .registry()
+        .prepare_activation(owner_account_id, agent_id)?;
     let session_id = record
         .main_session_id
         .as_deref()
@@ -253,8 +299,11 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
         agent
             .agentmesh360
             .registry()
-            .mark_runtime(agent_id, "resident", None)?;
-        let mut agent_record = agent.agentmesh360.registry().get(agent_id)?;
+            .mark_runtime(owner_account_id, agent_id, "resident", None)?;
+        let mut agent_record = agent
+            .agentmesh360
+            .registry()
+            .get(owner_account_id, agent_id)?;
         refresh_runtime_view(agent, &mut agent_record);
         return Ok(ActivateResponse {
             agent: agent_record,
@@ -272,6 +321,7 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
     let mut meta = acp::Meta::new();
     meta.insert("agentProfile".into(), profile.to_json_value());
     meta.insert("agentmesh360AgentId".into(), agent_id.into());
+    meta.insert("agentmesh360AccountId".into(), owner_account_id.into());
     meta.insert(
         "clientIdentifier".into(),
         "agentmesh360-product-agent".into(),
@@ -294,11 +344,16 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
     match session_result {
         Ok(actual_session_id) if actual_session_id == session_id => {
             agent.agentmesh360.pin(session_id);
-            agent
+            agent.agentmesh360.registry().mark_runtime(
+                owner_account_id,
+                agent_id,
+                "resident",
+                None,
+            )?;
+            let mut agent_record = agent
                 .agentmesh360
                 .registry()
-                .mark_runtime(agent_id, "resident", None)?;
-            let mut agent_record = agent.agentmesh360.registry().get(agent_id)?;
+                .get(owner_account_id, agent_id)?;
             refresh_runtime_view(agent, &mut agent_record);
             Ok(ActivateResponse {
                 agent: agent_record,
@@ -310,18 +365,22 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
                 "Grok session identity mismatch: expected {}, received {}",
                 session_id.0, actual_session_id.0
             );
-            let _ = agent
-                .agentmesh360
-                .registry()
-                .mark_runtime(agent_id, "error", Some(&error));
+            let _ = agent.agentmesh360.registry().mark_runtime(
+                owner_account_id,
+                agent_id,
+                "error",
+                Some(&error),
+            );
             Err(anyhow!(error))
         }
         Err(error) => {
             let message = error.to_string();
-            let _ = agent
-                .agentmesh360
-                .registry()
-                .mark_runtime(agent_id, "error", Some(&message));
+            let _ = agent.agentmesh360.registry().mark_runtime(
+                owner_account_id,
+                agent_id,
+                "error",
+                Some(&message),
+            );
             Err(anyhow!(error).context(format!("activate {agent_id}")))
         }
     }
@@ -365,7 +424,14 @@ pub(crate) fn spawn_restore_activated_agents(agent: &MvpAgent) {
     let agent_ref = LocalRef::new(agent);
     tokio::task::spawn_local(async move {
         let agent = agent_ref.get();
-        let records = match agent.agentmesh360.registry().list() {
+        let owner_account_id = match current_account_id(agent) {
+            Ok(owner_account_id) => owner_account_id,
+            Err(error) => {
+                tracing::error!(%error, "cannot restore AgentMesh360 agents without account access");
+                return;
+            }
+        };
+        let records = match agent.agentmesh360.registry().list(owner_account_id) {
             Ok(records) => records,
             Err(error) => {
                 tracing::error!(%error, "failed to read persistent AgentMesh360 agents at startup");
@@ -381,4 +447,12 @@ pub(crate) fn spawn_restore_activated_agents(agent: &MvpAgent) {
             }
         }
     });
+}
+
+fn current_account_id(agent: &MvpAgent) -> Result<i64> {
+    agent
+        .agentmesh360
+        .access
+        .current_account_id()
+        .ok_or_else(|| anyhow!("AgentMesh360 account access is unavailable"))
 }

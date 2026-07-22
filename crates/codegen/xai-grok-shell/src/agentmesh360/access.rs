@@ -172,6 +172,10 @@ impl ClientAccess {
         self.require().is_ok()
     }
 
+    pub fn invalidate(&self) {
+        self.state.replace(AccessState::Unverified);
+    }
+
     pub fn remaining_validity(&self) -> Option<Duration> {
         match &*self.state.borrow() {
             AccessState::Granted { valid_until, .. } => {
@@ -300,6 +304,9 @@ mod tests {
         assert!(access.is_granted());
         assert_eq!(access.current_account_id(), Some(1));
         access.require().expect("granted");
+        access.invalidate();
+        assert!(!access.is_granted());
+        assert_eq!(access.current_account_id(), None);
         let request = server.await.expect("server");
         assert!(request.starts_with("GET /v1/account/client-bootstrap HTTP/1.1"));
         assert!(

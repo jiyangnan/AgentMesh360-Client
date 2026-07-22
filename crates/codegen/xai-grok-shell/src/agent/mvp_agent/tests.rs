@@ -3352,7 +3352,7 @@ fn disconnect_keeps_idle_product_agent_session_resident() {
     run_local_for_bridge_test(|| async {
         let agent = build_minimal_agent_for_tests();
         let sid = acp::SessionId::new(
-            crate::agentmesh360::registry::stable_main_session_id("job-agent").to_string(),
+            crate::agentmesh360::registry::stable_main_session_id(1, "job-agent").to_string(),
         );
         let (handle, _cmd_tx, mut cmd_rx) = make_live_session_handle(&sid, None);
         agent.sessions.borrow_mut().insert(sid.clone(), handle);

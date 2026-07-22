@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B 已实现，切片 C 开发中
+状态：调研完成，切片 A/B/C0 已实现，切片 C1 开发中
 
 调研日期：2026-07-22
 
@@ -878,12 +878,14 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
 - 将 Profile、Policy、Assignment 编译为非秘密 `PreparedRoute`；
 - 建立数据优先级、Quirk 白名单和 Catalog 失败回退测试。
 
-### 切片 C：先实现 Session Binding
+### 切片 C：先隔离账户，再实现 Session Binding
 
-状态：**开发中（2026-07-23）**
+状态：**C0 已实现，C1 开发中（2026-07-23）**
 
+- C0 已把产品 Agent、Main Session、Workspace 与历史可见性按账户隔离，并完成旧状态
+  首次有效账号认领；
 - Main Session 固化不可变 Provider Binding 与 route revision；
-- 每 Turn 记录非秘密路由快照；
+- 建立每 Turn 非秘密实际路由记录的存储接口，但只允许切片 D 在 Sampling 请求提交点写入；
 - Profile/Catalog 更新不改变已有 Binding；
 - 实现继续原 Provider、兼容迁移分支与回滚语义。
 

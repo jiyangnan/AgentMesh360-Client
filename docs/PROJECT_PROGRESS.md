@@ -26,9 +26,9 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、确定性 Main Session、激活、恢复与 pin 基础已实现 | 独立后台 Host、自启动与 UI 重连 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B 已完成：Profile/Vault、Catalog、Capability、Policy、Assignment、RouteCompiler | 切片 C：不可变 Session Binding 与 Turn 路由快照 |
+| Provider Control Plane | 切片 A/B 与 C0 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离 | 切片 C1：不可变 Session Binding 与 Turn 路由快照 |
 | Provider Sampling | 仍使用 Grok 原有配置路径，AgentMesh 路由尚未接入 | 切片 D：PreparedRoute 投影到现有三协议 Backend |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | Session Binding 完成后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
@@ -75,7 +75,7 @@ Keychain 做破坏性验证。
 
 状态：已完成
 
-本地提交：`feat: add provider catalog and routing control plane`
+本地提交：`010c16d feat: add provider catalog and routing control plane`
 
 本轮目标：
 
@@ -141,15 +141,72 @@ Keychain 做破坏性验证。
 
 ### 循环 3：Provider 切片 C——不可变 Session Binding
 
-状态：开发中
+状态：开发中（C0 已完成，C1 已启动）
 
 本轮目标：
 
-1. 固化 `SessionProviderBinding` 的追加式 revision 与非秘密快照契约；
-2. 首次绑定保存完整 `PreparedRoute` 快照，Profile/Catalog/Assignment 更新不改写它；
-3. 显式切换时生成新 binding revision，同时保留旧 revision；
-4. 建立每 Turn 的非秘密实际路由记录接口，为切片 D 调用；
-5. Profile 删除或 Key 失效时保留 Binding 与历史，但执行必须失败关闭。
+1. 先完成 C0：产品 Agent Registry、Main Session 与 Workspace 按 `account_id` 隔离，
+   旧单账户状态由首次有效账号认领；
+2. 固化 `SessionProviderBinding` 的追加式 revision 与非秘密快照契约；
+3. 首次绑定保存完整 `PreparedRoute` 快照，Profile/Catalog/Assignment 更新不改写它；
+4. 显式切换时生成新 binding revision，同时保留旧 revision；
+5. 建立每 Turn 的非秘密实际路由记录接口，为切片 D 调用；
+6. Profile 删除或 Key 失效时保留 Binding 与历史，但执行必须失败关闭。
+
+本轮计划复盘发现：现有 Registry 只按 `agent_id` 全局唯一，同机切换两个有效账号可能
+复用同一产品 Agent 历史。直接实现 Binding 会把该问题固化，因此把账户隔离列为 C0
+硬前置。决策与迁移语义见
+[`architecture/ADR_ACCOUNT_SCOPED_SESSIONS_AND_BINDINGS.md`](architecture/ADR_ACCOUNT_SCOPED_SESSIONS_AND_BINDINGS.md)。
+
+#### C0 检查点：账户隔离的持久产品 Agent
+
+状态：已完成
+
+本地提交：待 C0 检查点提交后回填
+
+已经实现：
+
+- `state.db v4` 将产品 Agent 唯一键改为 `(owner_account_id, agent_id)`；
+- 新 Main Session UUID 与 Workspace 同时包含账户边界；
+- v3 旧 Registry 行先迁移为 unowned，由第一次通过订阅门禁的账号原子认领，原
+  Main Session、Workspace 和激活状态不丢失；
+- 有效账号切换时清除旧 pin/restore 视图，只恢复当前账号的运行中 Agent；
+- Session 列表隐藏其他账号与未认领的产品 Session，直接用其 ID 访问也返回不可见；
+- 订阅失效、退出登录和账号切换均只撤销访问与驻留，不删除磁盘历史；
+- Bootstrap 后的账户状态初始化如果失败，会撤销本次 Host 准入并失败关闭。
+
+验证证据：
+
+- `xai-grok-shell agentmesh360`：33 个测试通过；
+- 持久 Session disconnect 回归：1 个测试通过；
+- 桌面：18 个测试通过、1 个可选真实 Host 测试默认跳过；
+- 真实 Grok Host ACP 契约：v3 旧会话由账号 A 认领，切到账号 B 不可见，切回 A
+  仍恢复同一 Main Session；订阅失效后继续被硬门禁拒绝；
+- Rustfmt、Clippy `-D warnings`、桌面语法检查和真实 Host 构建通过。
+
+计划复盘：
+
+- 账户隔离被放在 Binding 之前完成，没有把跨账号复用风险写入新协议；
+- Session 磁盘状态没有随门禁或账号切换删除，符合“失效时保留可恢复状态”的产品边界；
+- 账户 ID 只作为 Host 内部范围和 Session 元数据使用，不进入产品 Agent API 响应；
+- C0 使用了 `state.db v4`，因此 Binding schema 顺延为 v5，不能覆盖或伪装成 v4；
+- 当前 Electron 仍随 UI 退出停止 Host，C0 只解决身份隔离，不把后台常驻误标为完成。
+
+#### C1 下一轮：不可变 SessionProviderBinding
+
+目标：
+
+1. 用 `state.db v5` 建立追加式 Binding revision，完整保存非秘密 `PreparedRoute` 快照；
+2. 首次获取当前 Binding 时只创建一次，后续 Profile/Catalog/Assignment 变化不静默漂移；
+3. 显式切换创建下一 revision，旧 revision 与历史继续可读；
+4. Profile 被删除后 Binding 仍保留，但执行路由解析失败关闭；
+5. 提供账户隔离的 ACP 读取/显式切换入口和桌面 Host Client 合同。
+
+验收条件：并发/重复首次绑定幂等、revision 单调递增、跨账号不可见、快照不含
+Credential Ref/API Key/Header、删除 Profile 不级联 Binding，并通过 v4→v5 无损迁移测试。
+
+C1 非目标：不发送真实模型请求；不在“准备路由”时伪造实际 Turn 记录；不实现
+Renderer 设置 UI。实际 Turn 路由只能由切片 D 在 Sampling 请求提交点记录。
 
 本轮非目标：不发送真实模型请求、不声称跨 Provider 历史可无损迁移、不实现 UI。
 
