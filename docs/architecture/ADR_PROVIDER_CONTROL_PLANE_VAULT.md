@@ -155,5 +155,6 @@ URL 或操作系统安全存储原始错误体。
 - Windows/Linux 客户端在各自 Vault Backend 完成前不能配置 BYOK；
 - 独立 Host/Supervisor 完成前，进程生命周期仍未达到最终常驻目标；
 - Catalog、Assignment、Binding、RouteCompiler、Credential Lease、三协议投影和产品
-  Session 主 Prompt 的 Sampling/Turn Route 接入已实现，并已用本机 mock Provider 验证；
-  完整 Host ACP E2E、辅助推理旁路、Provider UI 与真实 Provider E2E 仍需后续切片实现。
+  Session 主 Prompt 的 Sampling/Turn Route 接入已实现；无 Grok 登录的 Host ACP mock
+  成功链已验证实际 endpoint、Bearer、model 与审计一致。失败门槛矩阵、辅助推理旁路、
+  Provider UI 与真实 Provider E2E 仍需后续切片实现。

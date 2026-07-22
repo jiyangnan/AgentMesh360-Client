@@ -94,8 +94,9 @@ Route 可信存储接口；D0 已完成现有 Harness 的凭据诊断安全加�
 Credential Lease 与三协议投影，D1b 已固化 actor 接收后写 Turn Route 的提交协调器和
 失败/幂等时序，D1c0 已保证同一 Turn 的 tool/retry 多次调用保持同一 Binding。该路径
 D1c1 已以 Host 可信 Session Route Context 接到产品 Session 主 Prompt 推理边界，同时
-覆盖用户 Prompt 和 synthetic auto-wake，并在 actor 接收后记录实际 Turn Route。完整
-Host ACP mock E2E、辅助推理消费者审计、Provider UI 和真实 Provider E2E 仍未实现。
+覆盖用户 Prompt 和 synthetic auto-wake，并在 actor 接收后记录实际 Turn Route。D1c2
+已经用无 Grok 登录的真实 Job Agent 激活和 Prompt 跑通 Host ACP mock 成功链；失败门槛
+矩阵、辅助推理消费者审计、Provider UI 和真实 Provider E2E 仍未实现。
 
 当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
 因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和
