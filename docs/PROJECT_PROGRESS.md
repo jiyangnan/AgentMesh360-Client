@@ -481,12 +481,47 @@ Renderer 设置 UI。
 
 ### 循环 9：Provider 切片 D1c2——完整 Host ACP mock E2E
 
-状态：已启动
+状态：开发中；测试依赖注入子模块已完成
+
+阶段提交：
+
+- `5cfc926 test: share host vault across provider routing`
+
+已完成子模块：
+
+- `AgentMesh360Runtime` 显式持有同一份 state home 与 `RuntimeCredentialVault`，Provider
+  管理、Model Routing、Session Route Context 和 Credential Lease 不再各自重新读取
+  环境默认值；
+- 生产构建中的 `RuntimeCredentialVault` 只有系统 Vault 变体；共享 Memory Vault 变体、
+  `for_host_test` 构造器和秘密读取能力全部受 `cfg(test)` 限制，没有环境变量测试后门；
+- 测试 Memory Vault 改为线程安全的共享实例，使 ACP 创建 Provider 时写入的凭据可由
+  SessionActor 所在线程的 Prompt Lease 使用；其 Debug 与 Runtime Vault Debug 均脱敏；
+- 新增 Host 组合测试，已经覆盖本机 Core bootstrap、Provider ACP 创建、Agent 级 Model
+  Assignment、产品 Main Session 身份、Prompt 路由准备、提交接受和 Turn Route 管理 ACP
+  查询；Provider secret 不出现在 Provider/Turn Route 响应或 Debug 中。
+
+阶段验证：
+
+- AgentMesh360 模块回归 55 项全部通过；
+- Host 共享 Vault 定向测试通过，credits 为 0 的有效订阅仍允许进入；
+- Shell 全 target Clippy `-D warnings`、Rustfmt 与 diff 检查通过；
+- 测试仅访问本机临时 Core 端口，尚未启动真实产品 SessionActor，也未调用真实 Provider；
+- 构建再次触发磁盘满后，只删除了本仓库约 13 GB 可重建的
+  `target/debug/incremental`，并以 `CARGO_INCREMENTAL=0` 完成验证。
+
+阶段计划复盘：
+
+- 当前组合测试证明了“同一 Host 依赖图”成立，但用 `prepare_activation` 和假提交器替代了
+  `agents/activate`、`session/prompt` 与真实 SamplerActor，因此不能把 D1c2 标记完成；
+- 继续沿既定 D1c2 主线推进，下一子模块必须复用本测试注入缝并调用真实 Agent 激活和
+  Prompt actor，不新增第二套路由服务；
+- 原计划的失效订阅、跨账户和缺失配置失败门槛仍未在 Host 全链测试覆盖，保持为本循环
+  验收项；Provider UI、真实计费请求和辅助推理改造仍不是当前子模块范围。
 
 本轮目标：
 
-1. 为测试建立只在 `cfg(test)` 可用的 Memory Vault/本机 mock Provider 注入缝，不在生产
-   暴露 Vault 读取或绕过 Keychain；
+1. ~~为测试建立只在 `cfg(test)` 可用的 Memory Vault/本机 mock Provider 注入缝，不在
+   生产暴露 Vault 读取或绕过 Keychain；~~ 已完成
 2. 通过真实 MvpAgent/ACP 路径覆盖 Core bootstrap、Provider 创建、Model Assignment、
    产品 Agent 激活/加载、Prompt、Sampler actor 和 Turn Route 查询；
 3. 断言订阅无效、跨账户、缺失 Assignment/Vault 都在 Prompt 提交前失败关闭且不产生
