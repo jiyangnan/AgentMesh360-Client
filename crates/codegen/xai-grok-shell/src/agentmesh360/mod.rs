@@ -842,6 +842,15 @@ mod tests {
                         Ok(())
                     })
                     .expect("accept bound turn");
+                let mut vision_route = route_context
+                    .prepare_turn_for_role(&session_id, "vision", "turn-host-shared-vault-vision")
+                    .expect("prepare auxiliary role with main Assignment fallback");
+                vision_route
+                    .submit(|config| {
+                        assert_eq!(config.model, "model-main");
+                        Ok(())
+                    })
+                    .expect("accept auxiliary bound turn");
 
                 let history = handle(
                     &agent,
@@ -864,6 +873,24 @@ mod tests {
                         .contains("sentinel-provider-secret-1234")
                 );
                 assert!(!format!("{route:?}").contains("sentinel-provider-secret-1234"));
+
+                let vision_binding = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::BINDING_RESOLVE_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "vision",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("vision Binding response");
+                let vision_binding = ext_result(vision_binding);
+                assert_eq!(vision_binding["binding"]["role"], "vision");
+                assert_eq!(vision_binding["binding"]["route"]["assignmentRole"], "main");
+                assert!(!format!("{vision_route:?}").contains("sentinel-provider-secret-1234"));
             })
             .await;
     }

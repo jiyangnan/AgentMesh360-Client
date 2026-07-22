@@ -446,11 +446,17 @@ pub struct PreparedRoute {
     pub model_id: String,
     pub profile_route_revision: u64,
     pub assignment_id: String,
+    #[serde(default = "default_assignment_role")]
+    pub assignment_role: String,
     pub assignment_revision: u64,
     pub catalog_revision: u64,
     pub capability: ModelCapability,
     pub quirks: Vec<ProviderQuirk>,
     pub warnings: Vec<String>,
+}
+
+fn default_assignment_role() -> String {
+    "main".into()
 }
 
 impl PreparedRoute {
@@ -491,7 +497,7 @@ impl RouteCompiler {
         request: RouteCompileRequest<'_>,
         policy: &AgentModelPolicy,
     ) -> Result<PreparedRoute> {
-        let assignment = self.assignments.resolve(
+        let assignment = self.assignments.resolve_with_main_fallback(
             owner_account_id,
             request.role,
             request.agent_id,
@@ -509,6 +515,12 @@ impl RouteCompiler {
         }
 
         let mut warnings = Vec::new();
+        if assignment.role != request.role {
+            warnings.push(format!(
+                "role {} uses fallback assignment role {}",
+                request.role, assignment.role
+            ));
+        }
         let preset = profile
             .preset_id
             .as_deref()
@@ -585,6 +597,7 @@ impl RouteCompiler {
             model_id: assignment.model_id,
             profile_route_revision: profile.route_revision,
             assignment_id: assignment.assignment_id,
+            assignment_role: assignment.role,
             assignment_revision: assignment.assignment_revision,
             catalog_revision: self.catalog.catalog_revision,
             capability,
@@ -729,6 +742,46 @@ mod tests {
         assert!(!json.contains("credential"));
         assert!(!json.contains("1234"));
         assert!(!json.contains("apiKey"));
+    }
+
+    #[test]
+    fn auxiliary_route_records_main_assignment_fallback_without_changing_requested_role() {
+        let (temp, catalog, profiles, assignments) = setup();
+        insert_profile(&profiles, "https://models.example/v1");
+        insert_assignment(&assignments);
+        let compiler = RouteCompiler::in_home(catalog, temp.path());
+
+        let route = compiler
+            .compile(
+                17,
+                RouteCompileRequest {
+                    role: "vision",
+                    agent_id: Some("job-agent"),
+                    session_id: Some("session-a"),
+                },
+                &AgentModelPolicy::default(),
+            )
+            .expect("compile auxiliary fallback route");
+
+        assert_eq!(route.assignment_role, "main");
+        assert_eq!(route.model_id, "verified-model");
+        assert!(
+            route
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("vision uses fallback assignment role main"))
+        );
+        let mut legacy = serde_json::to_value(&route).expect("serialize route");
+        legacy
+            .as_object_mut()
+            .expect("route object")
+            .remove("assignmentRole");
+        assert_eq!(
+            serde_json::from_value::<PreparedRoute>(legacy)
+                .expect("legacy route without assignmentRole")
+                .assignment_role,
+            "main"
+        );
     }
 
     #[test]

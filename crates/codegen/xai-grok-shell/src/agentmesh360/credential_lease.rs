@@ -295,6 +295,7 @@ mod tests {
                     model_id: format!("model-{suffix}"),
                     profile_route_revision: 1,
                     assignment_id: format!("ma_{suffix}"),
+                    assignment_role: "main".into(),
                     assignment_revision: 1,
                     catalog_revision: 1,
                     capability: capability(),

@@ -89,7 +89,6 @@ pub struct TurnSubmissionCoordinator {
 pub struct AgentMeshSessionRouteContext {
     owner_account_id: i64,
     agent_id: String,
-    role: String,
     access: ClientAccessGuard,
     state_home: std::path::PathBuf,
     vault: RuntimeCredentialVault,
@@ -106,7 +105,6 @@ impl AgentMeshSessionRouteContext {
         Self {
             owner_account_id,
             agent_id,
-            role: "main".into(),
             access,
             state_home,
             vault,
@@ -114,6 +112,15 @@ impl AgentMeshSessionRouteContext {
     }
 
     pub fn prepare_turn(&self, session_id: &str, turn_id: &str) -> Result<ProductTurnRoute> {
+        self.prepare_turn_for_role(session_id, "main", turn_id)
+    }
+
+    pub fn prepare_turn_for_role(
+        &self,
+        session_id: &str,
+        role: &str,
+        turn_id: &str,
+    ) -> Result<ProductTurnRoute> {
         self.access
             .require()
             .map_err(|_| anyhow::anyhow!("AgentMesh360 subscription access is unavailable"))?;
@@ -121,14 +128,14 @@ impl AgentMeshSessionRouteContext {
             self.owner_account_id,
             session_id,
             &self.agent_id,
-            &self.role,
+            role,
         )?;
         let resolver = CredentialLeaseResolver::in_home(&self.state_home, self.vault.clone());
         let prepared = TurnSubmissionCoordinator::in_home(&self.state_home).prepare(
             &resolver,
             self.owner_account_id,
             session_id,
-            &self.role,
+            role,
             turn_id,
         )?;
         Ok(ProductTurnRoute::Prepared(Some(Box::new(prepared))))
@@ -264,6 +271,7 @@ mod tests {
             model_id: "turn-model".into(),
             profile_route_revision: profile_revision,
             assignment_id: "ma_turn".into(),
+            assignment_role: "main".into(),
             assignment_revision: profile_revision,
             catalog_revision: 1,
             capability: ModelCapability::unknown(),

@@ -211,36 +211,31 @@ impl ModelAssignmentStore {
     ) -> Result<ModelAssignmentRecord> {
         let role = normalized_identifier(role, "model role")?;
         let conn = super::state::open(&self.state_home)?;
-        if let Some(session_id) = session_id
-            && let Some(record) = get_exact(
-                &conn,
-                owner_account_id,
-                AssignmentScopeKind::Session,
-                session_id,
-                &role,
-            )?
+        resolve_role(&conn, owner_account_id, &role, agent_id, session_id)?
+            .ok_or_else(|| anyhow!("no model assignment is configured for role {role}"))
+    }
+
+    pub fn resolve_with_main_fallback(
+        &self,
+        owner_account_id: i64,
+        role: &str,
+        agent_id: Option<&str>,
+        session_id: Option<&str>,
+    ) -> Result<ModelAssignmentRecord> {
+        let role = normalized_identifier(role, "model role")?;
+        let conn = super::state::open(&self.state_home)?;
+        if let Some(record) = resolve_role(&conn, owner_account_id, &role, agent_id, session_id)? {
+            return Ok(record);
+        }
+        if role != "main"
+            && let Some(record) =
+                resolve_role(&conn, owner_account_id, "main", agent_id, session_id)?
         {
             return Ok(record);
         }
-        if let Some(agent_id) = agent_id
-            && let Some(record) = get_exact(
-                &conn,
-                owner_account_id,
-                AssignmentScopeKind::Agent,
-                agent_id,
-                &role,
-            )?
-        {
-            return Ok(record);
-        }
-        get_exact(
-            &conn,
-            owner_account_id,
-            AssignmentScopeKind::Global,
-            "",
-            &role,
-        )?
-        .ok_or_else(|| anyhow!("no model assignment is configured for role {role}"))
+        Err(anyhow!(
+            "no model assignment is configured for role {role} or fallback role main"
+        ))
     }
 
     pub fn delete(&self, owner_account_id: i64, assignment_id: &str) -> Result<()> {
@@ -255,6 +250,44 @@ impl ModelAssignmentStore {
         }
         Ok(())
     }
+}
+
+fn resolve_role(
+    conn: &Connection,
+    owner_account_id: i64,
+    role: &str,
+    agent_id: Option<&str>,
+    session_id: Option<&str>,
+) -> Result<Option<ModelAssignmentRecord>> {
+    if let Some(session_id) = session_id
+        && let Some(record) = get_exact(
+            conn,
+            owner_account_id,
+            AssignmentScopeKind::Session,
+            session_id,
+            role,
+        )?
+    {
+        return Ok(Some(record));
+    }
+    if let Some(agent_id) = agent_id
+        && let Some(record) = get_exact(
+            conn,
+            owner_account_id,
+            AssignmentScopeKind::Agent,
+            agent_id,
+            role,
+        )?
+    {
+        return Ok(Some(record));
+    }
+    get_exact(
+        conn,
+        owner_account_id,
+        AssignmentScopeKind::Global,
+        "",
+        role,
+    )
 }
 
 fn get_exact(
@@ -426,6 +459,54 @@ mod tests {
                 .expect("global assignment")
                 .model_id,
             "global-model"
+        );
+    }
+
+    #[test]
+    fn auxiliary_role_prefers_its_full_scope_chain_then_falls_back_to_main() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let profiles = ProviderProfileStore::in_home(temp.path());
+        let assignments = ModelAssignmentStore::in_home(temp.path());
+        profile(&profiles, 7, "pp_main", "Main");
+        profile(&profiles, 7, "pp_vision", "Vision");
+
+        assignments
+            .upsert(
+                7,
+                assignment(
+                    AssignmentScopeKind::Session,
+                    Some("session-1"),
+                    "pp_main",
+                    "main-session-model",
+                ),
+            )
+            .expect("main session assignment");
+
+        let fallback = assignments
+            .resolve_with_main_fallback(7, "vision", Some("job-agent"), Some("session-1"))
+            .expect("vision falls back to main");
+        assert_eq!(fallback.role, "main");
+        assert_eq!(fallback.model_id, "main-session-model");
+
+        let mut vision = assignment(
+            AssignmentScopeKind::Global,
+            None,
+            "pp_vision",
+            "vision-global-model",
+        );
+        vision.role = "vision".into();
+        assignments.upsert(7, vision).expect("vision assignment");
+
+        let exact = assignments
+            .resolve_with_main_fallback(7, "vision", Some("job-agent"), Some("session-1"))
+            .expect("dedicated vision assignment");
+        assert_eq!(exact.role, "vision");
+        assert_eq!(exact.model_id, "vision-global-model");
+        assert!(
+            assignments
+                .resolve_with_main_fallback(7, "memory", Some("job-agent"), Some("missing"))
+                .is_err(),
+            "an unrelated Session-scoped main Assignment must not cross Session identity"
         );
     }
 

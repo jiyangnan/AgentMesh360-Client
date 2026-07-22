@@ -279,6 +279,7 @@ mod tests {
             model_id: model_id.into(),
             profile_route_revision: 1,
             assignment_id: "ma_main".into(),
+            assignment_role: "main".into(),
             assignment_revision: 1,
             catalog_revision: 1,
             capability: ModelCapability::unknown(),
