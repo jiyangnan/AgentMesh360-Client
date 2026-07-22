@@ -982,8 +982,11 @@ impl SessionActor {
     pub(crate) async fn run_turn_via_sampler(
         self: &Arc<Self>,
         request: ConversationRequest,
+        product_turn_route: Option<&mut crate::agentmesh360::ProductTurnRoute>,
     ) -> Result<SamplerTurnOutcome, acp::Error> {
-        self.prepare_sampler_for_turn().await;
+        if product_turn_route.is_none() {
+            self.prepare_sampler_for_turn().await;
+        }
         let stream_drained_rx = {
             let (tx, rx) = tokio::sync::oneshot::channel();
             *self.turn_stream_drained.lock() = Some(tx);
@@ -991,11 +994,28 @@ impl SessionActor {
         };
         let request_id = xai_grok_sampler::RequestId::random();
         let request_id_str = request_id.as_str().to_string();
-        match self
-            .sampler_handle
-            .submit_and_collect(request_id, request)
-            .await
-        {
+        let sampling_result = if let Some(route) = product_turn_route {
+            let pending = match route.submit(|config| {
+                self.sampler_handle
+                    .begin_submit_and_collect_with_config(request_id.clone(), request, config)
+                    .map_err(anyhow::Error::new)
+            }) {
+                Ok(pending) => pending,
+                Err(error) => {
+                    self.turn_stream_drained.lock().take();
+                    return Err(acp::Error::internal_error().data(serde_json::json!({
+                        "code": "agentmesh360_bound_turn_submission_failed",
+                        "message": error.to_string(),
+                    })));
+                }
+            };
+            pending.collect().await
+        } else {
+            self.sampler_handle
+                .submit_and_collect(request_id, request)
+                .await
+        };
+        match sampling_result {
             Ok((response, metrics)) => {
                 let span = tracing::Span::current();
                 span.record("request_id", request_id_str.as_str());

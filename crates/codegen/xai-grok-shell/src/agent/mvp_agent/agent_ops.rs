@@ -2992,7 +2992,7 @@ impl MvpAgent {
             std::sync::Arc::new(TerminalRunner::new(notifier, session_info.id.clone()))
         };
         let load_envrc = self.cfg.borrow().session.load_envrc.unwrap_or(true);
-        let startup_hints = init
+        let mut startup_hints = init
             .meta
             .as_ref()
             .and_then(|m| m.get("startupHints"))
@@ -3000,6 +3000,13 @@ impl MvpAgent {
                 serde_json::from_value::<crate::session::StartupHints>(v.clone()).ok()
             })
             .unwrap_or_default();
+        startup_hints.agentmesh360_route = self
+            .agentmesh360
+            .session_route_context(&session_info.id)
+            .map_err(|error| {
+                acp::Error::internal_error()
+                    .data(format!("failed to resolve product Session route identity: {error}"))
+            })?;
         let hunk_plan = plan_hunk_tracking(
             init
                 .client_capabilities

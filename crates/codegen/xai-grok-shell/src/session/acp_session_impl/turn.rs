@@ -771,6 +771,18 @@ impl SessionActor {
         let turn_model_id = self.current_model_id().await;
         let doom_event_model = turn_model_id.clone();
         let turn_timer = std::time::Instant::now();
+        let mut product_turn_route = self
+            .startup_hints
+            .agentmesh360_route
+            .as_ref()
+            .map(|context| context.prepare_turn(self.session_info.id.0.as_ref(), prompt_id))
+            .transpose()
+            .map_err(|error| {
+                acp::Error::internal_error().data(serde_json::json!({
+                    "code": "agentmesh360_provider_route_required",
+                    "message": error.to_string(),
+                }))
+            })?;
         let result = {
             let mut round_trace = trace_gcs_config;
             let mut round_artifact = artifact_tracker;
@@ -787,6 +799,7 @@ impl SessionActor {
                         round_trace.take(),
                         round_artifact.take(),
                         json_schema.clone(),
+                        &mut product_turn_route,
                     )
                     .await;
                 if !matches!(round, Ok(TurnOutcome::Completed { .. })) {
@@ -1382,6 +1395,7 @@ impl SessionActor {
         trace_gcs_config: Option<crate::session::repo_changes::TraceExportConfig>,
         artifact_tracker: Option<crate::upload::manifest::ArtifactTracker>,
         json_schema: Option<serde_json::Value>,
+        product_turn_route: &mut Option<crate::agentmesh360::ProductTurnRoute>,
     ) -> Result<TurnOutcome, acp::Error> {
         let _ = self.compaction.auto_compact_suppressed.compare_exchange(
             crate::session::compaction_config::SUPPRESS_TURN,
@@ -1399,6 +1413,7 @@ impl SessionActor {
                         trace_gcs_config,
                         artifact_tracker.as_ref(),
                         json_schema,
+                        product_turn_route,
                     )
                     .await;
             }
@@ -1412,6 +1427,7 @@ impl SessionActor {
                         trace_gcs_config,
                         artifact_tracker.as_ref(),
                         json_schema,
+                        product_turn_route,
                     )
                     .await;
             }
@@ -1424,6 +1440,7 @@ impl SessionActor {
                 trace_gcs_config.clone(),
                 artifact_tracker.as_ref(),
                 json_schema.clone(),
+                product_turn_route,
             )
             .await;
         if matches!(result, Ok(TurnOutcome::MaxTurnsReached { .. })) {
@@ -1488,6 +1505,7 @@ impl SessionActor {
                     trace_gcs_config.clone(),
                     artifact_tracker.as_ref(),
                     None,
+                    product_turn_route,
                 )
                 .await;
             if matches!(result, Ok(TurnOutcome::MaxTurnsReached { .. })) {
@@ -1729,6 +1747,7 @@ impl SessionActor {
         trace_gcs_config: Option<crate::session::repo_changes::TraceExportConfig>,
         artifact_tracker: Option<&crate::upload::manifest::ArtifactTracker>,
         json_schema: Option<serde_json::Value>,
+        product_turn_route: &mut Option<crate::agentmesh360::ProductTurnRoute>,
     ) -> Result<TurnOutcome, acp::Error> {
         let conv_turn_start = std::time::Instant::now();
         self.maybe_refresh_model_metadata_on_resume().await;
@@ -1945,7 +1964,10 @@ impl SessionActor {
                 )),
             );
             let model_timer = std::time::Instant::now();
-            let (response, latency) = match self.run_turn_via_sampler(request.clone()).await? {
+            let (response, latency) = match self
+                .run_turn_via_sampler(request.clone(), product_turn_route.as_mut())
+                .await?
+            {
                 SamplerTurnOutcome::Response(r, latency) => (r, latency),
                 SamplerTurnOutcome::CompactAndResubmit => {
                     auth_retry_schedule.reset();

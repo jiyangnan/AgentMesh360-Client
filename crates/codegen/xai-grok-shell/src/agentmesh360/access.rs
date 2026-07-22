@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use agent_client_protocol as acp;
@@ -97,7 +97,28 @@ impl BootstrapError {
 pub struct ClientAccess {
     client: reqwest::Client,
     core_base_url: String,
-    state: RefCell<AccessState>,
+    state: Arc<parking_lot::Mutex<AccessState>>,
+}
+
+#[derive(Clone)]
+pub struct ClientAccessGuard {
+    state: Arc<parking_lot::Mutex<AccessState>>,
+    owner_account_id: i64,
+}
+
+impl std::fmt::Debug for ClientAccessGuard {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ClientAccessGuard")
+            .field("owner_account_id", &self.owner_account_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ClientAccessGuard {
+    pub fn require(&self) -> Result<(), acp::Error> {
+        require_state(&self.state.lock(), Some(self.owner_account_id))
+    }
 }
 
 impl Default for ClientAccess {
@@ -117,7 +138,7 @@ impl ClientAccess {
         Self {
             client,
             core_base_url: core_base_url.into().trim_end_matches('/').to_owned(),
-            state: RefCell::new(AccessState::Unverified),
+            state: Arc::new(parking_lot::Mutex::new(AccessState::Unverified)),
         }
     }
 
@@ -125,7 +146,7 @@ impl ClientAccess {
         &self,
         access_token: &str,
     ) -> Result<ClientBootstrapResponse, BootstrapError> {
-        self.state.replace(AccessState::Unverified);
+        *self.state.lock() = AccessState::Unverified;
         if access_token.trim().is_empty() {
             return Err(BootstrapError::MissingToken);
         }
@@ -158,12 +179,12 @@ impl ClientAccess {
 
         if bootstrap.access.can_enter_client {
             let valid_for = membership_valid_for(&bootstrap)?;
-            self.state.replace(AccessState::Granted {
+            *self.state.lock() = AccessState::Granted {
                 response: bootstrap.clone(),
                 valid_until: Instant::now() + valid_for,
-            });
+            };
         } else {
-            self.state.replace(AccessState::Denied(bootstrap.clone()));
+            *self.state.lock() = AccessState::Denied(bootstrap.clone());
         }
         Ok(bootstrap)
     }
@@ -173,11 +194,11 @@ impl ClientAccess {
     }
 
     pub fn invalidate(&self) {
-        self.state.replace(AccessState::Unverified);
+        *self.state.lock() = AccessState::Unverified;
     }
 
     pub fn remaining_validity(&self) -> Option<Duration> {
-        match &*self.state.borrow() {
+        match &*self.state.lock() {
             AccessState::Granted { valid_until, .. } => {
                 valid_until.checked_duration_since(Instant::now())
             }
@@ -186,7 +207,7 @@ impl ClientAccess {
     }
 
     pub fn current_account_id(&self) -> Option<i64> {
-        match &*self.state.borrow() {
+        match &*self.state.lock() {
             AccessState::Granted {
                 response,
                 valid_until,
@@ -196,33 +217,55 @@ impl ClientAccess {
     }
 
     pub fn require(&self) -> Result<(), acp::Error> {
-        match &*self.state.borrow() {
-            AccessState::Granted {
-                response,
-                valid_until,
-            } if Instant::now() < *valid_until => {
-                debug_assert!(response.access.can_enter_client);
-                Ok(())
-            }
-            AccessState::Granted { response, .. } => {
-                Err(acp::Error::auth_required().data(serde_json::json!({
-                    "code": "agentmesh360_subscription_required",
-                    "reason": "subscription_expired",
-                    "subscriptionStatus": response.subscription.status,
-                })))
-            }
-            AccessState::Denied(response) => {
-                Err(acp::Error::auth_required().data(serde_json::json!({
-                    "code": "agentmesh360_subscription_required",
-                    "reason": response.access.reason,
-                    "subscriptionStatus": response.subscription.status,
-                })))
-            }
-            AccessState::Unverified => Err(acp::Error::auth_required().data(serde_json::json!({
-                "code": "agentmesh360_access_required",
-                "reason": "access_unverified",
-            }))),
+        require_state(&self.state.lock(), None)
+    }
+
+    pub fn guard(&self, owner_account_id: i64) -> ClientAccessGuard {
+        ClientAccessGuard {
+            state: Arc::clone(&self.state),
+            owner_account_id,
         }
+    }
+}
+
+fn require_state(state: &AccessState, expected_account_id: Option<i64>) -> Result<(), acp::Error> {
+    match state {
+        AccessState::Granted {
+            response,
+            valid_until,
+        } if Instant::now() < *valid_until
+            && expected_account_id
+                .is_none_or(|expected| expected == response.account.account_id) =>
+        {
+            debug_assert!(response.access.can_enter_client);
+            Ok(())
+        }
+        AccessState::Granted {
+            response,
+            valid_until,
+        } if Instant::now() < *valid_until => {
+            Err(acp::Error::auth_required().data(serde_json::json!({
+                "code": "agentmesh360_access_required",
+                "reason": "account_changed",
+                "accountId": response.account.account_id,
+            })))
+        }
+        AccessState::Granted { response, .. } => {
+            Err(acp::Error::auth_required().data(serde_json::json!({
+                "code": "agentmesh360_subscription_required",
+                "reason": "subscription_expired",
+                "subscriptionStatus": response.subscription.status,
+            })))
+        }
+        AccessState::Denied(response) => Err(acp::Error::auth_required().data(serde_json::json!({
+            "code": "agentmesh360_subscription_required",
+            "reason": response.access.reason,
+            "subscriptionStatus": response.subscription.status,
+        }))),
+        AccessState::Unverified => Err(acp::Error::auth_required().data(serde_json::json!({
+            "code": "agentmesh360_access_required",
+            "reason": "access_unverified",
+        }))),
     }
 }
 
@@ -304,8 +347,12 @@ mod tests {
         assert!(access.is_granted());
         assert_eq!(access.current_account_id(), Some(1));
         access.require().expect("granted");
+        let guard = access.guard(1);
+        guard.require().expect("matching live account guard");
+        assert!(access.guard(2).require().is_err());
         access.invalidate();
         assert!(!access.is_granted());
+        assert!(guard.require().is_err());
         assert_eq!(access.current_account_id(), None);
         let request = server.await.expect("server");
         assert!(request.starts_with("GET /v1/account/client-bootstrap HTTP/1.1"));

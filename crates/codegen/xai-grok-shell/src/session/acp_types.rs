@@ -616,11 +616,30 @@ pub struct StartupHints {
     /// holds the parent's System and overwriting it would bust the cache prefix.
     #[serde(default)]
     pub preserve_inherited_system: bool,
+    /// Trusted Host-only routing identity for AgentMesh360 product sessions.
+    /// Client-provided startupHints can never set or deserialize this field.
+    #[serde(skip)]
+    pub agentmesh360_route:
+        Option<crate::agentmesh360::turn_submission::AgentMeshSessionRouteContext>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_startup_hints_cannot_inject_agentmesh_route_context() {
+        let hints: StartupHints = serde_json::from_value(serde_json::json!({
+            "nonInteractive": true,
+            "agentmesh360Route": {
+                "ownerAccountId": 999,
+                "agentId": "forged-agent"
+            }
+        }))
+        .expect("startup hints");
+        assert!(hints.non_interactive);
+        assert!(hints.agentmesh360_route.is_none());
+    }
 
     #[test]
     fn should_show_model_fingerprint_truth_table() {

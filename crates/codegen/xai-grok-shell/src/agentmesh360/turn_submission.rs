@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use xai_grok_sampler::SamplerConfig;
 
+use super::access::ClientAccessGuard;
 use super::credential_lease::{CredentialLeaseResolver, LeasedSamplingRoute};
 use super::credential_vault::CredentialVault;
+use super::model_routing::ModelRoutingService;
 use super::session_bindings::SessionProviderBinding;
 use super::turn_routes::{TurnRouteRecord, TurnRouteStore};
 
@@ -78,6 +80,87 @@ impl ActiveBoundTurn {
 
 pub struct TurnSubmissionCoordinator {
     turn_routes: TurnRouteStore,
+}
+
+/// Trusted, non-secret route identity injected by `MvpAgent` after it verifies
+/// the Registry owner. The access guard shares the live subscription state;
+/// serde clients cannot construct this type.
+#[derive(Clone, Debug)]
+pub struct AgentMeshSessionRouteContext {
+    owner_account_id: i64,
+    agent_id: String,
+    role: String,
+    access: ClientAccessGuard,
+}
+
+impl AgentMeshSessionRouteContext {
+    pub(super) fn new(owner_account_id: i64, agent_id: String, access: ClientAccessGuard) -> Self {
+        Self {
+            owner_account_id,
+            agent_id,
+            role: "main".into(),
+            access,
+        }
+    }
+
+    pub fn prepare_turn(&self, session_id: &str, turn_id: &str) -> Result<ProductTurnRoute> {
+        self.access
+            .require()
+            .map_err(|_| anyhow::anyhow!("AgentMesh360 subscription access is unavailable"))?;
+        ModelRoutingService::default().ensure_product_binding(
+            self.owner_account_id,
+            session_id,
+            &self.agent_id,
+            &self.role,
+        )?;
+        let resolver = CredentialLeaseResolver::default();
+        let prepared = TurnSubmissionCoordinator::default().prepare(
+            &resolver,
+            self.owner_account_id,
+            session_id,
+            &self.role,
+            turn_id,
+        )?;
+        Ok(ProductTurnRoute::Prepared(Some(Box::new(prepared))))
+    }
+}
+
+/// State machine for every model call within one product-agent Prompt turn.
+pub enum ProductTurnRoute {
+    Prepared(Option<Box<BoundTurnSubmission>>),
+    Active(Box<ActiveBoundTurn>),
+}
+
+impl std::fmt::Debug for ProductTurnRoute {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Prepared(prepared) => formatter
+                .debug_tuple("ProductTurnRoute::Prepared")
+                .field(prepared)
+                .finish(),
+            Self::Active(active) => formatter
+                .debug_tuple("ProductTurnRoute::Active")
+                .field(active)
+                .finish(),
+        }
+    }
+}
+
+impl ProductTurnRoute {
+    pub fn submit<T>(&mut self, submit: impl FnOnce(SamplerConfig) -> Result<T>) -> Result<T> {
+        match self {
+            Self::Prepared(prepared) => {
+                let prepared = prepared
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("bound turn submission is unavailable"))?;
+                let accepted = prepared.submit(submit)?;
+                let (receipt, active) = accepted.into_active();
+                *self = Self::Active(Box::new(active));
+                Ok(receipt)
+            }
+            Self::Active(active) => active.submit_again(submit),
+        }
+    }
 }
 
 impl Default for TurnSubmissionCoordinator {
@@ -402,5 +485,33 @@ mod tests {
         assert!(!debug.contains(SECRET));
         assert!(active.sampler_config().api_key.is_none());
         assert!(active.sampler_config().bearer_resolver.is_some());
+    }
+
+    #[test]
+    fn product_turn_state_machine_promotes_once_then_reuses_active_route() {
+        let (temp, resolver, coordinator, _) = setup();
+        let prepared = coordinator
+            .prepare(
+                &resolver,
+                ACCOUNT_ID,
+                "session-turn",
+                "main",
+                "turn-state-machine",
+            )
+            .expect("prepare");
+        let mut route = ProductTurnRoute::Prepared(Some(Box::new(prepared)));
+
+        let first = route
+            .submit(|config| Ok(config.model))
+            .expect("first actor acceptance");
+        let second = route
+            .submit(|config| Ok(config.model))
+            .expect("same-turn follow-up");
+
+        assert_eq!(first, "turn-model");
+        assert_eq!(second, "turn-model");
+        assert!(matches!(route, ProductTurnRoute::Active(_)));
+        assert_eq!(route_history(&temp).len(), 1);
+        assert!(!format!("{route:?}").contains(SECRET));
     }
 }

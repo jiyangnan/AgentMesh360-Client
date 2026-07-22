@@ -19,14 +19,14 @@ pub mod registry;
 mod session_bindings;
 mod state;
 mod turn_routes;
-mod turn_submission;
+pub(crate) mod turn_submission;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
 use agent_client_protocol as acp;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::MvpAgent;
@@ -74,7 +74,31 @@ impl AgentMesh360Runtime {
         self.access_generation.set(next);
         next
     }
+
+    pub(crate) fn session_route_context(
+        &self,
+        session_id: &acp::SessionId,
+    ) -> Result<Option<turn_submission::AgentMeshSessionRouteContext>> {
+        let Some((owner_account_id, agent_id)) =
+            self.registry.main_session_identity(session_id.0.as_ref())?
+        else {
+            return Ok(None);
+        };
+        let Some(owner_account_id) = owner_account_id else {
+            return Ok(None);
+        };
+        if self.access.current_account_id() != Some(owner_account_id) {
+            bail!("product Session account access is unavailable");
+        }
+        Ok(Some(turn_submission::AgentMeshSessionRouteContext::new(
+            owner_account_id,
+            agent_id,
+            self.access.guard(owner_account_id),
+        )))
+    }
 }
+
+pub(crate) use turn_submission::ProductTurnRoute;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

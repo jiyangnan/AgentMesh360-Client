@@ -164,6 +164,23 @@ impl ModelRoutingService {
         self.compiler.compile(owner_account_id, request, policy)
     }
 
+    pub(super) fn ensure_product_binding(
+        &self,
+        owner_account_id: i64,
+        session_id: &str,
+        agent_id: &str,
+        role: &str,
+    ) -> Result<SessionProviderBinding> {
+        self.resolve_binding(
+            owner_account_id,
+            &BindingLookupRequest {
+                session_id: session_id.to_owned(),
+                role: role.to_owned(),
+                agent_id: Some(agent_id.to_owned()),
+            },
+        )
+    }
+
     fn resolve_binding(
         &self,
         owner_account_id: i64,
