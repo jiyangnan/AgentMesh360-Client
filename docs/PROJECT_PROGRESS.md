@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛、Host Credential Lease、提交时序、Turn 内复用 | D1c1：贯通产品 Session Prompt 路径 |
-| Provider Sampling | Binding 已能经内存 Lease 投影到三协议；actor 接收后写 Turn Route，同一 Turn 多次模型调用保持同路由；尚未接产品 Prompt 队列 | 通过可信 Startup Context 接入真实 `run_turn_via_sampler`，无配置时失败关闭 |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据安全、Host Lease、提交时序、Turn 内复用、产品主推理接入 | D1c2：完整 Host ACP mock E2E |
+| Provider Sampling | 产品 Session 主推理已通过 Binding/Lease 进入现有 Sampler actor，接收后写 Turn Route；普通 Session 保持原路径 | 验证 bootstrap→Provider→Assignment→Agent Prompt→Turn Route 全链路，再审计辅助推理旁路 |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -424,24 +424,77 @@ Renderer 设置 UI。
 
 ### 循环 8：Provider 切片 D1c1——产品 Session Prompt 真实接入
 
+状态：已完成
+
+本地提交：
+
+- `1d8bb70 feat: route product turns through provider bindings`
+- `e401dcf test: cover bound turn sampler acceptance`
+
+已经实现：
+
+- `ClientAccess` 改为共享实时状态，并提供账户锁定的 `ClientAccessGuard`；账号切换、
+  订阅过期或 access invalidate 后，已有产品 Session 的 Guard 立即失败关闭；
+- `AgentMeshSessionRouteContext` 只含 owner、agent、role 和共享 Access Guard，不含秘密；
+- MvpAgent 在 Session spawn 时根据 Registry 和当前账户可信注入 Route Context；字段使用
+  `#[serde(skip)]`，客户端构造的 `startupHints` 无法伪造账户或 Agent；
+- 每个产品 Prompt 在推理前确保不可变 Session Binding，解析当前 Vault Lease 并创建
+  `ProductTurnRoute`；因此用户 Prompt、queued Prompt 和 synthetic auto-wake 共用同一
+  SessionActor 路径；
+- `run_turn_via_sampler` 对产品 Turn 使用
+  `begin_submit_and_collect_with_config`，普通 Grok Session 继续原来的 refresh + default
+  config 路径；
+- 产品 Turn 的 tool loop、compaction/401 resubmit、goal round 与 completion recovery 都
+  透传同一个 ProductTurnRoute；
+- 缺少 Assignment、Profile、Binding 或 Vault Key 时在提交前返回
+  `agentmesh360_provider_route_required`，不静默回落到 Grok 默认 Provider；本地历史和
+  Binding 数据不删除；
+- bound submit 失败会清理 stream-drain barrier；审计写入失败仍通过 Pending RAII 取消
+  已接收请求。
+
+验证证据：
+
+- AgentMesh360 回归 54 项全部通过；
+- 外部 `startupHints` 伪造 Route Context 测试通过；普通 Session 的既有 conversation
+  recovery 定向测试通过；
+- 真实 SamplerActor + 本机 mock Provider 测试通过：actor 接收后已有 Turn Route，请求
+  命中 `/v1/responses` 并使用 Lease Bearer，mock 401 后审计记录仍保持；
+- Shell 全 target Clippy `-D warnings`、Rustfmt、测试编译和 diff 检查通过；
+- 测试只访问本机临时端口，没有调用外部或计费 Provider；构建期间只清理了本仓库可再
+  生成的 `target/debug/incremental` 缓存以解除磁盘满阻塞。
+
+计划复盘：
+
+- 路由上下文由 Host Registry/Access 生成而不是从 Prompt 元数据接受，账户和订阅边界
+  没有下放给 Renderer；
+- 用户 Prompt 与后台 synthetic wake 都在 SessionActor 内部准备 ProductTurnRoute，避免
+  只覆盖前台对话却让后台 Agent 偷走默认 Provider；
+- 产品 Session 现在确实接到 Sampling actor，但只做了模块组合与本机 mock Provider
+  验证；尚未完成从 bootstrap、Provider ACP、Assignment、Agent 激活到 Prompt 的完整
+  Host ACP E2E，不能描述成 Provider M1 已经可交付；
+- Provider UI 尚未实现，因此当前用户若没有先通过管理 ACP 配置 Profile/Assignment，
+  产品 Prompt 会按设计失败关闭。这是安全语义，不是最终产品体验；
+- 自动权限分类、压缩/摘要、图像描述和 subagent 等辅助推理消费者仍需逐一审计，防止
+  主 Turn 已绑定而旁路继续使用默认 Provider。
+
+本轮非目标保持不变：没有真实 Provider E2E、Provider UI/Probe、计费 Usage 或新协议。
+
+### 循环 9：Provider 切片 D1c2——完整 Host ACP mock E2E
+
 状态：已启动
 
 本轮目标：
 
-1. 定义仅含 account/agent/role 的非秘密 `AgentMeshSessionRouteContext`，通过
-   `StartupHints` 的 serde-skip 字段由 MvpAgent 可信注入，外部 startupHints 不能设置；
-2. 每个产品 Prompt（包括 synthetic auto-wake）在推理前解析/初始化不可变 Binding、
-   Credential Lease 与 `ProductTurnRoute`；普通 Grok Session 保持原路径；
-3. `process_conversation_turn` 的所有 tool/retry/recovery 模型调用通过同一个
-   `ProductTurnRoute` 调用 `begin_submit_and_collect_with_config`；
-4. 产品 Session 缺少 Assignment/Profile/Vault 时失败关闭且保留历史，不静默使用 Grok
-   默认 Provider；
-5. 用无网络 actor/channel 测试验证真实 `run_turn_via_sampler` 边界写一条 Turn Route，
-   并覆盖普通 Session 不受影响。
+1. 为测试建立只在 `cfg(test)` 可用的 Memory Vault/本机 mock Provider 注入缝，不在生产
+   暴露 Vault 读取或绕过 Keychain；
+2. 通过真实 MvpAgent/ACP 路径覆盖 Core bootstrap、Provider 创建、Model Assignment、
+   产品 Agent 激活/加载、Prompt、Sampler actor 和 Turn Route 查询；
+3. 断言订阅无效、跨账户、缺失 Assignment/Vault 都在 Prompt 提交前失败关闭且不产生
+   Turn Route；
+4. 断言成功路径只写一条实际路由，响应/管理 API/日志均不返回秘密；
+5. E2E 后审计所有辅助推理消费者，形成 D1d 的明确清单与接入顺序。
 
-验收条件：产品 Prompt 的实际 Sampling 命令使用 Binding 投影配置，Turn Route 在 actor
-接受后可查询；同一 Turn 多调用不漂移；客户端不能伪造 account context；普通 Session
-回归、格式和 Clippy 通过。
+验收条件：无需真实账号、Keychain 或外部 Provider 即可重复验证完整 Host 链路；生产
+代码没有测试后门；普通 Session 回归通过；格式、Clippy 和相关测试通过。
 
-本轮非目标：不做真实 Provider E2E、不实现 Provider UI/Probe、不接计费 Usage、不扩展
-新协议。
+本轮非目标：不做真实计费请求、不实现 UI、不扩展协议或 Provider 预设。
