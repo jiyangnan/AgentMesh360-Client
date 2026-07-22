@@ -180,9 +180,14 @@ impl SamplerHandle {
     pub fn begin_submit_and_collect_with_config(
         &self,
         request_id: RequestId,
-        request: ConversationRequest,
+        mut request: ConversationRequest,
         config: SamplerConfig,
     ) -> Result<PendingSamplingRequest, SamplingError> {
+        // A bound per-request route owns the actual model identity. Session
+        // request builders may already contain the ordinary Grok default;
+        // leaving it intact would send that model to the leased endpoint while
+        // the Host audit records `config.model`.
+        request.model = Some(config.model.clone());
         self.begin_submit_and_collect_inner(request_id, request, Some(config))
     }
 

@@ -3154,7 +3154,7 @@ impl MvpAgent {
         let origin_client = self.origin_client_info_from_meta(init.meta.as_ref());
         let sampling_config = self
             .resolve_sampling_config_for_model(&session_model_id, origin_client.clone());
-        if self.auth_method_id.load().is_none() {
+        if self.auth_method_id.load().is_none() && startup_hints.agentmesh360_route.is_none() {
             return Err(acp::Error::auth_required().data("no auth method id provided"));
         }
         let auth_method_id = std::sync::Arc::clone(&self.auth_method_id);

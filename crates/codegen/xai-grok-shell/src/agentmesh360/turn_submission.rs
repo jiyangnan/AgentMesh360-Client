@@ -582,12 +582,16 @@ mod tests {
             event_tx,
         );
 
+        let request = xai_grok_sampling_types::ConversationRequest {
+            model: Some("stale-session-model".into()),
+            ..Default::default()
+        };
         let pending = route
             .submit(|config| {
                 handle
                     .begin_submit_and_collect_with_config(
                         xai_grok_sampler::RequestId::random(),
-                        xai_grok_sampling_types::ConversationRequest::default(),
+                        request,
                         config,
                     )
                     .map_err(anyhow::Error::new)
@@ -604,6 +608,8 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains(&format!("authorization: bearer {SECRET}").to_ascii_lowercase())
         );
+        assert!(request.contains("\"model\":\"turn-model\""));
+        assert!(!request.contains("stale-session-model"));
         assert_eq!(route_history(&temp)[0].turn_id, "turn-real-actor");
     }
 }

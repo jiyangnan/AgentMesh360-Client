@@ -537,8 +537,16 @@ fn current_account_id(agent: &MvpAgent) -> Result<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::Infallible;
     use std::sync::Arc;
+    use std::time::Duration;
 
+    use agent_client_protocol::Agent as _;
+    use axum::Router;
+    use axum::http::HeaderMap;
+    use axum::response::sse::Sse;
+    use axum::routing::post;
+    use futures_util::stream;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
     use xai_acp_lib::AcpAgentGatewaySender as GatewaySender;
@@ -566,10 +574,10 @@ mod tests {
     fn ext_result(response: acp::ExtResponse) -> serde_json::Value {
         let envelope: serde_json::Value =
             serde_json::from_str(response.0.get()).expect("extension response");
-        envelope
-            .get("result")
-            .cloned()
-            .unwrap_or_else(|| panic!("extension response has no result: {envelope}"))
+        match envelope.get("result") {
+            Some(result) if !result.is_null() => result.clone(),
+            _ => panic!("extension response has no successful result: {envelope}"),
+        }
     }
 
     async fn serve_bootstrap_once() -> (String, tokio::task::JoinHandle<String>) {
@@ -595,15 +603,107 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
-    fn build_host_test_agent(state_home: &std::path::Path, core_base_url: String) -> MvpAgent {
+    async fn serve_provider_once() -> (
+        String,
+        tokio::sync::oneshot::Receiver<(String, String)>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind Provider mock");
+        let address = listener.local_addr().expect("Provider mock address");
+        let (request_tx, request_rx) = tokio::sync::oneshot::channel();
+        let request_tx = Arc::new(parking_lot::Mutex::new(Some(request_tx)));
+        let app = Router::new().route(
+            "/v1/responses",
+            post({
+                let request_tx = Arc::clone(&request_tx);
+                move |headers: HeaderMap, body: String| {
+                    let request_tx = Arc::clone(&request_tx);
+                    async move {
+                        let authorization = headers
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or_default()
+                            .to_owned();
+                        if let Some(sender) = request_tx.lock().take() {
+                            let _ = sender.send((authorization, body));
+                        }
+                        let events = xai_grok_test_support::sse::responses_api_events_exact(
+                            "host-e2e-ok",
+                            "model-main",
+                        )
+                        .into_iter()
+                        .map(Ok::<_, Infallible>);
+                        Sse::new(stream::iter(events))
+                    }
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{address}/v1"), request_rx, task)
+    }
+
+    #[derive(Clone, Copy)]
+    struct HostTestClient;
+
+    #[async_trait::async_trait(?Send)]
+    impl acp::Client for HostTestClient {
+        async fn request_permission(
+            &self,
+            request: acp::RequestPermissionRequest,
+        ) -> acp::Result<acp::RequestPermissionResponse> {
+            let outcome = request
+                .options
+                .iter()
+                .find(|option| option.kind == acp::PermissionOptionKind::AllowOnce)
+                .or(request.options.first())
+                .map(|option| {
+                    acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+                        option.option_id.clone(),
+                    ))
+                })
+                .unwrap_or(acp::RequestPermissionOutcome::Cancelled);
+            Ok(acp::RequestPermissionResponse::new(outcome))
+        }
+
+        async fn session_notification(
+            &self,
+            _notification: acp::SessionNotification,
+        ) -> acp::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn drive_gateway(
+        mut receiver: tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::task::spawn_local(async move {
+            while let Some(message) = receiver.recv().await {
+                message.route_to_client(HostTestClient, |future| {
+                    tokio::task::spawn_local(future);
+                });
+            }
+        })
+    }
+
+    fn build_host_test_agent(
+        state_home: &std::path::Path,
+        core_base_url: String,
+    ) -> (
+        MvpAgent,
+        tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
+    ) {
         let auth_home = tempfile::tempdir().expect("auth home");
         let auth_manager = Arc::new(AuthManager::new(auth_home.path(), GrokComConfig::default()));
-        let (gateway_tx, _gateway_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (gateway_tx, gateway_rx) = tokio::sync::mpsc::unbounded_channel();
         let gateway = GatewaySender::new(gateway_tx);
         let mut agent =
             MvpAgent::new(gateway, &Config::default(), auth_manager, None).expect("test agent");
         agent.agentmesh360 = AgentMesh360Runtime::for_host_test(state_home, core_base_url);
-        agent
+        (agent, gateway_rx)
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -613,7 +713,7 @@ mod tests {
             .run_until(async {
                 let state_home = tempfile::tempdir().expect("state home");
                 let (core_base_url, core) = serve_bootstrap_once().await;
-                let agent = build_host_test_agent(state_home.path(), core_base_url);
+                let (agent, _gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
 
                 let bootstrap = handle(
                     &agent,
@@ -721,6 +821,187 @@ mod tests {
                         .contains("sentinel-provider-secret-1234")
                 );
                 assert!(!format!("{route:?}").contains("sentinel-provider-secret-1234"));
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn host_acp_flow_activates_product_agent_and_routes_real_prompt() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (provider_base_url, provider_request, provider_task) =
+                    serve_provider_once().await;
+                let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                let gateway_task = drive_gateway(gateway_rx);
+
+                agent
+                    .initialize(
+                        acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+                            .client_capabilities(
+                                acp::ClientCapabilities::new()
+                                    .fs(acp::FileSystemCapabilities::new())
+                                    .terminal(false),
+                            )
+                            .meta(
+                                serde_json::json!({
+                                    "startupHints": {
+                                        "nonInteractive": true,
+                                        "skipGitStatus": true,
+                                        "skipProjectLayout": true
+                                    },
+                                    "clientType": "agentmesh360-host-test",
+                                    "clientVersion": "0.0.0-test"
+                                })
+                                .as_object()
+                                .cloned(),
+                            ),
+                    )
+                    .await
+                    .expect("initialize Host ACP agent");
+
+                let ordinary_workspace = state_home.path().join("ordinary-session");
+                std::fs::create_dir_all(&ordinary_workspace).expect("ordinary workspace");
+                let ordinary_error = agent
+                    .new_session(acp::NewSessionRequest::new(ordinary_workspace))
+                    .await
+                    .expect_err("ordinary Grok Session still requires Grok authentication");
+                assert_eq!(ordinary_error.code, acp::Error::auth_required().code);
+
+                let bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "sentinel-bootstrap-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap response");
+                assert_eq!(ext_result(bootstrap)["access"]["canEnterClient"], true);
+                let _ = core.await.expect("Core request task");
+
+                let provider = handle(
+                    &agent,
+                    &ext_request(
+                        providers::PROVIDERS_CREATE_METHOD,
+                        serde_json::json!({
+                            "profile": {
+                                "presetId": "compatible-openai-responses",
+                                "displayName": "Host Prompt Mock",
+                                "protocol": "openai_responses",
+                                "baseUrl": provider_base_url,
+                                "authKind": "bearer_api_key",
+                                "enabledModels": ["model-main"]
+                            },
+                            "apiKey": "sentinel-provider-secret-5678"
+                        }),
+                    ),
+                )
+                .await
+                .expect("create Provider response");
+                let provider = ext_result(provider);
+                let profile_id = provider["profile"]["profileId"]
+                    .as_str()
+                    .expect("profile id")
+                    .to_owned();
+                assert!(
+                    !provider
+                        .to_string()
+                        .contains("sentinel-provider-secret-5678")
+                );
+
+                handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::ASSIGNMENTS_UPSERT_METHOD,
+                        serde_json::json!({
+                            "assignment": {
+                                "scopeKind": "agent",
+                                "scopeId": "job-agent",
+                                "role": "main",
+                                "providerProfileId": profile_id,
+                                "modelId": "model-main"
+                            }
+                        }),
+                    ),
+                )
+                .await
+                .expect("upsert Assignment");
+
+                let activation = handle(
+                    &agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "job-agent"}),
+                    ),
+                )
+                .await
+                .expect("activate Job Agent");
+                let activation_wire: serde_json::Value =
+                    serde_json::from_str(activation.0.get()).expect("activation response JSON");
+                if activation_wire["result"].is_null() {
+                    let record = agent
+                        .agentmesh360
+                        .registry()
+                        .get(41, "job-agent")
+                        .expect("failed Agent record");
+                    panic!(
+                        "Agent activation failed: response={activation_wire}, last_error={:?}",
+                        record.last_error
+                    );
+                }
+                let activation = ext_result(activation);
+                let session_id = activation["agent"]["mainSessionId"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("activation has no Main Session: {activation}"))
+                    .to_owned();
+                assert_eq!(activation["agent"]["runtimeState"], "resident");
+
+                tokio::time::timeout(
+                    Duration::from_secs(30),
+                    agent.prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id.clone()),
+                        vec![acp::ContentBlock::from("Return the Host E2E marker.")],
+                    )),
+                )
+                .await
+                .expect("product Prompt timed out")
+                .expect("product Prompt response");
+
+                let (authorization, request_body) =
+                    tokio::time::timeout(Duration::from_secs(5), provider_request)
+                        .await
+                        .expect("Provider request timed out")
+                        .expect("Provider request capture");
+                assert_eq!(authorization, "Bearer sentinel-provider-secret-5678");
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&request_body)
+                        .expect("Provider request JSON")["model"],
+                    "model-main"
+                );
+
+                let routes = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "main",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("Turn Route history response");
+                let routes = ext_result(routes);
+                assert_eq!(routes["turnRoutes"].as_array().map(Vec::len), Some(1));
+                assert_eq!(routes["turnRoutes"][0]["modelId"], "model-main");
+                assert!(!routes.to_string().contains("sentinel-provider-secret-5678"));
+
+                provider_task.abort();
+                gateway_task.abort();
             })
             .await;
     }
