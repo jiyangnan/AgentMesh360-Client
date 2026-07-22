@@ -1,0 +1,153 @@
+# 产品 Agent 辅助推理旁路审计与 D1d 接入计划
+
+状态：审计完成，D1d0 开发中
+
+审计日期：2026-07-23
+
+关联文档：
+
+- [`CC_SWITCH_PROVIDER_RESEARCH.md`](./CC_SWITCH_PROVIDER_RESEARCH.md)
+- [`ADR_PROVIDER_CONTROL_PLANE_VAULT.md`](./ADR_PROVIDER_CONTROL_PLANE_VAULT.md)
+- [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)
+
+## 1. 审计结论
+
+D1c2 已经证明产品 Agent 的主 Prompt 可以在没有 Grok 登录的情况下，经过订阅门禁、
+Session Binding、Credential Lease、SamplerActor 和 Turn Route 审计完成一次真实本机
+Provider 请求。
+
+但“主 Prompt 已绑定”不等于“产品 Agent 的所有推理都已绑定”。现有 Grok Harness 还存在
+多类直接调用 `prepare_chat_completion`、`resolve_aux_sampler_config`、
+`SamplingClient::new` 或向 subagent 复制默认 `sampling_config` 的辅助推理消费者。它们没有
+经过 `ProductTurnRoute`，因此当前会出现两种结果：
+
+1. 在 BYOK 产品 Session 没有 Grok 登录时调用失败，相关体验降级或中断；
+2. 如果进程同时存在 Grok 凭据，未来可能静默使用 Grok 默认 Provider，违反用户选定的
+   BYOK 路由，也使 Turn Route 审计不完整。
+
+因此 D1d 的核心不是增加新的 Provider 协议，而是建立一个统一的 Session Sampling
+Authority：产品 Session 的每一次 LLM 推理都必须由 Host 解析 Binding/Lease；普通 Grok
+Session 继续使用原路径。
+
+## 2. 不可破坏的约束
+
+- Renderer、Agent Package、Skill 和客户端 `startupHints` 不能提供账户、Binding、Vault
+  handle 或 credential；
+- 产品 Session 不得回落到 Grok 默认 Provider，即使当前进程恰好存在 Grok 登录；
+- Provider 请求实际使用的 endpoint、协议、Bearer/X-API-Key 和 model 必须与 Turn Route
+  记录一致；
+- Turn Route 只在 Sampling actor 接受请求后写入，准备失败和提交失败不能产生幽灵记录；
+- 同一逻辑 Turn/role 的重试和 tool follow-up 复用不可变 Binding；
+- 订阅失效、账户切换或 Vault 缺失时失败关闭，但不删除 Session 历史、Binding 或产物；
+- 普通 Grok Session、现有 Harness 工具循环和 Grok 官方认证流程不受影响。
+
+## 3. 调用点清单
+
+| 优先级 | 消费者 | 现有入口 | 当前风险 | D1d 目标 |
+| --- | --- | --- | --- | --- |
+| P0 | 用户图片描述 | `prompt_build::transcribe_user_images` → `resolve_aux_sampler_config` → `SamplingClient::new` | 在主 Turn Route 准备前直接采样；失败会中断整次图片 Prompt | 使用 `vision` role，经统一 actor 接受和 Turn Route；无专用 Assignment 时回退 `main` Assignment |
+| P0 | 自动权限分类 | `sampler_turn::wire_permission_auto_llm_classifier` → aux sampler / `prepare_chat_completion` | BYOK 无 Grok 登录时只能错误后退启发式；有 Grok 凭据时可能旁路用户 Provider | 使用 `permission_classifier` role；远端失败可回退本地启发式，但绝不换 Provider |
+| P0 | 上下文压缩 | `compaction.rs`、`helpers/session_summary.rs` → `prepare_chat_completion` / `conversation_collect` | 持久 Session 越长越容易触发；旁路失败会使长期记忆体验退化 | 使用 `compaction` role；同一次压缩的 two-pass/single-pass 保持同一 Binding |
+| P0 | Subagent 推理 | `mvp_agent::subagent_coordinator::build_subagent_spawn_context` 复制默认 `sampling_config`、AuthManager | 产品 Agent 能生成 subagent，但 subagent 没有产品 Binding/Lease，可能失败或走 Grok 默认路由 | 子 Agent 获得不可伪造的 Host 路由委托；默认使用 `subagent` role，缺省回退 `main` Assignment |
+| P1 | Laziness 检测 | `acp_session_impl::laziness` → `prepare_chat_completion` | 可选质量检测在 BYOK 下失效或旁路 | 使用 `laziness` role；失败只跳过检测，不换 Provider |
+| P1 | Recap/回顾 | `acp_session_impl::recap` 多处 collect/stream | between-turn/background 推理未记录真实路由 | 使用 `recap` role和独立 synthetic turn id；失败保留原会话 |
+| P1 | Memory dream | `acp_session_impl::memory_dream` 多处 collect/stream | 后台常驻 Agent 可能在用户不看窗口时旁路采样 | 使用 `memory` role和独立 synthetic turn id；订阅 Guard 每次重验 |
+| P2 | Trace classifier | `trace_classifier` 直接 `SamplingClient::new` | 主要是诊断/上传分类，不一定属于产品 Session 的用户推理 | 先按调用来源隔离；只有绑定到产品 Session 的任务才纳入 Authority |
+
+以下路径已经由 D1c1/D1c2 覆盖，不重复建设：主模型调用、tool follow-up、goal round、
+completion recovery、401/compaction resubmit，以及 synthetic auto-wake 进入主 Prompt 时的
+Sampling。
+
+Web search、图片/视频生成和部署服务拥有不同的产品服务协议与计费边界，不应伪装成
+通用 LLM Provider role；后续分别做服务级授权设计。
+
+## 4. Role 与回退规则
+
+首批稳定 role：
+
+- `main`
+- `vision`
+- `permission_classifier`
+- `compaction`
+- `subagent`
+- `laziness`
+- `recap`
+- `memory`
+
+Assignment 解析顺序保持 Session → Agent → Global，但辅助 role 增加一个明确、可审计的
+缺省规则：
+
+1. 先按辅助 role 执行 Session → Agent → Global；
+2. 如果该 role 完全没有 Assignment，再按 `main` 执行 Session → Agent → Global；
+3. 如果 `main` 也没有 Assignment，失败关闭；
+4. 一旦为 `session + role` 创建 Binding，后续配置变化不得静默改变它；只能显式切换、
+   兼容迁移或回滚。
+
+这样用户只配置一次主模型就能使用完整产品，同时高级用户仍可为 vision、compaction 或
+subagent 选择不同 Provider/model。
+
+## 5. 统一执行边界
+
+D1d 引入 Host 内部的 `SessionSamplingAuthority`，它不是新的 Sampling 实现，而是现有
+SamplerActor 前的一层产品路由权限：
+
+```text
+产品 Session 消费者
+  -> SessionSamplingAuthority.prepare(role, logical_turn_id)
+  -> Access Guard + Assignment fallback + immutable Binding + Credential Lease
+  -> existing SamplerActor accepts request with per-request config
+  -> write non-secret Turn Route
+  -> collect/stream existing Sampling events
+```
+
+普通 Session 仍直接使用现有 default config。产品 Session 的 Authority 只能由 MvpAgent
+根据 Registry 注入，不通过 ACP serde 或 ToolContext JSON 传输。
+
+对于同一用户 Prompt 内的辅助调用，`logical_turn_id` 使用主 prompt id，按不同 role 分别
+形成至多一条 Turn Route；同 role 的重试复用 Active route。between-turn/background 调用
+使用 `aux:<kind>:<uuid>`，并保留 parent session id。Subagent 使用 parent session、parent
+turn 和 subagent invocation id 形成可追踪的逻辑 turn id。
+
+## 6. 失败语义
+
+| 类型 | 失败处理 |
+| --- | --- |
+| 主 Prompt、图片描述、必要压缩 | 返回结构化 `agentmesh360_provider_route_required`，保存用户输入与历史，不切换 Provider |
+| 权限分类、laziness | 使用既有本地保守/启发式结果；记录非秘密降级原因，不调用其他 Provider |
+| recap、memory dream | 跳过本次后台任务并保留待重试状态；订阅恢复后可再次执行 |
+| subagent | 拒绝该 subagent 启动并把原因返回父 Agent；父 Agent 可以继续主 Turn 或请求用户配置 |
+
+## 7. D1d 实施顺序
+
+### D1d0：Authority 契约与 role fallback
+
+1. 为 Model Assignment 增加显式 auxiliary → main fallback，返回实际采用的 assignment role；
+2. 把 `AgentMeshSessionRouteContext` 扩展为可按 role 准备 route 的 Host Authority；
+3. 固化产品 Session 不可使用 default config 的 sentinel 测试；
+4. 固化同一 logical turn/role 多调用只写一条 Turn Route。
+
+### D1d1：Prompt 内 P0 消费者
+
+1. 将 route 准备提前到图片描述之前，但仍只在 actor 接受后写审计；
+2. 图片描述、权限分类和必要压缩改经现有 SamplerActor；
+3. 覆盖有/无专用 role Assignment、Vault 丢失、订阅失效与重试不漂移。
+
+### D1d2：后台消费者
+
+1. 接入 laziness、recap 与 memory dream；
+2. 每次后台执行重新检查 Access Guard；
+3. 使用 synthetic logical turn id 并验证 Session 历史不因失败被删除。
+
+### D1d3：Subagent 路由委托
+
+1. 定义不可序列化、不可跨账户的 Host route delegation；
+2. subagent Sampling 使用 `subagent` Binding/Lease，不复制 Grok 默认 credential；
+3. 父/子调用可追踪，但不把 credential 或 Vault handle写入 ToolContext、日志或会话状态；
+4. 真实 parent Prompt → tool call → subagent → Provider mock E2E 通过后，D1 才可整体关闭。
+
+## 8. 非目标
+
+- D1d 不实现 Provider 设置 UI、Probe、真实计费 Usage 或新协议；
+- 不把 Web Search、图片生成、视频生成等专业服务强行纳入通用 LLM role；
+- 不为每个产品 Agent 创建独立 Harness 进程；
+- 不改变订阅硬门禁、账户隔离、持久 Main Session 或动态 Agent Package 的既定边界。

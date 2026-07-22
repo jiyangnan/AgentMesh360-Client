@@ -156,5 +156,6 @@ URL 或操作系统安全存储原始错误体。
 - 独立 Host/Supervisor 完成前，进程生命周期仍未达到最终常驻目标；
 - Catalog、Assignment、Binding、RouteCompiler、Credential Lease、三协议投影和产品
   Session 主 Prompt 的 Sampling/Turn Route 接入已实现；无 Grok 登录的 Host ACP mock
-  成功链已验证实际 endpoint、Bearer、model 与审计一致。失败门槛矩阵、辅助推理旁路、
-  Provider UI 与真实 Provider E2E 仍需后续切片实现。
+  成功链已验证实际 endpoint、Bearer、model 与审计一致，订阅、账户、Assignment 和 Vault
+  失败矩阵也已覆盖。辅助推理统一 Authority、Provider UI 与真实 Provider E2E 仍需后续
+  切片实现。

@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1 已完成；D1c2 成功链已覆盖 bootstrap、Provider、Assignment、Agent 激活、Prompt 与 Turn Route | 补齐 D1c2 失败门槛矩阵 |
-| Provider Sampling | 无 Grok 登录的产品 Session 已通过 Binding/Lease 进入现有 Sampler actor，实际 endpoint、Bearer、模型和 Turn Route 一致；普通 Session 保持原认证路径 | 覆盖无效订阅、跨账户、缺失 Assignment/Vault，再审计辅助推理旁路 |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2 已完成；Host ACP 成功链与失败矩阵均有回归 | D1d0：辅助 role fallback 与统一 Sampling Authority |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt 已保证实际 endpoint、credential、model 与 Turn Route 一致；失败在 Provider 提交前关闭 | 接入图片、权限分类、压缩、后台任务与 subagent 等辅助推理旁路 |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -481,12 +481,13 @@ Renderer 设置 UI。
 
 ### 循环 9：Provider 切片 D1c2——完整 Host ACP mock E2E
 
-状态：开发中；测试依赖注入与 Host ACP 成功链已完成，失败门槛矩阵开发中
+状态：已完成
 
 阶段提交：
 
 - `5cfc926 test: share host vault across provider routing`
 - `9fa7350 test: cover host product prompt routing`
+- `a5df190 test: cover host provider failure gates`
 
 已完成子模块：
 
@@ -518,14 +519,19 @@ Renderer 设置 UI。
   SamplerActor，但没有调用真实或计费 Provider；
 - 构建再次触发磁盘满后，只删除了本仓库约 13 GB 可重建的
   `target/debug/incremental`，并以 `CARGO_INCREMENTAL=0` 完成验证。
+- Host 失败矩阵覆盖订阅拒绝、跨账户、缺失 Assignment 和缺失 Vault secret；所有 Provider
+  路由失败都发生在网络提交前，失败 Session 的 Turn Route 数为 0；
+- AgentMesh360 模块最终回归 57 项全部通过，Shell 全 target Clippy `-D warnings` 通过。
 
 阶段计划复盘：
 
 - D1c2 成功路径已经达到原计划的真实 MvpAgent/ACP 边界，不再只是模块组合测试；
 - E2E 揭示并修复了两个计划内但单元测试无法发现的偏差：Grok 登录前置条件与请求模型
   漂移，证明继续使用真实 Host 链而不是另建测试路由是正确方向；
-- 原计划的失效订阅、跨账户和缺失配置失败门槛仍未在 Host 全链测试覆盖，保持为本循环
-  验收项，因此 D1c2 仍不能标记完成；下一子模块先补失败矩阵，再进入辅助推理审计；
+- 原计划的失效订阅、跨账户和缺失配置失败门槛已在 Host 全链测试覆盖，D1c2 可以关闭；
+- 主 Prompt 以外仍存在直接 SamplingClient/subagent 默认配置旁路，这不属于 D1c2 主链
+  缺陷，但必须在 Provider M1 前解决；审计结果和 D1d 顺序已写入
+  [`architecture/PROVIDER_AUXILIARY_INFERENCE_AUDIT.md`](architecture/PROVIDER_AUXILIARY_INFERENCE_AUDIT.md)；
 - Provider UI、真实计费请求和辅助推理改造仍不是当前子模块范围。
 
 本轮目标：
@@ -534,12 +540,37 @@ Renderer 设置 UI。
    生产暴露 Vault 读取或绕过 Keychain；~~ 已完成
 2. ~~通过真实 MvpAgent/ACP 路径覆盖 Core bootstrap、Provider 创建、Model Assignment、
    产品 Agent 激活/加载、Prompt、Sampler actor 和 Turn Route 查询；~~ 已完成成功路径
-3. 断言订阅无效、跨账户、缺失 Assignment/Vault 都在 Prompt 提交前失败关闭且不产生
-   Turn Route；
+3. ~~断言订阅无效、跨账户、缺失 Assignment/Vault 都在 Prompt 提交前失败关闭且不产生
+   Turn Route；~~ 已完成
 4. ~~断言成功路径只写一条实际路由，响应/管理 API/日志均不返回秘密；~~ 已完成
-5. E2E 后审计所有辅助推理消费者，形成 D1d 的明确清单与接入顺序。
+5. ~~E2E 后审计所有辅助推理消费者，形成 D1d 的明确清单与接入顺序。~~ 已完成
 
 验收条件：无需真实账号、Keychain 或外部 Provider 即可重复验证完整 Host 链路；生产
 代码没有测试后门；普通 Session 回归通过；格式、Clippy 和相关测试通过。
 
 本轮非目标：不做真实计费请求、不实现 UI、不扩展协议或 Provider 预设。
+
+### 循环 10：Provider 切片 D1d0——统一辅助 Sampling Authority
+
+状态：已启动
+
+审计依据：
+
+- [`architecture/PROVIDER_AUXILIARY_INFERENCE_AUDIT.md`](architecture/PROVIDER_AUXILIARY_INFERENCE_AUDIT.md)
+
+本轮目标：
+
+1. 为辅助 role 增加明确的 Session → Agent → Global 解析，并在完全缺失时回退同作用域
+   的 `main` Assignment；返回实际采用的 assignment role，避免隐式漂移；
+2. 将 `AgentMeshSessionRouteContext` 提升为 Host 内部 `SessionSamplingAuthority`，可按
+   `main/vision/permission_classifier/compaction/subagent/...` 准备不可变 Binding/Lease；
+3. 同一 logical turn + role 多次调用只记录一条 Turn Route，跨 role 分开审计；
+4. 添加 sentinel：产品 Session 的任意 Authority 路径都不能得到 Grok default config，
+   普通 Session 保持既有路径；
+5. D1d0 完成后优先接图片描述、权限分类和必要压缩，再处理后台任务与 subagent。
+
+验收条件：role fallback 有独立契约测试；Binding/Turn Route 明确记录请求 role 与实际采用
+的 Assignment；订阅/账户/Vault 失败继续在 actor 接收前关闭；格式、Clippy 和 AgentMesh
+回归通过。
+
+本轮非目标：D1d0 不一次性改完所有消费者，不实现 UI/Probe/Usage，不扩展 Provider 协议。

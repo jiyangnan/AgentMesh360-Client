@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0/D1c1 已实现，切片 D1c2 开发中
+状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2 已实现，切片 D1d0 开发中
 
 调研日期：2026-07-22
 
@@ -24,8 +24,8 @@ revision、回滚和实际 Turn Route 的可信存储接口也已实现。D0 已
 subagent、认证恢复、上传和错误链路中的凭据片段/秘密 URL，并建立 sentinel 回归。Turn
 产品 Session 主 Prompt 推理已经接到现有 Sampler actor；Credential Lease、三协议投影、
 actor 接收后写 Turn Route、同一 Turn 多调用复用和实时订阅 Guard 已完成。Host ACP
-mock E2E 成功链已覆盖无 Grok 登录的 BYOK 产品 Agent 激活与 Prompt；失败门槛矩阵、辅助
-推理审计、Provider UI 与真实 Provider E2E 仍是目标能力。
+mock E2E 已覆盖无 Grok 登录的 BYOK 产品 Agent 激活/Prompt，以及订阅、账户、Assignment
+和 Vault 失败矩阵。辅助推理统一 Authority、Provider UI 与真实 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -906,7 +906,9 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
 - D1c0 已为 tool loop、401/compaction resubmit 与 completion recovery 保持同一 Turn
   的 Lease/Binding；D1c1 通过 MvpAgent 可信注入的 serde-skip Session Route Context
   贯通用户 Prompt 与 synthetic auto-wake；D1c2 已完成 bootstrap 到 Turn Route 查询的
-  Host ACP mock E2E 成功链，正在补失败门槛矩阵；
+  Host ACP mock E2E 成功链与失败矩阵；D1d 按
+  [`PROVIDER_AUXILIARY_INFERENCE_AUDIT.md`](./PROVIDER_AUXILIARY_INFERENCE_AUDIT.md)
+  收口图片、权限分类、压缩、后台任务和 subagent 旁路；
 - 把 `PreparedRoute` 投影到现有 `ModelEntry / SamplingConfig`；
 - 为 OpenAI、xAI、Anthropic 和三种 Compatible Profile 建立契约测试；
 - 复用现有 Streaming、Tool Call、Usage 和错误分类；
