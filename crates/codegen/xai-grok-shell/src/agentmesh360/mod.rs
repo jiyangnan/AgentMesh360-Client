@@ -113,6 +113,82 @@ impl AgentMesh360Runtime {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(crate) async fn bootstrap_for_host_test(&self, access_token: &str) -> Result<()> {
+        self.access
+            .bootstrap(access_token)
+            .await
+            .map(|_| ())
+            .map_err(anyhow::Error::new)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn invalidate_access_for_host_test(&self) {
+        self.access.invalidate();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn configure_product_route_for_host_test(
+        &self,
+        owner_account_id: i64,
+        agent_id: &str,
+        base_url: &str,
+        model_id: &str,
+        api_key: &str,
+    ) -> Result<(
+        String,
+        turn_submission::AgentMeshSessionRouteContext,
+        String,
+    )> {
+        let profile = self.providers.create_for_host_test(
+            owner_account_id,
+            provider_profiles::ProviderProfileInput {
+                preset_id: Some("compatible-openai-responses".into()),
+                display_name: "Host route test".into(),
+                protocol: provider_profiles::ProviderProtocol::OpenaiResponses,
+                base_url: base_url.into(),
+                auth_kind: provider_profiles::ProviderAuthKind::BearerApiKey,
+                enabled_models: vec![model_id.into()],
+            },
+            api_key.into(),
+        )?;
+        let profile_id = profile.profile_id;
+        model_assignments::ModelAssignmentStore::in_home(&self.state_home).upsert(
+            owner_account_id,
+            model_assignments::ModelAssignmentInput {
+                scope_kind: model_assignments::AssignmentScopeKind::Agent,
+                scope_id: Some(agent_id.into()),
+                role: "main".into(),
+                provider_profile_id: profile_id.clone(),
+                model_id: model_id.into(),
+            },
+        )?;
+        let record = self
+            .registry
+            .prepare_activation(owner_account_id, agent_id)?;
+        let session_id = record
+            .main_session_id
+            .ok_or_else(|| anyhow::anyhow!("test product Agent has no Main Session"))?;
+        let context = self
+            .session_route_context(&acp::SessionId::new(session_id.clone()))?
+            .ok_or_else(|| anyhow::anyhow!("test product Session has no route context"))?;
+        Ok((session_id, context, profile_id))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn turn_routes_for_host_test(
+        &self,
+        owner_account_id: i64,
+        session_id: &str,
+        role: &str,
+    ) -> Result<Vec<turn_routes::TurnRouteRecord>> {
+        turn_routes::TurnRouteStore::in_home(&self.state_home).list_session(
+            owner_account_id,
+            session_id,
+            role,
+        )
+    }
+
     pub(crate) fn registry(&self) -> &AgentRegistry {
         &self.registry
     }

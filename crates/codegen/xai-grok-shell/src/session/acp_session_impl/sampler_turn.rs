@@ -466,9 +466,14 @@ impl SessionActor {
             .await
             .map(|c| c.model)
             .unwrap_or_default();
-        let aux_classifier_sampler = match auto_cfg.classifier_model.as_deref() {
-            Some(slug) => self.resolve_auto_classifier_sampler(slug).await,
-            None => None,
+        let is_product_session = self.startup_hints.agentmesh360_route.is_some();
+        let aux_classifier_sampler = if is_product_session {
+            None
+        } else {
+            match auto_cfg.classifier_model.as_deref() {
+                Some(slug) => self.resolve_auto_classifier_sampler(slug).await,
+                None => None,
+            }
         };
         let models = self.models_manager.models();
         let effective_supports_re = crate::agent::config::effective_classifier_supports_re(
@@ -478,8 +483,14 @@ impl SessionActor {
             &session_model,
             &models,
         );
-        let (prompt_type, classifier_reasoning_effort) =
+        let (prompt_type, mut classifier_reasoning_effort) =
             crate::util::config::auto_mode_classifier_defaults(&auto_cfg, effective_supports_re);
+        if is_product_session {
+            // The ordinary session model does not describe the bound BYOK
+            // role's capabilities. Avoid sending a Grok-derived reasoning
+            // knob until the Host exposes capability-aware side-query input.
+            classifier_reasoning_effort = None;
+        }
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(
             Vec<xai_grok_workspace::permission::ClassifierMessage>,
             tokio::sync::oneshot::Sender<Result<String, String>>,
@@ -489,21 +500,34 @@ impl SessionActor {
             const TIMEOUT_MS: u64 = 15_000;
             while let Some((messages, respond_to)) = rx.recv().await {
                 let result = async {
-                    let (sampling_client, model) = match &aux_classifier_sampler {
-                        Some((client, model)) => (client.clone(), model.clone()),
-                        None => {
-                            let client = session
-                                .prepare_chat_completion(false)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                            let model = session
-                                .chat_state_handle
-                                .get_sampling_config()
-                                .await
-                                .map(|c| c.model)
-                                .unwrap_or_default();
-                            (client, model)
-                        }
+                    let ordinary_sampler = if session.startup_hints.agentmesh360_route.is_some() {
+                        None
+                    } else {
+                        Some(match &aux_classifier_sampler {
+                            Some((client, model)) => (client.clone(), model.clone()),
+                            None => {
+                                let client = session
+                                    .prepare_chat_completion(false)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                                let model = session
+                                    .chat_state_handle
+                                    .get_sampling_config()
+                                    .await
+                                    .map(|c| c.model)
+                                    .unwrap_or_default();
+                                (client, model)
+                            }
+                        })
+                    };
+                    let model = match ordinary_sampler.as_ref() {
+                        Some((_, model)) => model.clone(),
+                        None => session
+                            .chat_state_handle
+                            .get_sampling_config()
+                            .await
+                            .map(|config| config.model)
+                            .unwrap_or_default(),
                     };
                     let session_id = session.session_info.id.to_string();
                     let items = messages
@@ -535,15 +559,59 @@ impl SessionActor {
                         x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
                         ..ConversationRequest::default()
                     };
-                    let fut = sampling_client.conversation_collect(request);
-                    let response =
-                        tokio::time::timeout(std::time::Duration::from_millis(TIMEOUT_MS), fut)
+                    let timeout = std::time::Duration::from_millis(TIMEOUT_MS);
+                    let response = if let Some(context) =
+                        session.startup_hints.agentmesh360_route.as_ref()
+                    {
+                        let logical_turn_id = session
+                            .current_prompt_id
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.clone())
+                            .unwrap_or_else(|| {
+                                format!("aux:permission_classifier:{}", uuid::Uuid::new_v4())
+                            });
+                        let mut route = context
+                            .prepare_turn_for_role(
+                                session.session_info.id.0.as_ref(),
+                                "permission_classifier",
+                                &logical_turn_id,
+                            )
+                            .map_err(|error| error.to_string())?;
+                        let request_id = xai_grok_sampler::RequestId::random();
+                        let pending = route
+                            .submit(|config| {
+                                session
+                                    .sampler_handle
+                                    .begin_side_query_and_collect_with_config(
+                                        request_id, request, config,
+                                    )
+                                    .map_err(anyhow::Error::new)
+                            })
+                            .map_err(|error| error.to_string())?;
+                        tokio::time::timeout(timeout, pending.collect())
                             .await
                             .map_err(|_| "permission auto classifier timed out".to_string())?
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| e.to_string())?
+                            .0
+                    } else {
+                        let (sampling_client, _) = ordinary_sampler
+                            .expect("ordinary classifier sampler exists outside product sessions");
+                        tokio::time::timeout(timeout, sampling_client.conversation_collect(request))
+                            .await
+                            .map_err(|_| "permission auto classifier timed out".to_string())?
+                            .map_err(|e| e.to_string())?
+                    };
                     Ok(response.assistant_text())
                 }
                 .await;
+                if result.is_err() {
+                    tracing::warn!(
+                        session_id = %session.session_info.id,
+                        role = "permission_classifier",
+                        "permission classifier unavailable; using the local conservative fallback"
+                    );
+                }
                 let _ = respond_to.send(result);
             }
         });

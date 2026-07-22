@@ -125,6 +125,16 @@ impl<V: CredentialVault> ProviderService<V> {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn create_for_host_test(
+        &self,
+        owner_account_id: i64,
+        input: ProviderProfileInput,
+        api_key: String,
+    ) -> Result<ProviderProfileRecord> {
+        self.create(owner_account_id, input, api_key)
+    }
+
     fn update(
         &self,
         owner_account_id: i64,
