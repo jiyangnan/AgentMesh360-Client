@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "catalogRevision": 1,
+  "providers": [
+    {
+      "presetId": "openai",
+      "displayName": "OpenAI",
+      "classification": "official",
+      "protocol": "openai_responses",
+      "defaultBaseUrl": "https://api.openai.com/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://api.openai.com"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "xai",
+      "displayName": "xAI",
+      "classification": "official",
+      "protocol": "openai_responses",
+      "defaultBaseUrl": "https://api.x.ai/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://api.x.ai"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "anthropic",
+      "displayName": "Anthropic",
+      "classification": "official",
+      "protocol": "anthropic_messages",
+      "defaultBaseUrl": "https://api.anthropic.com/v1",
+      "authKind": "x_api_key",
+      "allowedEndpointOrigins": ["https://api.anthropic.com"],
+      "quirks": ["anthropic_version_2023_06_01"],
+      "models": []
+    },
+    {
+      "presetId": "compatible-openai-responses",
+      "displayName": "OpenAI Responses Compatible",
+      "classification": "custom",
+      "protocol": "openai_responses",
+      "defaultBaseUrl": null,
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": [],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "compatible-openai-chat",
+      "displayName": "OpenAI Chat Compatible",
+      "classification": "custom",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": null,
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": [],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "compatible-anthropic-messages",
+      "displayName": "Anthropic Messages Compatible",
+      "classification": "custom",
+      "protocol": "anthropic_messages",
+      "defaultBaseUrl": null,
+      "authKind": "x_api_key",
+      "allowedEndpointOrigins": [],
+      "quirks": ["anthropic_version_2023_06_01"],
+      "models": []
+    },
+    {
+      "presetId": "local-openai-chat",
+      "displayName": "Local OpenAI Compatible",
+      "classification": "local",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "http://127.0.0.1:11434/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["http://127.0.0.1:11434"],
+      "quirks": [],
+      "models": []
+    }
+  ]
+}

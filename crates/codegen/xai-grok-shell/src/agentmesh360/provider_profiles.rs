@@ -91,28 +91,12 @@ impl ProviderProfileInput {
             bail!("provider preset id is too long");
         }
 
-        let url = Url::parse(self.base_url.trim()).context("provider base URL is invalid")?;
-        if !matches!(url.scheme(), "http" | "https") {
-            bail!("provider base URL must use http or https");
-        }
-        if !url.username().is_empty() || url.password().is_some() {
-            bail!("provider base URL must not contain credentials");
-        }
-        if url.query().is_some() || url.fragment().is_some() {
-            bail!("provider base URL must not contain a query or fragment");
-        }
-        if url.host_str().is_none() {
-            bail!("provider base URL must contain a host");
-        }
-        self.base_url = url.as_str().trim_end_matches('/').to_owned();
+        self.base_url = normalize_base_url(&self.base_url)?;
 
         let mut seen = HashSet::new();
         let mut models = Vec::with_capacity(self.enabled_models.len());
         for model in self.enabled_models {
-            let model = model.trim().to_owned();
-            if model.is_empty() || model.chars().count() > 200 {
-                bail!("provider model ids must contain 1 to 200 characters");
-            }
+            let model = normalize_model_id(&model)?;
             if seen.insert(model.clone()) {
                 models.push(model);
             }
@@ -123,6 +107,36 @@ impl ProviderProfileInput {
         self.enabled_models = models;
         Ok(self)
     }
+}
+
+pub(super) fn normalize_base_url(value: &str) -> Result<String> {
+    let url = Url::parse(value.trim()).context("provider base URL is invalid")?;
+    if !matches!(url.scheme(), "http" | "https") {
+        bail!("provider base URL must use http or https");
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        bail!("provider base URL must not contain credentials");
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        bail!("provider base URL must not contain a query or fragment");
+    }
+    if url.host_str().is_none() {
+        bail!("provider base URL must contain a host");
+    }
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+pub(super) fn normalize_model_id(value: &str) -> Result<String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > 200
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/' | b':' | b'@')
+        })
+    {
+        bail!("provider model id is invalid");
+    }
+    Ok(value.to_owned())
 }
 
 #[derive(Clone, Serialize, PartialEq, Eq)]
@@ -454,5 +468,18 @@ mod tests {
         }
         .normalized();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn model_ids_support_common_local_and_gateway_syntax_but_reject_controls() {
+        assert_eq!(
+            normalize_model_id(" llama3.2:latest ").expect("Ollama model id"),
+            "llama3.2:latest"
+        );
+        assert_eq!(
+            normalize_model_id("openrouter/vendor@preview").expect("gateway model id"),
+            "openrouter/vendor@preview"
+        );
+        assert!(normalize_model_id("model\nheader").is_err());
     }
 }

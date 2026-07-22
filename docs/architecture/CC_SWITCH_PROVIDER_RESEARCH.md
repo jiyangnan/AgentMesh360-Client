@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，架构结论分阶段实现中
+状态：调研完成，切片 A/B 已实现，切片 C 开发中
 
 调研日期：2026-07-22
 
@@ -16,10 +16,13 @@
 切片 A 已接受的实现决策见
 [`ADR_PROVIDER_CONTROL_PLANE_VAULT.md`](ADR_PROVIDER_CONTROL_PLANE_VAULT.md)。
 
-实现进度（2026-07-23）：切片 A 基础已经落地，包括共享 `state.db v2`、账户隔离的
-Provider Profile Store、单调 route revision、macOS Host Keychain Vault、只写秘密
-ACP 管理方法和桌面 Host Client。Catalog、Assignment、Session Binding、
-RouteCompiler、Provider UI 与 Sampling 路由仍是目标能力。
+实现进度（2026-07-23）：切片 A/B 已经落地，包括共享 `state.db v3`、账户隔离的
+Provider Profile Store、macOS Host Keychain Vault、声明式内置 Catalog、Capability、
+Model Policy、三层 Model Assignment、非秘密 RouteCompiler，以及对应 ACP/桌面 Host
+Client 方法。Session Binding 正在开发；Provider UI 与 Sampling 路由仍是目标能力。
+
+逐轮实施证据、计划复盘和下一轮验收条件统一记录在
+[`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
 
 ## 1. 调研背景与目标
 
@@ -868,12 +871,16 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
 
 ### 切片 B：内置 Catalog、Capability 与 RouteCompiler
 
+状态：**已实现（2026-07-23）**
+
 - 建立只读内置 Catalog 基线；
 - 定义 Model Capability、Agent Model Policy 和独立 Model Assignment；
 - 将 Profile、Policy、Assignment 编译为非秘密 `PreparedRoute`；
 - 建立数据优先级、Quirk 白名单和 Catalog 失败回退测试。
 
 ### 切片 C：先实现 Session Binding
+
+状态：**开发中（2026-07-23）**
 
 - Main Session 固化不可变 Provider Binding 与 route revision；
 - 每 Turn 记录非秘密路由快照；

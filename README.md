@@ -14,6 +14,7 @@
 - **上游 Harness：** [`xai-org/grok-build`](https://github.com/xai-org/grok-build)
 - **旧原型与迁移来源：** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
 - **桌面身份外壳：** [`desktop/README.md`](desktop/README.md)
+- **项目进展与下一轮计划：** [`docs/PROJECT_PROGRESS.md`](docs/PROJECT_PROGRESS.md)
 - **仓库边界：** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
 - **产品与技术蓝图（中文）：** [`docs/architecture/PRODUCT_BLUEPRINT.md`](docs/architecture/PRODUCT_BLUEPRINT.md)
 - **持久化产品 Agent 架构（中文）：** [`docs/architecture/PERSISTENT_PRODUCT_AGENTS.md`](docs/architecture/PERSISTENT_PRODUCT_AGENTS.md)

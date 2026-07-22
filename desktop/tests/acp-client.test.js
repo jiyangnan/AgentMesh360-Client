@@ -87,6 +87,52 @@ test('Provider management uses write-only AgentMesh360 Host extensions', async (
   await client.stop();
 });
 
+test('Provider catalog and model assignments use Host-owned routing extensions', async () => {
+  const received = [];
+  const assignment = {
+    scopeKind: 'agent',
+    scopeId: 'job-agent',
+    role: 'main',
+    providerProfileId: 'pp_1234',
+    modelId: 'model-main',
+  };
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/providers/catalog') {
+      return { result: { catalog: { schemaVersion: 1, providers: [] } } };
+    }
+    if (request.method === '_x.agentmesh360/model-assignments/list') {
+      return { result: { assignments: [] } };
+    }
+    if (request.method === '_x.agentmesh360/model-assignments/delete') {
+      return { result: { deleted: true } };
+    }
+    return { result: { assignment: { assignmentId: 'ma_1234', ...assignment } } };
+  });
+  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+
+  await client.getProviderCatalog();
+  await client.listModelAssignments();
+  const upserted = await client.upsertModelAssignment(assignment);
+  const deleted = await client.deleteModelAssignment('ma_1234');
+
+  assert.equal(upserted.assignment.assignmentId, 'ma_1234');
+  assert.equal(deleted.deleted, true);
+  assert.deepEqual(
+    received.slice(1).map((request) => request.method),
+    [
+      '_x.agentmesh360/providers/catalog',
+      '_x.agentmesh360/model-assignments/list',
+      '_x.agentmesh360/model-assignments/upsert',
+      '_x.agentmesh360/model-assignments/delete',
+    ],
+  );
+  assert.deepEqual(received[3].params, { assignment });
+  assert.deepEqual(received[4].params, { assignmentId: 'ma_1234' });
+  await client.stop();
+});
+
 function fakeChild(handler) {
   const child = new EventEmitter();
   child.stdout = new PassThrough();

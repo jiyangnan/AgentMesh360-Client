@@ -18,9 +18,10 @@
 - 退出登录时删除本机 Refresh Token，并立即撤销 Host 的产品 Agent 准入状态。
 - Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
   API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
-  引用和最后四位。该管理能力尚未暴露给 Renderer。
+  引用和最后四位；Host 还提供声明式 Catalog 与三层 Model Assignment 管理方法。
+  这些管理能力尚未暴露给 Renderer。
 
-本切片尚未实现 OAuth、BYOK Provider 设置 UI、Catalog/RouteCompiler、真实模型路由、
+本切片尚未实现 OAuth、BYOK Provider 设置 UI、Session Binding、真实模型路由、
 固定对话界面、垂直业务工作区和动态 Agent Package。这些能力仍按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。
 

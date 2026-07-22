@@ -7,7 +7,11 @@
 
 mod access;
 mod credential_vault;
+mod model_assignments;
+mod model_policy;
+mod model_routing;
 mod profiles;
+mod provider_catalog;
 mod provider_profiles;
 mod providers;
 pub mod registry;
@@ -34,6 +38,7 @@ pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
     providers: providers::ProviderService<credential_vault::SystemCredentialVault>,
+    model_routing: model_routing::ModelRoutingService,
     access: access::ClientAccess,
     pinned_sessions: RefCell<HashSet<acp::SessionId>>,
     restore_started: Cell<bool>,
@@ -133,6 +138,18 @@ pub(crate) async fn handle(
             activate(agent, &request.agent_id)
                 .await
                 .and_then(|response| serde_json::to_value(response).map_err(Into::into))
+        }
+        method if model_routing::handles(method) => {
+            let owner_account_id = agent
+                .agentmesh360
+                .access
+                .current_account_id()
+                .ok_or_else(|| anyhow!("AgentMesh360 account access is unavailable"))?;
+            return model_routing::handle(
+                &agent.agentmesh360.model_routing,
+                owner_account_id,
+                args,
+            );
         }
         method if method.starts_with("x.agentmesh360/providers/") => {
             let owner_account_id = agent

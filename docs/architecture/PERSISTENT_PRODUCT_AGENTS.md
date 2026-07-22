@@ -2,7 +2,7 @@
 
 状态：基础实现完成，已接入 Host 订阅门禁
 建立日期：2026-07-21
-最近更新：2026-07-22
+最近更新：2026-07-23
 
 相关的产品结构、流程、Package、Provider 与信任边界图见：
 [`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。CC Switch Provider 调研、Host Vault、
@@ -86,7 +86,9 @@ Core 契约、Host 强制执行和桌面身份外壳已经接通：桌面端已�
 Token 轮换、Electron `safeStorage` 加密保存、启动/聚焦/唤醒/定时重验、订阅拦截页和
 官网跳转。这里的 `safeStorage` 服务于桌面身份 Token；Provider 切片 A 已另行实现由
 Host 直接拥有的 macOS Keychain `CredentialVault` 与非秘密 Profile Store，两者不是
-同一个凭据通道。Provider UI、RouteCompiler 和 Sampling 接入仍未实现。
+同一个凭据通道。Provider 切片 B 已继续实现声明式 Catalog、Capability、三层
+Model Assignment 与非秘密 RouteCompiler；Session Binding 正在开发，Provider UI 和
+Sampling 接入仍未实现。
 
 当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
 因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和

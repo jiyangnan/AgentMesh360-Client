@@ -47,12 +47,24 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       'lecturecast-agent',
       'deploy-agent',
     ]);
+    const catalog = await client.getProviderCatalog();
+    assert.equal(catalog.catalog.schemaVersion, 1);
+    assert.deepEqual(
+      catalog.catalog.providers.slice(0, 3).map((provider) => provider.presetId),
+      ['openai', 'xai', 'anthropic'],
+    );
+    const assignments = await client.listModelAssignments();
+    assert.deepEqual(assignments.assignments, []);
 
     canEnter = false;
     const denied = await client.bootstrap('integration-access-token');
     assert.equal(denied.access.canEnterClient, false);
     await assert.rejects(
       client.listAgents(),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
+      client.getProviderCatalog(),
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );
   } finally {

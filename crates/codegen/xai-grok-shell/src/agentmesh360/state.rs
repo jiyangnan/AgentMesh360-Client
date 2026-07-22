@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -40,6 +40,24 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_provider_profiles_owner
     ON provider_profiles(owner_account_id, display_name, profile_id);
+
+CREATE TABLE IF NOT EXISTS model_assignments (
+    assignment_id TEXT PRIMARY KEY,
+    owner_account_id INTEGER NOT NULL,
+    scope_kind TEXT NOT NULL CHECK(scope_kind IN ('global', 'agent', 'session')),
+    scope_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    provider_profile_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    assignment_revision INTEGER NOT NULL CHECK(assignment_revision >= 1),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(owner_account_id, scope_kind, scope_id, role),
+    FOREIGN KEY(provider_profile_id) REFERENCES provider_profiles(profile_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_model_assignments_resolve
+    ON model_assignments(owner_account_id, role, scope_kind, scope_id);
 "#;
 
 pub(super) fn default_state_home() -> PathBuf {
@@ -89,7 +107,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v2_schema() {
+    fn initializes_the_shared_v3_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -100,7 +118,7 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
-                     ('product_agents', 'provider_profiles') ORDER BY name",
+                     ('model_assignments', 'product_agents', 'provider_profiles') ORDER BY name",
                 )
                 .expect("prepare table query");
             stmt.query_map([], |row| row.get(0))
@@ -109,8 +127,11 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 2);
-        assert_eq!(tables, ["product_agents", "provider_profiles"]);
+        assert_eq!(version, 3);
+        assert_eq!(
+            tables,
+            ["model_assignments", "product_agents", "provider_profiles"]
+        );
     }
 
     #[test]
@@ -131,5 +152,50 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("read future version");
         assert_eq!(version, 99);
+    }
+
+    #[test]
+    fn upgrades_v2_without_losing_provider_profiles() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            conn.execute_batch(
+                "DROP TABLE model_assignments;
+                 PRAGMA user_version = 2;
+                 INSERT INTO provider_profiles (
+                   profile_id, owner_account_id, preset_id, display_name, protocol,
+                   base_url, auth_kind, credential_ref, credential_last_four,
+                   enabled_models_json, route_revision, created_at, updated_at
+                 ) VALUES (
+                   'pp_existing', 1, 'openai', 'Existing', 'openai_responses',
+                   'https://api.openai.com/v1', 'bearer_api_key',
+                   'credential://vault/h_00000000000000000000000000000001', '1234',
+                   '[\"model-main\"]', 1, '2026-07-23T00:00:00Z', '2026-07-23T00:00:00Z'
+                 );",
+            )
+            .expect("prepare v2 database");
+        }
+
+        let conn = open(temp.path()).expect("upgrade v2 database");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let profiles: u32 = conn
+            .query_row("SELECT COUNT(*) FROM provider_profiles", [], |row| {
+                row.get(0)
+            })
+            .expect("profile count");
+        let assignments_table: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'model_assignments'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("assignment table count");
+
+        assert_eq!(version, 3);
+        assert_eq!(profiles, 1);
+        assert_eq!(assignments_table, 1);
     }
 }
