@@ -133,6 +133,72 @@ test('Provider catalog and model assignments use Host-owned routing extensions',
   await client.stop();
 });
 
+test('Session Provider Binding methods keep route snapshots Host-owned', async () => {
+  const received = [];
+  const binding = {
+    bindingId: 'spb_1234',
+    sessionId: 'session-a',
+    role: 'main',
+    agentId: 'job-agent',
+    bindingRevision: 1,
+    changeReason: 'initial',
+    snapshotHash: 'hash',
+    route: { providerProfileId: 'pp_1234', modelId: 'model-main' },
+  };
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/session-bindings/history') {
+      return { result: { bindings: [binding] } };
+    }
+    if (request.method === '_x.agentmesh360/turn-routes/list') {
+      return { result: { turnRoutes: [] } };
+    }
+    return { result: { binding } };
+  });
+  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+
+  await client.resolveSessionBinding({ sessionId: 'session-a', role: 'main', agentId: 'job-agent' });
+  const history = await client.getSessionBindingHistory({
+    sessionId: 'session-a',
+    role: 'main',
+    agentId: 'job-agent',
+  });
+  await client.switchSessionBinding({
+    sessionId: 'session-a',
+    role: 'main',
+    agentId: 'job-agent',
+    kind: 'rollback',
+    targetBindingRevision: 1,
+  });
+  const turnRoutes = await client.listTurnRoutes({
+    sessionId: 'session-a',
+    role: 'main',
+    agentId: 'job-agent',
+  });
+
+  assert.deepEqual(history.bindings, [binding]);
+  assert.deepEqual(turnRoutes.turnRoutes, []);
+  assert.deepEqual(
+    received.slice(1).map((request) => request.method),
+    [
+      '_x.agentmesh360/session-bindings/resolve',
+      '_x.agentmesh360/session-bindings/history',
+      '_x.agentmesh360/session-bindings/switch',
+      '_x.agentmesh360/turn-routes/list',
+    ],
+  );
+  assert.deepEqual(received[3].params, {
+    sessionId: 'session-a',
+    role: 'main',
+    agentId: 'job-agent',
+    kind: 'rollback',
+    targetBindingRevision: 1,
+  });
+  assert.ok(received.every((request) => !JSON.stringify(request.params).includes('preparedRoute')));
+  await client.stop();
+});
+
 function fakeChild(handler) {
   const child = new EventEmitter();
   child.stdout = new PassThrough();

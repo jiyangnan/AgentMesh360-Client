@@ -28,9 +28,9 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B 与 C0 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离 | 切片 C1：不可变 Session Binding 与 Turn 路由快照 |
-| Provider Sampling | 仍使用 Grok 原有配置路径，AgentMesh 路由尚未接入 | 切片 D：PreparedRoute 投影到现有三协议 Backend |
-| Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | Session Binding 完成后实现最小设置 UI |
+| Provider Control Plane | 切片 A/B/C 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding | 切片 D0：认证日志安全门槛 |
+| Provider Sampling | 仍使用 Grok 原有配置路径；Turn Route 只有可信存储接口，尚无实际记录 | 切片 D0 清除认证片段日志后，再把 Binding 投影到现有三协议 Backend |
+| Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
 ## 开发循环记录
@@ -141,7 +141,7 @@ Keychain 做破坏性验证。
 
 ### 循环 3：Provider 切片 C——不可变 Session Binding
 
-状态：开发中（C0 已完成，C1 已启动）
+状态：已完成
 
 本轮目标：
 
@@ -192,7 +192,11 @@ Keychain 做破坏性验证。
 - C0 使用了 `state.db v4`，因此 Binding schema 顺延为 v5，不能覆盖或伪装成 v4；
 - 当前 Electron 仍随 UI 退出停止 Host，C0 只解决身份隔离，不把后台常驻误标为完成。
 
-#### C1 下一轮：不可变 SessionProviderBinding
+#### C1 检查点：不可变 SessionProviderBinding
+
+状态：已完成
+
+本地提交：待切片 C 检查点提交后回填
 
 目标：
 
@@ -205,10 +209,60 @@ Keychain 做破坏性验证。
 验收条件：并发/重复首次绑定幂等、revision 单调递增、跨账号不可见、快照不含
 Credential Ref/API Key/Header、删除 Profile 不级联 Binding，并通过 v4→v5 无损迁移测试。
 
-C1 非目标：不发送真实模型请求；不在“准备路由”时伪造实际 Turn 记录；不实现
-Renderer 设置 UI。实际 Turn 路由只能由切片 D 在 Sampling 请求提交点记录。
+已经实现：
 
-本轮非目标：不发送真实模型请求、不声称跨 Provider 历史可无损迁移、不实现 UI。
+- `state.db v5` 新增 `session_provider_bindings` 与 `turn_route_records`，v4→v5
+  只增表，不改写账户隔离的 Agent、Profile 或 Assignment；
+- Binding 保存完整、非秘密 `PreparedRoute` JSON、BLAKE3 snapshot hash、Profile /
+  Assignment / Catalog revision 和数据去向信息；读取时校验 hash，篡改失败关闭；
+- 首次绑定在 SQLite Immediate transaction 与 busy timeout 下并发幂等，只产生 revision 1；
+- 当前 Binding 不随 Profile、Catalog 或 Assignment 更新漂移；显式切换、兼容迁移和
+  回滚均追加新 revision，旧快照永久保留；
+- 删除 Profile 会级联当前 Assignment，但不级联 Binding/Turn 历史；没有当前
+  Assignment 时无法编译新路由；
+- 产品 Session 的 Binding/Turn 读取再次校验 Registry 账户归属，其他账号不可见；
+- 新增 resolve/history/switch Binding ACP、Turn Route 只读 ACP 与桌面 Host Client 合同；
+- Turn Route 写入接口只接受已持久化且 hash 匹配的 Binding，同一 Turn 不能改写路由；
+  当前没有调用该接口，因此不会把计划路由伪装成实际模型请求。
 
-完成切片 C 后再次更新本文档并复盘，再进入切片 D。切片 D 的第一步不是注入 Key，
-而是先清除 Grok Sampling/subagent 日志中的认证值片段并建立泄露回归测试。
+验证证据：
+
+- `xai-grok-shell agentmesh360`：42 个测试通过；
+- 桌面：19 个测试通过、1 个可选真实 Host 测试默认跳过；
+- 真实 Grok Host ACP 契约：当前账号可读空 Binding/Turn 历史，其他账号的产品
+  Session 在 ACP 外层即返回不可见，订阅失效后继续被硬门禁拒绝；
+- Rustfmt、Clippy `-D warnings`、桌面语法检查和真实 Host 构建通过。
+
+计划复盘：
+
+- Binding 复用切片 B 的 `PreparedRoute`，没有建立第二套路由结构或 Sampling 客户端；
+- `Model Assignment` 仍表示当前选择，Binding 才表示 Session 已冻结事实，两者没有合并；
+- `TurnRouteRecord` 表和可信写入接口不等于已有实际调用记录；切片 D 必须在真正提交
+  Sampling 请求时才调用；
+- `compatible_migration` 当前只是追加 revision 的审计原因，尚未实现历史转换、摘要或
+  Provider 私有推理状态兼容流程，不能对外宣称已经完成跨 Provider 迁移；
+- 动态 Agent Package 的 Model Policy 尚未落地，Binding ACP 当前使用保守默认 Policy；
+  切片 D 只接现有内置 Agent，Package Policy 仍按动态 Package 主线补齐；
+- C1 没有读取 Vault Key、发送模型请求或实现 Renderer UI，仍符合切片边界。
+
+C1 非目标保持不变：不发送真实模型请求；不在“准备路由”时写实际 Turn；不实现
+Renderer 设置 UI。
+
+### 循环 4：Provider 切片 D0——认证日志安全门槛
+
+状态：已启动
+
+本轮目标：
+
+1. 枚举 Grok Sampling、subagent、配置和错误路径中所有认证值前缀/后缀日志；
+2. 改为只记录 `credential_present`、认证类型、来源分类和相等性等非秘密信号；
+3. 用高辨识度 sentinel Key 建立日志泄露回归，断言完整 Key 及任意稳定片段均不出现；
+4. 复核错误对象、Debug 实现和 tracing fields，防止 API Key、Authorization Header、
+   Credential Ref 从非 debug 日志路径泄露；
+5. 安全门槛通过后，再规划 D1 的短生命周期内存 Credential Lease 与 Sampling 投影。
+
+验收条件：覆盖三种现有协议与 subagent 关键路径；测试失败时能明确指出泄露位置；
+Rustfmt、Clippy 和相关 Host 回归通过；不得为测试发起真实或可能计费的模型请求。
+
+本轮非目标：不注入用户真实 Key、不调用外部 Provider、不实现 UI、不把日志级别降低
+当作修复。

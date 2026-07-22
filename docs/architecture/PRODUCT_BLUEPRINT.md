@@ -470,7 +470,7 @@ flowchart LR
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
-| BYOK Provider 层 | **切片 A/B/C0 已实现，切片 C1 开发中** | 已实现共享 state.db v4、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent 和管理 ACP；当前推进 v5 不可变 Session Binding，Provider UI 与真实模型路由仍待实现 |
+| BYOK Provider 层 | **切片 A/B/C 已实现，切片 D0 开发中** | 已实现共享 state.db v5、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口和管理 ACP；当前先修复认证片段日志，再接真实模型路由；Provider UI 仍待实现 |
 | 动态 Agent Package | **目标** | Manifest、签名、目录、安装器、迁移、权限变更、回滚、宿主 Skill Adapter |
 | 桌面产品外壳 | **身份外壳与 Agent 首页已实现** | 登录、门禁、账号 / 订阅 / credits、Agent 列表与激活；固定对话、垂直工作区、活动、产物、审批与设置仍是目标 |
 | 后台 Host | **进程与 ACP 桥接已实现** | 桌面按需启动真实 Grok Host，执行订阅策略与 Agent Registry；系统登录自启动、独立 Supervisor、崩溃恢复、通知与完整审计仍是目标 |

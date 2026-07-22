@@ -1,9 +1,10 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use rusqlite::{Connection, OptionalExtension, Transaction};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -64,6 +65,54 @@ CREATE TABLE IF NOT EXISTS model_assignments (
 
 CREATE INDEX IF NOT EXISTS idx_model_assignments_resolve
     ON model_assignments(owner_account_id, role, scope_kind, scope_id);
+
+CREATE TABLE IF NOT EXISTS session_provider_bindings (
+    binding_id TEXT PRIMARY KEY,
+    owner_account_id INTEGER NOT NULL CHECK(owner_account_id > 0),
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    agent_id TEXT,
+    binding_revision INTEGER NOT NULL CHECK(binding_revision >= 1),
+    change_reason TEXT NOT NULL CHECK(change_reason IN (
+        'initial', 'explicit_switch', 'compatible_migration', 'rollback'
+    )),
+    prepared_route_json TEXT NOT NULL,
+    snapshot_hash TEXT NOT NULL,
+    provider_profile_id TEXT NOT NULL,
+    provider_preset_id TEXT,
+    model_id TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    endpoint_origin TEXT NOT NULL,
+    profile_route_revision INTEGER NOT NULL CHECK(profile_route_revision >= 1),
+    assignment_id TEXT NOT NULL,
+    assignment_revision INTEGER NOT NULL CHECK(assignment_revision >= 1),
+    catalog_revision INTEGER NOT NULL CHECK(catalog_revision >= 1),
+    bound_at TEXT NOT NULL,
+    UNIQUE(owner_account_id, session_id, role, binding_revision)
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_provider_bindings_current
+    ON session_provider_bindings(owner_account_id, session_id, role, binding_revision DESC);
+
+CREATE TABLE IF NOT EXISTS turn_route_records (
+    turn_route_id TEXT PRIMARY KEY,
+    owner_account_id INTEGER NOT NULL CHECK(owner_account_id > 0),
+    session_id TEXT NOT NULL,
+    turn_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    binding_revision INTEGER NOT NULL CHECK(binding_revision >= 1),
+    binding_snapshot_hash TEXT NOT NULL,
+    provider_profile_id TEXT NOT NULL,
+    provider_preset_id TEXT,
+    model_id TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    endpoint_origin TEXT NOT NULL,
+    submitted_at TEXT NOT NULL,
+    UNIQUE(owner_account_id, session_id, role, turn_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_turn_route_records_session
+    ON turn_route_records(owner_account_id, session_id, role, submitted_at);
 "#;
 
 pub(super) fn default_state_home() -> PathBuf {
@@ -85,6 +134,8 @@ pub(super) fn open(state_home: &Path) -> Result<Connection> {
     let mut conn = mode
         .open(&db_path)
         .with_context(|| format!("open AgentMesh360 state database {}", db_path.display()))?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .context("configure AgentMesh360 state lock timeout")?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")
         .context("enable AgentMesh360 state foreign keys")?;
     let current_version: u32 = conn
@@ -94,7 +145,7 @@ pub(super) fn open(state_home: &Path) -> Result<Connection> {
         anyhow::bail!("unsupported AgentMesh360 state schema version: {current_version}");
     }
     let transaction = conn
-        .transaction()
+        .transaction_with_behavior(TransactionBehavior::Immediate)
         .context("start AgentMesh360 state migration")?;
     if current_version < 4 {
         migrate_product_agents_to_v4(&transaction)?;
@@ -176,7 +227,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v4_schema() {
+    fn initializes_the_shared_v5_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -187,7 +238,8 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
-                     ('model_assignments', 'product_agents', 'provider_profiles') ORDER BY name",
+                     ('model_assignments', 'product_agents', 'provider_profiles', \
+                      'session_provider_bindings', 'turn_route_records') ORDER BY name",
                 )
                 .expect("prepare table query");
             stmt.query_map([], |row| row.get(0))
@@ -196,10 +248,16 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         assert_eq!(
             tables,
-            ["model_assignments", "product_agents", "provider_profiles"]
+            [
+                "model_assignments",
+                "product_agents",
+                "provider_profiles",
+                "session_provider_bindings",
+                "turn_route_records"
+            ]
         );
     }
 
@@ -263,7 +321,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -320,5 +378,51 @@ mod tests {
 
         assert_eq!(owner, None);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
+    }
+
+    #[test]
+    fn upgrades_v4_without_losing_account_scoped_agents() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            conn.execute_batch(
+                "DROP TABLE turn_route_records;
+                 DROP TABLE session_provider_bindings;
+                 INSERT INTO product_agents (
+                   owner_account_id, agent_id, display_name, description, version, sort_order,
+                   desired_state, runtime_state, main_session_id, updated_at
+                 ) VALUES (
+                   41, 'job-agent', 'Job Agent', 'Existing', '0.1.0', 10,
+                   'running', 'dormant', '11111111-1111-1111-1111-111111111111',
+                   '2026-07-23T00:00:00Z'
+                 );
+                 PRAGMA user_version = 4;",
+            )
+            .expect("prepare v4 database");
+        }
+
+        let conn = open(temp.path()).expect("upgrade v4 database");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let owner: i64 = conn
+            .query_row(
+                "SELECT owner_account_id FROM product_agents WHERE agent_id = 'job-agent'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("agent owner");
+        let binding_tables: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN \
+                 ('session_provider_bindings', 'turn_route_records')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("binding tables");
+
+        assert_eq!(version, 5);
+        assert_eq!(owner, 41);
+        assert_eq!(binding_tables, 2);
     }
 }

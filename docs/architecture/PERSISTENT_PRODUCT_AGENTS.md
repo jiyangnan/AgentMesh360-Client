@@ -89,8 +89,8 @@ Token 轮换、Electron `safeStorage` 加密保存、启动/聚焦/唤醒/定时
 官网跳转。这里的 `safeStorage` 服务于桌面身份 Token；Provider 切片 A 已另行实现由
 Host 直接拥有的 macOS Keychain `CredentialVault` 与非秘密 Profile Store，两者不是
 同一个凭据通道。Provider 切片 B 已继续实现声明式 Catalog、Capability、三层
-Model Assignment 与非秘密 RouteCompiler；Session Binding 正在开发，Provider UI 和
-Sampling 接入仍未实现。
+Model Assignment、非秘密 RouteCompiler、账户隔离的不可变 Session Binding 和 Turn
+Route 可信存储接口；Turn 写入尚未接到 Sampling，Provider UI 和真实推理接入仍未实现。
 
 当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
 因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和

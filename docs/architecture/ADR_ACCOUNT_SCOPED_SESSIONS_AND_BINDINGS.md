@@ -1,6 +1,6 @@
 # ADR：账户隔离的产品 Agent 与不可变 Session Binding
 
-状态：已接受；账户隔离 C0 已实现，Session Binding C1 实施中
+状态：已接受并实现；实际 Sampling/Turn 写入留待切片 D
 
 日期：2026-07-23
 

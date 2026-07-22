@@ -53,6 +53,18 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       'deploy-agent',
     ]);
     assert.equal(list.agents[0].mainSessionId, legacySessionId);
+    const emptyBindingHistory = await client.getSessionBindingHistory({
+      sessionId: legacySessionId,
+      role: 'main',
+      agentId: 'job-agent',
+    });
+    assert.deepEqual(emptyBindingHistory.bindings, []);
+    const emptyTurnRoutes = await client.listTurnRoutes({
+      sessionId: legacySessionId,
+      role: 'main',
+      agentId: 'job-agent',
+    });
+    assert.deepEqual(emptyTurnRoutes.turnRoutes, []);
     const catalog = await client.getProviderCatalog();
     assert.equal(catalog.catalog.schemaVersion, 1);
     assert.deepEqual(
@@ -68,6 +80,14 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     const secondAccountJob = secondAccountList.agents.find((agent) => agent.agentId === 'job-agent');
     assert.equal(secondAccountJob.desiredState, 'inactive');
     assert.equal(secondAccountJob.mainSessionId, null);
+    await assert.rejects(
+      client.getSessionBindingHistory({
+        sessionId: legacySessionId,
+        role: 'main',
+        agentId: 'job-agent',
+      }),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
 
     accountId = 11;
     await client.bootstrap('integration-access-token');
@@ -84,6 +104,14 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     );
     await assert.rejects(
       client.getProviderCatalog(),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
+      client.getSessionBindingHistory({
+        sessionId: legacySessionId,
+        role: 'main',
+        agentId: 'job-agent',
+      }),
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );
   } finally {

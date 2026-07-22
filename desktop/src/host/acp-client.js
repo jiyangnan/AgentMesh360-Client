@@ -118,6 +118,46 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/model-assignments/delete', { assignmentId });
   }
 
+  async resolveSessionBinding({ sessionId, role, agentId = null }) {
+    return this.#extension('x.agentmesh360/session-bindings/resolve', {
+      sessionId,
+      role,
+      agentId,
+    });
+  }
+
+  async getSessionBindingHistory({ sessionId, role, agentId = null }) {
+    return this.#extension('x.agentmesh360/session-bindings/history', {
+      sessionId,
+      role,
+      agentId,
+    });
+  }
+
+  async switchSessionBinding({
+    sessionId,
+    role,
+    agentId = null,
+    kind,
+    targetBindingRevision = null,
+  }) {
+    return this.#extension('x.agentmesh360/session-bindings/switch', {
+      sessionId,
+      role,
+      agentId,
+      kind,
+      targetBindingRevision,
+    });
+  }
+
+  async listTurnRoutes({ sessionId, role, agentId = null }) {
+    return this.#extension('x.agentmesh360/turn-routes/list', {
+      sessionId,
+      role,
+      agentId,
+    });
+  }
+
   async invalidate() {
     if (!this.child) return;
     try {

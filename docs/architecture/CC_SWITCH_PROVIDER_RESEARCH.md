@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C0 已实现，切片 C1 开发中
+状态：调研完成，切片 A/B/C 已实现，切片 D0 开发中
 
 调研日期：2026-07-22
 
@@ -16,10 +16,12 @@
 切片 A 已接受的实现决策见
 [`ADR_PROVIDER_CONTROL_PLANE_VAULT.md`](ADR_PROVIDER_CONTROL_PLANE_VAULT.md)。
 
-实现进度（2026-07-23）：切片 A/B 已经落地，包括共享 `state.db v3`、账户隔离的
+实现进度（2026-07-23）：切片 A/B/C 已经落地，包括共享 `state.db v5`、账户隔离的
 Provider Profile Store、macOS Host Keychain Vault、声明式内置 Catalog、Capability、
 Model Policy、三层 Model Assignment、非秘密 RouteCompiler，以及对应 ACP/桌面 Host
-Client 方法。Session Binding 正在开发；Provider UI 与 Sampling 路由仍是目标能力。
+Client 方法；产品 Agent/Main Session/Workspace 已按账户隔离，不可变 Session Binding、
+revision、回滚和实际 Turn Route 的可信存储接口也已实现。Turn 接口尚未接到 Sampling，
+Provider UI 与真实模型路由仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -880,17 +882,18 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
 
 ### 切片 C：先隔离账户，再实现 Session Binding
 
-状态：**C0 已实现，C1 开发中（2026-07-23）**
+状态：**已实现（2026-07-23）**
 
 - C0 已把产品 Agent、Main Session、Workspace 与历史可见性按账户隔离，并完成旧状态
   首次有效账号认领；
 - Main Session 固化不可变 Provider Binding 与 route revision；
-- 建立每 Turn 非秘密实际路由记录的存储接口，但只允许切片 D 在 Sampling 请求提交点写入；
+- 已建立每 Turn 非秘密实际路由记录的存储接口，但只允许切片 D 在 Sampling 请求提交点写入；
 - Profile/Catalog 更新不改变已有 Binding；
 - 实现继续原 Provider、兼容迁移分支与回滚语义。
 
 ### 切片 D：投影到 Grok 现有三协议 Backend
 
+- D0 先清除 Sampling/subagent 中认证值片段日志，并建立 sentinel Key 泄露回归；
 - 把 `PreparedRoute` 投影到现有 `ModelEntry / SamplingConfig`；
 - 为 OpenAI、xAI、Anthropic 和三种 Compatible Profile 建立契约测试；
 - 复用现有 Streaming、Tool Call、Usage 和错误分类；

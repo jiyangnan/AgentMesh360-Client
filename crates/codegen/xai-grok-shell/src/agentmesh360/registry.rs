@@ -131,11 +131,17 @@ impl AgentRegistry {
     }
 
     pub fn main_session_owner(&self, session_id: &str) -> Result<Option<Option<i64>>> {
+        Ok(self
+            .main_session_identity(session_id)?
+            .map(|(owner_account_id, _)| owner_account_id))
+    }
+
+    pub fn main_session_identity(&self, session_id: &str) -> Result<Option<(Option<i64>, String)>> {
         let conn = self.open()?;
         conn.query_row(
-            "SELECT owner_account_id FROM product_agents WHERE main_session_id = ?1",
+            "SELECT owner_account_id, agent_id FROM product_agents WHERE main_session_id = ?1",
             [session_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(Into::into)

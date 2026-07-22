@@ -15,7 +15,9 @@ mod provider_catalog;
 mod provider_profiles;
 mod providers;
 pub mod registry;
+mod session_bindings;
 mod state;
+mod turn_routes;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;

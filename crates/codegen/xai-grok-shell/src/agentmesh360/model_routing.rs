@@ -11,11 +11,18 @@ use super::provider_catalog::{
     ModelCapability, ProviderCatalog, ProviderClassification, ProviderQuirk,
 };
 use super::provider_profiles::{ProviderAuthKind, ProviderProfileStore, ProviderProtocol};
+use super::registry::AgentRegistry;
+use super::session_bindings::{BindingChangeReason, SessionBindingStore, SessionProviderBinding};
+use super::turn_routes::{TurnRouteRecord, TurnRouteStore};
 
 pub const PROVIDER_CATALOG_METHOD: &str = "x.agentmesh360/providers/catalog";
 pub const ASSIGNMENTS_LIST_METHOD: &str = "x.agentmesh360/model-assignments/list";
 pub const ASSIGNMENTS_UPSERT_METHOD: &str = "x.agentmesh360/model-assignments/upsert";
 pub const ASSIGNMENTS_DELETE_METHOD: &str = "x.agentmesh360/model-assignments/delete";
+pub const BINDING_RESOLVE_METHOD: &str = "x.agentmesh360/session-bindings/resolve";
+pub const BINDING_HISTORY_METHOD: &str = "x.agentmesh360/session-bindings/history";
+pub const BINDING_SWITCH_METHOD: &str = "x.agentmesh360/session-bindings/switch";
+pub const TURN_ROUTES_LIST_METHOD: &str = "x.agentmesh360/turn-routes/list";
 
 pub fn handles(method: &str) -> bool {
     matches!(
@@ -24,6 +31,10 @@ pub fn handles(method: &str) -> bool {
             | ASSIGNMENTS_LIST_METHOD
             | ASSIGNMENTS_UPSERT_METHOD
             | ASSIGNMENTS_DELETE_METHOD
+            | BINDING_RESOLVE_METHOD
+            | BINDING_HISTORY_METHOD
+            | BINDING_SWITCH_METHOD
+            | TURN_ROUTES_LIST_METHOD
     )
 }
 
@@ -37,6 +48,32 @@ struct UpsertAssignmentRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DeleteAssignmentRequest {
     assignment_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BindingLookupRequest {
+    session_id: String,
+    role: String,
+    agent_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum BindingSwitchKind {
+    ExplicitSwitch,
+    CompatibleMigration,
+    Rollback,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SwitchBindingRequest {
+    session_id: String,
+    role: String,
+    agent_id: Option<String>,
+    kind: BindingSwitchKind,
+    target_binding_revision: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -63,9 +100,30 @@ struct DeleteAssignmentResponse {
     deleted: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BindingResponse {
+    binding: SessionProviderBinding,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BindingHistoryResponse {
+    bindings: Vec<SessionProviderBinding>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnRoutesResponse {
+    turn_routes: Vec<TurnRouteRecord>,
+}
+
 pub struct ModelRoutingService {
     catalog: ProviderCatalog,
     assignments: ModelAssignmentStore,
+    bindings: SessionBindingStore,
+    turn_routes: TurnRouteStore,
+    registry: AgentRegistry,
     compiler: RouteCompiler,
 }
 
@@ -76,6 +134,9 @@ impl Default for ModelRoutingService {
         Self {
             catalog: catalog.clone(),
             assignments: ModelAssignmentStore::in_home(&state_home),
+            bindings: SessionBindingStore::in_home(&state_home),
+            turn_routes: TurnRouteStore::in_home(&state_home),
+            registry: AgentRegistry::in_home(&state_home),
             compiler: RouteCompiler::in_home(catalog, &state_home),
         }
     }
@@ -87,6 +148,9 @@ impl ModelRoutingService {
         Self {
             catalog: catalog.clone(),
             assignments: ModelAssignmentStore::in_home(state_home),
+            bindings: SessionBindingStore::in_home(state_home),
+            turn_routes: TurnRouteStore::in_home(state_home),
+            registry: AgentRegistry::in_home(state_home),
             compiler: RouteCompiler::in_home(catalog, state_home),
         }
     }
@@ -99,6 +163,168 @@ impl ModelRoutingService {
     ) -> Result<PreparedRoute> {
         self.compiler.compile(owner_account_id, request, policy)
     }
+
+    fn resolve_binding(
+        &self,
+        owner_account_id: i64,
+        request: &BindingLookupRequest,
+    ) -> Result<SessionProviderBinding> {
+        let agent_id = self.require_session_owner(
+            owner_account_id,
+            &request.session_id,
+            request.agent_id.as_deref(),
+        )?;
+        if let Some(current) =
+            self.bindings
+                .current(owner_account_id, &request.session_id, &request.role)?
+        {
+            ensure_agent_identity(&current, agent_id.as_deref())?;
+            return Ok(current);
+        }
+        let route = self.prepare_route(
+            owner_account_id,
+            RouteCompileRequest {
+                role: &request.role,
+                agent_id: agent_id.as_deref(),
+                session_id: Some(&request.session_id),
+            },
+            &AgentModelPolicy::default(),
+        )?;
+        self.bindings.bind_initial(
+            owner_account_id,
+            &request.session_id,
+            &request.role,
+            agent_id.as_deref(),
+            &route,
+        )
+    }
+
+    fn binding_history(
+        &self,
+        owner_account_id: i64,
+        request: &BindingLookupRequest,
+    ) -> Result<Vec<SessionProviderBinding>> {
+        let agent_id = self.require_session_owner(
+            owner_account_id,
+            &request.session_id,
+            request.agent_id.as_deref(),
+        )?;
+        let history =
+            self.bindings
+                .history(owner_account_id, &request.session_id, &request.role)?;
+        if let Some(current) = history.last() {
+            ensure_agent_identity(current, agent_id.as_deref())?;
+        }
+        Ok(history)
+    }
+
+    fn switch_binding(
+        &self,
+        owner_account_id: i64,
+        request: &SwitchBindingRequest,
+    ) -> Result<SessionProviderBinding> {
+        let agent_id = self.require_session_owner(
+            owner_account_id,
+            &request.session_id,
+            request.agent_id.as_deref(),
+        )?;
+        let current = self
+            .bindings
+            .current(owner_account_id, &request.session_id, &request.role)?
+            .ok_or_else(|| anyhow!("Session Provider Binding is not initialized"))?;
+        ensure_agent_identity(&current, agent_id.as_deref())?;
+
+        let (reason, route) = match request.kind {
+            BindingSwitchKind::ExplicitSwitch | BindingSwitchKind::CompatibleMigration => {
+                if request.target_binding_revision.is_some() {
+                    bail!("targetBindingRevision is only valid for rollback");
+                }
+                let route = self.prepare_route(
+                    owner_account_id,
+                    RouteCompileRequest {
+                        role: &request.role,
+                        agent_id: agent_id.as_deref(),
+                        session_id: Some(&request.session_id),
+                    },
+                    &AgentModelPolicy::default(),
+                )?;
+                let reason = match request.kind {
+                    BindingSwitchKind::ExplicitSwitch => BindingChangeReason::ExplicitSwitch,
+                    BindingSwitchKind::CompatibleMigration => {
+                        BindingChangeReason::CompatibleMigration
+                    }
+                    BindingSwitchKind::Rollback => unreachable!(),
+                };
+                (reason, route)
+            }
+            BindingSwitchKind::Rollback => {
+                let target_revision = request
+                    .target_binding_revision
+                    .ok_or_else(|| anyhow!("rollback requires targetBindingRevision"))?;
+                if target_revision >= current.binding_revision {
+                    bail!("rollback target must be an older Binding revision");
+                }
+                let target = self.bindings.revision(
+                    owner_account_id,
+                    &request.session_id,
+                    &request.role,
+                    target_revision,
+                )?;
+                (BindingChangeReason::Rollback, target.route)
+            }
+        };
+        self.bindings.append(
+            owner_account_id,
+            &request.session_id,
+            &request.role,
+            agent_id.as_deref(),
+            reason,
+            &route,
+        )
+    }
+
+    fn turn_route_history(
+        &self,
+        owner_account_id: i64,
+        request: &BindingLookupRequest,
+    ) -> Result<Vec<TurnRouteRecord>> {
+        self.require_session_owner(
+            owner_account_id,
+            &request.session_id,
+            request.agent_id.as_deref(),
+        )?;
+        self.turn_routes
+            .list_session(owner_account_id, &request.session_id, &request.role)
+    }
+
+    fn require_session_owner(
+        &self,
+        owner_account_id: i64,
+        session_id: &str,
+        requested_agent_id: Option<&str>,
+    ) -> Result<Option<String>> {
+        match self.registry.main_session_identity(session_id)? {
+            Some((Some(actual_owner), actual_agent_id)) if actual_owner == owner_account_id => {
+                if requested_agent_id.is_some_and(|requested| requested != actual_agent_id.as_str())
+                {
+                    bail!("session not found");
+                }
+                Ok(Some(actual_agent_id))
+            }
+            Some(_) => bail!("session not found"),
+            None => Ok(requested_agent_id.map(str::to_owned)),
+        }
+    }
+}
+
+fn ensure_agent_identity(
+    binding: &SessionProviderBinding,
+    requested_agent_id: Option<&str>,
+) -> Result<()> {
+    if binding.agent_id.as_deref() != requested_agent_id {
+        bail!("Session Provider Binding agent identity does not match");
+    }
+    Ok(())
 }
 
 pub fn handle(
@@ -138,6 +364,38 @@ pub fn handle(
                         .map_err(Into::into)
                 })
         }
+        BINDING_RESOLVE_METHOD => {
+            let request: BindingLookupRequest = crate::extensions::parse_params(args)?;
+            service
+                .resolve_binding(owner_account_id, &request)
+                .and_then(|binding| {
+                    serde_json::to_value(BindingResponse { binding }).map_err(Into::into)
+                })
+        }
+        BINDING_HISTORY_METHOD => {
+            let request: BindingLookupRequest = crate::extensions::parse_params(args)?;
+            service
+                .binding_history(owner_account_id, &request)
+                .and_then(|bindings| {
+                    serde_json::to_value(BindingHistoryResponse { bindings }).map_err(Into::into)
+                })
+        }
+        BINDING_SWITCH_METHOD => {
+            let request: SwitchBindingRequest = crate::extensions::parse_params(args)?;
+            service
+                .switch_binding(owner_account_id, &request)
+                .and_then(|binding| {
+                    serde_json::to_value(BindingResponse { binding }).map_err(Into::into)
+                })
+        }
+        TURN_ROUTES_LIST_METHOD => {
+            let request: BindingLookupRequest = crate::extensions::parse_params(args)?;
+            service
+                .turn_route_history(owner_account_id, &request)
+                .and_then(|turn_routes| {
+                    serde_json::to_value(TurnRoutesResponse { turn_routes }).map_err(Into::into)
+                })
+        }
         other => Err(anyhow!(
             "unknown AgentMesh360 model routing extension method: {other}"
         )),
@@ -152,7 +410,7 @@ pub struct RouteCompileRequest<'a> {
     pub session_id: Option<&'a str>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedRoute {
     pub provider_profile_id: String,
@@ -546,5 +804,128 @@ mod tests {
         let request = acp::ExtRequest::new(ASSIGNMENTS_DELETE_METHOD, Arc::from(raw));
         let response = handle(&service, 18, &request).expect("extension response");
         assert!(response.0.get().contains("model assignment not found"));
+    }
+
+    #[test]
+    fn binding_freezes_route_until_explicit_switch_and_survives_profile_deletion() {
+        let (temp, catalog, profiles, assignments) = setup();
+        insert_profile(&profiles, "https://models.example/v1");
+        insert_assignment(&assignments);
+        let service = ModelRoutingService::new(catalog, temp.path());
+        let lookup = BindingLookupRequest {
+            session_id: "session-a".into(),
+            role: "main".into(),
+            agent_id: Some("job-agent".into()),
+        };
+
+        let first = service
+            .resolve_binding(17, &lookup)
+            .expect("initial binding");
+        profiles
+            .update(
+                17,
+                "pp_verified",
+                &ProviderProfileInput {
+                    preset_id: Some("verified".into()),
+                    display_name: "Verified".into(),
+                    protocol: ProviderProtocol::OpenaiResponses,
+                    base_url: "https://gateway.example/v1".into(),
+                    auth_kind: ProviderAuthKind::BearerApiKey,
+                    enabled_models: vec!["verified-model".into()],
+                }
+                .normalized()
+                .expect("updated profile"),
+            )
+            .expect("update profile");
+
+        let unchanged = service
+            .resolve_binding(17, &lookup)
+            .expect("existing binding");
+        assert_eq!(unchanged, first);
+        let switched = service
+            .switch_binding(
+                17,
+                &SwitchBindingRequest {
+                    session_id: lookup.session_id.clone(),
+                    role: lookup.role.clone(),
+                    agent_id: lookup.agent_id.clone(),
+                    kind: BindingSwitchKind::ExplicitSwitch,
+                    target_binding_revision: None,
+                },
+            )
+            .expect("explicit switch");
+        assert_eq!(switched.binding_revision, 2);
+        assert_eq!(switched.route.endpoint_origin, "https://gateway.example");
+        assert_eq!(first.route.endpoint_origin, "https://models.example");
+
+        profiles.delete(17, "pp_verified").expect("delete profile");
+        assert_eq!(
+            service
+                .binding_history(17, &lookup)
+                .expect("preserved history")
+                .len(),
+            2
+        );
+        assert_eq!(
+            service
+                .resolve_binding(17, &lookup)
+                .expect("preserved current"),
+            switched
+        );
+        let switch_error = service
+            .switch_binding(
+                17,
+                &SwitchBindingRequest {
+                    session_id: lookup.session_id.clone(),
+                    role: lookup.role.clone(),
+                    agent_id: lookup.agent_id.clone(),
+                    kind: BindingSwitchKind::ExplicitSwitch,
+                    target_binding_revision: None,
+                },
+            )
+            .expect_err("deleted profile cannot compile a new route");
+        assert!(switch_error.to_string().contains("no model assignment"));
+
+        let rollback = service
+            .switch_binding(
+                17,
+                &SwitchBindingRequest {
+                    session_id: lookup.session_id.clone(),
+                    role: lookup.role.clone(),
+                    agent_id: lookup.agent_id.clone(),
+                    kind: BindingSwitchKind::Rollback,
+                    target_binding_revision: Some(1),
+                },
+            )
+            .expect("append rollback snapshot");
+        assert_eq!(rollback.binding_revision, 3);
+        assert_eq!(rollback.change_reason, BindingChangeReason::Rollback);
+        assert_eq!(rollback.route, first.route);
+    }
+
+    #[test]
+    fn binding_rejects_another_accounts_product_session() {
+        let (temp, catalog, profiles, assignments) = setup();
+        insert_profile(&profiles, "https://models.example/v1");
+        insert_assignment(&assignments);
+        let registry = AgentRegistry::in_home(temp.path());
+        registry
+            .claim_legacy_and_seed(17)
+            .expect("seed product agents");
+        let product_agent = registry
+            .prepare_activation(17, "job-agent")
+            .expect("prepare product agent");
+        let session_id = product_agent.main_session_id.expect("main session");
+        let service = ModelRoutingService::new(catalog, temp.path());
+        let request = BindingLookupRequest {
+            session_id,
+            role: "main".into(),
+            agent_id: Some("job-agent".into()),
+        };
+
+        let error = service
+            .resolve_binding(18, &request)
+            .expect_err("other account must not bind product session");
+        assert_eq!(error.to_string(), "session not found");
     }
 }
