@@ -1,0 +1,42 @@
+{
+  "name": "@agentmesh360/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "author": "AgentMesh360",
+  "description": "AgentMesh360 desktop identity shell and persistent-agent workspace",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/auth/core-client.js && node --check src/auth/secure-token-store.js && node --check src/host/acp-client.js && node --check src/identity-controller.js && node --check src/ui/app.js",
+    "build:host": "cargo build --manifest-path ../crates/codegen/xai-grok-pager-bin/Cargo.toml --release",
+    "build:mac": "npm run build:host && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.agentmesh360.client",
+    "productName": "AgentMesh360",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../target/release/xai-grok-pager",
+        "to": "bin/agentmesh360-host"
+      }
+    ],
+    "mac": {
+      "icon": "assets/icon-1024.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3"
+  }
+}

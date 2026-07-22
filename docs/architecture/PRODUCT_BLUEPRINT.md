@@ -1,6 +1,6 @@
 # AgentMesh360 Client 产品蓝图
 
-状态：目标架构，持久化基础能力已实现
+状态：目标架构，桌面身份外壳与持久化基础能力已实现
 建立日期：2026-07-22
 
 本文档是 AgentMesh360 桌面客户端在产品与工程层面的共同地图。它描述的是
@@ -139,8 +139,10 @@ credits 余额和产品标记来推断用户是否有权进入。
 当前已经落地 Core `GET /v1/account/client-bootstrap` 与 Host
 `x.agentmesh360/account/bootstrap`。Host 在准入成功前不会恢复持久 Agent，并在产品
 Main Session 的创建、加载、Prompt 和携带 Session ID 的扩展调用入口重复校验。
-JWT 仅用于内存中的 HTTPS 请求，不写入 Registry 或对话。桌面登录、Refresh Token、
-Keychain、定时 / 唤醒重验和订阅拦截页面仍由后续桌面外壳切片实现。
+桌面身份外壳已经实现邮箱密码登录、Refresh Token 轮换、操作系统安全存储、启动 / 唤醒 /
+窗口聚焦 / 每五分钟重验、订阅拦截页与官网续费跳转。Access Token 只存在于桌面主进程
+内存，并通过 HTTPS Authorization Header 传递；不会进入渲染进程、Registry 或对话。
+有效订阅必须同时得到 Core 与 Host 确认，才会展示 Agent 首页。OAuth 登录仍是后续目标。
 
 ## 3. 技术架构图
 
@@ -148,14 +150,14 @@ Keychain、定时 / 唤醒重验和订阅拦截页面仍由后续桌面外壳切
 flowchart LR
     subgraph OS["用户电脑"]
         direction TB
-        subgraph UI["桌面 UI 进程（目标态）"]
+        subgraph UI["桌面 UI 进程"]
             direction TB
             SHELL["登录与订阅门禁"]
             AGENT_UI["Agent 首页与垂直工作区"]
             SETTINGS_UI["Provider、账号、Package 与安全设置"]
         end
 
-        subgraph HOST["AgentMesh Host（目标后台服务）"]
+        subgraph HOST["AgentMesh Host"]
             direction TB
             SUPERVISOR["生命周期监管与健康检查"]
             AUTHZ["订阅准入与策略执行"]
@@ -444,11 +446,11 @@ flowchart LR
 | 能力切片 | 状态 | 具体范围 |
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：基础能力** | SQLite Agent Registry、确定性 Main Session、激活 ACP 方法、Session 固定、启动恢复 |
-| 订阅硬门禁 | **Core + Host 基础已实现** | 已完成服务端 bootstrap、恢复门禁、产品 Session 强制校验与周期截止；待登录、Token 刷新、Keychain、定时重验、订阅界面和官网跳转 |
+| 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
 | BYOK Provider 层 | **下一阶段目标** | 安全凭据、OpenAI/xAI/Anthropic Adapter、能力校验、模型选择、统一流式响应与错误 |
 | 动态 Agent Package | **目标** | Manifest、签名、目录、安装器、迁移、权限变更、回滚、宿主 Skill Adapter |
-| 桌面产品外壳 | **目标** | Agent 首页、固定对话、垂直工作区、活动、产物、审批与设置 |
-| 后台 Host | **目标** | 登录自启动、IPC/ACP 桥接、崩溃恢复、健康检查、通知、审计与离线行为 |
+| 桌面产品外壳 | **身份外壳与 Agent 首页已实现** | 登录、门禁、账号 / 订阅 / credits、Agent 列表与激活；固定对话、垂直工作区、活动、产物、审批与设置仍是目标 |
+| 后台 Host | **进程与 ACP 桥接已实现** | 桌面按需启动真实 Grok Host，执行订阅策略与 Agent Registry；系统登录自启动、独立 Supervisor、崩溃恢复、通知与完整审计仍是目标 |
 
 当前硬编码的 Job Agent、LectureCast Agent 和 Deploy Agent 目录，只是验证持久化
 契约的脚手架。在迁移具体 Agent 成为常规集成路径之前，必须用动态 Agent Package

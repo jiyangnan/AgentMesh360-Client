@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="background" x1="120" y1="90" x2="890" y2="930" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#29234f"/>
+      <stop offset="0.52" stop-color="#121729"/>
+      <stop offset="1" stop-color="#0b1920"/>
+    </linearGradient>
+    <linearGradient id="mesh" x1="283" y1="265" x2="755" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d1c6ff"/>
+      <stop offset="0.52" stop-color="#9178ff"/>
+      <stop offset="1" stop-color="#66dfb2"/>
+    </linearGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+  <rect x="42" y="42" width="940" height="940" rx="220" fill="url(#background)"/>
+  <rect x="63" y="63" width="898" height="898" rx="201" fill="none" stroke="#b9a9ff" stroke-opacity=".25" stroke-width="6"/>
+  <g fill="none" stroke="url(#mesh)" stroke-linecap="round">
+    <path d="M306 328L507 513L718 305" stroke-width="58" stroke-opacity=".16" filter="url(#glow)"/>
+    <path d="M306 328L507 513L718 305M507 513L716 715M507 513L303 722" stroke-width="34" stroke-opacity=".82"/>
+  </g>
+  <g fill="url(#mesh)">
+    <circle cx="306" cy="328" r="84"/>
+    <circle cx="718" cy="305" r="66"/>
+    <circle cx="507" cy="513" r="92"/>
+    <circle cx="303" cy="722" r="58"/>
+    <circle cx="716" cy="715" r="76"/>
+  </g>
+  <g fill="#111628">
+    <circle cx="306" cy="328" r="31"/>
+    <circle cx="718" cy="305" r="24"/>
+    <circle cx="507" cy="513" r="34"/>
+    <circle cx="303" cy="722" r="21"/>
+    <circle cx="716" cy="715" r="28"/>
+  </g>
+</svg>

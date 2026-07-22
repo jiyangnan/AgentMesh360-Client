@@ -1,0 +1,359 @@
+'use strict';
+
+const { CoreRequestError } = require('./auth/core-client');
+
+const DEFAULT_REVALIDATE_INTERVAL_MS = 5 * 60 * 1000;
+
+class IdentityController {
+  constructor({
+    core,
+    tokenStore,
+    host,
+    setIntervalImpl = setInterval,
+    clearIntervalImpl = clearInterval,
+    revalidateIntervalMs = DEFAULT_REVALIDATE_INTERVAL_MS,
+  }) {
+    this.core = core;
+    this.tokenStore = tokenStore;
+    this.host = host;
+    this.setIntervalImpl = setIntervalImpl;
+    this.clearIntervalImpl = clearIntervalImpl;
+    this.revalidateIntervalMs = revalidateIntervalMs;
+    this.accessToken = null;
+    this.listeners = new Set();
+    this.timer = null;
+    this.activeOperation = null;
+    this.state = Object.freeze({ phase: 'starting' });
+    this.handleHostExit = (error) => {
+      if (!['ready', 'checking'].includes(this.state.phase)) return;
+      this.accessToken = null;
+      this.#publishUnavailable(error, true, 'host_exited');
+    };
+    this.host.on?.('exit', this.handleHostExit);
+  }
+
+  getState() {
+    return this.state;
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    listener(this.state);
+    return () => this.listeners.delete(listener);
+  }
+
+  async start() {
+    if (!this.timer) {
+      this.timer = this.setIntervalImpl(() => {
+        this.revalidate('periodic').catch(() => {});
+      }, this.revalidateIntervalMs);
+      this.timer?.unref?.();
+    }
+    let refreshToken;
+    try {
+      refreshToken = this.tokenStore.loadRefreshToken();
+    } catch (error) {
+      this.#publish({
+        phase: 'unavailable',
+        code: 'secure_store_error',
+        message: error.message,
+        canLogout: true,
+      });
+      return this.state;
+    }
+    if (!refreshToken) {
+      await this.host.invalidate().catch(() => {});
+      this.#publish({ phase: 'signed_out' });
+      return this.state;
+    }
+    return this.#runValidation(refreshToken, 'startup');
+  }
+
+  login(email, password) {
+    return this.#exclusive(async () => {
+      this.#publish({ phase: 'checking', message: '正在登录并验证订阅…' });
+      let pair;
+      try {
+        pair = await this.core.login(String(email || '').trim(), String(password || ''));
+        validateTokenPair(pair);
+        this.tokenStore.saveRefreshToken(pair.refresh_token);
+      } catch (error) {
+        this.accessToken = null;
+        await this.host.invalidate().catch(() => {});
+        if (error instanceof CoreRequestError && ['invalid_credentials', 'email_not_verified'].includes(error.code)) {
+          this.#publish({ phase: 'signed_out', error: error.message, code: error.code });
+          return this.state;
+        }
+        this.#publishUnavailable(error, true);
+        return this.state;
+      }
+      return this.#validatePair(pair, 'login');
+    });
+  }
+
+  revalidate(reason = 'manual') {
+    if (this.activeOperation) return this.activeOperation;
+    let refreshToken;
+    try {
+      refreshToken = this.tokenStore.loadRefreshToken();
+    } catch (error) {
+      this.#publishUnavailable(error, true, 'secure_store_error');
+      return Promise.resolve(this.state);
+    }
+    if (!refreshToken) {
+      this.#publish({ phase: 'signed_out' });
+      return Promise.resolve(this.state);
+    }
+    return this.#runValidation(refreshToken, reason);
+  }
+
+  logout() {
+    return this.#exclusive(async () => {
+      this.tokenStore.clear();
+      this.accessToken = null;
+      await this.host.invalidate().catch(() => {});
+      this.#publish({ phase: 'signed_out' });
+      return this.state;
+    });
+  }
+
+  activateAgent(agentId) {
+    return this.#exclusive(async () => {
+      if (this.state.phase !== 'ready' || !this.accessToken) {
+        throw new Error('当前账号尚未通过订阅验证');
+      }
+      this.#publish({ ...this.state, activatingAgentId: agentId, activationError: null });
+      try {
+        await this.host.activateAgent(agentId);
+        const list = await this.host.listAgents();
+        this.#publish({ ...this.state, agents: publicAgents(list.agents), activatingAgentId: null });
+      } catch (error) {
+        this.#publish({
+          ...this.state,
+          activatingAgentId: null,
+          activationError: error.message || 'Agent 激活失败',
+        });
+      }
+      return this.state;
+    });
+  }
+
+  async shutdown() {
+    if (this.timer) this.clearIntervalImpl(this.timer);
+    this.timer = null;
+    this.accessToken = null;
+    this.host.off?.('exit', this.handleHostExit);
+    await this.host.stop();
+  }
+
+  #runValidation(refreshToken, reason) {
+    return this.#exclusive(async () => {
+      const preserve = ['ready', 'blocked'].includes(this.state.phase) ? this.state : null;
+      this.#publish({
+        ...(preserve || {}),
+        phase: 'checking',
+        message: reason === 'startup' ? '正在恢复安全登录状态…' : '正在重新验证订阅…',
+      });
+      let pair;
+      try {
+        pair = await this.core.refresh(refreshToken);
+        validateTokenPair(pair);
+        this.tokenStore.saveRefreshToken(pair.refresh_token);
+      } catch (error) {
+        this.accessToken = null;
+        await this.host.invalidate().catch(() => {});
+        if (error instanceof CoreRequestError && error.code === 'session_expired') {
+          this.tokenStore.clear();
+          this.#publish({ phase: 'signed_out', error: '登录已过期，请重新登录', code: error.code });
+          return this.state;
+        }
+        this.#publishUnavailable(error, true);
+        return this.state;
+      }
+      return this.#validatePair(pair, reason);
+    });
+  }
+
+  async #validatePair(pair, reason) {
+    this.accessToken = pair.access_token;
+    let coreBootstrap;
+    try {
+      coreBootstrap = await this.core.bootstrap(this.accessToken);
+      validateCoreBootstrap(coreBootstrap);
+    } catch (error) {
+      this.accessToken = null;
+      await this.host.invalidate().catch(() => {});
+      if (error instanceof CoreRequestError && error.code === 'session_expired') {
+        this.tokenStore.clear();
+        this.#publish({ phase: 'signed_out', error: '登录已过期，请重新登录', code: error.code });
+        return this.state;
+      }
+      this.#publishUnavailable(error, true);
+      return this.state;
+    }
+
+    const normalized = normalizeBootstrap(coreBootstrap);
+    if (!normalized.access.canEnterClient) {
+      await this.host.bootstrap(this.accessToken).catch(() => this.host.invalidate().catch(() => {}));
+      this.#publish({
+        phase: 'blocked',
+        account: normalized.account,
+        subscription: normalized.subscription,
+        credits: normalized.credits,
+        access: normalized.access,
+        checkedAt: new Date().toISOString(),
+      });
+      return this.state;
+    }
+
+    try {
+      const hostBootstrap = await this.host.bootstrap(this.accessToken);
+      if (
+        hostBootstrap?.schemaVersion !== 1
+        || hostBootstrap?.access?.canEnterClient !== true
+        || hostBootstrap?.account?.id !== normalized.account.id
+      ) {
+        throw new Error('Core 与 Agent Host 的订阅验证结果不一致');
+      }
+      const list = await this.host.listAgents();
+      this.#publish({
+        phase: 'ready',
+        account: normalized.account,
+        subscription: normalized.subscription,
+        credits: normalized.credits,
+        access: normalized.access,
+        agents: publicAgents(list?.agents),
+        checkedAt: new Date().toISOString(),
+        revalidatedBy: reason,
+      });
+    } catch (error) {
+      await this.host.invalidate().catch(() => {});
+      this.#publishUnavailable(error, true, 'host_unavailable');
+    }
+    return this.state;
+  }
+
+  #exclusive(operation) {
+    if (this.activeOperation) return this.activeOperation;
+    this.activeOperation = Promise.resolve()
+      .then(operation)
+      .finally(() => {
+        this.activeOperation = null;
+      });
+    return this.activeOperation;
+  }
+
+  #publishUnavailable(error, canLogout, code) {
+    this.#publish({
+      phase: 'unavailable',
+      code: code || error?.code || 'verification_unavailable',
+      message: error?.message || '暂时无法验证 AgentMesh360 订阅',
+      canLogout,
+    });
+  }
+
+  #publish(next) {
+    this.state = deepFreeze(stripSecrets(next));
+    for (const listener of this.listeners) listener(this.state);
+  }
+}
+
+function validateTokenPair(pair) {
+  if (
+    typeof pair?.access_token !== 'string'
+    || typeof pair?.refresh_token !== 'string'
+    || pair.access_token.length < 8
+    || pair.refresh_token.length < 8
+  ) {
+    throw new Error('AgentMesh360 登录服务返回了无效令牌');
+  }
+}
+
+function validateCoreBootstrap(bootstrap) {
+  if (bootstrap?.schema_version !== 1 || typeof bootstrap?.access?.can_enter_client !== 'boolean') {
+    throw new Error('AgentMesh360 订阅服务返回了不受支持的协议');
+  }
+}
+
+function normalizeBootstrap(value) {
+  return {
+    account: {
+      id: value.account.id,
+      email: value.account.email,
+      accountId: value.account.account_id,
+      displayName: value.account.display_name || null,
+      avatarUrl: value.account.avatar_url || null,
+    },
+    subscription: {
+      status: value.subscription.status,
+      source: value.subscription.source,
+      plan: value.subscription.plan || null,
+      periodStart: value.subscription.period_start || null,
+      periodEnd: value.subscription.period_end || null,
+      autoRenews: Boolean(value.subscription.auto_renews),
+    },
+    credits: {
+      balance: Number(value.credits.balance || 0),
+      source: value.credits.source,
+      expiresAt: value.credits.expires_at || null,
+    },
+    access: {
+      canEnterClient: value.access.can_enter_client,
+      reason: value.access.reason,
+    },
+  };
+}
+
+function stripSecrets(value) {
+  const clone = JSON.parse(JSON.stringify(value));
+  const secretKeys = new Set([
+    'accesstoken',
+    'access_token',
+    'refreshtoken',
+    'refresh_token',
+    'password',
+    'authorization',
+    'apikey',
+    'api_key',
+  ]);
+  const visit = (current) => {
+    if (!current || typeof current !== 'object') return;
+    for (const key of Object.keys(current)) {
+      if (secretKeys.has(key.toLowerCase())) {
+        delete current[key];
+      } else {
+        visit(current[key]);
+      }
+    }
+  };
+  visit(clone);
+  return clone;
+}
+
+function publicAgents(agents) {
+  if (!Array.isArray(agents)) return [];
+  return agents.map((agent) => ({
+    agentId: String(agent.agentId || ''),
+    displayName: String(agent.displayName || ''),
+    description: String(agent.description || ''),
+    version: String(agent.version || ''),
+    desiredState: String(agent.desiredState || 'stopped'),
+    runtimeState: String(agent.runtimeState || 'available'),
+  }));
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+module.exports = {
+  IdentityController,
+  DEFAULT_REVALIDATE_INTERVAL_MS,
+  normalizeBootstrap,
+  publicAgents,
+  stripSecrets,
+  validateCoreBootstrap,
+  validateTokenPair,
+};

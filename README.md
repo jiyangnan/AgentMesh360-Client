@@ -1,33 +1,32 @@
 # AgentMesh360 Client
 
 > [!IMPORTANT]
-> **This is the active development repository for the AgentMesh360 desktop client.**
-> It is a Grok-first fork of [`xai-org/grok-build`](https://github.com/xai-org/grok-build):
-> Grok Build supplies the core agent harness, while AgentMesh360 is building the
-> persistent multi-agent desktop product around it.
+> **这是 AgentMesh360 桌面客户端唯一的活跃开发仓库。**
+> 本仓库是 [`xai-org/grok-build`](https://github.com/xai-org/grok-build) 的
+> Grok-first Fork：Grok Build 提供核心 Agent Harness，AgentMesh360 在其上构建
+> 持久化多 Agent 桌面产品。
 
-The first-party product agents — including **Job Agent**, **LectureCast Agent**,
-and **Deploy Agent** — will live here as persistent, user-visible agents with
-stable conversations, memory, tools, permissions, background work, and recovery.
+**Job Agent**、**Lecturecast Agent**、**Deploy Agent** 等第一方产品 Agent
+将在这里作为用户可见、可长期驻留的 Agent 运行，并拥有固定对话、记忆、工具、
+权限、后台任务与恢复能力。
 
-- **Active client development:** this repository
-- **Upstream harness:** [`xai-org/grok-build`](https://github.com/xai-org/grok-build)
-- **Legacy prototype and migration source:** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
-- **Repository boundary:** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
+- **活跃客户端开发：** 本仓库
+- **上游 Harness：** [`xai-org/grok-build`](https://github.com/xai-org/grok-build)
+- **旧原型与迁移来源：** [`jiyangnan/AgentMesh`](https://github.com/jiyangnan/AgentMesh)
+- **桌面身份外壳：** [`desktop/README.md`](desktop/README.md)
+- **仓库边界：** [`docs/PROJECT_BOUNDARY.md`](docs/PROJECT_BOUNDARY.md)
 - **产品与技术蓝图（中文）：** [`docs/architecture/PRODUCT_BLUEPRINT.md`](docs/architecture/PRODUCT_BLUEPRINT.md)
 - **持久化产品 Agent 架构（中文）：** [`docs/architecture/PERSISTENT_PRODUCT_AGENTS.md`](docs/architecture/PERSISTENT_PRODUCT_AGENTS.md)
 
-Do not add new AgentMesh360 client features to the legacy `AgentMesh` repository.
-Migrate only still-valid product contracts, assets, and cloud integration code
-from it into this fork.
+不要继续在旧 `AgentMesh` 仓库开发 AgentMesh360 客户端功能。只能将仍然有效的
+产品契约、视觉资产和云端集成代码迁移到本 Fork。
 
 ---
 
 ## Upstream Grok Build reference
 
-The documentation below is retained from the upstream project while the
-AgentMesh360 product surface is built. Upstream attribution, licensing,
-`SOURCE_REV`, and third-party notices must remain intact.
+以下内容保留自上游项目，便于维护 Grok Build Harness。上游署名、许可证、
+`SOURCE_REV` 与第三方声明必须保持完整。
 
 <div align="center">
 
@@ -127,6 +126,7 @@ MCP servers, skills, plugins, hooks, headless mode, sandboxing, and more.
 
 | Path | Contents |
 |------|----------|
+| `desktop` | AgentMesh360 Electron 桌面身份外壳、ACP Host 桥接与 Agent 首页 |
 | `crates/codegen/xai-grok-pager-bin` | Composition-root package; builds the `xai-grok-pager` binary |
 | `crates/codegen/xai-grok-pager` | The TUI: scrollback, prompt, modals, rendering |
 | `crates/codegen/xai-grok-shell` | Agent runtime + leader/stdio/headless entry points |
