@@ -45,7 +45,7 @@ Session 继续使用原路径。
 
 | 优先级 | 消费者 | 现有入口 | 当前风险 | D1d 目标 |
 | --- | --- | --- | --- | --- |
-| P0 | 用户图片描述 | `prompt_build::transcribe_user_images` → `resolve_aux_sampler_config` → `SamplingClient::new` | 在主 Turn Route 准备前直接采样；失败会中断整次图片 Prompt | 使用 `vision` role，经统一 actor 接受和 Turn Route；无专用 Assignment 时回退 `main` Assignment |
+| P0 | 用户图片 | 当前模板 `is_cursor_harness() == false`，图片随 main 多模态请求；休眠 Cursor twin 为 `prompt_build::transcribe_user_images` → `resolve_aux_sampler_config` → `SamplingClient::new` | active 路径已受 main Binding 约束；未来若启用 Cursor twin，原实现会在主 Turn Route 前旁路采样 | active 路径固定为一条 main Turn Route；Cursor twin 使用 `vision` role，经统一 actor 接受和 Turn Route；无专用 Assignment 时回退 `main` Assignment |
 | P0 | 自动权限分类 | `sampler_turn::wire_permission_auto_llm_classifier` → aux sampler / `prepare_chat_completion` | BYOK 无 Grok 登录时只能错误后退启发式；有 Grok 凭据时可能旁路用户 Provider | 使用 `permission_classifier` role；远端失败可回退本地启发式，但绝不换 Provider |
 | P0 | 上下文压缩 | `compaction.rs`、`helpers/session_summary.rs` → `prepare_chat_completion` / `conversation_collect` | 持久 Session 越长越容易触发；旁路失败会使长期记忆体验退化 | 使用 `compaction` role；同一次压缩的 two-pass/single-pass 保持同一 Binding |
 | P0 | Subagent 推理 | `mvp_agent::subagent_coordinator::build_subagent_spawn_context` 复制默认 `sampling_config`、AuthManager | 产品 Agent 能生成 subagent，但 subagent 没有产品 Binding/Lease，可能失败或走 Grok 默认路由 | 子 Agent 获得不可伪造的 Host 路由委托；默认使用 `subagent` role，缺省回退 `main` Assignment |
@@ -135,9 +135,15 @@ turn 和 subagent invocation id 形成可追踪的逻辑 turn id。
 
 状态：**开发中**
 
-1. 将 route 准备提前到图片描述之前，但仍只在 actor 接受后写审计；
+1. ~~审计 active 图片路径，并将休眠 Cursor twin 的 route 准备提前到图片描述之前，
+   仍只在 actor 接受后写审计；~~ 已完成（`7acc26f`）
 2. 图片描述、权限分类和必要压缩改经现有 SamplerActor；
 3. 覆盖有/无专用 role Assignment、Vault 丢失、订阅失效与重试不漂移。
+
+图片路径复核结论（2026-07-23）：当前构建并不执行独立图片描述，图片随 main 多模态
+请求提交；Host E2E 已固定“一次 main Provider 请求、一条 main Turn Route、零 vision
+幽灵记录”。Cursor twin 已接入 `vision` Authority，并通过不广播主事件的 SamplerActor
+side-query 命令收集结果；该命令仍走现有 actor/HTTP/retry 栈，不创建常驻 actor 副本。
 
 ### D1d2：后台消费者
 

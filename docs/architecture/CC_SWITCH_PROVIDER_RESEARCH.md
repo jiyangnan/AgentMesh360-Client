@@ -26,8 +26,9 @@ subagent、认证恢复、上传和错误链路中的凭据片段/秘密 URL，�
 actor 接收后写 Turn Route、同一 Turn 多调用复用和实时订阅 Guard 已完成。Host ACP
 mock E2E 已覆盖无 Grok 登录的 BYOK 产品 Agent 激活/Prompt，以及订阅、账户、Assignment
 和 Vault 失败矩阵。D1d0 已实现辅助 role → main Assignment 回退、实际 assignment role
-审计和 Host role-aware Authority；图片描述、权限分类、压缩等消费者接入、Provider UI 与
-真实 Provider E2E 仍是目标能力。
+审计和 Host role-aware Authority；D1d1a 已验证当前图片随 main 多模态 Binding 提交，并
+把休眠 Cursor 图片描述 twin 接到 `vision` Authority。权限分类、压缩等消费者接入、
+Provider UI 与真实 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。

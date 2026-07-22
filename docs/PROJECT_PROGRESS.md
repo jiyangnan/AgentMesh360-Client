@@ -602,12 +602,50 @@ Renderer 设置 UI。
 
 ### 循环 11：Provider 切片 D1d1——Prompt 内 P0 辅助推理
 
-状态：已启动
+状态：开发中；D1d1a 图片路径已完成，D1d1b 权限分类进行中
+
+阶段提交：
+
+- `7acc26f feat: bind auxiliary image sampling`
+
+已完成子模块 D1d1a：
+
+- 复核真实编译路径后确认，当前 Grok Build 模板的 `is_cursor_harness()` 恒为 `false`：
+  用户图片作为多模态 content 随 main 请求提交，已经受 main Binding/Lease/Turn Route
+  约束，并不存在运行中的独立图片描述旁路；
+- Host 多模态 E2E 已加入合法 PNG，断言真实 Provider 请求携带图片、model 与 main
+  Binding 一致，只产生一条 main Turn Route，且不会产生幽灵 vision 请求或记录；
+- 休眠的 Cursor 图片转写路径已预先接入 `vision` Authority；主 Prompt 使用 prompt id，
+  interjection 优先复用当前 prompt id，没有活动 Turn 时使用独立 synthetic id；
+- `ImageDescribeCache` 抽出可注入描述执行器，普通 Grok Session 仍使用原
+  `SamplingClient`，产品 Session 的 Cursor 转写路径改由 Host Binding config 提交；
+- `SamplerActor` 新增 side-query 收集模式：命令仍由 actor 接受、支持 per-request
+  config 与 completion receipt，但辅助 token/Completed 事件不进入主会话事件通道；
+- 首次 E2E 试验发现辅助回复会被主 Session 误认成主回复，新增 side-query 隔离后已用
+  SamplerActor 回归固定；没有用测试特判或第二套 HTTP Sampling 栈绕过问题。
+
+阶段验证：
+
+- SamplerActor 回归 15 项全部通过，包含 side-query“可收集、不广播主事件”测试；
+- image describe 模块回归 27 项全部通过，包含注入执行器与缓存同语义测试；
+- AgentMesh360 模块回归 59 项全部通过；Host 多模态 E2E 只使用本机 mock；
+- `cargo check --tests`、Rustfmt、`git diff --check` 和 library + tests Clippy
+  `-D warnings` 通过。
+
+阶段计划复盘：
+
+- 原审计把图片描述列为当前 P0 运行旁路，但真实编译配置表明它是休眠的 Cursor twin；
+  计划已修正为“验证 active main 多模态路径 + 加固未来可能启用的 vision 路径”；
+- side-query 是同一个 SamplerActor 的显式命令语义，不是常驻副本，也不复制 credential，
+  因此没有背离单一 Harness 和低内存目标；
+- D1d1 尚未完成：下一入口是运行中的自动权限分类，其失败必须只回退本地策略，不能
+  回退 Grok default Provider；之后再处理必要压缩。
 
 本轮目标：
 
-1. 先改造用户图片描述，使产品 Session 在主 Prompt 组装阶段就通过 `vision` Authority
-   获取 per-request config，并在 actor 接受后记录对应 Turn Route；
+1. ~~审计并加固用户图片路径：当前模板验证图片随 main Binding 提交；休眠的 Cursor
+   描述路径通过 `vision` Authority 获取 per-request config，并在 actor 接受后记录对应
+   Turn Route；~~ 已完成
 2. 接入 `permission_classifier`，远端失败时只使用既有本地保守/启发式策略，不切换
    Provider；
 3. 接入必要压缩的 `compaction` role，保证同一次压缩的多阶段调用复用同一 Binding；
