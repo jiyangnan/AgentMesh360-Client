@@ -97,7 +97,9 @@ D1c1 已以 Host 可信 Session Route Context 接到产品 Session 主 Prompt �
 覆盖用户 Prompt 和 synthetic auto-wake，并在 actor 接收后记录实际 Turn Route。D1c2
 已经用无 Grok 登录的真实 Job Agent 激活和 Prompt 跑通 Host ACP mock 成功链，订阅、
 账户、Assignment 与 Vault 失败矩阵也已通过。图片、权限分类、压缩、后台任务和 subagent
-等辅助推理旁路正按 D1d 统一 Authority 计划收口；Provider UI 和真实 Provider E2E 仍未实现。
+等辅助推理旁路正按 D1d 统一 Authority 计划收口；其中 D1d0 已实现辅助 role 的 main
+Assignment fallback、实际 assignment role 审计和 Host role-aware Authority，D1d1 正在接入
+Prompt 内图片描述、权限分类和必要压缩。Provider UI 和真实 Provider E2E 仍未实现。
 
 当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
 因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和

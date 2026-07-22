@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：审计完成，D1d0 开发中
+状态：审计完成，D1d0 已实现，D1d1 开发中
 
 审计日期：2026-07-23
 
@@ -121,12 +121,19 @@ turn 和 subagent invocation id 形成可追踪的逻辑 turn id。
 
 ### D1d0：Authority 契约与 role fallback
 
-1. 为 Model Assignment 增加显式 auxiliary → main fallback，返回实际采用的 assignment role；
-2. 把 `AgentMeshSessionRouteContext` 扩展为可按 role 准备 route 的 Host Authority；
-3. 固化产品 Session 不可使用 default config 的 sentinel 测试；
-4. 固化同一 logical turn/role 多调用只写一条 Turn Route。
+状态：**已实现（2026-07-23，`6b1de2d`）**
+
+1. Model Assignment 已增加显式 auxiliary → main fallback，并返回实际采用的
+   `assignmentRole`；
+2. `AgentMeshSessionRouteContext` 已扩展为可按 role 准备 route 的 Host Authority；
+3. Host `vision` 路由测试已固定产品 Session 只能得到 Binding/Lease 投影，不使用 Grok
+   default config；
+4. 既有提交状态机按 `session + role + logical turn` 保证重试幂等，不同 role 使用独立
+   Binding 与 Turn Route。
 
 ### D1d1：Prompt 内 P0 消费者
+
+状态：**开发中**
 
 1. 将 route 准备提前到图片描述之前，但仍只在 actor 接受后写审计；
 2. 图片描述、权限分类和必要压缩改经现有 SamplerActor；

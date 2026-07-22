@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2 已完成；Host ACP 成功链与失败矩阵均有回归 | D1d0：辅助 role fallback 与统一 Sampling Authority |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt 已保证实际 endpoint、credential、model 与 Turn Route 一致；失败在 Provider 提交前关闭 | 接入图片、权限分类、压缩、后台任务与 subagent 等辅助推理旁路 |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0 已完成；辅助 role 具备可审计的 main fallback 与 Host Authority | D1d1：接入 Prompt 内 P0 辅助推理消费者 |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt 已保证实际 endpoint、credential、model 与 Turn Route 一致；辅助 role 也能生成独立 Binding/Lease | 接入图片描述、权限分类和必要压缩，再处理后台任务与 subagent |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -552,25 +552,71 @@ Renderer 设置 UI。
 
 ### 循环 10：Provider 切片 D1d0——统一辅助 Sampling Authority
 
-状态：已启动
+状态：已完成
+
+本地提交：`6b1de2d feat: add auxiliary provider role fallback`
 
 审计依据：
 
 - [`architecture/PROVIDER_AUXILIARY_INFERENCE_AUDIT.md`](architecture/PROVIDER_AUXILIARY_INFERENCE_AUDIT.md)
 
-本轮目标：
+已完成：
 
-1. 为辅助 role 增加明确的 Session → Agent → Global 解析，并在完全缺失时回退同作用域
-   的 `main` Assignment；返回实际采用的 assignment role，避免隐式漂移；
-2. 将 `AgentMeshSessionRouteContext` 提升为 Host 内部 `SessionSamplingAuthority`，可按
-   `main/vision/permission_classifier/compaction/subagent/...` 准备不可变 Binding/Lease；
-3. 同一 logical turn + role 多次调用只记录一条 Turn Route，跨 role 分开审计；
-4. 添加 sentinel：产品 Session 的任意 Authority 路径都不能得到 Grok default config，
-   普通 Session 保持既有路径；
-5. D1d0 完成后优先接图片描述、权限分类和必要压缩，再处理后台任务与 subagent。
+- `ModelAssignmentStore` 先完整解析请求 role 的 Session → Agent → Global；仅在该 role
+  完全缺失时，再完整解析 `main` 的 Session → Agent → Global，不跨 Session 偷用配置；
+- `PreparedRoute` 同时记录请求 role 所属 Binding 和实际 `assignmentRole`；旧 Binding
+  snapshot 缺少新字段时按 `main` 兼容读取，不修改已有不可变 snapshot 或 schema；
+- `RouteCompiler` 对辅助 role 使用 main Assignment 的情况输出非秘密 warning，使回退
+  可见、可测、可审计，不允许无 Assignment 时退回 Grok default config；
+- `AgentMeshSessionRouteContext::prepare_turn_for_role` 已成为 Host 内部按 role 准备
+  Binding、Lease 和 Turn Route 的统一入口；原 `prepare_turn` 保持 main role 兼容；
+- Host 共享 Vault 测试已用 `vision` role 验证 main Assignment fallback：生成独立
+  `vision` Binding，实际模型来自 main，Provider secret 不进入 Binding、Route 或 Debug；
+- 既有 Turn Submission 状态机继续保证同一 session + role + logical turn 重试只记录一条
+  Turn Route，不同 role 通过独立 Binding 隔离。
+
+验证证据：
+
+- `agentmesh360::` 模块回归 59 项全部通过；
+- 当前代码通过 `cargo check --tests`、Rustfmt、`git diff --check`；
+- 清理本仓库可重建 Cargo 缓存后，以 `CARGO_INCREMENTAL=0` 从干净依赖构建完成
+  library + tests 的 Clippy `-D warnings`；
+- 测试只访问本机 mock Core/Provider，没有调用真实或计费 Provider。
+
+计划复盘：
+
+- D1d0 仍复用现有 `SamplerActor`、Binding、Lease 和 Turn Route，没有建立平行 Sampling
+  栈，符合 Grok-first 约束；
+- 回退顺序是“先完整请求 role，再完整 main role”，与审计计划一致；专用全局 vision
+  Assignment 会优先于 Session main，避免 main 覆盖显式专用配置；
+- 新字段只进入非秘密 PreparedRoute snapshot，Vault handle、credential 和账户身份仍不由
+  Renderer、Agent Package 或 startup hints 提供；
+- D1d0 只完成 Authority 基础，不代表图片描述、权限分类和压缩已经接入。下一轮必须从
+  真实消费入口改造，不能把基础契约误报为 Provider M1 完成。
 
 验收条件：role fallback 有独立契约测试；Binding/Turn Route 明确记录请求 role 与实际采用
 的 Assignment；订阅/账户/Vault 失败继续在 actor 接收前关闭；格式、Clippy 和 AgentMesh
 回归通过。
 
 本轮非目标：D1d0 不一次性改完所有消费者，不实现 UI/Probe/Usage，不扩展 Provider 协议。
+
+### 循环 11：Provider 切片 D1d1——Prompt 内 P0 辅助推理
+
+状态：已启动
+
+本轮目标：
+
+1. 先改造用户图片描述，使产品 Session 在主 Prompt 组装阶段就通过 `vision` Authority
+   获取 per-request config，并在 actor 接受后记录对应 Turn Route；
+2. 接入 `permission_classifier`，远端失败时只使用既有本地保守/启发式策略，不切换
+   Provider；
+3. 接入必要压缩的 `compaction` role，保证同一次压缩的多阶段调用复用同一 Binding；
+4. 用 Host E2E 覆盖专用 role Assignment、main fallback、订阅失效、Vault 丢失和重试
+   不漂移，并确认普通 Grok Session 不受影响。
+
+验收条件：三个 Prompt 内 P0 消费者不再直接取得产品 Session 的 Grok default config；
+每个远端调用都有与真实 endpoint/model 一致的 role Turn Route；失败语义符合专项审计；
+格式、Clippy 和相关回归通过。
+
+本轮非目标：不接后台 laziness/recap/memory，不做 subagent 委托，不实现 Provider UI、
+Probe、Usage 或真实付费 Provider E2E。
