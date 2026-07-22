@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛 | 切片 D1：Host Credential Lease 与三协议路由投影 |
-| Provider Sampling | 仍使用 Grok 原有配置路径；Turn Route 只有可信存储接口，尚无实际记录 | 用短生命周期内存 Lease 把 Binding 投影到现有三协议 Backend，不建立平行 Sampling 栈 |
+| Provider Control Plane | 切片 A/B/C/D0/D1a 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛、Host Credential Lease | D1b：建立唯一请求提交协调器和 Turn Route 时序契约 |
+| Provider Sampling | Binding 已能经内存 Lease 无网络投影到现有三协议 SamplingClient；尚未接入产品 Session 的真实 Turn | D1b 先固化“提交成功后记录”的协调器，D1c 再接 SessionActor |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -297,24 +297,70 @@ Renderer 设置 UI。
 
 ### 循环 5：Provider 切片 D1a——Credential Lease 与无网络路由投影
 
+状态：已完成
+
+本地提交：`0bfce56 feat: add host credential lease projection`
+
+已经实现：
+
+- Host 自有 `CredentialLease` 不实现 `Clone` 或 `Serialize`，秘密保存在会清零的
+  `SecretValue` 中，`Debug` 只输出 Profile、revision 和 presence；
+- 账户范围的不可变 Binding 解析当前 Profile，校验 owner、Profile ID、revision 下界和
+  同 revision 路由一致性，再按 Profile 内部 Credential Ref 从 Vault 读取秘密；
+- 秘密不写入 `SamplerConfig.api_key`，只放入 serde 跳过的内存 `BearerResolver`；
+- Responses、Chat Completions、Anthropic Messages 都投影到原有 `SamplingClient`，构造
+  Client 不发网络请求，也没有新增 HTTP 栈；
+- 当前 Profile 有更新 revision 时，旧 Binding 继续使用冻结的 endpoint、protocol、model；
+  Profile revision 不可能倒退或同 revision 内容不一致时失败关闭；
+- 缺失 Vault 项、跨账户访问和伪造未来 revision 都会在进入 Sampling 前失败关闭；
+- D1 接入复盘时补掉 D0 一个漏网点：流式请求 span 不再记录可能携带 URL 的原始
+  `reqwest::Error`，只记录静态 transport 分类。
+
+验证证据：
+
+- Credential Lease 契约 4 项通过；
+- AgentMesh360 回归 46 项全部通过（订阅门禁的 3 项 mock server 测试需允许本机临时
+  端口；沙箱内其余 43 项已先通过）；
+- `xai-grok-sampler --lib` 156 项全部通过；
+- `cargo fmt --all -- --check`、Shell 全 target Clippy `-D warnings`、`git diff --check`
+  全部通过；
+- 测试明确断言序列化的 Sampler Config 与 Lease/Config Debug 都不含 sentinel 秘密。
+
+计划复盘：
+
+- D1a 只建立 Host 内存权限和现有数据面的投影，没有通过 Renderer/Agent Package 暴露
+  Lease，也没有发送真实或计费请求；
+- 旧 Binding 使用冻结路由、当前 Profile 只提供同一 Profile 的 Vault 句柄，符合“已有
+  Session 不随 Profile 更新静默漂移”；
+- 把 Lease 放入 serde 跳过的 resolver，而不是 `SamplerConfig.api_key`，避免为接入方便
+  重新打开持久化泄露面；
+- 真实产品 Session 仍走 Grok 原配置，不能把本轮描述成 BYOK 已经端到端可用；
+- 现有 `run_turn_via_sampler` 在 `submit_and_collect` 前具备单一提交点，但
+  `SessionActor` 尚未持有 AgentMesh 绑定上下文。直接塞入所有 SessionActor 测试构造器会
+  扩大改动面，因此先用 D1b 提交协调器固定时序，再在 D1c 做窄接缝接入。
+
+本轮非目标保持不变：不发送真实或计费请求，不实现 Gemini/Bedrock Native 协议，不
+实现 Provider UI、动态 Package Policy 或 compatible migration 的历史状态转换。
+
+### 循环 6：Provider 切片 D1b——请求提交协调器与 Turn Route 时序
+
 状态：已启动
 
 本轮目标：
 
-1. 在 Host 内建立不可序列化、不可克隆且 `Debug` 安全的短生命周期
-   `CredentialLease`；
-2. 由账户范围的 Session Binding 解析当前 Profile，校验 owner、route revision 和
-   Credential Ref，再从 Host Vault 读取秘密；
-3. 把 `PreparedRoute + CredentialLease` 投影到 Grok 现有 Responses、Chat
-   Completions、Anthropic Messages Sampling 配置；
-4. 用纯内存/假 Vault 契约测试覆盖缺失凭据、跨账户、revision 不一致和三协议投影，
-   不发真实请求；
-5. 为 D1b 保留唯一的真实请求提交边界，只有请求确实交给 Sampling 后才能写
-   `TurnRouteRecord`。
+1. 建立 Host 内部 `BoundTurnSubmission`，组合账户、turn ID、不可变 Binding、Lease
+   投影和可信 `TurnRouteStore`；
+2. 只有 Sampling submit future 已经被调用并返回“已接收”后，才写
+   `TurnRouteRecord`；准备失败、提交前失败或 submit 返回失败均不得写记录；
+3. 同一 turn 重试必须幂等，禁止用新 Binding 覆盖已经记录的 Turn；
+4. 用假提交器验证成功、失败、重复提交、跨账户和 Binding 不一致时序，不访问外部
+   Provider；
+5. 明确 D1c 接到 `SessionActor::run_turn_via_sampler` 的最小字段与生命周期，不在 D1b
+   扩散修改所有 Session 构造路径。
 
-验收条件：秘密不能出现在持久结构、序列化、`Debug`、错误和 Renderer/Package API；
-绑定或 Vault 解析失败必须关闭执行；三协议投影复用现有 `SamplingClient`，不创建平行
-HTTP 客户端；相关 Rustfmt、Clippy 和单元测试通过。
+验收条件：存储中每条 Turn Route 都对应一次已经进入 Sampling actor 的提交；失败尝试
+不产生“幽灵 Turn”；协调器不持久化/格式化 Lease；相关格式、Clippy、AgentMesh 回归
+通过。
 
-本轮非目标：不发送真实或计费请求，不实现 Gemini/Bedrock Native 协议，不实现
-Provider UI、动态 Package Policy 或 compatible migration 的历史状态转换。
+本轮非目标：不直接改造全部 SessionActor 构造器，不发送真实模型请求，不处理 Usage/
+计费，不实现 UI 或新的协议 Backend。

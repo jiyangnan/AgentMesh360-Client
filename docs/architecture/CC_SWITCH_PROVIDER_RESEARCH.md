@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0 已实现，切片 D1a 开发中
+状态：调研完成，切片 A/B/C/D0/D1a 已实现，切片 D1b 开发中
 
 调研日期：2026-07-22
 
@@ -22,7 +22,8 @@ Model Policy、三层 Model Assignment、非秘密 RouteCompiler，以及对应 
 Client 方法；产品 Agent/Main Session/Workspace 已按账户隔离，不可变 Session Binding、
 revision、回滚和实际 Turn Route 的可信存储接口也已实现。D0 已清除 Sampling、工具、
 subagent、认证恢复、上传和错误链路中的凭据片段/秘密 URL，并建立 sentinel 回归。Turn
-接口尚未接到 Sampling，Credential Lease、Provider UI 与真实模型路由仍是目标能力。
+接口尚未接到产品 Session 的 Sampling 提交点；Credential Lease 和三协议无网络投影已
+完成，请求提交协调器、Provider UI 与真实模型路由仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -896,14 +897,16 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
 
 - D0 已清除 Sampling、subagent、工具、上传、认证恢复与错误路径中的认证值片段、秘密
   URL/Header/响应正文，并建立 sentinel Key 泄露回归；
-- D1a 由 Host 解析不可变 Binding、Profile revision 与 Vault，生成不可序列化的短生命
-  周期 Credential Lease；
+- D1a 已由 Host 解析不可变 Binding、Profile revision 与 Vault，生成不可序列化的短
+  生命周期 Credential Lease，并通过 serde 跳过的 resolver 投影三协议；
+- D1b 固化“Sampling 已接收提交后才写 Turn Route”的协调器和幂等/失败时序；
 - 把 `PreparedRoute` 投影到现有 `ModelEntry / SamplingConfig`；
 - 为 OpenAI、xAI、Anthropic 和三种 Compatible Profile 建立契约测试；
 - 复用现有 Streaming、Tool Call、Usage 和错误分类；
 - 不创建平行 Sampling/Agent Loop。
 
-D1a 仍然只做无网络契约测试；真实请求提交与 `TurnRouteRecord` 的原子时序属于 D1b。
+D1a 只做了无网络契约测试；D1b 仍使用假提交器固定 `TurnRouteRecord` 时序，D1c 才把
+该协调器接到产品 Session 的真实 `submit_and_collect` 边界。
 
 ### 切片 E：最小 Provider UI 与分级 Probe
 
