@@ -92,8 +92,9 @@ Host 直接拥有的 macOS Keychain `CredentialVault` 与非秘密 Profile Store
 Model Assignment、非秘密 RouteCompiler、账户隔离的不可变 Session Binding 和 Turn
 Route 可信存储接口；D0 已完成现有 Harness 的凭据诊断安全加固，D1a 已完成 Host
 Credential Lease 与三协议投影，D1b 已固化 actor 接收后写 Turn Route 的提交协调器和
-失败/幂等时序。该路径尚未接到产品 Session Prompt 队列，D1c0 正在保证同一 Turn 的
-tool/retry 多次调用保持同一 Binding，Provider UI 和真实推理接入仍未实现。
+失败/幂等时序，D1c0 已保证同一 Turn 的 tool/retry 多次调用保持同一 Binding。该路径
+尚未接到产品 Session Prompt 推理边界，D1c1 正在以 Host 可信 Session Route Context
+同时覆盖用户 Prompt 和 synthetic auto-wake；Provider UI 和真实 Provider E2E 仍未实现。
 
 当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
 因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和

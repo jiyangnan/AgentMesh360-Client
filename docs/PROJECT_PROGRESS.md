@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛、Host Credential Lease、提交时序 | D1c0：同一 Turn 的绑定上下文复用 |
-| Provider Sampling | Binding 已能经内存 Lease 投影到现有三协议，Sampler actor 接收后才写 Turn Route；尚未贯通产品 Prompt 队列 | D1c0 固化 tool/retry 多次模型调用的同路由复用，D1c1 接 SessionActor |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0 已完成：Profile/Vault、Catalog、Policy、Assignment、RouteCompiler、账户隔离、不可变 Binding、凭据诊断安全门槛、Host Credential Lease、提交时序、Turn 内复用 | D1c1：贯通产品 Session Prompt 路径 |
+| Provider Sampling | Binding 已能经内存 Lease 投影到三协议；actor 接收后写 Turn Route，同一 Turn 多次模型调用保持同路由；尚未接产品 Prompt 队列 | 通过可信 Startup Context 接入真实 `run_turn_via_sampler`，无配置时失败关闭 |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -385,20 +385,63 @@ Renderer 设置 UI。
 
 ### 循环 7：Provider 切片 D1c0——同一 Turn 的绑定上下文复用
 
+状态：已完成
+
+本地提交：`5cc4ed9 feat: reuse bound provider route within a turn`
+
+已经实现：
+
+- 首次 actor acceptance 和 Turn Route 写入后，协调器返回不可序列化的
+  `ActiveBoundTurn`；
+- Active 上下文保留同一 Binding 的 resolver-backed `SamplerConfig`，后续调用只在 Host
+  内克隆该内存配置，不重新解析 Assignment/Profile；
+- tool follow-up、401/compaction resubmit 和 completion recovery 可以复用同一路由，但
+  不能修改 Binding，也不会再次写 Turn Route；
+- `ActiveBoundTurn` 的 Debug 继续使用安全 `SamplerConfig::Debug`，内部 config 序列化
+  会跳过 resolver，sentinel 秘密不会出现。
+
+验证证据：
+
+- Turn Submission 契约增至 6 项全部通过；新增用例执行首次提交、tool follow-up 和认证
+  重试三次调用，只产生一条 Turn Route；
+- AgentMesh360 回归增至 52 项全部通过；
+- Shell 全 target Clippy `-D warnings`、Rustfmt、diff 检查全部通过；
+- 全程使用假提交器，不发送网络请求。
+
+计划复盘：
+
+- 同一 Prompt 的所有模型调用现在可以保持同一不可变 Binding，不会在 retry 时退回
+  Grok 默认配置；
+- Active 上下文没有暴露给 Renderer/Package，也没有成为可序列化 Session 字段；
+- 产品 Session 和 synthetic auto-wake 都需要同一 Host 路由，单纯把 Bound Turn 塞进
+  用户 `SessionCommand::Prompt` 会漏掉后台唤醒。D1c1 应把可信、非秘密账户路由上下文
+  注入 `StartupHints` 的 serde-skip 字段，让 SessionActor 每个 Prompt 都从 Host 准备
+  Bound Turn；
+- `StartupHints` 的该字段必须由 MvpAgent 根据 Registry/当前账户覆盖，不能接受客户端
+  反序列化输入，防止伪造账户作用域。
+
+本轮非目标保持不变：不修改 Prompt 队列和全部测试构造器，不发送真实请求，不处理 UI。
+
+### 循环 8：Provider 切片 D1c1——产品 Session Prompt 真实接入
+
 状态：已启动
 
 本轮目标：
 
-1. 首次 actor acceptance 和 Turn Route 写入后，返回不可序列化的 `ActiveBoundTurn`；
-2. `ActiveBoundTurn` 可为同一 Prompt 的 tool loop、401/compaction resubmit 和 completion
-   recovery 生成同一绑定的 per-request config，但不能改变 Binding 或重复写记录；
-3. 复用的 config 继续只通过 serde 跳过的 resolver 持有秘密，Debug/序列化不泄露；
-4. 测试首次提交与多次重提只产生一条 Turn Route，并保持协议、模型、endpoint 与认证
-   Lease 一致；
-5. 完成后规划 D1c1：将可选 Bound Turn 从 `MvpAgent::prompt` 经 `SessionCommand::Prompt`
-   和 `InputItem` 传到真实 `run_turn_via_sampler`。
+1. 定义仅含 account/agent/role 的非秘密 `AgentMeshSessionRouteContext`，通过
+   `StartupHints` 的 serde-skip 字段由 MvpAgent 可信注入，外部 startupHints 不能设置；
+2. 每个产品 Prompt（包括 synthetic auto-wake）在推理前解析/初始化不可变 Binding、
+   Credential Lease 与 `ProductTurnRoute`；普通 Grok Session 保持原路径；
+3. `process_conversation_turn` 的所有 tool/retry/recovery 模型调用通过同一个
+   `ProductTurnRoute` 调用 `begin_submit_and_collect_with_config`；
+4. 产品 Session 缺少 Assignment/Profile/Vault 时失败关闭且保留历史，不静默使用 Grok
+   默认 Provider；
+5. 用无网络 actor/channel 测试验证真实 `run_turn_via_sampler` 边界写一条 Turn Route，
+   并覆盖普通 Session 不受影响。
 
-验收条件：同一 Turn 所有模型调用都保持同一不可变 Binding；重提不重新解析 Assignment
-或静默回到默认模型；秘密仍不进入持久化/日志；测试无外部请求。
+验收条件：产品 Prompt 的实际 Sampling 命令使用 Binding 投影配置，Turn Route 在 actor
+接受后可查询；同一 Turn 多调用不漂移；客户端不能伪造 account context；普通 Session
+回归、格式和 Clippy 通过。
 
-本轮非目标：不在本切片修改 Prompt 队列和全部测试构造器，不发送真实请求，不处理 UI。
+本轮非目标：不做真实 Provider E2E、不实现 Provider UI/Probe、不接计费 Usage、不扩展
+新协议。

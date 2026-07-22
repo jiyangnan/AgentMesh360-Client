@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1a/D1b 已实现，切片 D1c0 开发中
+状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0 已实现，切片 D1c1 开发中
 
 调研日期：2026-07-22
 
@@ -22,9 +22,9 @@ Model Policy、三层 Model Assignment、非秘密 RouteCompiler，以及对应 
 Client 方法；产品 Agent/Main Session/Workspace 已按账户隔离，不可变 Session Binding、
 revision、回滚和实际 Turn Route 的可信存储接口也已实现。D0 已清除 Sampling、工具、
 subagent、认证恢复、上传和错误链路中的凭据片段/秘密 URL，并建立 sentinel 回归。Turn
-接口尚未接到产品 Session 的 Prompt 队列；Credential Lease、三协议投影和 actor 接收
-后写 Turn Route 的提交协调器已完成。同一 Turn 路由复用、Provider UI 与真实模型路由
-仍是目标能力。
+接口尚未接到产品 Session 的 Prompt 推理路径；Credential Lease、三协议投影、actor
+接收后写 Turn Route 的提交协调器和同一 Turn 多调用复用已完成。Prompt 接入、Provider
+UI 与真实 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -902,15 +902,16 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
   生命周期 Credential Lease，并通过 serde 跳过的 resolver 投影三协议；
 - D1b 已固化“Sampling actor channel 已接收提交后才写 Turn Route”的协调器和幂等/
   失败时序；
-- D1c0 为 tool loop、401/compaction resubmit 与 completion recovery 保持同一 Turn 的
-  Lease/Binding；D1c1 再贯通产品 Prompt 队列；
+- D1c0 已为 tool loop、401/compaction resubmit 与 completion recovery 保持同一 Turn
+  的 Lease/Binding；D1c1 通过 MvpAgent 可信注入的 serde-skip Session Route Context
+  贯通用户 Prompt 与 synthetic auto-wake；
 - 把 `PreparedRoute` 投影到现有 `ModelEntry / SamplingConfig`；
 - 为 OpenAI、xAI、Anthropic 和三种 Compatible Profile 建立契约测试；
 - 复用现有 Streaming、Tool Call、Usage 和错误分类；
 - 不创建平行 Sampling/Agent Loop。
 
-D1a/D1b 使用无网络契约测试固定凭据和 `TurnRouteRecord` 时序；D1c0 先固定多次模型
-调用的同路由复用，D1c1 才把协调器接到产品 Session 的真实 `submit_and_collect` 边界。
+D1a-D1c0 使用无网络契约测试固定凭据、`TurnRouteRecord` 时序和多次模型调用复用；
+D1c1 把协调器接到产品 Session 的真实 `submit_and_collect` 边界，但仍不调用外部 Provider。
 
 ### 切片 E：最小 Provider UI 与分级 Probe
 
