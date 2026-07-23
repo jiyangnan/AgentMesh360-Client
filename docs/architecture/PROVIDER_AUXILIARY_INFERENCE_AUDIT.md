@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：审计完成，D1d0/D1d1/D1d2a 已实现，D1d2b 开发中
+状态：持续审计，D1d0/D1d1/D1d2a/D1d2b 已实现，D1d2c 开发中
 
 审计日期：2026-07-23
 
@@ -50,8 +50,11 @@ Session 继续使用原路径。
 | P0 | 上下文压缩 | `compaction.rs`、`helpers/session_summary.rs` → `prepare_chat_completion` / `conversation_collect` | 持久 Session 越长越容易触发；旁路失败会使长期记忆体验退化 | 使用 `compaction` role；同一次压缩的 two-pass/single-pass 保持同一 Binding |
 | P0 | Subagent 推理 | `mvp_agent::subagent_coordinator::build_subagent_spawn_context` 复制默认 `sampling_config`、AuthManager | 产品 Agent 能生成 subagent，但 subagent 没有产品 Binding/Lease，可能失败或走 Grok 默认路由 | 子 Agent 获得不可伪造的 Host 路由委托；默认使用 `subagent` role，缺省回退 `main` Assignment |
 | P1 | Laziness 检测 | `acp_session_impl::laziness` → `prepare_chat_completion` | 可选质量检测在 BYOK 下失效或旁路 | 使用 `laziness` role；失败只跳过检测，不换 Provider |
-| P1 | Recap/回顾 | `acp_session_impl::recap` 多处 collect/stream | between-turn/background 推理未记录真实路由 | 使用 `recap` role和独立 synthetic turn id；失败保留原会话 |
+| P1 | Recap/回顾 | `acp_session_impl::recap::handle_recap` 单次 collect | between-turn/background 推理未记录真实路由 | 使用 `recap` role和独立 synthetic turn id；失败保留原会话 |
 | P1 | Memory dream | `acp_session_impl::memory_dream` 多处 collect/stream | 后台常驻 Agent 可能在用户不看窗口时旁路采样 | 使用 `memory` role和独立 synthetic turn id；订阅 Guard 每次重验 |
+| P1 | `/btw` side question | `acp_session_impl::recap::handle_side_question` → direct collect | 用户可见的旁路问答可能使用 Grok 默认 Provider，且没有 Turn Route | 使用 `side_question` role和独立 synthetic turn id；缺省回退 main |
+| P2 | AI shell command suggestion | `acp_session_impl::recap::handle_ai_suggest` → direct stream | 自动建议可能旁路 BYOK 路由 | 与 prompt suggestion 共用 `suggestion` role；失败保持现有无建议语义 |
+| P2 | Prompt suggestion | `acp_session_impl::recap::handle_suggest_prompt` → direct collect | 自动建议可能旁路 BYOK 路由 | 使用 `suggestion` role；失败保持现有无建议语义 |
 | P2 | Trace classifier | `trace_classifier` 直接 `SamplingClient::new` | 主要是诊断/上传分类，不一定属于产品 Session 的用户推理 | 先按调用来源隔离；只有绑定到产品 Session 的任务才纳入 Authority |
 
 以下路径已经由 D1c1/D1c2 覆盖，不重复建设：主模型调用、tool follow-up、goal round、
@@ -73,6 +76,8 @@ Web search、图片/视频生成和部署服务拥有不同的产品服务协议
 - `laziness`
 - `recap`
 - `memory`
+- `side_question`
+- `suggestion`
 
 Assignment 解析顺序保持 Session → Agent → Global，但辅助 role 增加一个明确、可审计的
 缺省规则：
@@ -115,6 +120,7 @@ turn 和 subagent invocation id 形成可追踪的逻辑 turn id。
 | 主 Prompt、图片描述、必要压缩 | 返回结构化 `agentmesh360_provider_route_required`，保存用户输入与历史，不切换 Provider |
 | 权限分类、laziness | 使用既有本地保守/启发式结果；记录非秘密降级原因，不调用其他 Provider |
 | recap、memory dream | 跳过本次后台任务并保留待重试状态；订阅恢复后可再次执行 |
+| side question、suggestion | 返回现有不可用/无建议结果；不切换 Provider，不修改主会话 |
 | subagent | 拒绝该 subagent 启动并把原因返回父 Agent；父 Agent 可以继续主 Turn 或请求用户配置 |
 
 ## 7. D1d 实施顺序
@@ -161,9 +167,10 @@ Vault 丢失和订阅失效均在网络提交前失败并保留 Session。
 
 ### D1d2：后台消费者
 
-状态：**开发中；D1d2a laziness 已实现（`9e84d75`），D1d2b recap 进行中**
+状态：**开发中；D1d2a laziness（`9e84d75`）、D1d2b recap（`cc3020c`）已实现，
+D1d2c memory 进行中**
 
-1. ~~接入 laziness；~~ 已完成。继续接入 recap 与 memory dream；
+1. ~~接入 laziness 与 recap；~~ 已完成。继续接入 memory dream；
 2. 每次后台执行重新检查 Access Guard；
 3. 使用 synthetic logical turn id 并验证 Session 历史不因失败被删除。
 
@@ -172,6 +179,23 @@ Laziness 接入结论（2026-07-23）：产品 Session 每次 classifier fire �
 side-query 提交；专用 role 与 main fallback 均已通过本机 Provider E2E。订阅失效与
 Vault 丢失沿既有 `ClassifierError` 语义跳过检测，零网络、零幽灵 Route；普通 Session
 仍走原 direct collect。
+
+Recap 接入结论（2026-07-23）：真实 `handle_recap` 每次任务只有一次模型请求，并非
+此前描述的多阶段调用。产品 Session 使用 `aux:recap:<uuid>` 和 `recap` Binding/Lease，
+以实际 backend/model/context window 构建请求，再经既有 SamplerActor side-query 提交；
+专用 role 与 main fallback 均已通过 E2E。订阅失效或 Vault 丢失时零网络、零幽灵 Route，
+不推进 watermark、不修改 conversation，手动 spinner 仍按原协议清理。
+
+持续审计修正（2026-07-23）：同一 `recap.rs` 的 `/btw`、AI shell command suggestion
+和 prompt suggestion 是独立消费者，不能计入 recap 已完成范围。它们分别规划为
+`side_question` 与 `suggestion` role，并在 D1d2d 收口。
+
+### D1d2d：补充 Session 辅助消费者
+
+1. `/btw` 使用 `side_question` Binding/Lease 与独立 synthetic id；
+2. command/prompt suggestion 共用 `suggestion` role，保持失败时“不显示建议”的语义；
+3. 三条路径都必须覆盖 main fallback、订阅/Vault 零网络和普通 Session 回归；
+4. D1d2c memory 与本切片完成后再进入 D1d3。
 
 ### D1d3：Subagent 路由委托
 

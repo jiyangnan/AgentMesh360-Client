@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；D1d2a laziness 已接入 Host Authority | D1d2b：接入 recap 后台消费者 |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类、必要压缩和 laziness 已保证实际 endpoint、credential、model 与 Turn Route 一致 | 处理 recap、memory，再进入 subagent |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；D1d2a laziness、D1d2b recap 已接入 Host Authority | D1d2c：接入 memory 后台消费者 |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类、必要压缩、laziness 和 recap 已保证实际 endpoint、credential、model 与 Turn Route 一致 | 处理 memory 与补充审计消费者，再进入 subagent |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -736,11 +736,12 @@ Probe、Usage 或真实付费 Provider E2E。
 
 ### 循环 12：Provider 切片 D1d2——后台消费者
 
-状态：开发中；D1d2a laziness 已完成，D1d2b recap 调用链审计中
+状态：开发中；D1d2a laziness、D1d2b recap 已完成，D1d2c memory 调用链审计中
 
 阶段提交：
 
 - `9e84d75 feat: bind product laziness sampling`
+- `cc3020c feat: bind product recap sampling`
 
 已完成子模块 D1d2a：
 
@@ -777,18 +778,48 @@ D1d2a 计划复盘：
   辅助流要求；
 - `aux:laziness:<uuid>` 不绑定用户 Prompt，符合 between-turn/background synthetic id
   约束；失败不缓存 credential，也不影响后续重新执行；
-- 下一轮进入 D1d2b recap。recap 的多阶段调用必须先定义“一次后台任务”的稳定 logical
-  id 与重试范围，不能简单地给每个 HTTP 请求随机生成互不相关的 Route。
+- 下一轮进入 D1d2b recap。
+
+已完成子模块 D1d2b：
+
+- 复核真实调用链后确认，一次 `handle_recap` 只有一次模型请求；此前“recap 多阶段调用”
+  的描述不准确。每次手动/自动 recap 使用 `aux:recap:<uuid>` 和 `recap` role；
+- 产品 Session 在构建请求前取得不可变 Host Route 与短生命周期内存配置快照，使用实际
+  绑定 backend 决定 reasoning 清理、实际 context window 计算预算、实际 model 写入请求
+  和 recap artifact；普通 Grok Session 保持原 `SamplingClient` 路径；
+- 产品请求经现有 SamplerActor non-broadcast side-query 提交，只有 actor 接收后才写
+  Turn Route；专用 `recap` Assignment 缺省时可审计地回退 main；
+- 订阅失效或 Vault 凭据缺失在网络前失败，不推进 watermark、不修改 conversation；
+  手动 `/recap` 仍发出 unavailable 事件清理客户端 spinner，后续可重新执行。
+
+D1d2b 验证：
+
+- 产品 recap E2E 2 项通过：专用 `recap-model`/独立 Key 和 main fallback 均使用实际
+  Bearer/model，并只记录 `recap` Turn Route；
+- recap display-only 16 项全部通过，验证成功和失败都不改变 Session conversation；
+- laziness 15 项、permission auto-mode 16 项、AgentMesh360 60 项全部通过；
+- `cargo check --tests`、Rustfmt、`git diff --check` 与 library + tests Clippy
+  `-D warnings` 通过。
+
+D1d2b 计划复盘：
+
+- 代码复核发现同一 `recap.rs` 中的 `/btw`、AI shell command suggestion 和 prompt
+  suggestion 是三个独立消费者，不属于 recap 的多阶段请求；原审计漏列了这些入口；
+- 这些入口不能因文件同名而被误判为已经受 `recap` role 保护。它们已补入专项审计，
+  计划在 memory 后以 D1d2d 收口，再进入 subagent；
+- 下一轮进入 D1d2c memory。必须先确认每个 dream 阶段、重试边界、conversation/
+  artifact 副作用和现有失败重试语义，再决定一次任务对应一条还是多条 logical route。
 
 本轮目标：
 
 1. ~~D1d2a 先接 `laziness` role：产品 Session 的远端检测必须经实时 Access Guard、
    Binding/Lease 和 SamplerActor side-query；失败只跳过检测，不换 Provider；~~ 已完成
-2. D1d2b 接 `recap` role：每次任务使用独立 synthetic logical turn id，失败保留原会话
-   与可重试状态；
+2. ~~D1d2b 接 `recap` role：每次任务使用独立 synthetic logical turn id，失败保留原会话
+   与可重试状态；~~ 已完成
 3. D1d2c 接 `memory` role：后台 dream 每次执行重新验证订阅，禁止从常驻 Session
    缓存 credential 或 Grok default config；
-4. 为每个子模块分别覆盖专用 Assignment、main fallback、Vault/订阅失败零网络和普通
+4. D1d2d 收口复核新发现的 `/btw` 与 suggestion 辅助消费者；
+5. 为每个子模块分别覆盖专用 Assignment、main fallback、Vault/订阅失败零网络和普通
    Grok Session 回归。
 
 计划复盘后的顺序：
@@ -796,10 +827,13 @@ D1d2a 计划复盘：
 - laziness 是只读、可选质量检测，失败语义最窄，适合作为后台 Authority 的第一个接入点；
 - recap 与 memory 可能跨用户 Turn 或在窗口不可见时运行，必须在 laziness 验证
   synthetic id、实时 Guard 和 side-query 隔离后再接入；
+- D1d2b 已证明 request builder 可以安全读取同一租约的非持久化 config 快照，同时保持
+  “actor 接收后才记账”；memory 如需多阶段请求应复用同一 Active route，不能重复解析
+  Assignment；
 - D1d2 完成前不进入 subagent route delegation；Provider UI、Probe、Usage 和真实付费
   Provider E2E 仍不是本轮范围。
 
-D1d2a 验收条件：远端请求使用 `laziness` Binding 的真实 endpoint/model/credential；
-actor 接收后最多写一条该 role Turn Route；订阅、Vault、网络或解析失败只返回“跳过
-检测”的既有语义且不访问其他 Provider；格式、Clippy、AgentMesh360 与 laziness 回归
-通过。
+D1d2c 验收条件：每次 memory dream 重新通过实时 Access Guard 和 `memory`
+Binding/Lease；同一后台任务的阶段与重试保持不可变路由；订阅、Vault、网络或解析失败
+不删除 Session/Memory 状态且不访问其他 Provider；普通 Grok Session 行为不变，格式、
+Clippy、AgentMesh360 与 memory 回归通过。
