@@ -30,8 +30,9 @@ mock E2E 已覆盖无 Grok 登录的 BYOK 产品 Agent 激活/Prompt，以及订
 把休眠 Cursor 图片描述 twin 接到 `vision` Authority；D1d1b 已将自动权限分类接到
 `permission_classifier` Binding，并固定本地失败回退；D1d1c 已将 manual/auto、
 two-pass 与 single-pass 必要压缩接到 `compaction` Binding，固定专用模型、main fallback、
-同一逻辑压缩重试幂等和失败前零网络。后台 laziness/recap/memory、subagent、Provider UI
-与真实 Provider E2E 仍是目标能力。
+同一逻辑压缩重试幂等和失败前零网络。D1d2a 已将 between-turn laziness classifier 接到
+`laziness` Binding，固定专用模型、main fallback 与失败只跳过检测；后台 recap/memory、
+subagent、Provider UI 与真实 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。

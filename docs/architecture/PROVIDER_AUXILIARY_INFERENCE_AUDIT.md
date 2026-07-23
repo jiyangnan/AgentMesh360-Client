@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：审计完成，D1d0/D1d1 已实现，D1d2 开发中
+状态：审计完成，D1d0/D1d1/D1d2a 已实现，D1d2b 开发中
 
 审计日期：2026-07-23
 
@@ -161,11 +161,17 @@ Vault 丢失和订阅失效均在网络提交前失败并保留 Session。
 
 ### D1d2：后台消费者
 
-状态：**开发中；D1d2a laziness 优先**
+状态：**开发中；D1d2a laziness 已实现（`9e84d75`），D1d2b recap 进行中**
 
-1. 接入 laziness、recap 与 memory dream；
+1. ~~接入 laziness；~~ 已完成。继续接入 recap 与 memory dream；
 2. 每次后台执行重新检查 Access Guard；
 3. 使用 synthetic logical turn id 并验证 Session 历史不因失败被删除。
+
+Laziness 接入结论（2026-07-23）：产品 Session 每次 classifier fire 使用独立
+`aux:laziness:<uuid>`，由 `laziness` Binding/Lease 经现有 SamplerActor non-broadcast
+side-query 提交；专用 role 与 main fallback 均已通过本机 Provider E2E。订阅失效与
+Vault 丢失沿既有 `ClassifierError` 语义跳过检测，零网络、零幽灵 Route；普通 Session
+仍走原 direct collect。
 
 ### D1d3：Subagent 路由委托
 

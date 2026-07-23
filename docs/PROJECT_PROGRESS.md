@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；Prompt 内 P0 辅助推理均受 Host Authority 约束 | D1d2：接入 laziness、recap 与 memory 后台消费者 |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类和必要压缩已保证实际 endpoint、credential、model 与 Turn Route 一致 | 先接 laziness，再处理 recap、memory 与 subagent |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；D1d2a laziness 已接入 Host Authority | D1d2b：接入 recap 后台消费者 |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类、必要压缩和 laziness 已保证实际 endpoint、credential、model 与 Turn Route 一致 | 处理 recap、memory，再进入 subagent |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -736,12 +736,54 @@ Probe、Usage 或真实付费 Provider E2E。
 
 ### 循环 12：Provider 切片 D1d2——后台消费者
 
-状态：开发中；D1d2a laziness 调用链审计与接入准备中
+状态：开发中；D1d2a laziness 已完成，D1d2b recap 调用链审计中
+
+阶段提交：
+
+- `9e84d75 feat: bind product laziness sampling`
+
+已完成子模块 D1d2a：
+
+- 保留 Grok Harness 原有 laziness 启用/空闲门槛、分类 prompt、transcript 展平、
+  用户输入/模型切换取消、超时、JSON 解析、nudge cap 和 reminder 注入逻辑；
+- 普通 Grok Session 继续使用 direct `SamplingClient::conversation_collect`；产品 Session
+  为每次 fire 创建 `aux:laziness:<uuid>`，通过实时 `laziness` Binding/Lease 与现有
+  SamplerActor non-broadcast side-query 提交；
+- 抽出 `begin_product_side_query_for_role`，统一 actor 接收、per-request config、实际
+  model 返回和 Turn Route 写入边界；permission_classifier 同步复用该 helper，未改变其
+  失败回退；
+- 专用 `laziness` Assignment 优先，缺省可审计地回退 main；实际绑定 model 同时用于
+  Provider 请求和分类 telemetry；
+- 订阅、Vault、actor 或网络失败仍进入既有 `ClassifierError`，只跳过本次检测，不切换
+  Provider、不注入 nudge、不删除历史。
+
+D1d2a 验证：
+
+- 产品 laziness E2E 2 项通过：专用 `laziness-model`/独立 Key 与 main fallback 分别
+  生效；请求使用真实 Bearer/model，只有 `laziness` Turn Route；
+- 同一专用 role E2E 连续验证订阅失效与 Vault 删除均零网络、零幽灵 Route，并各写一条
+  `classifier_error` abort；
+- laziness actor 集成 15 项全部通过，包含普通 Session、空闲门槛、用户输入/模型切换
+  abort、debug log 与产品路由；
+- permission auto-mode 16 项、AgentMesh360 60 项全部通过；`cargo check --tests`、
+  Rustfmt、`git diff --check` 和 library + tests Clippy `-D warnings` 通过。
+
+D1d2a 计划复盘：
+
+- 本轮没有改变 laziness 何时启用，只替换产品 Session 真正发生远端分类时的 Sampling
+  Authority；模型 Catalog 的 laziness 开关仍是 Harness 产品策略，不由 Provider
+  Assignment 偷偷开启；
+- side-query 复用同一 SamplerActor，Drop 仍触发现有 Cancel 命令，满足低内存和不可见
+  辅助流要求；
+- `aux:laziness:<uuid>` 不绑定用户 Prompt，符合 between-turn/background synthetic id
+  约束；失败不缓存 credential，也不影响后续重新执行；
+- 下一轮进入 D1d2b recap。recap 的多阶段调用必须先定义“一次后台任务”的稳定 logical
+  id 与重试范围，不能简单地给每个 HTTP 请求随机生成互不相关的 Route。
 
 本轮目标：
 
-1. D1d2a 先接 `laziness` role：产品 Session 的远端检测必须经实时 Access Guard、
-   Binding/Lease 和 SamplerActor side-query；失败只跳过检测，不换 Provider；
+1. ~~D1d2a 先接 `laziness` role：产品 Session 的远端检测必须经实时 Access Guard、
+   Binding/Lease 和 SamplerActor side-query；失败只跳过检测，不换 Provider；~~ 已完成
 2. D1d2b 接 `recap` role：每次任务使用独立 synthetic logical turn id，失败保留原会话
    与可重试状态；
 3. D1d2c 接 `memory` role：后台 dream 每次执行重新验证订阅，禁止从常驻 Session
