@@ -11,6 +11,31 @@ contextBridge.exposeInMainWorld('agentmesh360', {
   logout: () => ipcRenderer.invoke('identity:logout'),
   recheck: () => ipcRenderer.invoke('identity:recheck'),
   activateAgent: (agentId) => ipcRenderer.invoke('agent:activate', String(agentId || '').slice(0, 100)),
+  getProviderSnapshot: () => ipcRenderer.invoke('provider:get-snapshot'),
+  createProviderProfile: ({ profile, apiKey }) => ipcRenderer.invoke('provider:create-profile', {
+    profile,
+    apiKey: String(apiKey || '').slice(0, 16_384),
+  }),
+  updateProviderProfile: ({ profileId, profile }) => ipcRenderer.invoke('provider:update-profile', {
+    profileId: String(profileId || '').slice(0, 200),
+    profile,
+  }),
+  replaceProviderSecret: ({ profileId, apiKey }) => ipcRenderer.invoke('provider:replace-secret', {
+    profileId: String(profileId || '').slice(0, 200),
+    apiKey: String(apiKey || '').slice(0, 16_384),
+  }),
+  deleteProviderProfile: (profileId) => ipcRenderer.invoke(
+    'provider:delete-profile',
+    String(profileId || '').slice(0, 200),
+  ),
+  upsertModelAssignment: (assignment) => ipcRenderer.invoke(
+    'provider:upsert-assignment',
+    assignment,
+  ),
+  deleteModelAssignment: (assignmentId) => ipcRenderer.invoke(
+    'provider:delete-assignment',
+    String(assignmentId || '').slice(0, 200),
+  ),
   openSubscription: () => ipcRenderer.invoke('external:open-subscription'),
   openRegistration: () => ipcRenderer.invoke('external:open-registration'),
   onState: (listener) => {

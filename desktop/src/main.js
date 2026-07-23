@@ -14,6 +14,7 @@ const { AgentMeshCoreClient } = require('./auth/core-client');
 const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
 const { IdentityController } = require('./identity-controller');
+const { ProviderController } = require('./provider-controller');
 
 const SUBSCRIPTION_URL = 'https://agentmesh360.com/app/#pricing';
 const REGISTRATION_URL = 'https://agentmesh360.com/app/#register';
@@ -46,8 +47,9 @@ async function boot() {
   });
   const host = new AcpHostClient();
   controller = new IdentityController({ core, tokenStore, host });
+  const providers = new ProviderController({ identity: controller, host });
 
-  registerIpc(controller);
+  registerIpc(controller, providers);
   window = createWindow();
   controller.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('identity:state', state);
@@ -92,7 +94,7 @@ function createWindow() {
   return created;
 }
 
-function registerIpc(identity) {
+function registerIpc(identity, providers) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
     const email = typeof credentials?.email === 'string' ? credentials.email : '';
@@ -104,6 +106,25 @@ function registerIpc(identity) {
   ipcMain.handle('agent:activate', (_event, agentId) => {
     if (!/^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$/.test(agentId)) throw new Error('Agent ID 无效');
     return identity.activateAgent(agentId);
+  });
+  ipcMain.handle('provider:get-snapshot', () => providers.getSnapshot());
+  ipcMain.handle('provider:create-profile', (_event, { profile, apiKey } = {}) => {
+    return providers.createProfile(profile, apiKey);
+  });
+  ipcMain.handle('provider:update-profile', (_event, { profileId, profile } = {}) => {
+    return providers.updateProfile(profileId, profile);
+  });
+  ipcMain.handle('provider:replace-secret', (_event, { profileId, apiKey } = {}) => {
+    return providers.replaceSecret(profileId, apiKey);
+  });
+  ipcMain.handle('provider:delete-profile', (_event, profileId) => {
+    return providers.deleteProfile(profileId);
+  });
+  ipcMain.handle('provider:upsert-assignment', (_event, assignment) => {
+    return providers.upsertAssignment(assignment);
+  });
+  ipcMain.handle('provider:delete-assignment', (_event, assignmentId) => {
+    return providers.deleteAssignment(assignmentId);
   });
   ipcMain.handle('external:open-subscription', () => openAllowedExternal(SUBSCRIPTION_URL));
   ipcMain.handle('external:open-registration', () => openAllowedExternal(REGISTRATION_URL));

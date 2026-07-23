@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test tests/*.test.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/auth/core-client.js && node --check src/auth/secure-token-store.js && node --check src/host/acp-client.js && node --check src/identity-controller.js && node --check src/ui/app.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/auth/core-client.js && node --check src/auth/secure-token-store.js && node --check src/host/acp-client.js && node --check src/identity-controller.js && node --check src/provider-controller.js && node --check src/ui/app.js",
     "build:host": "cargo build --manifest-path ../crates/codegen/xai-grok-pager-bin/Cargo.toml --release",
     "build:mac": "npm run build:host && electron-builder --mac"
   },
