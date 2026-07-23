@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：持续审计，D1d0/D1d1/D1d2 已实现，D1d3 开发中
+状态：审计已收口，D1d0/D1d1/D1d2/D1d3 已实现，D1 产品 Session 推理闭环完成
 
 审计日期：2026-07-23
 
@@ -57,7 +57,7 @@ Session 继续使用原路径。
 | P1 | `/btw` side question | `acp_session_impl::recap::handle_side_question` → direct collect | 用户可见的旁路问答可能使用 Grok 默认 Provider，且没有 Turn Route | 使用 `side_question` role和独立 synthetic turn id；缺省回退 main |
 | P2 | AI shell command suggestion | `acp_session_impl::recap::handle_ai_suggest` → direct stream | 自动建议可能旁路 BYOK 路由 | 与 prompt suggestion 共用 `suggestion` role；失败保持现有无建议语义 |
 | P2 | Prompt suggestion | `acp_session_impl::recap::handle_suggest_prompt` → direct collect | 自动建议可能旁路 BYOK 路由 | 使用 `suggestion` role；失败保持现有无建议语义 |
-| P2 | Trace classifier | `trace_classifier` 直接 `SamplingClient::new` | 主要是诊断/上传分类，不一定属于产品 Session 的用户推理 | 先按调用来源隔离；只有绑定到产品 Session 的任务才纳入 Authority |
+| 排除 | Trace classifier | 独立 `trace_classify` CLI 读取离线 trace，并显式解析 CLI/env/Grok auth | 不由产品 Session、Host ACP 或桌面生命周期调用，也没有合法的账户/Agent/Session Authority | 保持为操作者离线工具；运行时同类检测已由 `laziness` role 覆盖，不纳入产品 Binding |
 
 以下路径已经由 D1c1/D1c2 覆盖，不重复建设：主模型调用、tool follow-up、goal round、
 completion recovery、401/compaction resubmit，以及 synthetic auto-wake 进入主 Prompt 时的
@@ -169,8 +169,8 @@ Vault 丢失和订阅失效均在网络提交前失败并保留 Session。
 
 ### D1d2：后台消费者
 
-状态：**开发中；D1d2a laziness（`9e84d75`）、D1d2b recap（`cc3020c`）、
-D1d2c memory（`0519733`）已实现，D1d2d 补充消费者进行中**
+状态：**已实现；D1d2a laziness（`9e84d75`）、D1d2b recap（`cc3020c`）、
+D1d2c memory（`0519733`）、D1d2d 补充消费者（`6a73df8`）均已完成**
 
 1. ~~接入 laziness、recap、memory dream/flush/note rewrite；~~ 已完成；
 2. 每次后台执行重新检查 Access Guard；
@@ -210,12 +210,26 @@ fallback、订阅失效和 Vault 丢失已通过 E2E，失败路径零网络、�
 
 ### D1d3：Subagent 路由委托
 
-状态：**开发中；真实 spawn/Sampling 生命周期审计中**
+状态：**已实现（2026-07-23，`a1628d1`）**
 
-1. 定义不可序列化、不可跨账户的 Host route delegation；
-2. subagent Sampling 使用 `subagent` Binding/Lease，不复制 Grok 默认 credential；
-3. 父/子调用可追踪，但不把 credential 或 Vault handle写入 ToolContext、日志或会话状态；
-4. 真实 parent Prompt → tool call → subagent → Provider mock E2E 通过后，D1 才可整体关闭。
+1. Host 从已认证父产品 Session 派生 Rust-only、不可 serde 的 route delegation；
+2. subagent Sampling 使用 `subagent` Binding/Lease；bootstrap 配置清除 credential、
+   headers、resolver 与客户端身份，子 Session 不继承 Grok AuthManager/API-key provider；
+3. actor 接收后才写子 Turn Route，专用 Assignment/main fallback、订阅/账户/
+   Assignment/Vault 失败零网络与普通 Grok subagent 回归均已通过；
+4. parent Prompt → tool call → child Prompt → parent continuation 的本机 Provider mock
+   E2E 已验证父/子实际 Bearer、model 与审计记录一致；
+5. 隐藏子 Session 标题使用本地 fallback，删除了测试发现的无路由额外模型请求。
+
+### D1 来源收口：离线 Trace classifier
+
+状态：**已审计；不属于产品 Session 数据面**
+
+`trace_classifier::run` 的唯一生产调用者是独立 `trace_classify` binary。它读取指定的
+离线 trace 文件，凭据来源是操作者显式传入的 `--api-key`、`XAI_API_KEY` 或 Grok
+`auth.json`；调用链中没有 Host Registry、产品账户、Agent 或 Session。将它接到产品
+Assignment 会制造不存在的租户语义。运行时产品 Session 的 laziness classifier 已在
+D1d2a 通过 `laziness` Authority 路由，因此 D1 不再保留待接消费者。
 
 ## 8. 非目标
 

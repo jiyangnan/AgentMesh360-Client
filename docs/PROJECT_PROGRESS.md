@@ -28,9 +28,9 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1/D1d2 已完成 | D1d3：定义不可伪造的 subagent 路由委托 |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt与已审计 Session 辅助消费者均保证实际 endpoint、credential、model 与 Turn Route 一致 | 接入 subagent，再复核来源相关的 Trace classifier |
-| Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
+| Provider Control Plane | 切片 A/B/C/D0/D1 已完成；产品 subagent 已使用 Host-only 路由委托 | 切片 E1：向 Renderer 暴露最小 Provider 管理桥 |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者与 subagent 均保证实际 endpoint、credential、model 与 Turn Route 一致 | 保持真实链路回归，进入设置与 Probe 产品化 |
+| Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E1：Profile/Assignment 只读与写入契约、秘密一次性提交 |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
 ## 开发循环记录
@@ -908,7 +908,9 @@ endpoint/model/credential，失败不切换 Provider，普通 Grok Session 原�
 
 ### 循环 13：Provider 切片 D1d3——Subagent 路由委托
 
-状态：开发中；调用链与生命周期审计中
+状态：已完成
+
+本地提交：`a1628d1 feat: delegate product subagent provider routes`
 
 本轮目标：
 
@@ -932,3 +934,73 @@ endpoint/model/credential，失败不切换 Provider，普通 Grok Session 原�
 D1d3 验收条件：产品父 Session 启动的 subagent 在无 Grok 登录时使用 `subagent`
 Binding 的实际 endpoint/model/credential；actor 接收后记录可关联且不含秘密的 Turn
 Route；专用 Assignment/main fallback 与失败矩阵通过；普通 Grok subagent 行为不变。
+
+已经实现：
+
+- `MvpAgent` 只从 Host 已认证的父产品 Session 派生 Rust-only
+  `SubagentProductRoute::Delegated`；客户端 serde、ToolContext 和持久化状态均不能注入；
+- 子 Session bootstrap 只保留 endpoint/model/backend/capability 等非秘密配置，主动清除
+  API Key、Header、Bearer resolver、header injector、客户端身份与 attribution callback；
+- 子 Agent 的每次主 Prompt 使用 `subagent` role 重新经过实时 Access Guard、
+  Session Binding、Credential Lease 与既有 SamplerActor；未配置专用 Assignment 时按
+  D1d0 规则回退 main，但 Turn Route 仍保留请求 role；
+- 产品子 Agent 不继承 Grok `AuthManager`、auth method、API-key provider 或默认
+  credential；普通 Grok subagent 保持原继承逻辑；
+- 隐藏子 Session 的标题改为本地 fallback，不再为不可见标题额外发出一条无路由的
+  Provider 请求；
+- bootstrap/订阅/账户/Assignment/Vault 失败均在实际 Provider 提交前关闭，并保证
+  Turn Route 为零；Session 历史和已有 Binding 不被删除。
+
+验证证据：
+
+- 真实 Host → 父产品 Prompt → `spawn_subagent` tool call → 子 Session Prompt →
+  父 Prompt 续跑的本机 mock Provider E2E 通过；抓包分别验证父请求使用 main Bearer/
+  model，子请求使用 subagent Bearer/model，且没有标题生成旁路；
+- `xai-grok-shell agentmesh360 --lib`：62 项通过；
+- `xai-grok-shell agent::subagent --lib`：288 项通过；
+- subagent spawn context 专项：3 项通过；
+- `cargo check -p xai-grok-shell --tests`、Rustfmt、`git diff --check` 与 Clippy
+  `-D warnings` 通过。
+
+D1d3 计划复盘：
+
+- 没有建立新的 Agent Loop、常驻 Harness 副本或平行 HTTP 栈，子 Agent 仍是同一 Host
+  内的隐藏 Session；
+- 委托只传递账户绑定的 Host Authority，不传递 Vault handle 或秘密；子 Session
+  bootstrap 的短暂 Lease 只用于验证路由和读取非秘密模型配置；
+- 测试首次暴露出隐藏子 Session 标题会直接使用 bootstrap client；本轮没有掩盖抓包
+  差异，而是取消这项无产品价值的模型调用，并用完整 E2E 固定为三次必要请求；
+- 本轮没有提前实现 UI、Probe、Usage 或新协议，符合 D1d3 范围。
+
+### 循环 14：D1 收口——Trace classifier 来源审计
+
+状态：已完成；无需代码改造
+
+源码审计结论：
+
+- `trace_classifier` 只由独立的 `trace_classify` CLI 调用，用于读取离线 trace 文件并让
+  操作者显式指定 `--api-key` / `XAI_API_KEY` / Grok `auth.json` 后做回放评估；
+- 它不由 `MvpAgent`、产品 Session、Host ACP、后台 Agent 生命周期或桌面 Renderer 调用，
+  也没有 Session/Agent/账户输入，不能合法解析产品 Assignment；
+- 运行中产品 Session 的同类 laziness 检测已经在 D1d2a 接入 `laziness` Authority。
+  因此把离线诊断 CLI 强行绑定产品 Provider 反而会混淆数据面和操作者工具边界。
+
+计划复盘：D1 的产品 Session 推理旁路清单已经收口。外部真实付费 Provider 调用仍不是
+这轮证明；当前证据是本机协议兼容 mock Provider。下一轮按既定路线进入切片 E，不跳到
+动态 Package、后台 Supervisor 或新协议。
+
+### 循环 15：Provider 切片 E1——最小 Renderer 管理桥
+
+状态：已启动；桌面主进程与 Renderer 契约审计中
+
+本轮目标：
+
+1. 复用现有 Host Provider 管理 ACP，不在 Electron/Renderer 建立第二份 Profile Store；
+2. 向 Renderer 暴露账户内 Profile、Catalog、Assignment 与诊断状态的最小类型安全桥；
+3. credential 只允许一次性写入/替换，提交后清空，任何读接口都不能返回秘密或
+   Credential Ref；
+4. 先完成本地格式校验与现有配置状态展示，不自动触发可能计费的模型 Probe；
+5. 完成后再次更新本文档、产品蓝图与 Provider 专项计划，再决定 E2 设置页 UI 范围。
+
+本轮非目标：不做付费 Probe、外部 Provider 计费 E2E、Catalog 在线更新、新协议或
+Profile 自动迁移。
