@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；D1d2a laziness、D1d2b recap、D1d2c memory 已接入 Host Authority | D1d2d：收口 `/btw` 与 suggestion |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类、必要压缩、laziness、recap 和 memory 已保证实际 endpoint、credential、model 与 Turn Route 一致 | 收口补充审计消费者，再进入 subagent |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1/D1d2 已完成 | D1d3：定义不可伪造的 subagent 路由委托 |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt与已审计 Session 辅助消费者均保证实际 endpoint、credential、model 与 Turn Route 一致 | 接入 subagent，再复核来源相关的 Trace classifier |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -736,13 +736,14 @@ Probe、Usage 或真实付费 Provider E2E。
 
 ### 循环 12：Provider 切片 D1d2——后台消费者
 
-状态：开发中；D1d2a laziness、D1d2b recap、D1d2c memory 已完成，D1d2d 补充消费者调用链审计中
+状态：已完成；laziness、recap、memory、`/btw` 与 suggestion 均已接入 Host Authority
 
 阶段提交：
 
 - `9e84d75 feat: bind product laziness sampling`
 - `cc3020c feat: bind product recap sampling`
 - `0519733 feat: bind product memory sampling`
+- `6a73df8 feat: bind remaining product session auxiliaries`
 
 已完成子模块 D1d2a：
 
@@ -845,6 +846,39 @@ D1d2c 计划复盘：
 - D1d2d 的范围保持为 `/btw`、command suggestion 和 prompt suggestion，不夹带
   subagent、Trace classifier 或 Provider UI。下一步从用户可见的 `/btw` 开始。
 
+已完成子模块 D1d2d：
+
+- `/btw` 为每次问题创建 `aux:side_question:<uuid>`，使用 `side_question`
+  Binding/Lease；持久化的 BtwEntry model 改为实际 Host 绑定模型；
+- AI shell command suggestion 与 prompt suggestion 共用 `suggestion` role，但分别使用
+  `aux:suggestion:command:<uuid>` 和 `aux:suggestion:prompt:<uuid>`，失败继续返回 None；
+- Product prompt suggestion 不再受 Grok 官方模型 Catalog 门槛影响，直接服从产品
+  `suggestion` Assignment；普通 Grok Session 仍保留 env/config/client hint、
+  Catalog guard、direct stream/collect 与 sanitize/repeat filter；
+- 三条产品请求都走现有 SamplerActor non-broadcast side-query；专用 role 缺省时可审计
+  回退 main，订阅或 Vault 失败不访问 Grok default Provider。
+
+D1d2d 验证：
+
+- 产品补充消费者 E2E 2 项通过：`side_question` 独立模型/Key、`suggestion` 独立
+  模型/Key、main fallback、实际 Bearer/model 和三类 synthetic id 均正确；
+- 同一 E2E 验证订阅失效和 suggestion Vault 删除零网络、零幽灵 Route；
+- Recap/Session 辅助回归 18 项、prompt-suggest helper/config 28 项、AgentMesh360 60 项
+  全部通过；
+- `cargo check --tests`、Rustfmt、`git diff --check` 与 library + tests Clippy
+  `-D warnings` 通过。
+
+D1d2 总计划复盘：
+
+- D1d2 没有建立额外 Agent 副本或 Sampling HTTP 栈，所有后台/旁路调用都复用当前
+  Session 的 SamplerActor non-broadcast side-query，符合长期常驻与低内存约束；
+- 最初只列 laziness/recap/memory，持续源码审计补出了 memory flush、note rewrite、
+  `/btw` 与两类 suggestion；本轮已全部收口，没有用文件名替代真实调用点核验；
+- Trace classifier 仍按调用来源决定是否属于产品 Session，不能在没有来源证据时强行
+  绑定；D1d3 先处理已确认会复制默认 Grok config/AuthManager 的 subagent；
+- 下一轮进入 D1d3。路由委托必须由 Host 注入、不可 serde、不可跨账户，父/子只共享
+  非秘密关联标识，不能把 credential、Vault handle 或 bootstrap token放进 ToolContext。
+
 本轮目标：
 
 1. ~~D1d2a 先接 `laziness` role：产品 Session 的远端检测必须经实时 Access Guard、
@@ -853,9 +887,9 @@ D1d2c 计划复盘：
    与可重试状态；~~ 已完成
 3. ~~D1d2c 接 `memory` role：后台 dream、flush 与 note rewrite 每次执行重新验证订阅，
    禁止从常驻 Session 缓存 credential 或 Grok default config；~~ 已完成
-4. D1d2d 收口复核新发现的 `/btw` 与 suggestion 辅助消费者；
-5. 为每个子模块分别覆盖专用 Assignment、main fallback、Vault/订阅失败零网络和普通
-   Grok Session 回归。
+4. ~~D1d2d 收口复核新发现的 `/btw` 与 suggestion 辅助消费者；~~ 已完成
+5. ~~为每个子模块分别覆盖专用 Assignment、main fallback、Vault/订阅失败零网络和普通
+   Grok Session 回归。~~ 已完成
 
 计划复盘后的顺序：
 
@@ -868,7 +902,33 @@ D1d2c 计划复盘：
 - D1d2 完成前不进入 subagent route delegation；Provider UI、Probe、Usage 和真实付费
   Provider E2E 仍不是本轮范围。
 
-D1d2d 验收条件：`/btw` 使用 `side_question` role，command/prompt suggestion 使用
-`suggestion` role；产品 Session 的三条远端请求均经过实时 Guard、Binding/Lease 与
-SamplerActor side-query，专用 Assignment/main fallback 与失败零网络通过；普通 Grok
-Session 原路径不变，格式、Clippy、AgentMesh360 与对应 Session 回归通过。
+D1d2 验收条件已满足：所有已确认的 Session 后台/旁路消费者均使用对应 role 的真实
+endpoint/model/credential，失败不切换 Provider，普通 Grok Session 原路径不变，专项
+与全局回归通过。
+
+### 循环 13：Provider 切片 D1d3——Subagent 路由委托
+
+状态：开发中；调用链与生命周期审计中
+
+本轮目标：
+
+1. 追踪父 Session 从 tool call 到 `build_subagent_spawn_context`、子 Session spawn 和
+   Sampling 的完整真实路径；
+2. 定义 Host-only、不可序列化、账户绑定的 route delegation，使用 `subagent` role，
+   缺省回退 main Assignment；
+3. 子 Agent 每次模型请求仍由现有 SamplerActor 接收，父/子调用可审计但不复制默认
+   Grok credential、AuthManager、Vault handle 或秘密配置；
+4. 覆盖 parent Prompt → subagent spawn → mock Provider 成功链，以及订阅、账户、
+   Assignment、Vault 和取消失败矩阵；
+5. 完成代码后更新本进展文档、专项审计、产品蓝图并再次复盘 Provider M1 路线。
+
+计划约束：
+
+- 不为每个产品 Agent 或 subagent 创建常驻 Harness 副本；
+- 不通过 ToolContext JSON、ACP startupHints serde 或 Session 持久化传递路由权力；
+- 普通 Grok Session 的 subagent 继承逻辑保持不变；
+- 本轮不实现 Provider UI、Probe、Usage、Trace classifier 或新协议。
+
+D1d3 验收条件：产品父 Session 启动的 subagent 在无 Grok 登录时使用 `subagent`
+Binding 的实际 endpoint/model/credential；actor 接收后记录可关联且不含秘密的 Turn
+Route；专用 Assignment/main fallback 与失败矩阵通过；普通 Grok subagent 行为不变。

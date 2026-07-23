@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：持续审计，D1d0/D1d1/D1d2a/D1d2b/D1d2c 已实现，D1d2d 开发中
+状态：持续审计，D1d0/D1d1/D1d2 已实现，D1d3 开发中
 
 审计日期：2026-07-23
 
@@ -201,12 +201,16 @@ fallback、订阅失效和 Vault 丢失已通过 E2E，失败路径零网络、�
 
 ### D1d2d：补充 Session 辅助消费者
 
+状态：**已实现（2026-07-23，`6a73df8`）**
+
 1. `/btw` 使用 `side_question` Binding/Lease 与独立 synthetic id；
 2. command/prompt suggestion 共用 `suggestion` role，保持失败时“不显示建议”的语义；
-3. 三条路径都必须覆盖 main fallback、订阅/Vault 零网络和普通 Session 回归；
-4. D1d2c memory 与本切片完成后再进入 D1d3。
+3. Product prompt suggestion 直接服从 Assignment，不受 Grok Catalog guard 阻断；
+4. 专用 Assignment、main fallback、订阅/Vault 零网络和普通 Session 回归已通过。
 
 ### D1d3：Subagent 路由委托
+
+状态：**开发中；真实 spawn/Sampling 生命周期审计中**
 
 1. 定义不可序列化、不可跨账户的 Host route delegation；
 2. subagent Sampling 使用 `subagent` Binding/Lease，不复制 Grok 默认 credential；
