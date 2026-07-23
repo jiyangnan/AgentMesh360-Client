@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0 已完成；辅助 role 具备可审计的 main fallback 与 Host Authority | D1d1：接入 Prompt 内 P0 辅助推理消费者 |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt 已保证实际 endpoint、credential、model 与 Turn Route 一致；辅助 role 也能生成独立 Binding/Lease | 接入图片描述、权限分类和必要压缩，再处理后台任务与 subagent |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；Prompt 内 P0 辅助推理均受 Host Authority 约束 | D1d2：接入 laziness、recap 与 memory 后台消费者 |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类和必要压缩已保证实际 endpoint、credential、model 与 Turn Route 一致 | 先接 laziness，再处理 recap、memory 与 subagent |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -602,12 +602,13 @@ Renderer 设置 UI。
 
 ### 循环 11：Provider 切片 D1d1——Prompt 内 P0 辅助推理
 
-状态：开发中；D1d1a 图片路径与 D1d1b 权限分类已完成，D1d1c 必要压缩进行中
+状态：已完成
 
 阶段提交：
 
 - `7acc26f feat: bind auxiliary image sampling`
 - `a41b05b feat: bind automatic permission classification`
+- `1e1b705 feat: bind product compaction sampling`
 
 已完成子模块 D1d1a：
 
@@ -673,6 +674,47 @@ D1d1b 计划复盘：
 - side-query 的远端失败不会污染主 Session 的流式事件，也不会改变 main Binding；
 - 下一轮只接必要压缩 `compaction` role；D1d1 完成前仍不能进入后台任务或 subagent。
 
+已完成子模块 D1d1c：
+
+- 产品 Session 的 manual/auto compaction、two-pass prefire/pass2 和 single-pass
+  full-replace 不再读取 Grok default Provider；统一为 `compaction` role 准备
+  Binding、Credential Lease 与 per-request `SamplerConfig`；
+- 压缩请求复用现有 SamplerActor 的 side-query 收集命令，保留现有三协议 Backend、
+  retry、cancellation、工具定义和 full-replace Harness；普通 Grok Session 仍走原
+  `SamplingClient` 路径，没有建立第二套 HTTP 或压缩引擎；
+- `PrefireState` 只保存非秘密 logical compaction id；同一次压缩的 pass1、pass2、
+  退化重试与 single-pass fallback 使用同一 immutable Binding，并由 Turn Route 的
+  幂等键只记录一次真实提交；
+- 专用 `compaction` Assignment 优先；未配置时完整回退 `main` Assignment，但
+  Binding/Turn Route 的请求 role 仍为 `compaction`，可从 Binding 的
+  `assignmentRole` 审计实际回退；
+- Credential Lease 与订阅 Guard 在压缩开始前重新解析；Vault 丢失返回结构化
+  `agentmesh360_provider_route_required`，订阅无效返回准入错误，两者都在 actor
+  接收前停止、零 Provider 网络请求，并保留 Session 历史。
+
+D1d1c 验证：
+
+- 新增专用 `model-compact` Host E2E：第一次返回退化摘要、第二次成功，两个请求都使用
+  同一 Bearer/model，最终只有一条 `compaction` Turn Route；
+- 既有 Host 主 Prompt E2E 增加显式 `/compact`，验证没有专用 role 时回退
+  `model-main`，Binding 的 `assignmentRole` 为 `main`；
+- Vault 删除和订阅失效矩阵均验证零网络请求；普通 Chat Completions 与 Responses
+  compaction 回归各 1 项通过；
+- AgentMesh360 模块 60 项全部通过；Rustfmt、`git diff --check` 与 library + tests
+  Clippy `-D warnings` 通过。
+
+D1d1 总计划复盘：
+
+- 三个 P0 入口都复用 Grok Harness 已有的 Prompt、Permission Manager、Compaction
+  Engine 和 SamplerActor；新增的是 Host Authority 与 side-query 命令语义，不是平行
+  Agent Loop；
+- main、vision、permission_classifier 与 compaction 的请求 role、fallback 和失败语义
+  与专项审计一致，Provider 密钥仍只存在于 Vault/短生命周期内存 lease；
+- 本轮没有提前实现 Provider UI、Probe、后台消费者或 subagent，也没有把 Web Search、
+  图片生成等服务错误纳入通用 LLM role；
+- D1d1 已满足验收条件，下一轮按既定顺序进入 D1d2，先处理失败可安全跳过的
+  `laziness`，再处理需要可重试状态的 `recap` 与 `memory`。
+
 本轮目标：
 
 1. ~~审计并加固用户图片路径：当前模板验证图片随 main Binding 提交；休眠的 Cursor
@@ -680,9 +722,10 @@ D1d1b 计划复盘：
    Turn Route；~~ 已完成
 2. ~~接入 `permission_classifier`，远端失败时只使用既有本地保守/启发式策略，不切换
    Provider；~~ 已完成
-3. 接入必要压缩的 `compaction` role，保证同一次压缩的多阶段调用复用同一 Binding；
-4. 用 Host E2E 覆盖专用 role Assignment、main fallback、订阅失效、Vault 丢失和重试
-   不漂移，并确认普通 Grok Session 不受影响。
+3. ~~接入必要压缩的 `compaction` role，保证同一次压缩的多阶段调用复用同一
+   Binding；~~ 已完成
+4. ~~用 Host E2E 覆盖专用 role Assignment、main fallback、订阅失效、Vault 丢失和重试
+   不漂移，并确认普通 Grok Session 不受影响。~~ 已完成
 
 验收条件：三个 Prompt 内 P0 消费者不再直接取得产品 Session 的 Grok default config；
 每个远端调用都有与真实 endpoint/model 一致的 role Turn Route；失败语义符合专项审计；
@@ -690,3 +733,31 @@ D1d1b 计划复盘：
 
 本轮非目标：不接后台 laziness/recap/memory，不做 subagent 委托，不实现 Provider UI、
 Probe、Usage 或真实付费 Provider E2E。
+
+### 循环 12：Provider 切片 D1d2——后台消费者
+
+状态：开发中；D1d2a laziness 调用链审计与接入准备中
+
+本轮目标：
+
+1. D1d2a 先接 `laziness` role：产品 Session 的远端检测必须经实时 Access Guard、
+   Binding/Lease 和 SamplerActor side-query；失败只跳过检测，不换 Provider；
+2. D1d2b 接 `recap` role：每次任务使用独立 synthetic logical turn id，失败保留原会话
+   与可重试状态；
+3. D1d2c 接 `memory` role：后台 dream 每次执行重新验证订阅，禁止从常驻 Session
+   缓存 credential 或 Grok default config；
+4. 为每个子模块分别覆盖专用 Assignment、main fallback、Vault/订阅失败零网络和普通
+   Grok Session 回归。
+
+计划复盘后的顺序：
+
+- laziness 是只读、可选质量检测，失败语义最窄，适合作为后台 Authority 的第一个接入点；
+- recap 与 memory 可能跨用户 Turn 或在窗口不可见时运行，必须在 laziness 验证
+  synthetic id、实时 Guard 和 side-query 隔离后再接入；
+- D1d2 完成前不进入 subagent route delegation；Provider UI、Probe、Usage 和真实付费
+  Provider E2E 仍不是本轮范围。
+
+D1d2a 验收条件：远端请求使用 `laziness` Binding 的真实 endpoint/model/credential；
+actor 接收后最多写一条该 role Turn Route；订阅、Vault、网络或解析失败只返回“跳过
+检测”的既有语义且不访问其他 Provider；格式、Clippy、AgentMesh360 与 laziness 回归
+通过。

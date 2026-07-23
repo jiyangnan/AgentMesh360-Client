@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0 已实现，切片 D1d1 开发中
+状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已实现，切片 D1d2 开发中
 
 调研日期：2026-07-22
 
@@ -28,8 +28,10 @@ mock E2E 已覆盖无 Grok 登录的 BYOK 产品 Agent 激活/Prompt，以及订
 和 Vault 失败矩阵。D1d0 已实现辅助 role → main Assignment 回退、实际 assignment role
 审计和 Host role-aware Authority；D1d1a 已验证当前图片随 main 多模态 Binding 提交，并
 把休眠 Cursor 图片描述 twin 接到 `vision` Authority；D1d1b 已将自动权限分类接到
-`permission_classifier` Binding，并固定本地失败回退。必要压缩等消费者接入、Provider
-UI 与真实 Provider E2E 仍是目标能力。
+`permission_classifier` Binding，并固定本地失败回退；D1d1c 已将 manual/auto、
+two-pass 与 single-pass 必要压缩接到 `compaction` Binding，固定专用模型、main fallback、
+同一逻辑压缩重试幂等和失败前零网络。后台 laziness/recap/memory、subagent、Provider UI
+与真实 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -911,9 +913,9 @@ Model Assignment、不可变 Session Binding、RouteCompiler、最小设置 UI �
   的 Lease/Binding；D1c1 通过 MvpAgent 可信注入的 serde-skip Session Route Context
   贯通用户 Prompt 与 synthetic auto-wake；D1c2 已完成 bootstrap 到 Turn Route 查询的
   Host ACP mock E2E 成功链与失败矩阵；D1d0 已完成辅助 role fallback 和 Host Authority，
-  D1d1 起按
+  D1d1 已收口 Prompt 内图片、权限分类和必要压缩，D1d2 起继续按
   [`PROVIDER_AUXILIARY_INFERENCE_AUDIT.md`](./PROVIDER_AUXILIARY_INFERENCE_AUDIT.md)
-  收口图片、权限分类、压缩、后台任务和 subagent 旁路；
+  收口后台任务和 subagent 旁路；
 - 把 `PreparedRoute` 投影到现有 `ModelEntry / SamplingConfig`；
 - 为 OpenAI、xAI、Anthropic 和三种 Compatible Profile 建立契约测试；
 - 复用现有 Streaming、Tool Call、Usage 和错误分类；

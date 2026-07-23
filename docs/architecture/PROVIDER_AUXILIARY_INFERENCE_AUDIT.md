@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：审计完成，D1d0 已实现，D1d1 开发中
+状态：审计完成，D1d0/D1d1 已实现，D1d2 开发中
 
 审计日期：2026-07-23
 
@@ -133,12 +133,13 @@ turn 和 subagent invocation id 形成可追踪的逻辑 turn id。
 
 ### D1d1：Prompt 内 P0 消费者
 
-状态：**开发中**
+状态：**已实现（2026-07-23，`7acc26f`、`a41b05b`、`1e1b705`）**
 
 1. ~~审计 active 图片路径，并将休眠 Cursor twin 的 route 准备提前到图片描述之前，
    仍只在 actor 接受后写审计；~~ 已完成（`7acc26f`）
-2. 图片描述与权限分类已改经现有 SamplerActor side-query；必要压缩待接入；
-3. 覆盖有/无专用 role Assignment、Vault 丢失、订阅失效与重试不漂移。
+2. ~~图片描述与权限分类改经现有 SamplerActor side-query；必要压缩使用同一 actor 的
+   side-query 收集语义；~~ 已完成
+3. ~~覆盖有/无专用 role Assignment、Vault 丢失、订阅失效与重试不漂移。~~ 已完成
 
 图片路径复核结论（2026-07-23）：当前构建并不执行独立图片描述，图片随 main 多模态
 请求提交；Host E2E 已固定“一次 main Provider 请求、一条 main Turn Route、零 vision
@@ -152,7 +153,15 @@ fallback、真实 Bearer/model、订阅失效和 Vault 丢失，失败路径零�
 在 Host 尚未把 role capability 暴露给 Session 前，产品分类请求不继承 Grok session 的
 `reasoning_effort`。
 
+必要压缩接入结论（2026-07-23）：产品 Session 的 manual/auto、two-pass 与 single-pass
+压缩统一使用 `compaction` Binding/Lease 和现有 SamplerActor；普通 Grok Session 保持
+原直接采样路径。同一逻辑压缩的 pass/retry 共享非秘密 logical id，因此专用
+`model-compact` 的退化重试只写一条 Turn Route；未配置专用 role 时可审计地回退 main。
+Vault 丢失和订阅失效均在网络提交前失败并保留 Session。
+
 ### D1d2：后台消费者
+
+状态：**开发中；D1d2a laziness 优先**
 
 1. 接入 laziness、recap 与 memory dream；
 2. 每次后台执行重新检查 Access Guard；
