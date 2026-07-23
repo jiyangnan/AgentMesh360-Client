@@ -28,9 +28,9 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1 已完成；产品 subagent 已使用 Host-only 路由委托 | 切片 E1：向 Renderer 暴露最小 Provider 管理桥 |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1 已完成；Renderer 管理桥复用 Host ACP | 保持 Host 单一权威，随 E2 设置页补契约回归 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者与 subagent 均保证实际 endpoint、credential、model 与 Turn Route 一致 | 保持真实链路回归，进入设置与 Probe 产品化 |
-| Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E1：Profile/Assignment 只读与写入契约、秘密一次性提交 |
+| Provider UI | Renderer 已有订阅门禁后的 Profile/Catalog/Assignment 安全桥，尚无设置页 | 切片 E2：最小 Provider 设置页与本地校验反馈 |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
 ## 开发循环记录
@@ -991,7 +991,9 @@ D1d3 计划复盘：
 
 ### 循环 15：Provider 切片 E1——最小 Renderer 管理桥
 
-状态：已启动；桌面主进程与 Renderer 契约审计中
+状态：已完成
+
+本地提交：`f9a96a1 feat: expose secure provider management bridge`
 
 本轮目标：
 
@@ -1004,3 +1006,53 @@ D1d3 计划复盘：
 
 本轮非目标：不做付费 Probe、外部 Provider 计费 E2E、Catalog 在线更新、新协议或
 Profile 自动迁移。
+
+已经实现：
+
+- 新增桌面 `ProviderController`，所有读写先检查 Identity 状态必须为 `ready`；订阅
+  blocked/unavailable/signed_out 均不能借 Renderer IPC 管理 Provider；
+- `getProviderSnapshot` 并行读取 Host 内的 Profile、Catalog 与 Assignment，不在
+  Electron 创建副本数据库或缓存租户状态；
+- 创建、更新、替换秘密、删除 Profile，以及 upsert/delete Assignment 均复用现有
+  Host ACP；
+- API Key 只存在于 create/replace 的一次性调用参数；输出递归删除 API Key、
+  Authorization、Token、Header、Credential Ref 等秘密字段，同时保留
+  `credentialConfigured` 与 `credentialLastFour` 供 UI 展示；
+- 主进程对协议、认证方式、Base URL、模型 ID、scope/role、字段白名单和长度再次校验，
+  Host Rust 校验仍是最终权威；
+- preload 只暴露窄方法，不向 Renderer 暴露 Host client、access token 或通用 ACP
+  调用能力。
+
+验证证据：
+
+- 桌面测试：24 项通过，1 项需真实 Host binary 的可选测试按原设置跳过；
+- 新增测试覆盖 ready 门禁、递归脱敏、API Key 只写、credential-bearing URL/
+  未知字段拒绝，以及 Assignment scope 约束；
+- `npm run check` 与 `git diff --check` 通过。
+
+E1 计划复盘：
+
+- 现有 Host ACP 已具备完整管理操作，实际缺口是桌面安全桥；本轮据此缩小实现，没有
+  重复 Provider Store、Catalog 或 Assignment 逻辑；
+- Renderer 仍拿不到 Credential Ref，秘密字段即使因未来 Host 回归意外出现，也会在
+  `ProviderController` 输出边界再次移除；
+- 没有自动发 Probe 或外部模型请求，保存配置不会产生 Provider 费用；
+- E1 只证明安全调用桥，不等于用户已经能在 UI 配置 Provider。
+
+### 循环 16：Provider 切片 E2——最小设置页
+
+状态：已规划，下一开发切片
+
+本轮目标：
+
+1. 把侧边栏“设置”改为可访问的 Provider 设置视图，加载 E1 snapshot；
+2. 展示预设/自定义 Profile、协议、Base URL、已配置凭据尾号与 enabled models；
+3. 支持创建/编辑 Profile、替换 Key、删除，以及 global/agent role Assignment；
+4. 提交成功后立即清空 DOM 中的 Key 输入，并从 Host 重新加载公开 snapshot；
+5. 明确显示“保存不会测试模型或产生费用”，把付费最小推理 Probe 留到用户主动操作。
+
+验收条件：登录与订阅门禁页面不回归；键盘可操作；错误不回显秘密；界面刷新后不保留
+Key；桌面单测、语法检查和真实浏览器视觉 smoke 通过。
+
+本轮非目标：不做 Session Binding 迁移 UI、自动 Provider fallback、付费 Probe、
+Catalog 在线更新或外部 Provider 发布验收。

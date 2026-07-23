@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1 已实现，切片 E1 已启动
+状态：调研完成，切片 A/B/C/D0/D1/E1 已实现，切片 E2 已规划
 
 调研日期：2026-07-22
 
@@ -42,7 +42,9 @@ D1d3 已将产品 subagent 接到 Host-only `subagent` Authority，清除 bootst
 credential/header/resolver 并禁止继承 Grok AuthManager；真实父→子→父本机 mock
 Provider 链路已验证专用 Assignment/main fallback、实际 Bearer/model 与失败零幽灵
 Turn Route。离线 `trace_classify` CLI 经来源审计确认不属于产品 Session 数据面，D1
-至此收口。当前进入最小 Provider UI 管理桥；外部真实付费 Provider E2E 仍是目标能力。
+至此收口。E1 已把 Host Provider 管理 ACP 通过订阅门禁、输入校验和输出递归脱敏的
+窄桥暴露给 Renderer，秘密只允许 create/replace 一次性写入。当前进入 E2 最小设置页；
+外部真实付费 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -939,6 +941,8 @@ Provider 验证 actor/HTTP/Header/审计组合，但没有调用外部 Provider�
 
 ### 切片 E：最小 Provider UI 与分级 Probe
 
+状态：**E1 安全管理桥已实现（`f9a96a1`），E2 设置页待实现**
+
 - 选择预设或自定义协议；
 - 填写 Key、Base URL 和模型；
 - Key 经桌面主进程一次性提交给 Host，提交后清空且不可读回；
@@ -948,6 +952,11 @@ Provider 验证 actor/HTTP/Header/审计组合，但没有调用外部 Provider�
 
 Probe 分成三层：本地格式/端点校验、免费模型元数据探测、用户主动触发的付费最小推理
 测试。保存 Profile 不得自动发起可能产生费用的推理调用。
+
+E1 实现边界：Renderer 只能通过 preload 的窄方法访问 Host-owned Profile、Catalog 与
+Assignment；主进程在 `ready` 订阅状态下才允许调用，对输入做字段白名单/URL/标识符校验，
+并在所有输出上移除 credential、Authorization、Token、Header 与 Credential Ref。
+Electron 不缓存秘密，也没有第二份 Provider 数据库。E2 才负责可见设置页和表单交互。
 
 ### 切片 F：Gemini 兼容 Spike 与预设扩展
 
