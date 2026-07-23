@@ -318,15 +318,31 @@ impl SessionActor {
         );
     }
 
-    /// Make the dream model call using the session's sampling client.
-    async fn run_dream_model_call(&self, user_message: &str) -> Result<String, acp::Error> {
-        let sampling_client = self.prepare_chat_completion(false).await?;
-        let model = self
-            .chat_state_handle
-            .get_sampling_config()
-            .await
-            .map(|c| c.model)
-            .unwrap_or_default();
+    /// Make the dream model call using the session's sampling authority.
+    pub(super) async fn run_dream_model_call(
+        &self,
+        user_message: &str,
+    ) -> Result<String, acp::Error> {
+        let logical_turn_id = format!("aux:memory:dream:{}", uuid::Uuid::new_v4());
+        let (sampling_client, mut product_route, model) =
+            if self.startup_hints.agentmesh360_route.is_some() {
+                let (route, config) = self
+                    .prepare_product_side_query_for_role("memory", &logical_turn_id)
+                    .map_err(|error| {
+                        acp::Error::internal_error()
+                            .data(format!("dream product route unavailable: {error}"))
+                    })?;
+                (None, Some(route), config.model)
+            } else {
+                let client = self.prepare_chat_completion(false).await?;
+                let model = self
+                    .chat_state_handle
+                    .get_sampling_config()
+                    .await
+                    .map(|config| config.model)
+                    .unwrap_or_default();
+                (Some(client), None, model)
+            };
         let session_id = self.session_info.id.to_string();
         let request = ConversationRequest {
             items: vec![
@@ -340,12 +356,31 @@ impl SessionActor {
             x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
             ..Default::default()
         };
-        let response = sampling_client
-            .conversation_collect(request)
-            .await
-            .map_err(|e| {
-                acp::Error::internal_error().data(format!("dream model call failed: {e}"))
-            })?;
+        let response = if let Some(route) = product_route.as_mut() {
+            let pending = route
+                .submit(|config| {
+                    self.sampler_handle
+                        .begin_side_query_and_collect_with_config(
+                            xai_grok_sampler::RequestId::random(),
+                            request,
+                            config,
+                        )
+                        .map_err(anyhow::Error::new)
+                })
+                .map_err(|error| {
+                    acp::Error::internal_error()
+                        .data(format!("dream product submission failed: {error}"))
+                })?;
+            pending.collect().await.map(|(response, _metrics)| response)
+        } else {
+            sampling_client
+                .expect("ordinary dream SamplingClient exists")
+                .conversation_collect(request)
+                .await
+        }
+        .map_err(|error| {
+            acp::Error::internal_error().data(format!("dream model call failed: {error}"))
+        })?;
         Ok(response.assistant_text())
     }
 
@@ -380,7 +415,23 @@ impl SessionActor {
             .await;
 
         let result = async {
-            let sampling_client = self.prepare_chat_completion(false).await?;
+            let logical_turn_id = format!("aux:memory:flush:{}", uuid::Uuid::new_v4());
+            let (sampling_client, mut product_route, product_model) =
+                if self.startup_hints.agentmesh360_route.is_some() {
+                    let (route, config) = self
+                        .prepare_product_side_query_for_role("memory", &logical_turn_id)
+                        .map_err(|error| {
+                            acp::Error::internal_error()
+                                .data(format!("flush product route unavailable: {error}"))
+                        })?;
+                    (None, Some(route), Some(config.model))
+                } else {
+                    (
+                        Some(self.prepare_chat_completion(false).await?),
+                        None,
+                        None,
+                    )
+                };
             let MemoryFlushSnapshot {
                 counts,
                 chat_history,
@@ -427,11 +478,17 @@ impl SessionActor {
                 "Now write the memory summary as described in the system prompt.",
             ));
 
-            let model = match self.memory.flush_config.flush_model.clone() {
-                Some(m) => m,
-                None => self.chat_state_handle.get_sampling_config().await
-                    .map(|c| c.model)
-                    .unwrap_or_default(),
+            let model = match product_model {
+                Some(model) => model,
+                None => match self.memory.flush_config.flush_model.clone() {
+                    Some(model) => model,
+                    None => self
+                        .chat_state_handle
+                        .get_sampling_config()
+                        .await
+                        .map(|config| config.model)
+                        .unwrap_or_default(),
+                },
             };
             tracing::info!(
                 target: xai_grok_telemetry::memory_log::TARGET,
@@ -450,13 +507,39 @@ impl SessionActor {
 
             // Run on the multi-threaded runtime so it doesn't block the
             // session's LocalSet.
-            let handle = tokio::spawn(async move {
-                let response = sampling_client
-                    .conversation_collect(request)
-                    .await
-                    .map_err(|e| format!("flush model call failed: {e}"))?;
-                Ok::<_, String>(response.assistant_text())
-            });
+            let handle = if let Some(route) = product_route.as_mut() {
+                let pending = route
+                    .submit(|config| {
+                        self.sampler_handle
+                            .begin_side_query_and_collect_with_config(
+                                xai_grok_sampler::RequestId::random(),
+                                request,
+                                config,
+                            )
+                            .map_err(anyhow::Error::new)
+                    })
+                    .map_err(|error| {
+                        acp::Error::internal_error()
+                            .data(format!("flush product submission failed: {error}"))
+                    })?;
+                tokio::spawn(async move {
+                    let (response, _metrics) = pending
+                        .collect()
+                        .await
+                        .map_err(|error| format!("flush model call failed: {error}"))?;
+                    Ok::<_, String>(response.assistant_text())
+                })
+            } else {
+                let sampling_client =
+                    sampling_client.expect("ordinary memory flush SamplingClient exists");
+                tokio::spawn(async move {
+                    let response = sampling_client
+                        .conversation_collect(request)
+                        .await
+                        .map_err(|error| format!("flush model call failed: {error}"))?;
+                    Ok::<_, String>(response.assistant_text())
+                })
+            };
             // Abort the spawned task if this future is dropped (session
             // cancellation), preventing orphan HTTP streams.
             struct AbortOnDrop(tokio::task::AbortHandle);
@@ -679,11 +762,6 @@ impl SessionActor {
             ));
         }
 
-        let sampling_client = self
-            .prepare_chat_completion(false)
-            .await
-            .map_err(|e| format!("failed to prepare client: {e}"))?;
-
         let system = "You are a memory note formatter. Rewrite the user's note into \
             well-structured markdown suitable for a persistent MEMORY.md file. The note should be:\n\
             - Concise but complete\n\
@@ -704,7 +782,7 @@ impl SessionActor {
             ConversationItem::user(user_msg),
         ];
 
-        let request = ConversationRequest {
+        let mut request = ConversationRequest {
             items,
             tools: vec![],
             model: Some("grok-build".to_owned()),
@@ -716,42 +794,71 @@ impl SessionActor {
         let request_id = xai_grok_sampler::RequestId::random();
         let idle_timeout = std::time::Duration::from_secs(15);
 
-        let result = match sampling_client.api_backend() {
-            crate::sampling::ApiBackend::ChatCompletions => {
-                let (raw, meta) = sampling_client
-                    .conversation_stream(request)
-                    .await
-                    .map_err(|e| format!("rewrite stream failed: {e}"))?;
-                let events =
-                    xai_grok_sampler::stream_chat_completions(raw, meta, request_id, idle_timeout);
-                xai_grok_sampler::collect_response(events).await
-            }
-            crate::sampling::ApiBackend::Responses => {
-                let (raw, meta, doom_loop) = sampling_client
-                    .conversation_stream_responses(request)
-                    .await
-                    .map_err(|e| format!("rewrite stream failed: {e}"))?;
-                let events = xai_grok_sampler::stream_responses(
-                    raw,
-                    meta,
-                    request_id,
-                    idle_timeout,
-                    doom_loop,
-                );
-                xai_grok_sampler::collect_response(events).await
-            }
-            crate::sampling::ApiBackend::Messages => {
-                let (raw, meta) = sampling_client
-                    .conversation_stream_messages(request)
-                    .await
-                    .map_err(|e| format!("rewrite stream failed: {e}"))?;
-                let events = xai_grok_sampler::stream_messages(raw, meta, request_id, idle_timeout);
-                xai_grok_sampler::collect_response(events).await
-            }
+        let result = if self.startup_hints.agentmesh360_route.is_some() {
+            let logical_turn_id = format!("aux:memory:rewrite:{}", uuid::Uuid::new_v4());
+            let (pending, model) = self
+                .begin_product_side_query_for_role(
+                    "memory",
+                    &logical_turn_id,
+                    std::mem::take(&mut request),
+                )
+                .map_err(|error| format!("rewrite product route unavailable: {error}"))?;
+            tracing::debug!(model = %model, "memory note rewrite: using product route");
+            pending
+                .collect()
+                .await
+                .map(|(response, _metrics)| response)
+                .map_err(|error| error.to_string())
+        } else {
+            let sampling_client = self
+                .prepare_chat_completion(false)
+                .await
+                .map_err(|error| format!("failed to prepare client: {error}"))?;
+            let streamed = match sampling_client.api_backend() {
+                crate::sampling::ApiBackend::ChatCompletions => {
+                    let (raw, meta) = sampling_client
+                        .conversation_stream(request)
+                        .await
+                        .map_err(|error| format!("rewrite stream failed: {error}"))?;
+                    let events = xai_grok_sampler::stream_chat_completions(
+                        raw,
+                        meta,
+                        request_id,
+                        idle_timeout,
+                    );
+                    xai_grok_sampler::collect_response(events).await
+                }
+                crate::sampling::ApiBackend::Responses => {
+                    let (raw, meta, doom_loop) = sampling_client
+                        .conversation_stream_responses(request)
+                        .await
+                        .map_err(|error| format!("rewrite stream failed: {error}"))?;
+                    let events = xai_grok_sampler::stream_responses(
+                        raw,
+                        meta,
+                        request_id,
+                        idle_timeout,
+                        doom_loop,
+                    );
+                    xai_grok_sampler::collect_response(events).await
+                }
+                crate::sampling::ApiBackend::Messages => {
+                    let (raw, meta) = sampling_client
+                        .conversation_stream_messages(request)
+                        .await
+                        .map_err(|error| format!("rewrite stream failed: {error}"))?;
+                    let events =
+                        xai_grok_sampler::stream_messages(raw, meta, request_id, idle_timeout);
+                    xai_grok_sampler::collect_response(events).await
+                }
+            };
+            streamed
+                .map(|(response, _metrics)| response)
+                .map_err(|error| error.message)
         };
 
         match result {
-            Ok((response, _metrics)) => {
+            Ok(response) => {
                 let text = response.assistant_text();
                 if text.is_empty() {
                     Err("LLM returned empty response".to_string())
@@ -760,8 +867,8 @@ impl SessionActor {
                 }
             }
             Err(e) => {
-                tracing::debug!(error = %e.message, "memory note rewrite inference failed");
-                Err(format!("rewrite inference failed: {}", e.message))
+                tracing::debug!(error = %e, "memory note rewrite inference failed");
+                Err(format!("rewrite inference failed: {e}"))
             }
         }
     }

@@ -651,3 +651,273 @@ async fn test_idle_flush_timeout_from_config() {
         })
         .await;
 }
+
+async fn make_product_memory_actor(
+    session_id: String,
+    route_context: crate::agentmesh360::turn_submission::AgentMeshSessionRouteContext,
+    storage_root: &std::path::Path,
+) -> SessionActor {
+    let (gateway_tx, _gateway_rx) =
+        tokio::sync::mpsc::unbounded_channel::<xai_acp_lib::AcpClientMessage>();
+    let (persistence_tx, _persistence_rx) =
+        tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
+    let mut actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
+    actor.session_info.id = acp::SessionId::new(session_id);
+    actor.startup_hints.agentmesh360_route = Some(route_context);
+    actor.chat_state_handle.replace_conversation(vec![
+        ConversationItem::system("you are a durable coding agent"),
+        ConversationItem::user("remember that product memory uses the selected Provider"),
+        ConversationItem::assistant("I will preserve that decision"),
+    ]);
+    actor.memory.storage =
+        std::cell::RefCell::new(Some(crate::session::memory::MemoryStorage::with_paths(
+            storage_root.join("global"),
+            storage_root.join("workspace"),
+        )));
+    actor.memory.flush_config.flush_model = Some("must-not-use-grok-flush-model".to_owned());
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    actor.sampler_handle = xai_grok_sampler::SamplerActor::spawn(
+        xai_grok_sampler::SamplerConfig::default(),
+        xai_grok_sampler::RetryPolicy::default(),
+        event_tx,
+    );
+    actor
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_memory_consumers_use_dedicated_role_and_fail_closed() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("memory route state home");
+            let storage_home = tempfile::tempdir().expect("memory storage home");
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_aux_test_provider(
+                    "## Durable memory\n\n- Product memory used the selected Provider.",
+                    "memory-model",
+                )
+                .await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("memory-bootstrap-token")
+                .await
+                .expect("grant AgentMesh360 memory access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "main-model",
+                    "sentinel-memory-main-secret",
+                )
+                .expect("configure product main route");
+            let memory_profile_id = runtime
+                .configure_role_assignment_for_host_test(
+                    41,
+                    "job-agent",
+                    "memory",
+                    &provider_base_url,
+                    "memory-model",
+                    "sentinel-memory-role-secret",
+                )
+                .expect("configure dedicated memory route");
+            let actor =
+                make_product_memory_actor(session_id.clone(), route_context, storage_home.path())
+                    .await;
+
+            let dream = actor
+                .run_dream_model_call("Consolidate the durable Provider decision.")
+                .await
+                .expect("product memory dream");
+            assert!(dream.contains("Durable memory"));
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("dream Provider request");
+            assert_eq!(authorization, "Bearer sentinel-memory-role-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("dream request JSON")["model"],
+                "memory-model"
+            );
+            assert!(request_body.contains("Consolidate the durable Provider decision."));
+
+            let rewrite = actor
+                .handle_rewrite_memory_note(
+                    "The memory role owns all product memory inference.",
+                    "AgentMesh360 Provider routing",
+                )
+                .await
+                .expect("product memory rewrite");
+            assert!(rewrite.contains("Durable memory"));
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("rewrite Provider request");
+            assert_eq!(authorization, "Bearer sentinel-memory-role-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("rewrite request JSON")["model"],
+                "memory-model",
+                "product route must replace the hard-coded grok-build model"
+            );
+
+            assert!(
+                actor.run_memory_flush("user_requested", None).await,
+                "product memory flush must execute"
+            );
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("flush Provider request");
+            assert_eq!(authorization, "Bearer sentinel-memory-role-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("flush request JSON")["model"],
+                "memory-model",
+                "product route must replace the ordinary flush_model override"
+            );
+
+            let routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "memory")
+                .expect("memory Turn Routes");
+            assert_eq!(routes.len(), 3);
+            assert!(routes.iter().all(|route| route.model_id == "memory-model"));
+            assert!(
+                routes
+                    .iter()
+                    .any(|route| route.turn_id.starts_with("aux:memory:dream:"))
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|route| route.turn_id.starts_with("aux:memory:rewrite:"))
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|route| route.turn_id.starts_with("aux:memory:flush:"))
+            );
+            assert!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "main")
+                    .expect("main Turn Routes")
+                    .is_empty(),
+                "memory side queries must not create main Turn Routes"
+            );
+
+            runtime.invalidate_access_for_host_test();
+            actor
+                .run_dream_model_call("This must fail before network.")
+                .await
+                .expect_err("invalid subscription must reject dream");
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "invalid subscription must produce no memory Provider request"
+            );
+
+            runtime
+                .bootstrap_for_host_test("memory-bootstrap-token-restored")
+                .await
+                .expect("restore AgentMesh360 memory access");
+            runtime
+                .remove_credential_for_host_test(41, &memory_profile_id)
+                .expect("remove memory Provider credential");
+            actor
+                .handle_rewrite_memory_note("must fail", "missing Vault")
+                .await
+                .expect_err("missing Vault must reject memory rewrite");
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "missing Vault must produce no memory Provider request"
+            );
+            assert_eq!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "memory")
+                    .expect("final memory Turn Routes")
+                    .len(),
+                3,
+                "failed memory attempts must not create ghost Turn Routes"
+            );
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_memory_falls_back_to_main_assignment() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("memory fallback state home");
+            let storage_home = tempfile::tempdir().expect("memory fallback storage home");
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_aux_test_provider(
+                    "## Main fallback memory\n\n- Main handled memory.",
+                    "fallback-main-model",
+                )
+                .await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("memory-fallback-bootstrap-token")
+                .await
+                .expect("grant memory fallback access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "fallback-main-model",
+                    "sentinel-memory-fallback-secret",
+                )
+                .expect("configure memory fallback main route");
+            let actor =
+                make_product_memory_actor(session_id.clone(), route_context, storage_home.path())
+                    .await;
+
+            actor
+                .handle_rewrite_memory_note("Use the main fallback.", "Provider routing")
+                .await
+                .expect("fallback memory rewrite");
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("fallback memory Provider request");
+            assert_eq!(authorization, "Bearer sentinel-memory-fallback-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("fallback memory request JSON")["model"],
+                "fallback-main-model"
+            );
+            let routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "memory")
+                .expect("fallback memory Turn Routes");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].model_id, "fallback-main-model");
+            assert!(routes[0].turn_id.starts_with("aux:memory:rewrite:"));
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
