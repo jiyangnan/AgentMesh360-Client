@@ -88,6 +88,7 @@ pub struct TurnSubmissionCoordinator {
 pub struct AgentMeshSessionRouteContext {
     owner_account_id: i64,
     agent_id: String,
+    default_role: String,
     access: ClientAccessGuard,
     state_home: std::path::PathBuf,
     vault: RuntimeCredentialVault,
@@ -104,14 +105,31 @@ impl AgentMeshSessionRouteContext {
         Self {
             owner_account_id,
             agent_id,
+            default_role: "main".into(),
             access,
             state_home,
             vault,
         }
     }
 
+    /// Derive a Host-only child authority without exposing the account,
+    /// Agent identity, access guard, or Vault through ACP/ToolContext state.
+    ///
+    /// The delegated context remains non-serializable; only trusted Rust code
+    /// can choose the default role used by the child session's main Prompt.
+    pub(crate) fn delegate_for_role(&self, role: &str) -> Self {
+        let mut delegated = self.clone();
+        delegated.default_role = role.to_owned();
+        delegated
+    }
+
+    #[cfg(test)]
+    pub(crate) fn default_role_for_test(&self) -> &str {
+        &self.default_role
+    }
+
     pub fn prepare_turn(&self, session_id: &str, turn_id: &str) -> Result<ProductTurnRoute> {
-        self.prepare_turn_for_role(session_id, "main", turn_id)
+        self.prepare_turn_for_role(session_id, &self.default_role, turn_id)
     }
 
     pub fn prepare_turn_for_role(

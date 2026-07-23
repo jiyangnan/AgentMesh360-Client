@@ -32,6 +32,7 @@ pub(crate) fn ctx_with_toggle_and_cmd_tx(
 pub(crate) fn ctx_with_toggle(toggle: HashMap<String, bool>) -> SubagentSpawnContext {
     let (tx, _rx) = mpsc::unbounded_channel();
     SubagentSpawnContext {
+        product_route: crate::agent::subagent::SubagentProductRoute::Ordinary,
         lsp: None,
         parent_max_turns: None,
         gateway: test_gateway(),

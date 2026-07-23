@@ -54,6 +54,61 @@ pub(crate) enum InitialContextSource {
     /// prompt context are freshly rendered from the current agent definition.
     Resumed,
 }
+/// Trusted product-route authority attached to a spawn context by the Host.
+///
+/// This enum is deliberately Rust-only: it is never serialized into ACP
+/// startup hints, ToolContext, persistence, or a tool payload. `Blocked`
+/// preserves fail-closed semantics when a Registry-recognized product parent
+/// cannot be bound to the currently authorized account.
+#[derive(Clone, Debug)]
+pub(crate) enum SubagentProductRoute {
+    Ordinary,
+    Delegated(crate::agentmesh360::turn_submission::AgentMeshSessionRouteContext),
+    Blocked,
+}
+
+impl SubagentProductRoute {
+    fn is_delegated(&self) -> bool {
+        matches!(self, Self::Delegated(_))
+    }
+}
+
+/// Resolve and validate the product child's `subagent` Binding before any
+/// filesystem/worktree spawn side effects. The leased credential is used only
+/// to validate routing and discover the bound model/backend; the returned
+/// bootstrap config is scrubbed before it can enter child session state.
+fn prepare_product_subagent_bootstrap(
+    ctx: &SubagentSpawnContext,
+    child_session_id: &str,
+    logical_turn_id: &str,
+) -> anyhow::Result<Option<(xai_grok_sampler::SamplerConfig, acp::ModelId)>> {
+    let SubagentProductRoute::Delegated(context) = &ctx.product_route else {
+        return Ok(None);
+    };
+    let route = context.prepare_turn(child_session_id, logical_turn_id)?;
+    let config = scrub_product_bootstrap_config(route.sampler_config_snapshot()?);
+    let model_id = acp::ModelId::new(config.model.clone());
+    Ok(Some((config, model_id)))
+}
+
+/// Remove every credential/header/identity callback from the config retained
+/// by the child session. Real requests receive a fresh short-lived lease from
+/// `StartupHints::agentmesh360_route` at submission time.
+fn scrub_product_bootstrap_config(
+    mut config: xai_grok_sampler::SamplerConfig,
+) -> xai_grok_sampler::SamplerConfig {
+    config.api_key = None;
+    config.extra_headers.clear();
+    config.origin_client = None;
+    config.client_identifier = None;
+    config.deployment_id = None;
+    config.user_id = None;
+    config.client_version = None;
+    config.attribution_callback = None;
+    config.bearer_resolver = None;
+    config.header_injector = None;
+    config
+}
 /// Tracks a single active subagent for progress polling and cleanup.
 pub(crate) struct SubagentTracker {
     pub subagent_id: String,
@@ -137,6 +192,9 @@ impl AutoCompactThresholdTiers {
 /// Avoids passing `&MvpAgent` (which would require the coordinator to know
 /// about the full agent struct). Built by `MvpAgent::build_subagent_spawn_context()`.
 pub(crate) struct SubagentSpawnContext {
+    /// Host-only product routing delegation. Ordinary Grok sessions retain the
+    /// existing model/config inheritance path.
+    pub product_route: SubagentProductRoute,
     /// Parent's LSP runtime — inherited via ToolContext, same as fs/terminal.
     pub lsp: Option<std::sync::Arc<dyn xai_grok_tools::implementations::lsp::LspBackend>>,
     #[expect(

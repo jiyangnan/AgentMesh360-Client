@@ -672,7 +672,7 @@ mod tests {
     use agent_client_protocol::Agent as _;
     use axum::Router;
     use axum::http::HeaderMap;
-    use axum::response::sse::Sse;
+    use axum::response::sse::{Event, Sse};
     use axum::routing::post;
     use futures_util::stream;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -706,6 +706,34 @@ mod tests {
             Some(result) if !result.is_null() => result.clone(),
             _ => panic!("extension response has no successful result: {envelope}"),
         }
+    }
+
+    fn summarize_provider_requests(requests: &[(String, String)]) -> String {
+        requests
+            .iter()
+            .enumerate()
+            .map(|(index, (authorization, body))| {
+                let parsed = serde_json::from_str::<serde_json::Value>(body).unwrap_or_default();
+                let input_tail = parsed["input"]
+                    .as_array()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .rev()
+                            .take(3)
+                            .rev()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                format!(
+                    "#{index} auth={authorization:?} model={} input_tail={}",
+                    parsed["model"],
+                    serde_json::Value::Array(input_tail)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
     }
 
     async fn serve_bootstrap_once() -> (String, tokio::task::JoinHandle<String>) {
@@ -799,6 +827,78 @@ mod tests {
                         .into_iter()
                         .map(Ok::<_, Infallible>);
                         Sse::new(stream::iter(events))
+                    }
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{address}/v1"), request_rx, task)
+    }
+
+    async fn serve_subagent_route_provider_requests() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind subagent route Provider mock");
+        let address = listener
+            .local_addr()
+            .expect("subagent route Provider mock address");
+        let main_attempts = Arc::new(AtomicUsize::new(0));
+        let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/v1/responses",
+            post({
+                let request_tx = request_tx.clone();
+                let main_attempts = Arc::clone(&main_attempts);
+                move |headers: HeaderMap, body: String| {
+                    let request_tx = request_tx.clone();
+                    let main_attempts = Arc::clone(&main_attempts);
+                    async move {
+                        let authorization = headers
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or_default()
+                            .to_owned();
+                        let model = serde_json::from_str::<serde_json::Value>(&body)
+                            .ok()
+                            .and_then(|value| {
+                                value["model"].as_str().map(ToOwned::to_owned)
+                            })
+                            .unwrap_or_else(|| "unknown-model".to_string());
+                        let _ = request_tx.send((authorization.clone(), body));
+                        let events = if authorization == "Bearer sentinel-subagent-secret" {
+                            xai_grok_test_support::sse::responses_api_events_exact(
+                                "child-provider-ok",
+                                &model,
+                            )
+                        } else if main_attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                            xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                                "Delegate this bounded verification.",
+                                "call_agentmesh_subagent",
+                                "spawn_subagent",
+                                r#"{"prompt":"Return child-provider-ok without using tools.","description":"verify product route","subagent_type":"general-purpose","background":false}"#,
+                                &model,
+                            )
+                            .into_iter()
+                            .map(|event| match event.event {
+                                Some(name) => Event::default().event(name).data(event.data),
+                                None => Event::default().data(event.data),
+                            })
+                            .collect()
+                        } else {
+                            xai_grok_test_support::sse::responses_api_events_exact(
+                                "parent-observed-child-ok",
+                                &model,
+                            )
+                        };
+                        Sse::new(stream::iter(
+                            events.into_iter().map(Ok::<_, Infallible>),
+                        ))
                     }
                 }
             }),
@@ -1036,6 +1136,20 @@ mod tests {
                         Ok(())
                     })
                     .expect("accept auxiliary bound turn");
+                let child_session_id = "child-main-fallback";
+                let delegated = route_context.delegate_for_role("subagent");
+                assert_eq!(delegated.default_role_for_test(), "subagent");
+                let mut subagent_route = delegated
+                    .prepare_turn(child_session_id, "turn-host-shared-vault-subagent")
+                    .expect("prepare delegated subagent role with main Assignment fallback");
+                subagent_route
+                    .submit(|config| {
+                        assert_eq!(config.model, "model-main");
+                        assert!(config.api_key.is_none());
+                        assert!(config.bearer_resolver.is_some());
+                        Ok(())
+                    })
+                    .expect("accept delegated subagent bound turn");
 
                 let history = handle(
                     &agent,
@@ -1076,6 +1190,316 @@ mod tests {
                 assert_eq!(vision_binding["binding"]["role"], "vision");
                 assert_eq!(vision_binding["binding"]["route"]["assignmentRole"], "main");
                 assert!(!format!("{vision_route:?}").contains("sentinel-provider-secret-1234"));
+
+                let subagent_binding = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::BINDING_RESOLVE_METHOD,
+                        serde_json::json!({
+                            "sessionId": child_session_id,
+                            "role": "subagent",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("subagent Binding response");
+                let subagent_binding = ext_result(subagent_binding);
+                assert_eq!(subagent_binding["binding"]["role"], "subagent");
+                assert_eq!(
+                    subagent_binding["binding"]["route"]["assignmentRole"],
+                    "main"
+                );
+                let child_routes = agent
+                    .agentmesh360
+                    .turn_routes_for_host_test(41, child_session_id, "subagent")
+                    .expect("delegated subagent Turn Routes");
+                assert_eq!(child_routes.len(), 1);
+                assert_eq!(child_routes[0].model_id, "model-main");
+                assert!(!format!("{subagent_route:?}").contains("sentinel-provider-secret-1234"));
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn delegated_subagent_route_failures_create_no_ghost_turn_routes() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let runtime = AgentMesh360Runtime::for_host_test(state_home.path(), core_base_url);
+                runtime
+                    .bootstrap_for_host_test("sentinel-bootstrap-token")
+                    .await
+                    .expect("bootstrap product access");
+                let _ = core.await.expect("Core request task");
+
+                let record = runtime
+                    .registry
+                    .prepare_activation(41, "job-agent")
+                    .expect("prepare product Agent");
+                let parent_session_id = record.main_session_id.expect("Main Session");
+                let missing_assignment_context = runtime
+                    .session_route_context(&acp::SessionId::new(parent_session_id.clone()))
+                    .expect("route context lookup")
+                    .expect("product route context")
+                    .delegate_for_role("subagent");
+                assert!(
+                    missing_assignment_context
+                        .prepare_turn("child-missing-assignment", "turn-missing-assignment")
+                        .is_err()
+                );
+                assert!(
+                    runtime
+                        .turn_routes_for_host_test(41, "child-missing-assignment", "subagent")
+                        .expect("missing Assignment routes")
+                        .is_empty()
+                );
+
+                runtime
+                    .configure_product_route_for_host_test(
+                        41,
+                        "job-agent",
+                        "http://127.0.0.1:9/v1",
+                        "model-main",
+                        "sentinel-main-failure-secret",
+                    )
+                    .expect("configure main fallback route");
+                let subagent_profile_id = runtime
+                    .configure_role_assignment_for_host_test(
+                        41,
+                        "job-agent",
+                        "subagent",
+                        "http://127.0.0.1:9/v1",
+                        "model-subagent",
+                        "sentinel-subagent-failure-secret",
+                    )
+                    .expect("configure subagent route");
+                runtime
+                    .remove_credential_for_host_test(41, &subagent_profile_id)
+                    .expect("remove subagent Vault credential");
+                let delegated = runtime
+                    .session_route_context(&acp::SessionId::new(parent_session_id.clone()))
+                    .expect("route context lookup")
+                    .expect("product route context")
+                    .delegate_for_role("subagent");
+                assert!(
+                    delegated
+                        .prepare_turn("child-missing-vault", "turn-missing-vault")
+                        .is_err()
+                );
+                assert!(
+                    runtime
+                        .turn_routes_for_host_test(41, "child-missing-vault", "subagent")
+                        .expect("missing Vault routes")
+                        .is_empty()
+                );
+
+                runtime.invalidate_access_for_host_test();
+                assert!(
+                    runtime
+                        .session_route_context(&acp::SessionId::new(parent_session_id))
+                        .is_err(),
+                    "an account-unavailable product parent must not degrade to an ordinary session"
+                );
+                assert!(
+                    delegated
+                        .prepare_turn("child-expired-access", "turn-expired-access")
+                        .is_err()
+                );
+                assert!(
+                    runtime
+                        .turn_routes_for_host_test(41, "child-expired-access", "subagent")
+                        .expect("expired access routes")
+                        .is_empty()
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn host_parent_prompt_spawns_subagent_through_delegated_provider_route() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (provider_base_url, mut provider_requests, provider_task) =
+                    serve_subagent_route_provider_requests().await;
+                let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                let gateway_task = drive_gateway(gateway_rx);
+
+                agent
+                    .initialize(
+                        acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+                            .client_capabilities(
+                                acp::ClientCapabilities::new()
+                                    .fs(acp::FileSystemCapabilities::new())
+                                    .terminal(false),
+                            )
+                            .meta(
+                                serde_json::json!({
+                                    "startupHints": {
+                                        "nonInteractive": true,
+                                        "skipGitStatus": true,
+                                        "skipProjectLayout": true
+                                    },
+                                    "clientType": "agentmesh360-subagent-route-test",
+                                    "clientVersion": "0.0.0-test"
+                                })
+                                .as_object()
+                                .cloned(),
+                            ),
+                    )
+                    .await
+                    .expect("initialize Host ACP agent");
+                agent
+                    .agentmesh360
+                    .bootstrap_for_host_test("sentinel-bootstrap-token")
+                    .await
+                    .expect("bootstrap product access");
+                let _ = core.await.expect("Core request task");
+
+                agent
+                    .agentmesh360
+                    .configure_product_route_for_host_test(
+                        41,
+                        "job-agent",
+                        &provider_base_url,
+                        "model-main",
+                        "sentinel-main-secret",
+                    )
+                    .expect("configure main product route");
+                agent
+                    .agentmesh360
+                    .configure_role_assignment_for_host_test(
+                        41,
+                        "job-agent",
+                        "subagent",
+                        &provider_base_url,
+                        "model-subagent",
+                        "sentinel-subagent-secret",
+                    )
+                    .expect("configure dedicated subagent Assignment");
+
+                let activation = handle(
+                    &agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "job-agent"}),
+                    ),
+                )
+                .await
+                .expect("activate Job Agent");
+                let activation = ext_result(activation);
+                let parent_session_id = activation["agent"]["mainSessionId"]
+                    .as_str()
+                    .expect("activation Main Session")
+                    .to_owned();
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(parent_session_id.clone()),
+                        vec![acp::ContentBlock::from(
+                            "Delegate one bounded verification and report the result.",
+                        )],
+                    )),
+                )
+                .await
+                .expect("product subagent Prompt timed out")
+                .expect("product subagent Prompt response");
+
+                let mut captured = Vec::new();
+                for _ in 0..3 {
+                    let next =
+                        tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                            .await;
+                    match next {
+                        Ok(Some(request)) => captured.push(request),
+                        Ok(None) => panic!(
+                            "Provider request channel closed after {} requests: {}",
+                            captured.len(),
+                            summarize_provider_requests(&captured)
+                        ),
+                        Err(_) => panic!(
+                            "Provider request timed out after {} requests: {}",
+                            captured.len(),
+                            summarize_provider_requests(&captured)
+                        ),
+                    }
+                }
+                assert_eq!(captured[0].0, "Bearer sentinel-main-secret");
+                assert_eq!(
+                    captured[1].0,
+                    "Bearer sentinel-subagent-secret",
+                    "{}",
+                    summarize_provider_requests(&captured)
+                );
+                assert_eq!(captured[2].0, "Bearer sentinel-main-secret");
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&captured[0].1)
+                        .expect("parent request JSON")["model"],
+                    "model-main"
+                );
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&captured[1].1)
+                        .expect("subagent request JSON")["model"],
+                    "model-subagent"
+                );
+                assert!(
+                    captured[2].1.contains("child-provider-ok"),
+                    "the parent continuation must receive the child result"
+                );
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
+                        .await
+                        .is_err(),
+                    "subagent execution must not call an unbound fallback Provider"
+                );
+
+                let parent_routes = agent
+                    .agentmesh360
+                    .turn_routes_for_host_test(41, &parent_session_id, "main")
+                    .expect("parent main Turn Routes");
+                assert_eq!(parent_routes.len(), 1);
+                assert_eq!(parent_routes[0].model_id, "model-main");
+
+                let conn = state::open(state_home.path()).expect("open Host state");
+                let mut statement = conn
+                    .prepare(
+                        "SELECT session_id, turn_id, model_id, endpoint_origin \
+                         FROM turn_route_records WHERE owner_account_id = 41 \
+                         AND role = 'subagent' ORDER BY rowid",
+                    )
+                    .expect("prepare delegated route query");
+                let child_routes = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                        ))
+                    })
+                    .expect("query delegated Turn Routes")
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .expect("collect delegated Turn Routes");
+                assert_eq!(child_routes.len(), 1);
+                assert_ne!(child_routes[0].0, parent_session_id);
+                assert!(!child_routes[0].1.starts_with("subagent-bootstrap:"));
+                assert_eq!(child_routes[0].2, "model-subagent");
+                assert_eq!(
+                    child_routes[0].3,
+                    url::Url::parse(&provider_base_url)
+                        .expect("Provider base URL")
+                        .origin()
+                        .ascii_serialization()
+                );
+
+                provider_task.abort();
+                gateway_task.abort();
             })
             .await;
     }

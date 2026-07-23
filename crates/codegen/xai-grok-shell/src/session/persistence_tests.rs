@@ -37,6 +37,7 @@ fn test_actor_with_remote_sync(
                 crate::session::summary::SummaryConfig {
                     sampling_client,
                     model: String::new(),
+                    local_fallback_only: false,
                     persistence_tx: summary_tx,
                 },
             ),

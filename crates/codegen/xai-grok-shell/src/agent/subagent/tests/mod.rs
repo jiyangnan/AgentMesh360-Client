@@ -3,6 +3,85 @@ use super::*;
 use crate::test_support::lsp_runtime::{
     DummyLspDispatch, ctx_with_toggle, make_request, test_gateway,
 };
+
+#[test]
+fn product_subagent_bootstrap_config_drops_all_host_credential_material() {
+    #[derive(Debug)]
+    struct TestBearerResolver;
+    impl xai_grok_sampler::BearerResolver for TestBearerResolver {
+        fn current_bearer(&self) -> Option<String> {
+            Some("sentinel-live-secret".into())
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestHeaderInjector;
+    impl xai_grok_sampler::HeaderInjector for TestHeaderInjector {
+        fn inject(&self, headers: &mut reqwest::header::HeaderMap) {
+            headers.insert(
+                "x-sentinel-secret",
+                reqwest::header::HeaderValue::from_static("sentinel-header-secret"),
+            );
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestAttribution;
+    impl xai_grok_sampler::Auth401AttributionCallback for TestAttribution {
+        fn record_401(
+            &self,
+            _consumer: xai_grok_sampler::SamplingConsumer,
+            _sent_credential: Option<&str>,
+        ) {
+        }
+    }
+
+    let mut extra_headers = indexmap::IndexMap::new();
+    extra_headers.insert("authorization".into(), "Bearer sentinel-header-secret".into());
+    let config = xai_grok_sampler::SamplerConfig {
+        api_key: Some("sentinel-static-secret".into()),
+        base_url: "https://provider.example/v1".into(),
+        model: "provider-model".into(),
+        extra_headers,
+        context_window: 131_072,
+        origin_client: Some(xai_grok_sampler::OriginClientInfo {
+            product: "grok-build".into(),
+            version: Some("secret-adjacent-version".into()),
+        }),
+        client_identifier: Some("client-id".into()),
+        deployment_id: Some("deployment-id".into()),
+        user_id: Some("user-id".into()),
+        client_version: Some("client-version".into()),
+        attribution_callback: Some(Arc::new(TestAttribution)),
+        bearer_resolver: Some(Arc::new(TestBearerResolver)),
+        header_injector: Some(Arc::new(TestHeaderInjector)),
+        ..Default::default()
+    };
+
+    let scrubbed = scrub_product_bootstrap_config(config);
+    assert_eq!(scrubbed.base_url, "https://provider.example/v1");
+    assert_eq!(scrubbed.model, "provider-model");
+    assert_eq!(scrubbed.context_window, 131_072);
+    assert!(scrubbed.api_key.is_none());
+    assert!(scrubbed.extra_headers.is_empty());
+    assert!(scrubbed.origin_client.is_none());
+    assert!(scrubbed.client_identifier.is_none());
+    assert!(scrubbed.deployment_id.is_none());
+    assert!(scrubbed.user_id.is_none());
+    assert!(scrubbed.client_version.is_none());
+    assert!(scrubbed.attribution_callback.is_none());
+    assert!(scrubbed.bearer_resolver.is_none());
+    assert!(scrubbed.header_injector.is_none());
+    let debug = format!("{scrubbed:?}");
+    for sentinel in [
+        "sentinel-static-secret",
+        "sentinel-live-secret",
+        "sentinel-header-secret",
+    ] {
+        assert!(!debug.contains(sentinel));
+    }
+}
+
 /// Invariant: resolving a subagent applies the parent session's
 /// `--tools`/`--disallowed-tools`/`--permission-mode` — driven through
 /// `resolve_agent_definition` so the spawn path can't skip them.

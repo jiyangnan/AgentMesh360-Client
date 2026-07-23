@@ -481,7 +481,22 @@ impl MvpAgent {
                 &parent_cwd,
                 project_trusted,
             );
+        let product_route = match self.agentmesh360.session_route_context(&parent_sid) {
+            Ok(Some(context)) => crate::agent::subagent::SubagentProductRoute::Delegated(
+                context.delegate_for_role("subagent"),
+            ),
+            Ok(None) => crate::agent::subagent::SubagentProductRoute::Ordinary,
+            Err(error) => {
+                tracing::warn!(
+                    parent_session_id,
+                    error_kind = %error.root_cause(),
+                    "Product subagent route delegation is unavailable"
+                );
+                crate::agent::subagent::SubagentProductRoute::Blocked
+            }
+        };
         Some(crate::agent::subagent::SubagentSpawnContext {
+            product_route,
             lsp: parent_lsp,
             gateway: self.gateway.clone(),
             client_hooks: Default::default(),

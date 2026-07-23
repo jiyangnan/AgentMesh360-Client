@@ -26,6 +26,9 @@ enum State {
 pub(crate) struct SummaryConfig {
     pub(crate) sampling_client: OaiCompatClient,
     pub(crate) model: String,
+    /// Hidden subagent sessions already have coordinator-owned labels and do
+    /// not need a separate provider request merely to generate a title.
+    pub(crate) local_fallback_only: bool,
     /// Channel back to the persistence actor for sequential storage writes.
     pub(crate) persistence_tx: mpsc::UnboundedSender<PersistenceMsg>,
 }
@@ -71,14 +74,20 @@ impl SummaryGenerator {
 
                 let sampling_client = self.config.sampling_client.clone();
                 let model = self.config.model.clone();
+                let local_fallback_only = self.config.local_fallback_only;
                 let persistence_tx = self.config.persistence_tx.clone();
 
                 // Spawn title generation as a background task so the
                 // persistence actor can continue processing messages
                 // (updates, flushes) without waiting for the LLM call.
                 tokio::spawn(async move {
-                    let mut title =
-                        generate_session_summary(content.clone(), sampling_client, &model).await;
+                    let mut title = if local_fallback_only {
+                        crate::session::helpers::session_summary::title_fallback_from_user_text(
+                            &content,
+                        )
+                    } else {
+                        generate_session_summary(content.clone(), sampling_client, &model).await
+                    };
                     if title.trim().is_empty() {
                         title =
                             crate::session::helpers::session_summary::title_fallback_from_user_text(

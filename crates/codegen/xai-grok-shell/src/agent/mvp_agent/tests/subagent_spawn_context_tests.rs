@@ -91,6 +91,10 @@ async fn subagent_spawn_context_shares_parent_goal_loop_gate() {
 
     let ctx = agent.build_subagent_spawn_context(sid.0.as_ref());
 
+    assert!(matches!(
+        ctx.product_route,
+        crate::agent::subagent::SubagentProductRoute::Ordinary
+    ));
     // Flipping the parent gate must surface through the child flag (shared Arc).
     assert!(!ctx.goal_loop_active.load(Relaxed));
     parent_gate.store(true, Relaxed);

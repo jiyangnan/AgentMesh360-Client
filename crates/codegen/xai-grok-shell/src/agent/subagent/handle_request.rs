@@ -85,6 +85,17 @@ pub(crate) async fn handle_subagent_request(
         .then(|| crate::tools::tool_context::BlockingWaitGuard::enter(
             ctx.parent_blocking_wait_depth.clone(),
         ));
+    if matches!(ctx.product_route, SubagentProductRoute::Blocked) {
+        send_pre_spawn_failure(
+            request,
+            "AgentMesh360 product subagent access is unavailable; restore subscription access and Provider routing, then retry.",
+            coordinator,
+            &ctx,
+            gateway,
+        );
+        return;
+    }
+    let product_subagent = ctx.product_route.is_delegated();
     let Some(mut definition) = resolve_agent_definition(&request.subagent_type, &ctx)
     else {
         let msg = format!("Unknown subagent type: {}", request.subagent_type);
@@ -249,17 +260,48 @@ pub(crate) async fn handle_subagent_request(
             return;
         }
     }
-    if let Some(error) = task_model_override_error(
-        request.runtime_overrides.model.as_deref(),
-        request.runtime_overrides.model_override_provenance,
-        resume_source.is_some(),
-        &ctx.available_models,
-        ctx.auth_manager.current_or_expired().is_some_and(|a| a.is_session_auth()),
-    ) {
+    if !product_subagent
+        && let Some(error) = task_model_override_error(
+            request.runtime_overrides.model.as_deref(),
+            request.runtime_overrides.model_override_provenance,
+            resume_source.is_some(),
+            &ctx.available_models,
+            ctx.auth_manager
+                .current_or_expired()
+                .is_some_and(|a| a.is_session_auth()),
+        )
+    {
         pending_guard.set_error(error.clone());
         send_failure(request, &error);
         return;
     }
+    let product_bootstrap_turn_id = format!(
+        "subagent-bootstrap:{}:{}",
+        request
+            .parent_prompt_id
+            .as_deref()
+            .unwrap_or("between-turn"),
+        request.id
+    );
+    let product_sampling = match prepare_product_subagent_bootstrap(
+        &ctx,
+        &request.id,
+        &product_bootstrap_turn_id,
+    ) {
+        Ok(config) => config,
+        Err(error) => {
+            tracing::warn!(
+                subagent_id = %request.id,
+                parent_session_id = %ctx.parent_session_id,
+                error_kind = %error.root_cause(),
+                "AgentMesh360 subagent route preparation failed"
+            );
+            let message = "AgentMesh360 subagent Provider route is unavailable; check the subscription, subagent/main Assignment, and credential Vault.";
+            pending_guard.set_error(message.into());
+            send_failure(request, message);
+            return;
+        }
+    };
     let worktree_path = if let Some(ref source) = resume_source {
         if effective_runtime.isolation != xai_tool_types::SubagentIsolationMode::None
             && source.worktree_path.is_none()
@@ -432,18 +474,23 @@ pub(crate) async fn handle_subagent_request(
     if request.fork_context {
         effective_runtime.model = Some(ctx.model_id.0.to_string());
     }
-    let (mut effective_sampling_config, mut effective_model_id) = resolve_effective_model_config(
-            effective_runtime.model.as_deref(),
-            &request.subagent_type,
-            &definition.model,
-            &ctx,
-        )
-        .await;
+    let (mut effective_sampling_config, mut effective_model_id) =
+        if let Some(product_sampling) = product_sampling {
+            product_sampling
+        } else {
+            resolve_effective_model_config(
+                effective_runtime.model.as_deref(),
+                &request.subagent_type,
+                &definition.model,
+                &ctx,
+            )
+            .await
+        };
     let subagent_max_turns = resolve_subagent_max_turns(
         definition.max_turns,
         ctx.parent_max_turns,
     );
-    {
+    if !product_subagent {
         let model_str = &effective_sampling_config.model;
         let model_unknown = !model_str.is_empty() && !ctx.available_models.is_empty()
             && !ctx.available_models.contains_key(model_str)
@@ -460,7 +507,8 @@ pub(crate) async fn handle_subagent_request(
             effective_model_id = parent_mid;
         }
     }
-    if let Some(ref source) = resume_source
+    if !product_subagent
+        && let Some(ref source) = resume_source
         && let Some(ref source_model) = source.model_id
         && effective_model_id.0.as_ref() != source_model.as_str()
     {
@@ -481,7 +529,8 @@ pub(crate) async fn handle_subagent_request(
             return;
         }
     }
-    if let Some(raw) = effective_runtime.reasoning_effort.as_deref()
+    if !product_subagent
+        && let Some(raw) = effective_runtime.reasoning_effort.as_deref()
         && ctx
             .models_manager
             .model_supports_reasoning_effort(effective_model_id.0.as_ref())
@@ -774,12 +823,25 @@ pub(crate) async fn handle_subagent_request(
     );
     let model_has_own_creds = model_entry
         .is_some_and(|entry| entry.has_own_credentials());
-    let inherited_auth_type = subagent_auth_type(model_entry, &ctx.auth_method_id);
-    let credentials = xai_chat_state::Credentials {
-        api_key: effective_sampling_config.api_key.clone(),
-        auth_type: inherited_auth_type,
-        alpha_test_key: ctx.alpha_test_key.clone(),
-        client_version: effective_sampling_config.client_version.clone(),
+    let inherited_auth_type = if product_subagent {
+        xai_chat_state::AuthType::ApiKey
+    } else {
+        subagent_auth_type(model_entry, &ctx.auth_method_id)
+    };
+    let credentials = if product_subagent {
+        xai_chat_state::Credentials {
+            api_key: None,
+            auth_type: inherited_auth_type,
+            alpha_test_key: None,
+            client_version: None,
+        }
+    } else {
+        xai_chat_state::Credentials {
+            api_key: effective_sampling_config.api_key.clone(),
+            auth_type: inherited_auth_type,
+            alpha_test_key: ctx.alpha_test_key.clone(),
+            client_version: effective_sampling_config.client_version.clone(),
+        }
     };
     xai_grok_telemetry::unified_log::info(
         "subagent spawn credentials",
@@ -1057,15 +1119,19 @@ pub(crate) async fn handle_subagent_request(
     } else {
         None
     };
+    let product_startup_route = match &ctx.product_route {
+        SubagentProductRoute::Delegated(context) => Some(context.clone()),
+        SubagentProductRoute::Ordinary | SubagentProductRoute::Blocked => None,
+    };
     let spawn_result = session::spawn_session_on_thread(
             child_session_info,
             gateway.clone(),
             effective_sampling_config,
             credentials,
             crate::agent::auth_method::new_shared_auth_method_id(
-                Some(ctx.auth_method_id.clone()),
+                (!product_subagent).then(|| ctx.auth_method_id.clone()),
             ),
-            Some(ctx.auth_manager.clone()),
+            (!product_subagent).then(|| ctx.auth_manager.clone()),
             attribution_callback,
             tool_ctx,
             agent_mcp_servers,
@@ -1087,6 +1153,7 @@ pub(crate) async fn handle_subagent_request(
                 parent_session_id: Some(ctx.parent_session_id.clone()),
                 subagent_type: Some(request.subagent_type.clone()),
                 preserve_inherited_system: verbatim_mirror_fork,
+                agentmesh360_route: product_startup_route,
                 ..Default::default()
             },
             xai_grok_workspace::permission::ClientType::Generic,
@@ -1184,7 +1251,11 @@ pub(crate) async fn handle_subagent_request(
             ctx.models_manager.clone(),
             parent_traceparent,
             ctx.permission_handle.clone(),
-            ctx.api_key_provider.clone(),
+            if product_subagent {
+                None
+            } else {
+                ctx.api_key_provider.clone()
+            },
             ctx.image_description_model.clone(),
             ctx.hook_registry.clone(),
             ctx.workspace_ops.clone(),

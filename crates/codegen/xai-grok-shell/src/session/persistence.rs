@@ -2214,6 +2214,7 @@ pub(crate) async fn new(
                 crate::session::summary::SummaryConfig {
                     sampling_client,
                     model: session_summary_model,
+                    local_fallback_only: false,
                     persistence_tx: tx,
                 },
             ),
@@ -2284,6 +2285,7 @@ pub async fn new_with_explicit_dir(
                 crate::session::summary::SummaryConfig {
                     sampling_client,
                     model: session_summary_model,
+                    local_fallback_only: true,
                     persistence_tx: tx,
                 },
             ),
@@ -2392,6 +2394,7 @@ pub(crate) async fn load(
             crate::session::summary::SummaryConfig {
                 sampling_client,
                 model: session_summary_model,
+                local_fallback_only: false,
                 persistence_tx: tx,
             },
         );
@@ -2477,6 +2480,7 @@ pub(crate) async fn load_light(
             crate::session::summary::SummaryConfig {
                 sampling_client,
                 model: session_summary_model,
+                local_fallback_only: false,
                 persistence_tx: tx,
             },
         );
