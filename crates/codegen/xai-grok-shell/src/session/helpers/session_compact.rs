@@ -55,7 +55,7 @@ pub(crate) use xai_grok_sampling_types::is_context_length_error;
 /// and stuck-model conditions all persist). 4xx API responses other than
 /// 408 (timeout) and 429 (rate limit) are likewise deterministic. Network
 /// transport errors, stream-level blips, and 5xx responses are transient.
-fn classify_sampling_error(err: SamplingError) -> CompactFailure {
+pub(crate) fn classify_sampling_error(err: SamplingError) -> CompactFailure {
     let acp_err = acp::Error::internal_error().data(format!("compact failed: {err}"));
     let deterministic = match &err {
         SamplingError::Auth(_)
@@ -325,6 +325,71 @@ where
         Err(_) => StreamStep::IdleTimeout,
     }
 }
+
+/// Build the backend-neutral request used when a product Session routes
+/// compaction through the existing SamplerActor. The actor applies the leased
+/// per-request backend and model, preserving retry and cancellation without
+/// broadcasting compaction text into the main conversation stream.
+pub(crate) fn build_compaction_conversation_request(
+    chat_history: Vec<ConversationItem>,
+    tools: Vec<ToolSpec>,
+    hosted_tools: Vec<HostedTool>,
+    session_id: &acp::SessionId,
+    sampling_config: &SamplingConfig,
+    tool_choice: crate::util::config::CompactionToolChoice,
+) -> ConversationRequest {
+    let conversation_tool_choice = match tool_choice {
+        crate::util::config::CompactionToolChoice::Auto => ConversationToolChoice::Auto,
+        crate::util::config::CompactionToolChoice::None => ConversationToolChoice::None,
+    };
+    ConversationRequest {
+        items: chat_history,
+        tool_choice: (!tools.is_empty()).then_some(conversation_tool_choice),
+        tools,
+        hosted_tools,
+        model: Some(sampling_config.model.clone()),
+        temperature: Some(1.0),
+        x_grok_conv_id: Some(session_id.to_string()),
+        x_grok_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
+        x_grok_session_id: Some(session_id.to_string()),
+        x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
+        ..ConversationRequest::default()
+    }
+}
+
+/// Convert a side-query completion back into the compaction telemetry shape
+/// used by the existing full-replace engine.
+pub(crate) fn compact_output_from_collected_response(
+    response: xai_grok_sampling_types::ConversationResponse,
+    metrics: xai_grok_sampler::InferenceLatencyStats,
+) -> Result<CompactOutput, CompactFailure> {
+    let content = response.assistant_text();
+    if content.is_empty() {
+        return Err(CompactFailure::Transient(
+            acp::Error::internal_error().data("compact failed: model returned empty response"),
+        ));
+    }
+    let stop_reason = response
+        .stop_reason
+        .map(|reason| reason.as_str().to_string());
+    let truncated = matches!(
+        response.stop_reason,
+        Some(xai_grok_sampling_types::StopReason::Length)
+    );
+    let stream_ms = metrics
+        .time_to_first_token_ms
+        .map(|ttft| metrics.time_to_last_byte_ms.saturating_sub(ttft));
+    Ok(CompactOutput {
+        content,
+        stop_reason,
+        truncated,
+        ttft_ms: metrics.time_to_first_token_ms,
+        stream_ms,
+        delta_count: u64::from(metrics.chunk_count),
+        itl_max_ms: metrics.itl_max_ms,
+    })
+}
+
 /// Generates a summary of the conversation for compaction.
 /// Accepts `Vec<ConversationItem>` so the Responses path can preserve
 /// encrypted reasoning. ChatCompletions converts at point of use.

@@ -72,7 +72,6 @@ impl ActiveBoundTurn {
         &self.turn_route
     }
 
-    #[cfg(test)]
     fn sampler_config(&self) -> &SamplerConfig {
         &self.sampler_config
     }
@@ -164,6 +163,19 @@ impl std::fmt::Debug for ProductTurnRoute {
 }
 
 impl ProductTurnRoute {
+    /// Snapshot the already leased, in-memory config without claiming that a
+    /// model request has been submitted. Product-side request builders use
+    /// this only for backend/capability-sensitive preparation; durable Turn
+    /// Route audit still happens exclusively inside [`Self::submit`] after the
+    /// Sampling actor accepts the request.
+    pub(crate) fn sampler_config_snapshot(&self) -> Result<SamplerConfig> {
+        match self {
+            Self::Prepared(Some(prepared)) => Ok(prepared.leased_route.sampler_config().clone()),
+            Self::Prepared(None) => anyhow::bail!("bound turn submission is unavailable"),
+            Self::Active(active) => Ok(active.sampler_config().clone()),
+        }
+    }
+
     pub fn submit<T>(&mut self, submit: impl FnOnce(SamplerConfig) -> Result<T>) -> Result<T> {
         match self {
             Self::Prepared(prepared) => {

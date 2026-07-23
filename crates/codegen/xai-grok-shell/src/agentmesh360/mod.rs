@@ -630,6 +630,7 @@ fn current_account_id(agent: &MvpAgent) -> Result<i64> {
 mod tests {
     use std::convert::Infallible;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use agent_client_protocol::Agent as _;
@@ -744,13 +745,88 @@ mod tests {
                             .and_then(|value| value.to_str().ok())
                             .unwrap_or_default()
                             .to_owned();
+                        let response = if body
+                            .contains("Your task is to produce a faithful, concise summary")
+                        {
+                            format!(
+                                "<summary>\n1. Primary Request and Intent: retain the current product Agent task.\n{}\n</summary>",
+                                "The session remains recoverable after compaction. ".repeat(12)
+                            )
+                        } else {
+                            "host-e2e-ok".to_string()
+                        };
                         let _ = request_tx.send((authorization, body));
                         let events = xai_grok_test_support::sse::responses_api_events_exact(
-                            "host-e2e-ok",
+                            &response,
                             "model-main",
                         )
                         .into_iter()
                         .map(Ok::<_, Infallible>);
+                        Sse::new(stream::iter(events))
+                    }
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{address}/v1"), request_rx, task)
+    }
+
+    async fn serve_compaction_provider_requests() -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind compaction Provider mock");
+        let address = listener
+            .local_addr()
+            .expect("compaction Provider mock address");
+        let compaction_attempts = Arc::new(AtomicUsize::new(0));
+        let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/v1/responses",
+            post({
+                let request_tx = request_tx.clone();
+                let compaction_attempts = Arc::clone(&compaction_attempts);
+                move |headers: HeaderMap, body: String| {
+                    let request_tx = request_tx.clone();
+                    let compaction_attempts = Arc::clone(&compaction_attempts);
+                    async move {
+                        let authorization = headers
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or_default()
+                            .to_owned();
+                        let model = serde_json::from_str::<serde_json::Value>(&body)
+                            .ok()
+                            .and_then(|value| {
+                                value["model"].as_str().map(ToOwned::to_owned)
+                            })
+                            .unwrap_or_else(|| "unknown-model".to_string());
+                        let is_compaction =
+                            body.contains("Your task is to produce a faithful, concise summary");
+                        let response = if is_compaction {
+                            let attempt = compaction_attempts.fetch_add(1, Ordering::SeqCst);
+                            if attempt == 0 {
+                                "<summary>too short</summary>".to_string()
+                            } else {
+                                format!(
+                                    "<summary>\n1. Primary Request and Intent: preserve the product Agent conversation.\n{}\n</summary>",
+                                    "The compacted state remains bound to the selected Provider and model. "
+                                        .repeat(12)
+                                )
+                            }
+                        } else {
+                            "host-main-before-compaction".to_string()
+                        };
+                        let _ = request_tx.send((authorization, body));
+                        let events =
+                            xai_grok_test_support::sse::responses_api_events_exact(&response, &model)
+                                .into_iter()
+                                .map(Ok::<_, Infallible>);
                         Sse::new(stream::iter(events))
                     }
                 }
@@ -1119,7 +1195,7 @@ mod tests {
                 );
 
                 tokio::time::timeout(
-                    Duration::from_secs(30),
+                    Duration::from_secs(45),
                     agent.prompt(acp::PromptRequest::new(
                         acp::SessionId::new(session_id.clone()),
                         vec![
@@ -1152,6 +1228,34 @@ mod tests {
                         .await
                         .is_err(),
                     "the current non-Cursor template must not issue a separate vision request"
+                );
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id.clone()),
+                        vec![acp::ContentBlock::from("/compact")],
+                    )),
+                )
+                .await
+                .expect("fallback product compaction timed out")
+                .expect("fallback product compaction response");
+                let (compaction_authorization, compaction_body) =
+                    tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                        .await
+                        .expect("fallback compaction Provider request timed out")
+                        .expect("fallback compaction Provider request capture");
+                assert_eq!(
+                    compaction_authorization,
+                    "Bearer sentinel-provider-secret-5678"
+                );
+                assert!(
+                    compaction_body.contains("Your task is to produce a faithful, concise summary")
+                );
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&compaction_body)
+                        .expect("compaction Provider request JSON")["model"],
+                    "model-main"
                 );
 
                 let routes = handle(
@@ -1190,6 +1294,273 @@ mod tests {
                     vision_routes["turnRoutes"].as_array().map(Vec::len),
                     Some(0),
                     "the inactive Cursor transcription path must not create a ghost route"
+                );
+
+                let compaction_routes = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "compaction",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("compaction fallback Turn Route history response");
+                let compaction_routes = ext_result(compaction_routes);
+                assert_eq!(
+                    compaction_routes["turnRoutes"].as_array().map(Vec::len),
+                    Some(1)
+                );
+                assert_eq!(compaction_routes["turnRoutes"][0]["modelId"], "model-main");
+                let compaction_binding = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::BINDING_RESOLVE_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "compaction",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("compaction fallback Binding response");
+                assert_eq!(
+                    ext_result(compaction_binding)["binding"]["route"]["assignmentRole"],
+                    "main"
+                );
+
+                provider_task.abort();
+                gateway_task.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn host_product_compaction_uses_bound_role_and_reuses_turn_route() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (provider_base_url, mut provider_requests, provider_task) =
+                    serve_compaction_provider_requests().await;
+                let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                let gateway_task = drive_gateway(gateway_rx);
+
+                agent
+                    .initialize(
+                        acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+                            .client_capabilities(
+                                acp::ClientCapabilities::new()
+                                    .fs(acp::FileSystemCapabilities::new())
+                                    .terminal(false),
+                            )
+                            .meta(
+                                serde_json::json!({
+                                    "startupHints": {
+                                        "nonInteractive": true,
+                                        "skipGitStatus": true,
+                                        "skipProjectLayout": true
+                                    },
+                                    "clientType": "agentmesh360-host-test",
+                                    "clientVersion": "0.0.0-test"
+                                })
+                                .as_object()
+                                .cloned(),
+                            ),
+                    )
+                    .await
+                    .expect("initialize Host ACP agent");
+                let bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "sentinel-bootstrap-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap response");
+                assert_eq!(ext_result(bootstrap)["access"]["canEnterClient"], true);
+                let _ = core.await.expect("Core request task");
+
+                let provider = handle(
+                    &agent,
+                    &ext_request(
+                        providers::PROVIDERS_CREATE_METHOD,
+                        serde_json::json!({
+                            "profile": {
+                                "presetId": "compatible-openai-responses",
+                                "displayName": "Host Compaction Mock",
+                                "protocol": "openai_responses",
+                                "baseUrl": provider_base_url,
+                                "authKind": "bearer_api_key",
+                                "enabledModels": ["model-main", "model-compact"]
+                            },
+                            "apiKey": "sentinel-provider-secret-compact"
+                        }),
+                    ),
+                )
+                .await
+                .expect("create Provider response");
+                let profile_id = ext_result(provider)["profile"]["profileId"]
+                    .as_str()
+                    .expect("profile id")
+                    .to_owned();
+                for (role, model_id) in [("main", "model-main"), ("compaction", "model-compact")] {
+                    handle(
+                        &agent,
+                        &ext_request(
+                            model_routing::ASSIGNMENTS_UPSERT_METHOD,
+                            serde_json::json!({
+                                "assignment": {
+                                    "scopeKind": "agent",
+                                    "scopeId": "job-agent",
+                                    "role": role,
+                                    "providerProfileId": profile_id,
+                                    "modelId": model_id
+                                }
+                            }),
+                        ),
+                    )
+                    .await
+                    .unwrap_or_else(|error| panic!("upsert {role} Assignment: {error:?}"));
+                }
+
+                let activation = handle(
+                    &agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "job-agent"}),
+                    ),
+                )
+                .await
+                .expect("activate Job Agent");
+                let session_id = ext_result(activation)["agent"]["mainSessionId"]
+                    .as_str()
+                    .expect("Job Agent Main Session")
+                    .to_owned();
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id.clone()),
+                        vec![acp::ContentBlock::from(
+                            "Seed the conversation before compaction.",
+                        )],
+                    )),
+                )
+                .await
+                .expect("seed Prompt timed out")
+                .expect("seed Prompt response");
+                let (main_authorization, main_body) =
+                    tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                        .await
+                        .expect("main Provider request timed out")
+                        .expect("main Provider request capture");
+                assert_eq!(
+                    main_authorization,
+                    "Bearer sentinel-provider-secret-compact"
+                );
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&main_body)
+                        .expect("main request JSON")["model"],
+                    "model-main"
+                );
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id.clone()),
+                        vec![acp::ContentBlock::from("/compact")],
+                    )),
+                )
+                .await
+                .expect("product compaction timed out")
+                .expect("product compaction response");
+
+                for attempt in 1..=2 {
+                    let (authorization, body) =
+                        tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                            .await
+                            .unwrap_or_else(|_| panic!("compaction attempt {attempt} timed out"))
+                            .unwrap_or_else(|| panic!("compaction attempt {attempt} missing"));
+                    assert_eq!(authorization, "Bearer sentinel-provider-secret-compact");
+                    let body: serde_json::Value =
+                        serde_json::from_str(&body).expect("compaction request JSON");
+                    assert_eq!(body["model"], "model-compact");
+                }
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
+                        .await
+                        .is_err(),
+                    "degenerate retry must stop after the successful compaction response"
+                );
+
+                let routes = handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::TURN_ROUTES_LIST_METHOD,
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "role": "compaction",
+                            "agentId": "job-agent"
+                        }),
+                    ),
+                )
+                .await
+                .expect("compaction Turn Routes");
+                let routes = ext_result(routes);
+                assert_eq!(
+                    routes["turnRoutes"].as_array().map(Vec::len),
+                    Some(1),
+                    "all attempts in one logical compaction share one Turn Route"
+                );
+                assert_eq!(routes["turnRoutes"][0]["modelId"], "model-compact");
+                assert!(
+                    !routes
+                        .to_string()
+                        .contains("sentinel-provider-secret-compact")
+                );
+
+                agent
+                    .agentmesh360
+                    .remove_credential_for_host_test(41, &profile_id)
+                    .expect("remove compaction credential");
+                let missing_vault = agent
+                    .prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id.clone()),
+                        vec![acp::ContentBlock::from("/compact preserve routing")],
+                    ))
+                    .await
+                    .expect_err("missing Vault credential must block compaction");
+                assert!(
+                    format!("{missing_vault:?}").contains("agentmesh360_provider_route_required")
+                );
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
+                        .await
+                        .is_err(),
+                    "missing Vault must fail before Provider submission"
+                );
+
+                agent.agentmesh360.invalidate_access_for_host_test();
+                let denied = agent
+                    .prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id),
+                        vec![acp::ContentBlock::from("/compact")],
+                    ))
+                    .await
+                    .expect_err("invalid subscription must block compaction");
+                assert_eq!(denied.code, acp::Error::auth_required().code);
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
+                        .await
+                        .is_err(),
+                    "invalid subscription must not reach Provider"
                 );
 
                 provider_task.abort();

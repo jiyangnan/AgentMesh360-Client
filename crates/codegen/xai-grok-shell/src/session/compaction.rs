@@ -16,7 +16,7 @@ use crate::session::helpers::compaction_context::CompactionInputs;
 use crate::session::helpers::compaction_context::to_system_reminder;
 use crate::session::helpers::session_compact::{
     CompactOutput, CompactionOutcome, build_compaction_chat_history,
-    build_two_pass_compaction_prompt, generate_session_compact, is_context_length_error,
+    build_two_pass_compaction_prompt, is_context_length_error,
 };
 use crate::session::persistence::PersistenceMsg;
 use crate::session::two_pass::{
@@ -156,6 +156,52 @@ mod two_pass_prefire_helper_tests {
     }
 }
 impl SessionActor {
+    fn compaction_logical_turn_id(&self) -> String {
+        self.compaction.prefire.logical_turn_id_or_insert_with(|| {
+            self.current_prompt_id
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .unwrap_or_else(|| format!("aux:compaction:{}", uuid::Uuid::new_v4()))
+        })
+    }
+
+    async fn compaction_sampling_config_and_route(
+        &self,
+        logical_turn_id: &str,
+    ) -> Result<
+        (
+            xai_grok_sampler::SamplerConfig,
+            Option<crate::agentmesh360::ProductTurnRoute>,
+        ),
+        acp::Error,
+    > {
+        let Some(context) = self.startup_hints.agentmesh360_route.as_ref() else {
+            return Ok((self.reconstruct_full_config().await, None));
+        };
+        let route = context
+            .prepare_turn_for_role(
+                self.session_info.id.0.as_ref(),
+                "compaction",
+                logical_turn_id,
+            )
+            .map_err(|error| {
+                acp::Error::internal_error().data(serde_json::json!({
+                    "code": "agentmesh360_provider_route_required",
+                    "role": "compaction",
+                    "message": error.to_string(),
+                }))
+            })?;
+        let sampling_config = route.sampler_config_snapshot().map_err(|error| {
+            acp::Error::internal_error().data(serde_json::json!({
+                "code": "agentmesh360_provider_route_required",
+                "role": "compaction",
+                "message": error.to_string(),
+            }))
+        })?;
+        Ok((sampling_config, Some(route)))
+    }
+
     /// Two-pass active for this session: flag resolved on at build AND not an
     /// agent that keeps its single short self-summary.
     pub(crate) fn two_pass_active(&self) -> bool {
@@ -171,17 +217,12 @@ impl SessionActor {
     /// held across `.await`). Prefire is `spawn_local` on the same LocalSet as
     /// the turn loop; a long-lived borrow would race with turn/compact/cancel
     /// and panic on double-borrow.
-    async fn two_pass_sample(&self, history: Vec<ConversationItem>) -> Option<CompactOutput> {
-        let sampling_config = self.reconstruct_full_config().await;
-        let client = match self.prepare_chat_completion(false).await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(
-                    error = % e, "two_pass: failed to prepare sampling client"
-                );
-                return None;
-            }
-        };
+    async fn two_pass_sample(
+        &self,
+        history: Vec<ConversationItem>,
+        sampling_config: xai_grok_sampler::SamplerConfig,
+        product_route: Option<crate::agentmesh360::ProductTurnRoute>,
+    ) -> Option<CompactOutput> {
         let tool_defs = self.prepare_tool_definitions().await;
         let tools = self.turn_base_tool_specs(&tool_defs);
         let (hosted_tools, wall_clock_budget_secs) = {
@@ -197,19 +238,48 @@ impl SessionActor {
                 agent.compaction_policy().wall_clock_budget_secs,
             )
         };
-        match generate_session_compact(
-            history,
-            tools,
-            hosted_tools,
-            client,
-            self.session_info.id.clone(),
-            &sampling_config,
-            self.inference_idle_timeout,
-            wall_clock_budget_secs,
-            self.compaction.tool_choice,
-        )
-        .await
-        {
+        let sampler = match product_route {
+            Some(route) => {
+                crate::session::helpers::full_replace_compaction::ShellCompactionSampler::new_product(
+                    false,
+                    None,
+                    tools,
+                    hosted_tools,
+                    self.sampler_handle.clone(),
+                    route,
+                    self.session_info.id.clone(),
+                    sampling_config,
+                    self.inference_idle_timeout,
+                    wall_clock_budget_secs,
+                    self.compaction.tool_choice,
+                )
+            }
+            None => {
+                let client = match self.prepare_chat_completion(false).await {
+                    Ok(client) => client,
+                    Err(error) => {
+                        tracing::warn!(
+                            error = %error,
+                            "two_pass: failed to prepare sampling client"
+                        );
+                        return None;
+                    }
+                };
+                crate::session::helpers::full_replace_compaction::ShellCompactionSampler::new(
+                    false,
+                    None,
+                    tools,
+                    hosted_tools,
+                    client,
+                    self.session_info.id.clone(),
+                    sampling_config,
+                    self.inference_idle_timeout,
+                    wall_clock_budget_secs,
+                    self.compaction.tool_choice,
+                )
+            }
+        };
+        match sampler.sample_history(history).await {
             Ok(out) => Some(out),
             Err(e) => {
                 tracing::warn!(error = ? e, "two_pass: summarization sample failed");
@@ -291,15 +361,23 @@ impl SessionActor {
         if split.prefix.is_empty() || split.tail.is_empty() {
             return PrefireOutcome::EmptySplit.into();
         }
-        let sampling_cfg = self.chat_state_handle.get_sampling_config().await;
-        let strips = sampling_cfg
-            .as_ref()
-            .map(|c| c.api_backend == ApiBackend::Messages)
-            .unwrap_or(false);
-        let model_slug = sampling_cfg
-            .as_ref()
-            .map(|c| c.model.to_string())
-            .unwrap_or_default();
+        let logical_turn_id = self.compaction_logical_turn_id();
+        let (sampling_config, product_route) = match self
+            .compaction_sampling_config_and_route(&logical_turn_id)
+            .await
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                tracing::warn!(
+                    error = ?error,
+                    role = "compaction",
+                    "two_pass: product compaction route unavailable"
+                );
+                return PrefireOutcome::SampleFailed.into();
+            }
+        };
+        let strips = sampling_config.api_backend == ApiBackend::Messages;
+        let model_slug = sampling_config.model.to_string();
         let prefix_prepared =
             prepare_conversation_for_verbatim_summarization(split.prefix.to_vec(), strips);
         let prefix_est_tokens = prefix_prepared
@@ -309,7 +387,9 @@ impl SessionActor {
         let prompt = build_two_pass_compaction_prompt(None);
         let pass1_history = build_two_pass_pass1_history(&prefix_prepared, &prompt);
         let started = std::time::Instant::now();
-        let out = self.two_pass_sample(pass1_history).await;
+        let out = self
+            .two_pass_sample(pass1_history, sampling_config, product_route)
+            .await;
         let pass1_latency_ms = started.elapsed().as_millis() as u64;
         let attempted = |outcome: PrefireOutcome, note1_chars: Option<usize>| PrefirePass1Run {
             outcome,
@@ -357,7 +437,7 @@ impl SessionActor {
     async fn try_two_pass_pass2_apply(
         &self,
         user_context: Option<&str>,
-        strips_reasoning: bool,
+        logical_turn_id: &str,
     ) -> Option<CompactOutput> {
         if !self.two_pass_active() {
             return None;
@@ -379,12 +459,21 @@ impl SessionActor {
         }
         let cache = self.compaction.prefire.take()?;
         let live = self.chat_state_handle.get_conversation().await;
-        let model_slug = self
-            .chat_state_handle
-            .get_sampling_config()
+        let (sampling_config, product_route) = match self
+            .compaction_sampling_config_and_route(logical_turn_id)
             .await
-            .map(|c| c.model.to_string())
-            .unwrap_or_default();
+        {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                tracing::warn!(
+                    error = ?error,
+                    role = "compaction",
+                    "two_pass: product compaction route unavailable"
+                );
+                return None;
+            }
+        };
+        let model_slug = sampling_config.model.to_string();
         if cache.prefix_len == 0
             || cache.prefix_len > live.len()
             || cache.model_slug != model_slug
@@ -399,13 +488,17 @@ impl SessionActor {
         }
         let prefix = &live[..cache.prefix_len];
         let tail = &live[cache.prefix_len..];
-        let prepared_tail =
-            prepare_conversation_for_verbatim_summarization(tail.to_vec(), strips_reasoning);
+        let prepared_tail = prepare_conversation_for_verbatim_summarization(
+            tail.to_vec(),
+            sampling_config.api_backend == ApiBackend::Messages,
+        );
         let prompt = build_two_pass_compaction_prompt(user_context);
         let pass2_history =
             build_two_pass_pass2_history(prefix, &prepared_tail, &cache.note1, &prompt);
         let started = std::time::Instant::now();
-        let mut out = self.two_pass_sample(pass2_history).await?;
+        let mut out = self
+            .two_pass_sample(pass2_history, sampling_config, product_route)
+            .await?;
         if is_degenerate_summary(&out.content) {
             tracing::Span::current().record("compaction_prefire_stale", true);
             tracing::info!(
@@ -613,14 +706,15 @@ impl SessionActor {
             .unwrap_or(DEFAULT_CONTEXT_WINDOW);
         self.maybe_pre_compaction_flush(total_tokens, context_window, "pre_compaction")
             .await;
-        if let Err(e) = self
+        let result = self
             .run_compact_inner(
                 user_context,
                 None,
                 xai_grok_telemetry::events::CompactionTrigger::Manual,
             )
-            .await
-        {
+            .await;
+        self.compaction.prefire.clear_logical_turn_id();
+        if let Err(e) = result {
             let span = tracing::Span::current();
             span.record("success", false);
             span.record("error", e.to_string().as_str());
@@ -815,6 +909,10 @@ impl SessionActor {
         auto_continue: Option<crate::extensions::notification::AutoContinueInfo>,
         trigger: xai_grok_telemetry::events::CompactionTrigger,
     ) -> Result<(), acp::Error> {
+        let logical_turn_id = self.compaction_logical_turn_id();
+        let (sampling_config, product_compaction_route) = self
+            .compaction_sampling_config_and_route(&logical_turn_id)
+            .await?;
         let tokens_before = self.chat_state_handle.get_total_tokens().await;
         tracing::Span::current().record("compaction_tokens_before", tokens_before as i64);
         self.signals_handle().record_compaction(tokens_before);
@@ -822,11 +920,11 @@ impl SessionActor {
             xai_grok_telemetry::events::CompactionTrigger::Manual => "manual",
             xai_grok_telemetry::events::CompactionTrigger::Auto => "auto",
         };
-        let sampling_config = self.chat_state_handle.get_sampling_config().await;
-        let context_window = sampling_config
-            .as_ref()
-            .map(|c| c.context_window.get())
-            .unwrap_or(DEFAULT_CONTEXT_WINDOW);
+        let context_window = if sampling_config.context_window == 0 {
+            DEFAULT_CONTEXT_WINDOW
+        } else {
+            sampling_config.context_window
+        };
         {
             let span = tracing::Span::current();
             let trigger_pct = if context_window == 0 {
@@ -841,11 +939,8 @@ impl SessionActor {
             );
             span.record("compaction_trigger", trigger_str);
         }
-        let summary_strips_reasoning = sampling_config
-            .as_ref()
-            .map(|c| c.api_backend == ApiBackend::Messages)
-            .unwrap_or(false);
-        let model_id = sampling_config.map(|c| c.model).unwrap_or_default();
+        let summary_strips_reasoning = sampling_config.api_backend == ApiBackend::Messages;
+        let model_id = sampling_config.model.clone();
         let compaction = xai_grok_telemetry::events::CompactionScope::begin(
             trigger,
             tokens_before,
@@ -929,8 +1024,6 @@ impl SessionActor {
             return Err(acp::Error::internal_error()
                 .data("Compaction failed: no system message in simplified conversation"));
         }
-        let sampling_config = self.reconstruct_full_config().await;
-        let sampling_client = self.prepare_chat_completion(false).await?;
         let use_backend_search =
             self.agent.borrow().backend_search_enabled() && self.supports_backend_search.get();
         let effective_tool_defs: Vec<xai_grok_sampling_types::ToolDefinition> = self
@@ -990,18 +1083,38 @@ impl SessionActor {
             .borrow()
             .compaction_policy()
             .wall_clock_budget_secs;
-        let sampler = crate::session::helpers::full_replace_compaction::ShellCompactionSampler::new(
-            use_short_prompt,
-            user_context.clone(),
-            compaction_tools.clone(),
-            compaction_hosted_tools.clone(),
-            sampling_client,
-            self.session_info.id.clone(),
-            sampling_config.clone(),
-            self.inference_idle_timeout,
-            wall_clock_budget_secs,
-            self.compaction.tool_choice,
-        );
+        let sampler = match product_compaction_route {
+            Some(route) => {
+                crate::session::helpers::full_replace_compaction::ShellCompactionSampler::new_product(
+                    use_short_prompt,
+                    user_context.clone(),
+                    compaction_tools.clone(),
+                    compaction_hosted_tools.clone(),
+                    self.sampler_handle.clone(),
+                    route,
+                    self.session_info.id.clone(),
+                    sampling_config.clone(),
+                    self.inference_idle_timeout,
+                    wall_clock_budget_secs,
+                    self.compaction.tool_choice,
+                )
+            }
+            None => {
+                let sampling_client = self.prepare_chat_completion(false).await?;
+                crate::session::helpers::full_replace_compaction::ShellCompactionSampler::new(
+                    use_short_prompt,
+                    user_context.clone(),
+                    compaction_tools.clone(),
+                    compaction_hosted_tools.clone(),
+                    sampling_client,
+                    self.session_info.id.clone(),
+                    sampling_config.clone(),
+                    self.inference_idle_timeout,
+                    wall_clock_budget_secs,
+                    self.compaction.tool_choice,
+                )
+            }
+        };
         let observer =
             crate::session::helpers::full_replace_compaction::ShellFullReplaceObserver::new(
                 trigger,
@@ -1019,7 +1132,7 @@ impl SessionActor {
         let mut request_turns = simplified_messages.clone();
         let mut input_overflow_rejections: u32 = 0;
         let two_pass_output = self
-            .try_two_pass_pass2_apply(user_context.as_deref(), summary_strips_reasoning)
+            .try_two_pass_pass2_apply(user_context.as_deref(), &logical_turn_id)
             .await;
         let mut compact_summary: Option<String> =
             two_pass_output.as_ref().map(|o| o.content.clone());
@@ -1960,6 +2073,7 @@ impl SessionActor {
                 xai_grok_telemetry::events::CompactionTrigger::Auto,
             )
             .await;
+        self.compaction.prefire.clear_logical_turn_id();
         let elapsed_ms = compact_start.elapsed().as_millis() as i64;
         match result {
             Ok(()) => {

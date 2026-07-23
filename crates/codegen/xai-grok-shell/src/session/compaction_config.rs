@@ -72,6 +72,11 @@ pub struct PrefireState {
     /// compaction fires before prefire finished, so a still-running pass-1 is
     /// used rather than discarded for a full single-pass.
     handle: RefCell<Option<tokio::task::JoinHandle<()>>>,
+    /// Stable, non-secret identity shared by every sampling stage in one
+    /// logical compaction. Product Sessions use it to keep speculative
+    /// pass-1, pass-2, retries, and single-pass fallback on one immutable
+    /// `compaction` Binding and one idempotent Turn Route record.
+    logical_turn_id: RefCell<Option<String>>,
 }
 
 impl PrefireState {
@@ -114,10 +119,27 @@ impl PrefireState {
         self.cache.borrow_mut().take()
     }
 
+    pub fn logical_turn_id_or_insert_with(&self, create: impl FnOnce() -> String) -> String {
+        if let Some(existing) = self.logical_turn_id.borrow().as_ref() {
+            return existing.clone();
+        }
+        let logical_turn_id = create();
+        self.logical_turn_id.replace(Some(logical_turn_id.clone()));
+        logical_turn_id
+    }
+
+    /// Finish the current logical compaction. Network receipts and credential
+    /// leases are owned by the sampling callers; this runtime state retains
+    /// only the non-secret logical id.
+    pub fn clear_logical_turn_id(&self) {
+        self.logical_turn_id.replace(None);
+    }
+
     /// Drop any cached async pass-1 result (invalidation: model switch, rewind,
     /// apply, edits).
     pub fn clear(&self) {
         self.cache.replace(None);
+        self.clear_logical_turn_id();
     }
 
     pub fn has_cache(&self) -> bool {

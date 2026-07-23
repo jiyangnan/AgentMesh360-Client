@@ -39,8 +39,18 @@ use xai_chat_state::compaction_utils::{
 
 use crate::sampling::Client as OaiCompatClient;
 use crate::session::helpers::session_compact::{
-    CompactFailure, CompactOutput, build_compaction_chat_history, generate_session_compact,
+    CompactFailure, CompactOutput, build_compaction_chat_history,
+    build_compaction_conversation_request, classify_sampling_error,
+    compact_output_from_collected_response, generate_session_compact,
 };
+
+enum ShellCompactionTransport {
+    Direct(OaiCompatClient),
+    Product {
+        sampler_handle: xai_grok_sampler::SamplerHandle,
+        route: Mutex<crate::agentmesh360::ProductTurnRoute>,
+    },
+}
 
 /// Wraps `generate_session_compact` as the shared engine's
 /// [`CompactionSampler`] for grok-build's full-replace pass.
@@ -61,7 +71,7 @@ pub(crate) struct ShellCompactionSampler {
     user_context: Option<String>,
     tools: Vec<ToolSpec>,
     hosted_tools: Vec<HostedTool>,
-    client: OaiCompatClient,
+    transport: ShellCompactionTransport,
     session_id: acp::SessionId,
     sampling_config: SamplingConfig,
     /// Per-chunk idle timeout forwarded to `generate_session_compact`: a stalled
@@ -95,7 +105,39 @@ impl ShellCompactionSampler {
             user_context,
             tools,
             hosted_tools,
-            client,
+            transport: ShellCompactionTransport::Direct(client),
+            session_id,
+            sampling_config,
+            idle_timeout,
+            wall_clock_budget_secs,
+            tool_choice,
+            last_success: Mutex::new(None),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_product(
+        use_short_prompt: bool,
+        user_context: Option<String>,
+        tools: Vec<ToolSpec>,
+        hosted_tools: Vec<HostedTool>,
+        sampler_handle: xai_grok_sampler::SamplerHandle,
+        route: crate::agentmesh360::ProductTurnRoute,
+        session_id: acp::SessionId,
+        sampling_config: SamplingConfig,
+        idle_timeout: Duration,
+        wall_clock_budget_secs: u64,
+        tool_choice: crate::util::config::CompactionToolChoice,
+    ) -> Self {
+        Self {
+            use_short_prompt,
+            user_context,
+            tools,
+            hosted_tools,
+            transport: ShellCompactionTransport::Product {
+                sampler_handle,
+                route: Mutex::new(route),
+            },
             session_id,
             sampling_config,
             idle_timeout,
@@ -108,6 +150,90 @@ impl ShellCompactionSampler {
     /// Take the [`CompactOutput`] of the most recent successful sample, if any.
     pub(crate) fn take_last_success(&self) -> Option<CompactOutput> {
         self.last_success.lock().unwrap().take()
+    }
+
+    pub(crate) async fn sample_history(
+        &self,
+        chat_history: Vec<ConversationItem>,
+    ) -> Result<CompactOutput, CompactFailure> {
+        match &self.transport {
+            ShellCompactionTransport::Direct(client) => {
+                generate_session_compact(
+                    chat_history,
+                    self.tools.clone(),
+                    self.hosted_tools.clone(),
+                    client.clone(),
+                    self.session_id.clone(),
+                    &self.sampling_config,
+                    self.idle_timeout,
+                    self.wall_clock_budget_secs,
+                    self.tool_choice,
+                )
+                .await
+            }
+            ShellCompactionTransport::Product {
+                sampler_handle,
+                route,
+            } => {
+                let pending = {
+                    let mut route = route.lock().map_err(|_| {
+                        CompactFailure::Deterministic(
+                            acp::Error::internal_error()
+                                .data("AgentMesh360 compaction route lock is poisoned"),
+                        )
+                    })?;
+                    route
+                        .submit(|config| {
+                            let request = build_compaction_conversation_request(
+                                chat_history,
+                                self.tools.clone(),
+                                self.hosted_tools.clone(),
+                                &self.session_id,
+                                &config,
+                                self.tool_choice,
+                            );
+                            sampler_handle
+                                .begin_side_query_and_collect_with_config(
+                                    xai_grok_sampler::RequestId::random(),
+                                    request,
+                                    config,
+                                )
+                                .map_err(anyhow::Error::new)
+                        })
+                        .map_err(|error| {
+                            CompactFailure::Deterministic(acp::Error::internal_error().data(
+                                serde_json::json!({
+                                    "code": "agentmesh360_provider_route_required",
+                                    "role": "compaction",
+                                    "message": error.to_string(),
+                                }),
+                            ))
+                        })?
+                };
+                let collected = if self.wall_clock_budget_secs > 0 {
+                    match tokio::time::timeout(
+                        Duration::from_secs(self.wall_clock_budget_secs),
+                        pending.collect(),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => {
+                            return Err(CompactFailure::Transient(
+                                acp::Error::internal_error().data(format!(
+                                    "compact failed: exceeded wall-clock budget {}s (runaway generation)",
+                                    self.wall_clock_budget_secs
+                                )),
+                            ));
+                        }
+                    }
+                } else {
+                    pending.collect().await
+                };
+                let (response, metrics) = collected.map_err(classify_sampling_error)?;
+                compact_output_from_collected_response(response, metrics)
+            }
+        }
     }
 }
 
@@ -130,19 +256,7 @@ impl CompactionSampler for ShellCompactionSampler {
             self.use_short_prompt,
         );
 
-        match generate_session_compact(
-            chat_history,
-            self.tools.clone(),
-            self.hosted_tools.clone(),
-            self.client.clone(),
-            self.session_id.clone(),
-            &self.sampling_config,
-            self.idle_timeout,
-            self.wall_clock_budget_secs,
-            self.tool_choice,
-        )
-        .await
-        {
+        match self.sample_history(chat_history).await {
             Ok(output) => {
                 let response = output.content.clone();
                 *self.last_success.lock().unwrap() = Some(output);

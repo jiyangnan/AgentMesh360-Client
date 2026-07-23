@@ -90,8 +90,7 @@ impl LeasedSamplingRoute {
         (self.sampler_config, self.binding)
     }
 
-    #[cfg(test)]
-    fn sampler_config(&self) -> &SamplerConfig {
+    pub(super) fn sampler_config(&self) -> &SamplerConfig {
         &self.sampler_config
     }
 }
