@@ -323,6 +323,229 @@ fn drained_recap_unavailable(
     saw
 }
 
+async fn make_product_recap_actor(
+    session_id: String,
+    route_context: crate::agentmesh360::turn_submission::AgentMeshSessionRouteContext,
+) -> (
+    SessionActor,
+    tokio::sync::mpsc::UnboundedReceiver<PersistenceMsg>,
+) {
+    let (gateway_tx, _gateway_rx) =
+        tokio::sync::mpsc::unbounded_channel::<xai_acp_lib::AcpClientMessage>();
+    let (persistence_tx, persistence_rx) = tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
+    let mut actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
+    actor.session_info.id = acp::SessionId::new(session_id);
+    actor.startup_hints.agentmesh360_route = Some(route_context);
+    actor.chat_state_handle.replace_conversation(vec![
+        ConversationItem::system("you are a durable coding agent"),
+        ConversationItem::user("wire recap to the selected Provider"),
+        ConversationItem::assistant("the implementation is ready for review"),
+    ]);
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    actor.sampler_handle = xai_grok_sampler::SamplerActor::spawn(
+        xai_grok_sampler::SamplerConfig::default(),
+        xai_grok_sampler::RetryPolicy::default(),
+        event_tx,
+    );
+    (actor, persistence_rx)
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_recap_uses_dedicated_role_and_fails_closed() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("recap route state home");
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_aux_test_provider(
+                    "We wired the durable recap route through the selected Provider.",
+                    "recap-model",
+                )
+                .await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("recap-bootstrap-token")
+                .await
+                .expect("grant AgentMesh360 recap access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "main-model",
+                    "sentinel-recap-main-secret",
+                )
+                .expect("configure product main route");
+            let recap_profile_id = runtime
+                .configure_role_assignment_for_host_test(
+                    41,
+                    "job-agent",
+                    "recap",
+                    &provider_base_url,
+                    "recap-model",
+                    "sentinel-recap-role-secret",
+                )
+                .expect("configure dedicated recap route");
+            let (actor, mut persistence_rx) =
+                make_product_recap_actor(session_id.clone(), route_context).await;
+            let before = actor.chat_state_handle.get_conversation().await;
+
+            actor.handle_recap(false).await;
+            let (authorization, request_body) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("recap Provider request timed out")
+                    .expect("recap Provider request capture");
+            assert_eq!(authorization, "Bearer sentinel-recap-role-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("recap Provider request JSON")["model"],
+                "recap-model"
+            );
+            assert!(request_body.contains("Write ONE sentence recap body"));
+            assert!(!request_body.contains("sentinel-recap-main-secret"));
+            assert!(!request_body.contains("recap-bootstrap-token"));
+            assert_eq!(
+                serde_json::to_string(&before).unwrap(),
+                serde_json::to_string(&actor.chat_state_handle.get_conversation().await).unwrap(),
+                "product recap must remain display-only"
+            );
+            assert!(
+                drained_session_recap(&mut persistence_rx),
+                "successful product recap must emit SessionRecap"
+            );
+
+            let routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "recap")
+                .expect("recap Turn Routes");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].model_id, "recap-model");
+            assert!(routes[0].turn_id.starts_with("aux:recap:"));
+            assert!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "main")
+                    .expect("main Turn Routes")
+                    .is_empty(),
+                "recap side query must not create a main Turn Route"
+            );
+
+            runtime.invalidate_access_for_host_test();
+            actor.handle_recap(false).await;
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "invalid subscription must skip recap before Provider submission"
+            );
+            assert!(
+                drained_recap_unavailable(&mut persistence_rx),
+                "failed manual recap must clear the client spinner"
+            );
+
+            runtime
+                .bootstrap_for_host_test("recap-bootstrap-token-restored")
+                .await
+                .expect("restore AgentMesh360 recap access");
+            runtime
+                .remove_credential_for_host_test(41, &recap_profile_id)
+                .expect("remove recap Provider credential");
+            actor.handle_recap(false).await;
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "missing recap Vault secret must fail before Provider submission"
+            );
+            assert!(
+                drained_recap_unavailable(&mut persistence_rx),
+                "missing Vault must preserve manual recap failure semantics"
+            );
+            assert_eq!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "recap")
+                    .expect("final recap Turn Routes")
+                    .len(),
+                1,
+                "failed recap attempts must not create ghost Turn Routes"
+            );
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_recap_falls_back_to_main_assignment() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("recap fallback state home");
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_aux_test_provider(
+                    "We generated the recap with the main Provider fallback.",
+                    "fallback-main-model",
+                )
+                .await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("recap-fallback-bootstrap-token")
+                .await
+                .expect("grant recap fallback access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "fallback-main-model",
+                    "sentinel-recap-fallback-secret",
+                )
+                .expect("configure recap fallback main route");
+            let (actor, mut persistence_rx) =
+                make_product_recap_actor(session_id.clone(), route_context).await;
+
+            actor.handle_recap(false).await;
+            let (authorization, request_body) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("fallback recap Provider request timed out")
+                    .expect("fallback recap Provider request capture");
+            assert_eq!(authorization, "Bearer sentinel-recap-fallback-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("fallback recap request JSON")["model"],
+                "fallback-main-model"
+            );
+            assert!(
+                drained_session_recap(&mut persistence_rx),
+                "fallback recap must still emit SessionRecap"
+            );
+            let routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "recap")
+                .expect("fallback recap Turn Routes");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].model_id, "fallback-main-model");
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
+
 /// A manual `/recap` on a brand-new session (no main turns yet) must NOT strand
 /// the client's loading spinner: the recap gate skips before any model call, but
 /// instead of silently dropping, the shell emits `SessionRecapUnavailable` so

@@ -510,6 +510,104 @@ pub(crate) fn test_image_content() -> acp::ImageContent {
         "image/png".to_string(),
     )
 }
+
+#[cfg(test)]
+pub(crate) async fn serve_agentmesh_aux_test_core() -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind auxiliary test Core");
+    let address = listener.local_addr().expect("auxiliary test Core address");
+    let app = axum::Router::new().route(
+        "/v1/account/client-bootstrap",
+        axum::routing::get(|| async {
+            axum::Json(serde_json::json!({
+                "schema_version": 1,
+                "server_time": "2026-07-23T00:00:00Z",
+                "account": {
+                    "id": 1,
+                    "email": "auxiliary@example.com",
+                    "account_id": 41,
+                    "display_name": null,
+                    "avatar_url": null
+                },
+                "subscription": {
+                    "status": "active",
+                    "source": "monthly_pass",
+                    "plan": "monthly_pass",
+                    "period_start": "2026-07-01 00:00:00",
+                    "period_end": "2026-08-31 00:00:00",
+                    "auto_renews": false
+                },
+                "credits": {
+                    "balance": 0,
+                    "source": "monthly_pass",
+                    "expires_at": "2026-08-31 00:00:00"
+                },
+                "access": {
+                    "can_enter_client": true,
+                    "reason": "active_subscription"
+                }
+            }))
+        }),
+    );
+    let task = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{address}"), task)
+}
+
+#[cfg(test)]
+pub(crate) async fn serve_agentmesh_aux_test_provider(
+    response_text: &'static str,
+    response_model: &'static str,
+) -> (
+    String,
+    tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+    tokio::task::JoinHandle<()>,
+) {
+    use std::convert::Infallible;
+
+    use axum::http::HeaderMap;
+    use axum::response::sse::Sse;
+    use futures_util::stream;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind auxiliary test Provider");
+    let address = listener
+        .local_addr()
+        .expect("auxiliary test Provider address");
+    let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+    let app = axum::Router::new().route(
+        "/v1/responses",
+        axum::routing::post({
+            let request_tx = request_tx.clone();
+            move |headers: HeaderMap, body: String| {
+                let request_tx = request_tx.clone();
+                async move {
+                    let authorization = headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or_default()
+                        .to_owned();
+                    let _ = request_tx.send((authorization, body));
+                    let events = xai_grok_test_support::sse::responses_api_events_exact(
+                        response_text,
+                        response_model,
+                    )
+                    .into_iter()
+                    .map(Ok::<_, Infallible>);
+                    Sse::new(stream::iter(events))
+                }
+            }
+        }),
+    );
+    let task = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{address}/v1"), request_rx, task)
+}
+
 #[cfg(test)]
 pub(crate) fn set_goal_harness_for_tests(actor: &SessionActor) {
     actor

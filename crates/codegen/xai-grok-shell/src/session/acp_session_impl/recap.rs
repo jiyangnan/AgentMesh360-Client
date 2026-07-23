@@ -196,39 +196,69 @@ impl SessionActor {
         // (not on failure/empty/cancel) so auto can retry later for this turn if needed.
         let clear_in_flight = || self.recap_in_flight.set(false);
 
-        let sampling_client = match self.prepare_chat_completion(false).await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!(error = %e, "recap: failed to prepare sampling client");
-                clear_in_flight();
-                // A manual `/recap` shows a loading spinner; clear it on failure.
-                if !auto {
-                    self.emit_recap_unavailable().await;
-                }
-                return;
-            }
-        };
-
         let tag = self.reminder_wrapper_tag();
-        // Strip reasoning ONLY on the Anthropic Messages backend (it rejects
-        // thinking blocks without a `thinking` config). Every other backend
-        // keeps reasoning verbatim so the prefix matches the last turn and the
-        // provider's prefix KV cache stays warm. Mirrors compaction's
-        // `summary_strips_reasoning`.
-        let strip_reasoning =
-            sampling_client.api_backend() == crate::sampling::ApiBackend::Messages;
+        let logical_turn_id = format!("aux:recap:{}", uuid::Uuid::new_v4());
+        let (sampling_client, mut product_route, strip_reasoning, context_window, model) =
+            if self.startup_hints.agentmesh360_route.is_some() {
+                let (route, config) =
+                    match self.prepare_product_side_query_for_role("recap", &logical_turn_id) {
+                        Ok(prepared) => prepared,
+                        Err(error) => {
+                            tracing::warn!(
+                                error = %error,
+                                role = "recap",
+                                "recap: product route unavailable"
+                            );
+                            clear_in_flight();
+                            if !auto {
+                                self.emit_recap_unavailable().await;
+                            }
+                            return;
+                        }
+                    };
+                (
+                    None,
+                    Some(route),
+                    config.api_backend == crate::sampling::ApiBackend::Messages,
+                    if config.context_window == 0 {
+                        DEFAULT_CONTEXT_WINDOW
+                    } else {
+                        config.context_window
+                    },
+                    config.model,
+                )
+            } else {
+                let client = match self.prepare_chat_completion(false).await {
+                    Ok(client) => client,
+                    Err(error) => {
+                        tracing::warn!(error = %error, "recap: failed to prepare sampling client");
+                        clear_in_flight();
+                        // A manual `/recap` shows a loading spinner; clear it on failure.
+                        if !auto {
+                            self.emit_recap_unavailable().await;
+                        }
+                        return;
+                    }
+                };
+                // Ordinary Sessions retain their current ChatState model and
+                // context-window semantics.
+                let sampling_config = self.chat_state_handle.get_sampling_config().await;
+                let context_window = sampling_config
+                    .as_ref()
+                    .map(|config| config.context_window.get())
+                    .unwrap_or(DEFAULT_CONTEXT_WINDOW);
+                let model = sampling_config
+                    .map(|config| config.model)
+                    .unwrap_or_default();
+                let strip_reasoning = client.api_backend() == crate::sampling::ApiBackend::Messages;
+                (Some(client), None, strip_reasoning, context_window, model)
+            };
 
-        // Budget off the recap model's context window (today the session model).
-        // One read serves both the window and the model.
-        let sampling_config = self.chat_state_handle.get_sampling_config().await;
-        let context_window = sampling_config
-            .as_ref()
-            .map(|c| c.context_window.get())
-            .unwrap_or(DEFAULT_CONTEXT_WINDOW);
+        // Strip reasoning ONLY on the actual recap backend (Anthropic rejects
+        // thinking blocks without a top-level `thinking` config), and budget
+        // against the context window of the model that will receive the request.
         let items =
             session_recap::budget_recap_items(conversation, tag, strip_reasoning, context_window);
-
-        let model = sampling_config.map(|c| c.model).unwrap_or_default();
 
         // Leave BOTH temperature and max_output_tokens unset: the cli-chat-proxy
         // layer may inject a `thinking` budget for thinking-enabled models
@@ -255,7 +285,31 @@ impl SessionActor {
             ..Default::default()
         };
 
-        let response = match sampling_client.conversation_collect(request).await {
+        let response_result = if let Some(route) = product_route.as_mut() {
+            match route.submit(|config| {
+                self.sampler_handle
+                    .begin_side_query_and_collect_with_config(
+                        xai_grok_sampler::RequestId::random(),
+                        request,
+                        config,
+                    )
+                    .map_err(anyhow::Error::new)
+            }) {
+                Ok(pending) => pending
+                    .collect()
+                    .await
+                    .map(|(response, _metrics)| response)
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            }
+        } else {
+            sampling_client
+                .expect("ordinary recap SamplingClient exists")
+                .conversation_collect(request)
+                .await
+                .map_err(|error| error.to_string())
+        };
+        let response = match response_result {
             Ok(r) => r,
             Err(e) => {
                 tracing::warn!(error = %e, "recap: model call failed");
@@ -270,7 +324,7 @@ impl SessionActor {
                     started_at,
                     None,
                     None,
-                    Some(&e.to_string()),
+                    Some(&e),
                 );
                 clear_in_flight();
                 // A manual `/recap` shows a loading spinner; clear it on failure.

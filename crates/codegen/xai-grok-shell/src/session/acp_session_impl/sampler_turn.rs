@@ -448,27 +448,41 @@ impl SessionActor {
         }
     }
 
-    /// Route a product-Session auxiliary request through the existing
-    /// SamplerActor without broadcasting its tokens into the main ACP stream.
-    /// The returned model is the Host-bound model actually submitted. Callers
-    /// must only use this helper when the trusted startup route context exists;
-    /// ordinary Grok Sessions retain their direct SamplingClient paths.
+    /// Prepare the immutable Host route and a short-lived in-memory config
+    /// snapshot for a product auxiliary call. This does not write a Turn Route;
+    /// audit remains tied to the later actor-accepted submission.
+    pub(super) fn prepare_product_side_query_for_role(
+        &self,
+        role: &str,
+        logical_turn_id: &str,
+    ) -> anyhow::Result<(
+        crate::agentmesh360::ProductTurnRoute,
+        xai_grok_sampler::SamplerConfig,
+    )> {
+        let context = self
+            .startup_hints
+            .agentmesh360_route
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("product Session route context is unavailable"))?;
+        let route = context.prepare_turn_for_role(
+            self.session_info.id.0.as_ref(),
+            role,
+            logical_turn_id,
+        )?;
+        let sampling_config = route.sampler_config_snapshot()?;
+        Ok((route, sampling_config))
+    }
+
+    /// Prepare and submit a product auxiliary request through the existing
+    /// SamplerActor without broadcasting tokens into the main ACP stream.
+    /// Returns the Host-bound model actually submitted.
     pub(super) fn begin_product_side_query_for_role(
         &self,
         role: &str,
         logical_turn_id: &str,
         request: ConversationRequest,
     ) -> anyhow::Result<(xai_grok_sampler::PendingSamplingRequest, String)> {
-        let context = self
-            .startup_hints
-            .agentmesh360_route
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("product Session route context is unavailable"))?;
-        let mut route = context.prepare_turn_for_role(
-            self.session_info.id.0.as_ref(),
-            role,
-            logical_turn_id,
-        )?;
+        let (mut route, _) = self.prepare_product_side_query_for_role(role, logical_turn_id)?;
         route.submit(|config| {
             let model = config.model.clone();
             let pending = self

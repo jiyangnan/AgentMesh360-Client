@@ -84,100 +84,6 @@ fn has_event_with(log: &str, ty: &str, predicate: impl Fn(&serde_json::Value) ->
     })
 }
 
-async fn serve_agentmesh_laziness_test_core() -> (String, tokio::task::JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind laziness test Core");
-    let address = listener.local_addr().expect("laziness test Core address");
-    let app = axum::Router::new().route(
-        "/v1/account/client-bootstrap",
-        axum::routing::get(|| async {
-            axum::Json(serde_json::json!({
-                "schema_version": 1,
-                "server_time": "2026-07-23T00:00:00Z",
-                "account": {
-                    "id": 1,
-                    "email": "laziness@example.com",
-                    "account_id": 41,
-                    "display_name": null,
-                    "avatar_url": null
-                },
-                "subscription": {
-                    "status": "active",
-                    "source": "monthly_pass",
-                    "plan": "monthly_pass",
-                    "period_start": "2026-07-01 00:00:00",
-                    "period_end": "2026-08-31 00:00:00",
-                    "auto_renews": false
-                },
-                "credits": {
-                    "balance": 0,
-                    "source": "monthly_pass",
-                    "expires_at": "2026-08-31 00:00:00"
-                },
-                "access": {
-                    "can_enter_client": true,
-                    "reason": "active_subscription"
-                }
-            }))
-        }),
-    );
-    let task = tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
-    (format!("http://{address}"), task)
-}
-
-async fn serve_agentmesh_laziness_test_provider(
-    response_model: &'static str,
-) -> (
-    String,
-    tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
-    tokio::task::JoinHandle<()>,
-) {
-    use std::convert::Infallible;
-
-    use axum::http::HeaderMap;
-    use axum::response::sse::Sse;
-    use futures_util::stream;
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind laziness test Provider");
-    let address = listener
-        .local_addr()
-        .expect("laziness test Provider address");
-    let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
-    let app = axum::Router::new().route(
-        "/v1/responses",
-        axum::routing::post({
-            let request_tx = request_tx.clone();
-            move |headers: HeaderMap, body: String| {
-                let request_tx = request_tx.clone();
-                async move {
-                    let authorization = headers
-                        .get("authorization")
-                        .and_then(|value| value.to_str().ok())
-                        .unwrap_or_default()
-                        .to_owned();
-                    let _ = request_tx.send((authorization, body));
-                    let events = xai_grok_test_support::sse::responses_api_events_exact(
-                        r#"{"category":"not_stalled_complete","confidence":0.99,"evidence":"work is complete"}"#,
-                        response_model,
-                    )
-                    .into_iter()
-                    .map(Ok::<_, Infallible>);
-                    Sse::new(stream::iter(events))
-                }
-            }
-        }),
-    );
-    let task = tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
-    (format!("http://{address}/v1"), request_rx, task)
-}
-
 async fn make_product_laziness_actor(
     session_id: String,
     route_context: crate::agentmesh360::turn_submission::AgentMeshSessionRouteContext,
@@ -226,9 +132,13 @@ async fn product_laziness_uses_dedicated_role_and_fails_closed() {
     tokio::task::LocalSet::new()
         .run_until(async {
             let state_home = tempfile::tempdir().expect("laziness route state home");
-            let (core_base_url, core_task) = serve_agentmesh_laziness_test_core().await;
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
             let (provider_base_url, mut provider_requests, provider_task) =
-                serve_agentmesh_laziness_test_provider("laziness-model").await;
+                serve_agentmesh_aux_test_provider(
+                    r#"{"category":"not_stalled_complete","confidence":0.99,"evidence":"work is complete"}"#,
+                    "laziness-model",
+                )
+                .await;
             let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
                 state_home.path(),
                 core_base_url,
@@ -352,9 +262,13 @@ async fn product_laziness_falls_back_to_main_assignment() {
     tokio::task::LocalSet::new()
         .run_until(async {
             let state_home = tempfile::tempdir().expect("laziness fallback state home");
-            let (core_base_url, core_task) = serve_agentmesh_laziness_test_core().await;
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
             let (provider_base_url, mut provider_requests, provider_task) =
-                serve_agentmesh_laziness_test_provider("fallback-main-model").await;
+                serve_agentmesh_aux_test_provider(
+                    r#"{"category":"not_stalled_complete","confidence":0.99,"evidence":"work is complete"}"#,
+                    "fallback-main-model",
+                )
+                .await;
             let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
                 state_home.path(),
                 core_base_url,
