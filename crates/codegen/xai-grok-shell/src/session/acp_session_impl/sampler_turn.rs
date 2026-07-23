@@ -447,6 +447,42 @@ impl SessionActor {
             header_injector: Some(std::sync::Arc::new(TraceContextInjector)),
         }
     }
+
+    /// Route a product-Session auxiliary request through the existing
+    /// SamplerActor without broadcasting its tokens into the main ACP stream.
+    /// The returned model is the Host-bound model actually submitted. Callers
+    /// must only use this helper when the trusted startup route context exists;
+    /// ordinary Grok Sessions retain their direct SamplingClient paths.
+    pub(super) fn begin_product_side_query_for_role(
+        &self,
+        role: &str,
+        logical_turn_id: &str,
+        request: ConversationRequest,
+    ) -> anyhow::Result<(xai_grok_sampler::PendingSamplingRequest, String)> {
+        let context = self
+            .startup_hints
+            .agentmesh360_route
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("product Session route context is unavailable"))?;
+        let mut route = context.prepare_turn_for_role(
+            self.session_info.id.0.as_ref(),
+            role,
+            logical_turn_id,
+        )?;
+        route.submit(|config| {
+            let model = config.model.clone();
+            let pending = self
+                .sampler_handle
+                .begin_side_query_and_collect_with_config(
+                    xai_grok_sampler::RequestId::random(),
+                    request,
+                    config,
+                )
+                .map_err(anyhow::Error::new)?;
+            Ok((pending, model))
+        })
+    }
+
     /// Install auto-mode permission classifier with a live LLM side-query
     /// (laziness-classifier pattern: `prepare_chat_completion` +
     /// `conversation_collect` on a LocalSet task; channel bridges the
@@ -560,9 +596,7 @@ impl SessionActor {
                         ..ConversationRequest::default()
                     };
                     let timeout = std::time::Duration::from_millis(TIMEOUT_MS);
-                    let response = if let Some(context) =
-                        session.startup_hints.agentmesh360_route.as_ref()
-                    {
+                    let response = if session.startup_hints.agentmesh360_route.is_some() {
                         let logical_turn_id = session
                             .current_prompt_id
                             .lock()
@@ -571,23 +605,12 @@ impl SessionActor {
                             .unwrap_or_else(|| {
                                 format!("aux:permission_classifier:{}", uuid::Uuid::new_v4())
                             });
-                        let mut route = context
-                            .prepare_turn_for_role(
-                                session.session_info.id.0.as_ref(),
+                        let (pending, _) = session
+                            .begin_product_side_query_for_role(
                                 "permission_classifier",
                                 &logical_turn_id,
+                                request,
                             )
-                            .map_err(|error| error.to_string())?;
-                        let request_id = xai_grok_sampler::RequestId::random();
-                        let pending = route
-                            .submit(|config| {
-                                session
-                                    .sampler_handle
-                                    .begin_side_query_and_collect_with_config(
-                                        request_id, request, config,
-                                    )
-                                    .map_err(anyhow::Error::new)
-                            })
                             .map_err(|error| error.to_string())?;
                         tokio::time::timeout(timeout, pending.collect())
                             .await

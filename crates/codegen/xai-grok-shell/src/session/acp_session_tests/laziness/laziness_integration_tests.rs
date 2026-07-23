@@ -1,18 +1,14 @@
-//! End-to-end tests for `maybe_fire_laziness_check`. Drive the
-//! actor against a non-listening `http://localhost` base URL —
-//! the unified path now uses `prepare_chat_completion().conversation_collect()`,
-//! which surfaces the connection failure as the
-//! `ClassifierError` abort. Observe state mutations + the
-//! per-test `events.jsonl`.
+//! End-to-end tests for `maybe_fire_laziness_check`. Ordinary actor
+//! fixtures use a non-listening `http://localhost` base URL so direct
+//! collection surfaces `ClassifierError`; product fixtures use local
+//! Core/Provider mocks to exercise Host-bound side-query routing.
+//! State mutations and `events.jsonl` remain the observable outputs.
 //!
-//! Tests that depend on a *successful* classifier response are
-//! out of scope here — they'd require a real `SamplerActor`
-//! responding with a stubbed verdict, which is heavyweight. The
-//! happy-path classifier→nudge dispatch is covered by the unit
-//! tests on `evaluate_laziness` and `build_laziness_nudge`. The
-//! integration coverage here pins the actor-level orchestration:
-//! enabled/disabled gating, the two generation-counter abort
-//! arms, idle re-check, sampler-error pathway, and reset-on-switch.
+//! Happy-path nudge construction remains covered by pure tests on
+//! `evaluate_laziness` and `build_laziness_nudge`. This module pins
+//! actor orchestration, cancellation gates, sampler errors, product
+//! role/fallback selection, failure-before-network, and model-switch
+//! reset behavior.
 use super::support::*;
 use super::*;
 use crate::agent::config::{LazinessDetectorPerModelConfig, ModelInfo};
@@ -86,6 +82,321 @@ fn has_event_with(log: &str, ty: &str, predicate: impl Fn(&serde_json::Value) ->
         };
         v.get("type").and_then(|t| t.as_str()) == Some(ty) && predicate(&v)
     })
+}
+
+async fn serve_agentmesh_laziness_test_core() -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind laziness test Core");
+    let address = listener.local_addr().expect("laziness test Core address");
+    let app = axum::Router::new().route(
+        "/v1/account/client-bootstrap",
+        axum::routing::get(|| async {
+            axum::Json(serde_json::json!({
+                "schema_version": 1,
+                "server_time": "2026-07-23T00:00:00Z",
+                "account": {
+                    "id": 1,
+                    "email": "laziness@example.com",
+                    "account_id": 41,
+                    "display_name": null,
+                    "avatar_url": null
+                },
+                "subscription": {
+                    "status": "active",
+                    "source": "monthly_pass",
+                    "plan": "monthly_pass",
+                    "period_start": "2026-07-01 00:00:00",
+                    "period_end": "2026-08-31 00:00:00",
+                    "auto_renews": false
+                },
+                "credits": {
+                    "balance": 0,
+                    "source": "monthly_pass",
+                    "expires_at": "2026-08-31 00:00:00"
+                },
+                "access": {
+                    "can_enter_client": true,
+                    "reason": "active_subscription"
+                }
+            }))
+        }),
+    );
+    let task = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{address}"), task)
+}
+
+async fn serve_agentmesh_laziness_test_provider(
+    response_model: &'static str,
+) -> (
+    String,
+    tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+    tokio::task::JoinHandle<()>,
+) {
+    use std::convert::Infallible;
+
+    use axum::http::HeaderMap;
+    use axum::response::sse::Sse;
+    use futures_util::stream;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind laziness test Provider");
+    let address = listener
+        .local_addr()
+        .expect("laziness test Provider address");
+    let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+    let app = axum::Router::new().route(
+        "/v1/responses",
+        axum::routing::post({
+            let request_tx = request_tx.clone();
+            move |headers: HeaderMap, body: String| {
+                let request_tx = request_tx.clone();
+                async move {
+                    let authorization = headers
+                        .get("authorization")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or_default()
+                        .to_owned();
+                    let _ = request_tx.send((authorization, body));
+                    let events = xai_grok_test_support::sse::responses_api_events_exact(
+                        r#"{"category":"not_stalled_complete","confidence":0.99,"evidence":"work is complete"}"#,
+                        response_model,
+                    )
+                    .into_iter()
+                    .map(Ok::<_, Infallible>);
+                    Sse::new(stream::iter(events))
+                }
+            }
+        }),
+    );
+    let task = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{address}/v1"), request_rx, task)
+}
+
+async fn make_product_laziness_actor(
+    session_id: String,
+    route_context: crate::agentmesh360::turn_submission::AgentMeshSessionRouteContext,
+) -> (Arc<SessionActor>, tempfile::TempDir) {
+    let tmp = tempfile::TempDir::new().expect("laziness event tempdir");
+    let (gateway_tx, _gateway_rx) =
+        tokio::sync::mpsc::unbounded_channel::<xai_acp_lib::AcpClientMessage>();
+    let (persistence_tx, _persistence_rx) =
+        tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
+    let mut actor = create_test_actor(0, 256_000, 85, gateway_tx, persistence_tx).await;
+    actor.events = crate::session::events::EventTracker::new(tmp.path());
+    let mut entry = detector_entry(true, 1, Some(0));
+    entry.info.laziness_detector = LazinessDetectorPerModelConfig {
+        enabled: true,
+        max_nudges_per_session: 1,
+        idle_threshold_ms: Some(0),
+        min_confidence: None,
+        include_reasoning: None,
+    };
+    actor
+        .models_manager
+        .insert_test_entry("test-laziness-model", entry);
+    actor
+        .models_manager
+        .set_current_model_id(acp::ModelId::new("test-laziness-model"));
+    actor.session_info.id = acp::SessionId::new(session_id);
+    actor.startup_hints.agentmesh360_route = Some(route_context);
+    actor
+        .chat_state_handle
+        .push_user_message(ConversationItem::user("Finish the assigned work."));
+    actor
+        .chat_state_handle
+        .push_assistant_response(ConversationItem::assistant("The work is complete."));
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    actor.sampler_handle = xai_grok_sampler::SamplerActor::spawn(
+        xai_grok_sampler::SamplerConfig::default(),
+        xai_grok_sampler::RetryPolicy::default(),
+        event_tx,
+    );
+    (Arc::new(actor), tmp)
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_laziness_uses_dedicated_role_and_fails_closed() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("laziness route state home");
+            let (core_base_url, core_task) = serve_agentmesh_laziness_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_laziness_test_provider("laziness-model").await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("laziness-bootstrap-token")
+                .await
+                .expect("grant AgentMesh360 test access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "main-model",
+                    "sentinel-laziness-main-secret",
+                )
+                .expect("configure product main route");
+            let laziness_profile_id = runtime
+                .configure_role_assignment_for_host_test(
+                    41,
+                    "job-agent",
+                    "laziness",
+                    &provider_base_url,
+                    "laziness-model",
+                    "sentinel-laziness-role-secret",
+                )
+                .expect("configure dedicated laziness route");
+            let (actor, events_tmp) =
+                make_product_laziness_actor(session_id.clone(), route_context).await;
+
+            SessionActor::maybe_fire_laziness_check(actor.clone()).await;
+            let (authorization, request_body) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("laziness Provider request timed out")
+                    .expect("laziness Provider request capture");
+            assert_eq!(authorization, "Bearer sentinel-laziness-role-secret");
+            let request_json = serde_json::from_str::<serde_json::Value>(&request_body)
+                .expect("laziness Provider request JSON");
+            assert_eq!(request_json["model"], "laziness-model");
+            assert!(request_body.contains("strict JSON-emitting classifier"));
+            assert!(!request_body.contains("sentinel-laziness-main-secret"));
+            assert!(!request_body.contains("laziness-bootstrap-token"));
+
+            let routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "laziness")
+                .expect("laziness Turn Routes");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].model_id, "laziness-model");
+            assert!(routes[0].turn_id.starts_with("aux:laziness:"));
+            assert!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "main")
+                    .expect("main Turn Routes")
+                    .is_empty(),
+                "laziness side query must not create a main Turn Route"
+            );
+
+            runtime.invalidate_access_for_host_test();
+            SessionActor::maybe_fire_laziness_check(actor.clone()).await;
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "invalid subscription must skip laziness before Provider submission"
+            );
+
+            runtime
+                .bootstrap_for_host_test("laziness-bootstrap-token-restored")
+                .await
+                .expect("restore AgentMesh360 test access");
+            runtime
+                .remove_credential_for_host_test(41, &laziness_profile_id)
+                .expect("remove laziness Provider credential");
+            SessionActor::maybe_fire_laziness_check(actor.clone()).await;
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "missing laziness Vault secret must fail before Provider submission"
+            );
+            assert_eq!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "laziness")
+                    .expect("final laziness Turn Routes")
+                    .len(),
+                1,
+                "failed laziness fires must not create ghost Turn Routes"
+            );
+            drop(Arc::try_unwrap(actor).ok().expect("release laziness actor"));
+            let log = events_log(&events_tmp);
+            let classifier_error_aborts = log
+                .lines()
+                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+                .filter(|event| {
+                    event["type"] == "laziness_classifier_aborted"
+                        && event["reason"]
+                            == crate::session::events::LAZINESS_ABORT_CLASSIFIER_ERROR
+                })
+                .count();
+            assert_eq!(
+                classifier_error_aborts, 2,
+                "subscription and Vault failures must both skip via classifier_error"
+            );
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_laziness_falls_back_to_main_assignment() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("laziness fallback state home");
+            let (core_base_url, core_task) = serve_agentmesh_laziness_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_laziness_test_provider("fallback-main-model").await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("laziness-fallback-bootstrap-token")
+                .await
+                .expect("grant fallback AgentMesh360 access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "fallback-main-model",
+                    "sentinel-laziness-fallback-secret",
+                )
+                .expect("configure fallback main route");
+            let (actor, _events_tmp) =
+                make_product_laziness_actor(session_id.clone(), route_context).await;
+
+            SessionActor::maybe_fire_laziness_check(actor).await;
+            let (authorization, request_body) =
+                tokio::time::timeout(std::time::Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("fallback laziness Provider request timed out")
+                    .expect("fallback laziness Provider request capture");
+            assert_eq!(authorization, "Bearer sentinel-laziness-fallback-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("fallback laziness request JSON")["model"],
+                "fallback-main-model"
+            );
+            let routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "laziness")
+                .expect("fallback laziness Turn Routes");
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].model_id, "fallback-main-model");
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
 }
 
 #[tokio::test(flavor = "current_thread")]

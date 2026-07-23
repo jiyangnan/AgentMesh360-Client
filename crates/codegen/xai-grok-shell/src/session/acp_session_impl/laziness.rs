@@ -19,8 +19,8 @@ pub(crate) struct LazinessFireMeta {
 pub(crate) enum LazinessFireOutcome {
     /// User input, model switch, timeout, or sampler/HTTP failure
     /// before a verdict was produced. `error_detail` is `Some` only
-    /// for `ClassifierError` reasons (sampler/HTTP failure or
-    /// `prepare_chat_completion` failure).
+    /// for `ClassifierError` reasons (route preparation,
+    /// sampler/HTTP, or `prepare_chat_completion` failure).
     Aborted {
         reason: LazinessAbortReason,
         error_detail: Option<String>,
@@ -320,9 +320,10 @@ impl SessionActor {
     /// nudge cap (default 0). See plan §3 "Layer 3 — LazinessDetector".
     ///
     /// **Invisibility contract** (mirrors the memory-flush path):
-    /// the sampler call goes through `prepare_chat_completion().conversation_collect()`
-    /// — a side-channel direct-HTTP call that does NOT publish events
-    /// on the per-session shared sampler channel. The client never
+    /// ordinary Sessions use direct `conversation_collect`; product
+    /// Sessions use the shared SamplerActor's non-broadcast side-query
+    /// command with a Host-bound route. Neither publishes classifier
+    /// events on the main Session stream. The client never
     /// sees "Grok is thinking", streaming token chunks, or any other
     /// session update from a classifier fire. Stalled verdicts only
     /// queue a `<system-reminder>` into chat state via
@@ -346,7 +347,7 @@ impl SessionActor {
     /// the production decision logic.
     pub(crate) async fn maybe_fire_laziness_check(self: Arc<Self>) {
         let model_id_acp = self.models_manager.current_model_id();
-        let model_id = model_id_acp.0.to_string();
+        let mut model_id = model_id_acp.0.to_string();
         let cfg = self.models_manager.laziness_detector_for(&model_id);
         let debug_mode = self.laziness_debug_log.is_some();
 
@@ -564,47 +565,78 @@ impl SessionActor {
             ..ConversationRequest::default()
         };
 
-        // Invisibility-critical: build a fresh `SamplingClient` via
-        // `prepare_chat_completion` and call `conversation_collect`
-        // directly. This is the same side-channel pattern
-        // `run_memory_flush`, `run_dream_model_call`, and
-        // `image_describe` use. The per-session `sampler_handle`
-        // would forward streaming events on the shared sampler
-        // channel — every `ChannelToken { Text }` becomes an ACP
-        // `AgentMessageChunk` → the pager UI renders mid-classifier
-        // reasoning + text deltas. `conversation_collect` does NOT
-        // publish on that channel, so the client sees nothing.
-        let sampling_client = match self.prepare_chat_completion(false).await {
-            Ok(c) => c,
-            Err(err) => {
-                let detail = err.to_string();
-                tracing::debug!(error = %detail, "laziness classifier: prepare_chat_completion failed");
-                let elapsed_ms = started.elapsed().as_millis() as u64;
-                self.maybe_write_laziness_debug_log(
-                    meta.take(),
-                    &model_id,
-                    items_count_after_trim,
-                    elapsed_ms,
-                    LazinessFireOutcome::Aborted {
-                        reason: LazinessAbortReason::ClassifierError,
-                        error_detail: Some(detail),
-                    },
-                )
-                .await;
-                self.emit_laziness_abort(LazinessAbortReason::ClassifierError);
-                return;
+        // Invisibility-critical: ordinary Grok Sessions keep the direct
+        // `SamplingClient::conversation_collect` path. Product Sessions use
+        // the same SamplerActor's side-query command with a Host-resolved
+        // `laziness` Binding/Lease, so tokens remain out of the main ACP
+        // stream while submission still receives a durable Turn Route receipt.
+        let sampler_future = if self.startup_hints.agentmesh360_route.is_some() {
+            let logical_turn_id = format!("aux:laziness:{}", uuid::Uuid::new_v4());
+            match self.begin_product_side_query_for_role("laziness", &logical_turn_id, request) {
+                Ok((pending, bound_model)) => {
+                    model_id = bound_model;
+                    futures_util::future::Either::Left(async move {
+                        pending.collect().await.map(|(response, _metrics)| response)
+                    })
+                }
+                Err(err) => {
+                    let detail = err.to_string();
+                    tracing::debug!(
+                        error = %detail,
+                        role = "laziness",
+                        "laziness classifier: product route unavailable"
+                    );
+                    let elapsed_ms = started.elapsed().as_millis() as u64;
+                    self.maybe_write_laziness_debug_log(
+                        meta.take(),
+                        &model_id,
+                        items_count_after_trim,
+                        elapsed_ms,
+                        LazinessFireOutcome::Aborted {
+                            reason: LazinessAbortReason::ClassifierError,
+                            error_detail: Some(detail),
+                        },
+                    )
+                    .await;
+                    self.emit_laziness_abort(LazinessAbortReason::ClassifierError);
+                    return;
+                }
             }
+        } else {
+            let sampling_client = match self.prepare_chat_completion(false).await {
+                Ok(client) => client,
+                Err(err) => {
+                    let detail = err.to_string();
+                    tracing::debug!(error = %detail, "laziness classifier: prepare_chat_completion failed");
+                    let elapsed_ms = started.elapsed().as_millis() as u64;
+                    self.maybe_write_laziness_debug_log(
+                        meta.take(),
+                        &model_id,
+                        items_count_after_trim,
+                        elapsed_ms,
+                        LazinessFireOutcome::Aborted {
+                            reason: LazinessAbortReason::ClassifierError,
+                            error_detail: Some(detail),
+                        },
+                    )
+                    .await;
+                    self.emit_laziness_abort(LazinessAbortReason::ClassifierError);
+                    return;
+                }
+            };
+            futures_util::future::Either::Right(async move {
+                sampling_client.conversation_collect(request).await
+            })
         };
 
         // Sampler call wrapped in a generation-poll loop AND a
-        // wall-clock timeout. Dropping the `conversation_collect`
-        // future on abort cancels the in-flight HTTP request via
-        // standard `Drop` semantics — no actor-side cleanup needed.
+        // wall-clock timeout. Dropping the direct future cancels its HTTP
+        // request; dropping a product PendingSamplingRequest sends the actor's
+        // existing Cancel command for the accepted side query.
         let timeout = tokio::time::sleep(std::time::Duration::from_millis(
             LAZINESS_CLASSIFIER_TIMEOUT_MS,
         ));
         tokio::pin!(timeout);
-        let sampler_future = sampling_client.conversation_collect(request);
         tokio::pin!(sampler_future);
         let response = loop {
             tokio::select! {

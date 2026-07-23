@@ -176,6 +176,42 @@ impl AgentMesh360Runtime {
     }
 
     #[cfg(test)]
+    pub(crate) fn configure_role_assignment_for_host_test(
+        &self,
+        owner_account_id: i64,
+        agent_id: &str,
+        role: &str,
+        base_url: &str,
+        model_id: &str,
+        api_key: &str,
+    ) -> Result<String> {
+        let profile = self.providers.create_for_host_test(
+            owner_account_id,
+            provider_profiles::ProviderProfileInput {
+                preset_id: Some("compatible-openai-responses".into()),
+                display_name: format!("Host {role} route test"),
+                protocol: provider_profiles::ProviderProtocol::OpenaiResponses,
+                base_url: base_url.into(),
+                auth_kind: provider_profiles::ProviderAuthKind::BearerApiKey,
+                enabled_models: vec![model_id.into()],
+            },
+            api_key.into(),
+        )?;
+        let profile_id = profile.profile_id;
+        model_assignments::ModelAssignmentStore::in_home(&self.state_home).upsert(
+            owner_account_id,
+            model_assignments::ModelAssignmentInput {
+                scope_kind: model_assignments::AssignmentScopeKind::Agent,
+                scope_id: Some(agent_id.into()),
+                role: role.into(),
+                provider_profile_id: profile_id.clone(),
+                model_id: model_id.into(),
+            },
+        )?;
+        Ok(profile_id)
+    }
+
+    #[cfg(test)]
     pub(crate) fn turn_routes_for_host_test(
         &self,
         owner_account_id: i64,
