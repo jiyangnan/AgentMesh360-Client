@@ -546,6 +546,285 @@ async fn product_recap_falls_back_to_main_assignment() {
         .await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_side_question_and_suggestions_use_dedicated_roles_and_fail_closed() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("supplemental route state home");
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_aux_test_provider("run the tests", "aux-model").await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("supplemental-bootstrap-token")
+                .await
+                .expect("grant supplemental access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "main-model",
+                    "sentinel-supplemental-main-secret",
+                )
+                .expect("configure supplemental main route");
+            runtime
+                .configure_role_assignment_for_host_test(
+                    41,
+                    "job-agent",
+                    "side_question",
+                    &provider_base_url,
+                    "side-question-model",
+                    "sentinel-side-question-secret",
+                )
+                .expect("configure side-question route");
+            let suggestion_profile_id = runtime
+                .configure_role_assignment_for_host_test(
+                    41,
+                    "job-agent",
+                    "suggestion",
+                    &provider_base_url,
+                    "suggestion-model",
+                    "sentinel-suggestion-secret",
+                )
+                .expect("configure suggestion route");
+            let (actor, mut persistence_rx) =
+                make_product_recap_actor(session_id.clone(), route_context).await;
+
+            assert_eq!(
+                actor
+                    .handle_side_question("What should I do next?")
+                    .await
+                    .expect("product side question"),
+                "run the tests"
+            );
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("side-question Provider request");
+            assert_eq!(authorization, "Bearer sentinel-side-question-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("side-question request JSON")["model"],
+                "side-question-model"
+            );
+            let btw = persistence_rx
+                .recv()
+                .await
+                .expect("side-question persistence entry");
+            match btw {
+                PersistenceMsg::Btw(entry) => {
+                    assert!(entry.success);
+                    assert_eq!(entry.model, "side-question-model");
+                }
+                other => panic!("expected Btw persistence entry, got {other:?}"),
+            }
+
+            assert_eq!(
+                actor
+                    .handle_ai_suggest("cargo te", "/workspace", Some("must-not-win"))
+                    .await
+                    .as_deref(),
+                Some("run the tests")
+            );
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("command-suggestion Provider request");
+            assert_eq!(authorization, "Bearer sentinel-suggestion-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("command-suggestion request JSON")["model"],
+                "suggestion-model"
+            );
+
+            assert_eq!(
+                actor
+                    .handle_suggest_prompt(Some("not-in-the-grok-catalog"))
+                    .await
+                    .as_deref(),
+                Some("run the tests"),
+                "product suggestion must use its Assignment without Grok catalog gating"
+            );
+            let (authorization, request_body) = provider_requests
+                .recv()
+                .await
+                .expect("prompt-suggestion Provider request");
+            assert_eq!(authorization, "Bearer sentinel-suggestion-secret");
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&request_body)
+                    .expect("prompt-suggestion request JSON")["model"],
+                "suggestion-model"
+            );
+
+            let side_routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "side_question")
+                .expect("side-question Turn Routes");
+            assert_eq!(side_routes.len(), 1);
+            assert_eq!(side_routes[0].model_id, "side-question-model");
+            assert!(side_routes[0].turn_id.starts_with("aux:side_question:"));
+            let suggestion_routes = runtime
+                .turn_routes_for_host_test(41, &session_id, "suggestion")
+                .expect("suggestion Turn Routes");
+            assert_eq!(suggestion_routes.len(), 2);
+            assert!(
+                suggestion_routes
+                    .iter()
+                    .all(|route| route.model_id == "suggestion-model")
+            );
+            assert!(
+                suggestion_routes
+                    .iter()
+                    .any(|route| route.turn_id.starts_with("aux:suggestion:command:"))
+            );
+            assert!(
+                suggestion_routes
+                    .iter()
+                    .any(|route| route.turn_id.starts_with("aux:suggestion:prompt:"))
+            );
+
+            runtime.invalidate_access_for_host_test();
+            actor
+                .handle_side_question("This must fail before network.")
+                .await
+                .expect_err("invalid subscription must reject side question");
+            assert!(
+                actor
+                    .handle_ai_suggest("cargo", "/workspace", None)
+                    .await
+                    .is_none()
+            );
+            assert!(actor.handle_suggest_prompt(None).await.is_none());
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "invalid subscription must produce no supplemental Provider request"
+            );
+
+            runtime
+                .bootstrap_for_host_test("supplemental-bootstrap-restored")
+                .await
+                .expect("restore supplemental access");
+            runtime
+                .remove_credential_for_host_test(41, &suggestion_profile_id)
+                .expect("remove suggestion Provider credential");
+            assert!(
+                actor
+                    .handle_ai_suggest("cargo", "/workspace", None)
+                    .await
+                    .is_none()
+            );
+            assert!(actor.handle_suggest_prompt(None).await.is_none());
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(200),
+                    provider_requests.recv(),
+                )
+                .await
+                .is_err(),
+                "missing Vault must produce no suggestion Provider request"
+            );
+            assert_eq!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "suggestion")
+                    .expect("final suggestion Turn Routes")
+                    .len(),
+                2,
+                "failed suggestions must not create ghost Turn Routes"
+            );
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial]
+async fn product_side_question_and_suggestions_fall_back_to_main_assignment() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let state_home = tempfile::tempdir().expect("supplemental fallback state home");
+            let (core_base_url, core_task) = serve_agentmesh_aux_test_core().await;
+            let (provider_base_url, mut provider_requests, provider_task) =
+                serve_agentmesh_aux_test_provider("run the tests", "fallback-main-model").await;
+            let runtime = crate::agentmesh360::AgentMesh360Runtime::for_host_test(
+                state_home.path(),
+                core_base_url,
+            );
+            runtime
+                .bootstrap_for_host_test("supplemental-fallback-bootstrap")
+                .await
+                .expect("grant supplemental fallback access");
+            let (session_id, route_context, _main_profile_id) = runtime
+                .configure_product_route_for_host_test(
+                    41,
+                    "job-agent",
+                    &provider_base_url,
+                    "fallback-main-model",
+                    "sentinel-supplemental-fallback-secret",
+                )
+                .expect("configure supplemental fallback route");
+            let (actor, _persistence_rx) =
+                make_product_recap_actor(session_id.clone(), route_context).await;
+
+            actor
+                .handle_side_question("What next?")
+                .await
+                .expect("fallback side question");
+            actor
+                .handle_ai_suggest("cargo te", "/workspace", None)
+                .await
+                .expect("fallback command suggestion");
+            actor
+                .handle_suggest_prompt(Some("ignored-product-hint"))
+                .await
+                .expect("fallback prompt suggestion");
+
+            for _ in 0..3 {
+                let (authorization, request_body) = provider_requests
+                    .recv()
+                    .await
+                    .expect("fallback supplemental Provider request");
+                assert_eq!(
+                    authorization,
+                    "Bearer sentinel-supplemental-fallback-secret"
+                );
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&request_body)
+                        .expect("fallback supplemental request JSON")["model"],
+                    "fallback-main-model"
+                );
+            }
+            assert_eq!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "side_question")
+                    .expect("fallback side-question Turn Routes")
+                    .len(),
+                1
+            );
+            assert_eq!(
+                runtime
+                    .turn_routes_for_host_test(41, &session_id, "suggestion")
+                    .expect("fallback suggestion Turn Routes")
+                    .len(),
+                2
+            );
+
+            core_task.abort();
+            provider_task.abort();
+        })
+        .await;
+}
+
 /// A manual `/recap` on a brand-new session (no main turns yet) must NOT strand
 /// the client's loading spinner: the recap gate skips before any model call, but
 /// instead of silently dropping, the shell emits `SessionRecapUnavailable` so

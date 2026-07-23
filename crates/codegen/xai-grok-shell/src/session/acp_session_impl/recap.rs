@@ -22,11 +22,26 @@ impl SessionActor {
         let btw_session_id = format!("btw-{}", uuid::Uuid::new_v4());
         let parent_session_id = self.session_info.id.to_string();
         let asked_at = chrono::Utc::now();
-
-        let sampling_client = self
-            .prepare_chat_completion(false)
-            .await
-            .map_err(|e| format!("failed to prepare client: {e}"))?;
+        let logical_turn_id = format!("aux:side_question:{}", uuid::Uuid::new_v4());
+        let (sampling_client, mut product_route, model) =
+            if self.startup_hints.agentmesh360_route.is_some() {
+                let (route, config) = self
+                    .prepare_product_side_query_for_role("side_question", &logical_turn_id)
+                    .map_err(|error| format!("side question product route unavailable: {error}"))?;
+                (None, Some(route), config.model)
+            } else {
+                let client = self
+                    .prepare_chat_completion(false)
+                    .await
+                    .map_err(|error| format!("failed to prepare client: {error}"))?;
+                let model = self
+                    .chat_state_handle
+                    .get_sampling_config()
+                    .await
+                    .map(|config| config.model)
+                    .unwrap_or_default();
+                (Some(client), None, model)
+            };
 
         // Full conversation snapshot including system prompt, tool calls, and results.
         // Strip reasoning/thinking blocks from assistant items so we don't send
@@ -79,13 +94,6 @@ impl SessionActor {
         let tool_definitions = self.prepare_tool_definitions().await;
         let tool_specs: Vec<ToolSpec> = tool_definitions.into_iter().map(ToolSpec::from).collect();
 
-        let model = self
-            .chat_state_handle
-            .get_sampling_config()
-            .await
-            .map(|c| c.model)
-            .unwrap_or_default();
-
         let persist = |answer: String, success: bool, error: Option<String>| {
             let _ = self.notifications.persistence_tx.send(PersistenceMsg::Btw(
                 crate::session::persistence::BtwEntry {
@@ -117,14 +125,35 @@ impl SessionActor {
             ..Default::default()
         };
 
-        let response = sampling_client
-            .conversation_collect(request)
-            .await
-            .map_err(|e| {
-                let msg = format!("side question model call failed: {e}");
-                persist(String::new(), false, Some(msg.clone()));
-                msg
-            })?;
+        let response_result = if let Some(route) = product_route.as_mut() {
+            match route.submit(|config| {
+                self.sampler_handle
+                    .begin_side_query_and_collect_with_config(
+                        xai_grok_sampler::RequestId::random(),
+                        request,
+                        config,
+                    )
+                    .map_err(anyhow::Error::new)
+            }) {
+                Ok(pending) => pending
+                    .collect()
+                    .await
+                    .map(|(response, _metrics)| response)
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            }
+        } else {
+            sampling_client
+                .expect("ordinary side-question SamplingClient exists")
+                .conversation_collect(request)
+                .await
+                .map_err(|error| error.to_string())
+        };
+        let response = response_result.map_err(|error| {
+            let msg = format!("side question model call failed: {error}");
+            persist(String::new(), false, Some(msg.clone()));
+            msg
+        })?;
         let content = response.assistant_text();
 
         if content.is_empty() {
@@ -540,14 +569,14 @@ impl SessionActor {
     /// Builds a minimal prompt from the prefix and CWD, calls the sampler
     ///
     /// with low temperature and small max_tokens, and returns the suggestion.
+    /// Product Sessions use the Host-bound `suggestion` Assignment; ordinary
+    /// Grok Sessions retain the caller override / `grok-build` default.
     pub(super) async fn handle_ai_suggest(
         &self,
         prefix: &str,
         cwd: &str,
         model_override: Option<&str>,
     ) -> Option<String> {
-        let sampling_client = self.prepare_chat_completion(false).await.ok()?;
-
         let system = "You are a shell command autocomplete engine. \
             Given a partial command, output ONLY the completed command. \
             No explanation, no markdown, no quotes. Just the raw command.";
@@ -573,47 +602,68 @@ impl SessionActor {
             ..Default::default()
         };
 
-        let request_id = xai_grok_sampler::RequestId::random();
-        let idle_timeout = std::time::Duration::from_secs(5);
-
-        let result = match sampling_client.api_backend() {
-            crate::sampling::ApiBackend::ChatCompletions => {
-                let (raw, meta) = sampling_client.conversation_stream(request).await.ok()?;
-                let events =
-                    xai_grok_sampler::stream_chat_completions(raw, meta, request_id, idle_timeout);
-                xai_grok_sampler::collect_response(events).await
-            }
-            crate::sampling::ApiBackend::Responses => {
-                let (raw, meta, doom_loop) = sampling_client
-                    .conversation_stream_responses(request)
-                    .await
-                    .ok()?;
-                let events = xai_grok_sampler::stream_responses(
-                    raw,
-                    meta,
-                    request_id,
-                    idle_timeout,
-                    doom_loop,
-                );
-                xai_grok_sampler::collect_response(events).await
-            }
-            crate::sampling::ApiBackend::Messages => {
-                let (raw, meta) = sampling_client
-                    .conversation_stream_messages(request)
-                    .await
-                    .ok()?;
-                let events = xai_grok_sampler::stream_messages(raw, meta, request_id, idle_timeout);
-                xai_grok_sampler::collect_response(events).await
-            }
+        let result = if self.startup_hints.agentmesh360_route.is_some() {
+            let logical_turn_id = format!("aux:suggestion:command:{}", uuid::Uuid::new_v4());
+            let (pending, model) = self
+                .begin_product_side_query_for_role("suggestion", &logical_turn_id, request)
+                .ok()?;
+            tracing::debug!(model = %model, "AI suggest: using product route");
+            pending
+                .collect()
+                .await
+                .map(|(response, _metrics)| response)
+                .map_err(|error| error.to_string())
+        } else {
+            let sampling_client = self.prepare_chat_completion(false).await.ok()?;
+            let request_id = xai_grok_sampler::RequestId::random();
+            let idle_timeout = std::time::Duration::from_secs(5);
+            let streamed = match sampling_client.api_backend() {
+                crate::sampling::ApiBackend::ChatCompletions => {
+                    let (raw, meta) = sampling_client.conversation_stream(request).await.ok()?;
+                    let events = xai_grok_sampler::stream_chat_completions(
+                        raw,
+                        meta,
+                        request_id,
+                        idle_timeout,
+                    );
+                    xai_grok_sampler::collect_response(events).await
+                }
+                crate::sampling::ApiBackend::Responses => {
+                    let (raw, meta, doom_loop) = sampling_client
+                        .conversation_stream_responses(request)
+                        .await
+                        .ok()?;
+                    let events = xai_grok_sampler::stream_responses(
+                        raw,
+                        meta,
+                        request_id,
+                        idle_timeout,
+                        doom_loop,
+                    );
+                    xai_grok_sampler::collect_response(events).await
+                }
+                crate::sampling::ApiBackend::Messages => {
+                    let (raw, meta) = sampling_client
+                        .conversation_stream_messages(request)
+                        .await
+                        .ok()?;
+                    let events =
+                        xai_grok_sampler::stream_messages(raw, meta, request_id, idle_timeout);
+                    xai_grok_sampler::collect_response(events).await
+                }
+            };
+            streamed
+                .map(|(response, _metrics)| response)
+                .map_err(|error| error.message)
         };
 
         match result {
-            Ok((response, _metrics)) => {
+            Ok(response) => {
                 let text = response.assistant_text();
                 if text.is_empty() { None } else { Some(text) }
             }
             Err(e) => {
-                tracing::debug!(error = %e.message, "AI suggest inference failed");
+                tracing::debug!(error = %e, "AI suggest inference failed");
                 None
             }
         }
@@ -623,7 +673,7 @@ impl SessionActor {
     /// Fired by the client after a turn completes. Builds a compact text-only
     /// transcript of the recent conversation (see
     /// [`prompt_suggest::build_transcript`]) and makes one tool-free model
-    /// call. The model is resolved by
+    /// call. For ordinary Grok Sessions, the model is resolved by
     /// [`prompt_suggest::effective_suggest_model`]: env
     /// (`GROK_PROMPT_SUGGESTIONS_MODEL`) > `[models] prompt_suggestion`
     /// (config.toml) > remote `prompt_suggestion_model` (remote settings) >
@@ -632,8 +682,10 @@ impl SessionActor {
     /// tier except env is catalog-guarded against this shell's own model
     /// catalog — when the effective model is not sampleable here (e.g.
     /// `grok-build-0.1` for OAuth users) the request is **skipped
-    /// entirely** instead of fired doomed. The session model is never used:
-    /// a per-turn background call must stay on the small model.
+    /// entirely** instead of fired doomed. Product Sessions bypass the Grok
+    /// catalog and use their Host-bound `suggestion` Assignment. The session
+    /// model is never used implicitly: a per-turn background call must stay
+    /// on its configured small model.
     /// Temperature, max_output_tokens, and
     /// reasoning_effort are left unset — mirrors [`Self::handle_recap`]: the
     /// proxy may inject provider defaults, a small token cap silently empties
@@ -648,16 +700,24 @@ impl SessionActor {
     ) -> Option<String> {
         use crate::session::helpers::prompt_suggest;
 
-        let pin = self.models_manager.prompt_suggest_model_pin();
-        let Some(model) = prompt_suggest::effective_suggest_model(&pin, model_override, |m| {
-            self.models_manager.model_in_catalog(m)
-        }) else {
-            tracing::debug!(
-                pin = ?pin,
-                client_hint = ?model_override,
-                "prompt suggest: effective model not in catalog; skipping request"
-            );
-            return None;
+        let product_session = self.startup_hints.agentmesh360_route.is_some();
+        let ordinary_model = if product_session {
+            None
+        } else {
+            let pin = self.models_manager.prompt_suggest_model_pin();
+            let Some(model) =
+                prompt_suggest::effective_suggest_model(&pin, model_override, |model| {
+                    self.models_manager.model_in_catalog(model)
+                })
+            else {
+                tracing::debug!(
+                    pin = ?pin,
+                    client_hint = ?model_override,
+                    "prompt suggest: effective model not in catalog; skipping request"
+                );
+                return None;
+            };
+            Some(model)
         };
 
         let conversation = self.chat_state_handle.get_conversation().await;
@@ -668,20 +728,6 @@ impl SessionActor {
             );
             return None;
         };
-
-        let sampling_client = match self.prepare_chat_completion(false).await {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::debug!(error = %e, "prompt suggest: sampling client unavailable");
-                return None;
-            }
-        };
-
-        tracing::debug!(
-            model = %model,
-            transcript_len = transcript.len(),
-            "prompt suggest: requesting"
-        );
 
         let cwd = self
             .tool_context
@@ -700,7 +746,7 @@ impl SessionActor {
         let request = ConversationRequest {
             items,
             tools: vec![],
-            model: Some(model),
+            model: ordinary_model.clone(),
             temperature: None,
             x_grok_conv_id: Some(format!("promptsuggest-{}", uuid::Uuid::new_v4())),
             x_grok_req_id: Some(format!("xai-promptsuggest-{}", uuid::Uuid::new_v4())),
@@ -709,10 +755,51 @@ impl SessionActor {
             ..Default::default()
         };
 
-        let response = match sampling_client.conversation_collect(request).await {
+        let response_result = if product_session {
+            let logical_turn_id = format!("aux:suggestion:prompt:{}", uuid::Uuid::new_v4());
+            let (pending, model) = match self.begin_product_side_query_for_role(
+                "suggestion",
+                &logical_turn_id,
+                request,
+            ) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    tracing::debug!(error = %error, "prompt suggest: product route unavailable");
+                    return None;
+                }
+            };
+            tracing::debug!(
+                model = %model,
+                transcript_len = transcript.len(),
+                "prompt suggest: requesting through product route"
+            );
+            pending
+                .collect()
+                .await
+                .map(|(response, _metrics)| response)
+                .map_err(|error| error.to_string())
+        } else {
+            let sampling_client = match self.prepare_chat_completion(false).await {
+                Ok(client) => client,
+                Err(error) => {
+                    tracing::debug!(error = %error, "prompt suggest: sampling client unavailable");
+                    return None;
+                }
+            };
+            tracing::debug!(
+                model = %ordinary_model.as_deref().unwrap_or_default(),
+                transcript_len = transcript.len(),
+                "prompt suggest: requesting"
+            );
+            sampling_client
+                .conversation_collect(request)
+                .await
+                .map_err(|error| error.to_string())
+        };
+        let response = match response_result {
             Ok(r) => r,
-            Err(e) => {
-                tracing::debug!(error = %e, "prompt suggest inference failed");
+            Err(error) => {
+                tracing::debug!(error = %error, "prompt suggest inference failed");
                 return None;
             }
         };
