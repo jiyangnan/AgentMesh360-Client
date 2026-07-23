@@ -3,6 +3,16 @@
 const bridge = window.agentmesh360;
 const root = document.getElementById('app');
 let currentState = { phase: 'starting' };
+let workspaceView = 'agents';
+let readyAccountId = null;
+let providerUi = {
+  phase: 'idle',
+  snapshot: null,
+  error: null,
+  message: null,
+  busy: false,
+  editingProfileId: null,
+};
 
 bridge.onState(render);
 bridge.getState().then(render).catch(() => render({
@@ -13,6 +23,23 @@ bridge.getState().then(render).catch(() => render({
 
 function render(state) {
   currentState = state || { phase: 'unavailable', message: '身份状态无效' };
+  if (currentState.phase === 'ready' && currentState.account?.id !== readyAccountId) {
+    readyAccountId = currentState.account?.id ?? null;
+    workspaceView = 'agents';
+    providerUi = {
+      phase: 'idle',
+      snapshot: null,
+      error: null,
+      message: null,
+      busy: false,
+      editingProfileId: null,
+    };
+  } else if (['signed_out', 'blocked', 'unavailable'].includes(currentState.phase)) {
+    readyAccountId = null;
+    workspaceView = 'agents';
+    providerUi.snapshot = null;
+    providerUi.phase = 'idle';
+  }
   switch (currentState.phase) {
     case 'signed_out':
       renderSignedOut(currentState);
@@ -131,17 +158,14 @@ function renderUnavailable(state) {
 
 function renderReady(state) {
   const account = state.account || {};
-  const subscription = state.subscription || {};
-  const credits = state.credits || {};
-  const agents = Array.isArray(state.agents) ? state.agents : [];
   root.innerHTML = `
     <section class="shell workspace">
       <aside class="sidebar">
         ${brand()}
         <p class="nav-label">Workspace</p>
-        <div class="nav-item active"><i class="nav-dot"></i>常驻 Agent</div>
-        <div class="nav-item"><i class="nav-dot"></i>会话 <span class="muted">后续</span></div>
-        <div class="nav-item"><i class="nav-dot"></i>设置 <span class="muted">后续</span></div>
+        <button class="nav-item ${workspaceView === 'agents' ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>常驻 Agent</button>
+        <button class="nav-item" type="button" disabled><i class="nav-dot"></i>会话 <span class="muted">后续</span></button>
+        <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>Provider 设置</button>
         <div class="sidebar-spacer"></div>
         <div class="sidebar-account">
           <div class="avatar">${escapeHtml(initials(account))}</div>
@@ -149,21 +173,386 @@ function renderReady(state) {
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
-      <main class="workspace-main">
-        <header class="workspace-header">
-          <div><p class="eyebrow">Persistent Agent Workspace</p><h1>欢迎回来，${escapeHtml(firstName(account))}</h1><p>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
-          <div class="credit-card"><span>AgentMesh360 Credits</span><strong>${formatNumber(credits.balance)}</strong></div>
-        </header>
-        <div class="section-head"><h2>你的专业 Agent</h2><span>${agents.filter(isResident).length} 个正在常驻</span></div>
-        ${state.activationError ? `<div class="activation-error">${escapeHtml(state.activationError)}</div>` : ''}
-        <div class="agent-grid">${agents.length ? agents.map((agent, index) => agentCard(agent, index, state.activatingAgentId)).join('') : '<div class="empty-agents">当前没有可用的 Agent Package。</div>'}</div>
-        <div class="security-row">订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}</div>
-      </main>
+      <main class="workspace-main">${workspaceView === 'providers' ? providerSettingsView(state) : agentWorkspaceView(state)}</main>
     </section>`;
   document.getElementById('logout').addEventListener('click', () => bridge.logout());
+  document.getElementById('nav-agents').addEventListener('click', () => {
+    workspaceView = 'agents';
+    renderReady(currentState);
+  });
+  document.getElementById('nav-providers').addEventListener('click', () => {
+    workspaceView = 'providers';
+    renderReady(currentState);
+    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+  });
+  if (workspaceView === 'providers') {
+    wireProviderSettings();
+  }
   for (const button of document.querySelectorAll('[data-agent-id]')) {
     button.addEventListener('click', () => bridge.activateAgent(button.dataset.agentId));
   }
+}
+
+function agentWorkspaceView(state) {
+  const account = state.account || {};
+  const subscription = state.subscription || {};
+  const credits = state.credits || {};
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  return `
+    <header class="workspace-header">
+      <div><p class="eyebrow">Persistent Agent Workspace</p><h1>欢迎回来，${escapeHtml(firstName(account))}</h1><p>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
+      <div class="credit-card"><span>AgentMesh360 Credits</span><strong>${formatNumber(credits.balance)}</strong></div>
+    </header>
+    <div class="section-head"><h2>你的专业 Agent</h2><span>${agents.filter(isResident).length} 个正在常驻</span></div>
+    ${state.activationError ? `<div class="activation-error">${escapeHtml(state.activationError)}</div>` : ''}
+    <div class="agent-grid">${agents.length ? agents.map((agent, index) => agentCard(agent, index, state.activatingAgentId)).join('') : '<div class="empty-agents">当前没有可用的 Agent Package。</div>'}</div>
+    <div class="security-row">订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}</div>`;
+}
+
+function providerSettingsView(state) {
+  const profiles = providerUi.snapshot?.profiles || [];
+  const assignments = providerUi.snapshot?.assignments || [];
+  const catalog = providerUi.snapshot?.catalog || { providers: [] };
+  return `
+    <header class="workspace-header provider-header">
+      <div>
+        <p class="eyebrow">BYOK Routing Console</p>
+        <h1>你的模型，按角色就位。</h1>
+        <p>Provider 凭据保存在本机 Host Vault；Agent 只获得短时租约，永远读不到 Key。</p>
+      </div>
+      <div class="route-health"><i></i><span>Host Authority</span><strong>${profiles.length} 个 Provider</strong></div>
+    </header>
+    ${providerUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(providerUi.message)}</div>` : ''}
+    ${providerUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(providerUi.error)}</div>` : ''}
+    ${providerUi.phase === 'loading' ? providerLoadingView() : ''}
+    ${providerUi.phase === 'error' ? `<button class="secondary retry-providers" type="button">重新加载 Provider</button>` : ''}
+    ${providerUi.phase === 'ready' ? `
+      <section class="provider-overview" aria-label="Provider 状态">
+        <div><span>Profiles</span><strong>${profiles.length}</strong></div>
+        <div><span>Assignments</span><strong>${assignments.length}</strong></div>
+        <div><span>Catalog revision</span><strong>${escapeHtml(catalog.catalogRevision || '—')}</strong></div>
+        <p>保存配置不会自动测试模型，也不会产生 Provider 费用。</p>
+      </section>
+      <div class="provider-layout">
+        <section class="provider-column">
+          ${providerProfileEditor(catalog, profiles)}
+          ${providerProfileList(profiles, assignments)}
+        </section>
+        <section class="provider-column route-column">
+          ${providerAssignmentEditor(state, profiles, catalog)}
+          ${providerAssignmentList(assignments, profiles)}
+        </section>
+      </div>
+    ` : ''}
+    <div class="security-row">Provider 数据由本机 Host 独占 · Renderer 只能读取公开配置状态</div>`;
+}
+
+function providerLoadingView() {
+  return `
+    <div class="provider-loading" role="status">
+      <div class="spinner" aria-hidden="true"></div>
+      <div><strong>正在读取 Host 路由状态</strong><span>Profile、Catalog 与 Assignment 会在本机汇合。</span></div>
+    </div>`;
+}
+
+function providerProfileEditor(catalog, profiles) {
+  const editing = profiles.find((item) => item.profileId === providerUi.editingProfileId) || null;
+  const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
+  const selectedPreset = editing?.presetId || '';
+  const enabledModels = Array.isArray(editing?.enabledModels) ? editing.enabledModels.join('\n') : '';
+  return `
+    <form class="control-panel provider-form" id="provider-profile-form">
+      <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑 Provider' : '接入 Provider'}</strong><small>Profile + write-only credential</small></div></div>
+      <div class="form-grid two">
+        <label class="field"><span>预设</span>
+          <select name="presetId" id="provider-preset">
+            <option value="">自定义兼容端点</option>
+            ${providers.map((provider) => `<option value="${escapeHtml(provider.presetId)}" ${selectedPreset === provider.presetId ? 'selected' : ''}>${escapeHtml(provider.displayName)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="field"><span>显示名称</span><input name="displayName" maxlength="80" required value="${escapeHtml(editing?.displayName || '')}" placeholder="例如：我的 OpenAI"></label>
+      </div>
+      <div class="form-grid two">
+        <label class="field"><span>协议</span>
+          <select name="protocol" required>
+            ${option('openai_responses', 'OpenAI Responses', editing?.protocol)}
+            ${option('openai_chat', 'OpenAI Chat', editing?.protocol)}
+            ${option('anthropic_messages', 'Anthropic Messages', editing?.protocol)}
+          </select>
+        </label>
+        <label class="field"><span>认证</span>
+          <select name="authKind" required>
+            ${option('bearer_api_key', 'Bearer API Key', editing?.authKind)}
+            ${option('x_api_key', 'X-API-Key', editing?.authKind)}
+          </select>
+        </label>
+      </div>
+      <label class="field"><span>Base URL</span><input name="baseUrl" type="url" required value="${escapeHtml(editing?.baseUrl || '')}" placeholder="https://api.example.com/v1"></label>
+      <label class="field"><span>启用模型 <em>一行一个，也可逗号分隔</em></span><textarea name="enabledModels" rows="3" placeholder="gpt-5&#10;gpt-5-mini">${escapeHtml(enabledModels)}</textarea></label>
+      <label class="field secret-field"><span>${editing ? '替换 API Key（可留空）' : 'API Key'}</span><input name="apiKey" type="password" autocomplete="off" ${editing ? '' : 'required'} placeholder="${editing ? '不修改请留空' : '仅提交给本机 Host Vault'}"><i>提交后立即清空</i></label>
+      <div class="panel-actions">
+        ${editing ? '<button class="ghost" id="cancel-profile-edit" type="button">取消编辑</button>' : '<span></span>'}
+        <button class="secondary" type="submit" ${providerUi.busy ? 'disabled' : ''}>${editing ? '保存 Profile' : '安全保存'}</button>
+      </div>
+    </form>`;
+}
+
+function providerProfileList(profiles, assignments) {
+  return `
+    <section class="profile-stack">
+      <div class="section-head compact"><h2>已连接 Provider</h2><span>${profiles.length} 个</span></div>
+      ${profiles.length ? profiles.map((profile) => {
+        const routes = assignments.filter((assignment) => assignment.providerProfileId === profile.profileId).length;
+        return `
+          <article class="profile-row">
+            <div class="profile-sigil">${escapeHtml((profile.displayName || '?').slice(0, 1).toUpperCase())}</div>
+            <div class="profile-copy">
+              <strong>${escapeHtml(profile.displayName)}</strong>
+              <span>${escapeHtml(protocolLabel(profile.protocol))} · ${escapeHtml(profile.baseUrl)}</span>
+              <small>${profile.credentialConfigured ? `Key ···· ${escapeHtml(profile.credentialLastFour || '已配置')}` : '尚未配置 Key'} · ${routes} 条路由</small>
+            </div>
+            <div class="row-actions">
+              <button class="ghost" type="button" data-edit-profile="${escapeHtml(profile.profileId)}">编辑</button>
+              <button class="ghost danger-text" type="button" data-delete-profile="${escapeHtml(profile.profileId)}">删除</button>
+            </div>
+          </article>`;
+      }).join('') : '<div class="empty-provider">还没有 Provider。先从上方接入你的第一个 BYOK 端点。</div>'}
+    </section>`;
+}
+
+function providerAssignmentEditor(state, profiles, catalog) {
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  const modelOptions = collectModelOptions(profiles, catalog);
+  return `
+    <form class="control-panel assignment-form" id="provider-assignment-form">
+      <div class="panel-kicker"><span>02</span><div><strong>分配模型角色</strong><small>Global → Agent → Session</small></div></div>
+      <div class="route-diagram" aria-hidden="true"><b>Agent</b><i></i><b>Role</b><i></i><b>Provider</b></div>
+      <div class="form-grid two">
+        <label class="field"><span>范围</span>
+          <select name="scopeKind" id="assignment-scope">
+            ${option('global', '全局默认', 'global')}
+            ${option('agent', '指定 Agent', null)}
+          </select>
+        </label>
+        <label class="field" id="assignment-agent-field"><span>Agent</span>
+          <select name="scopeId" disabled>
+            ${agents.map((agent) => `<option value="${escapeHtml(agent.agentId)}">${escapeHtml(agent.displayName)}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <label class="field"><span>模型角色</span>
+        <select name="role">
+          ${[
+            'main', 'subagent', 'vision', 'permission_classifier', 'compaction',
+            'laziness', 'recap', 'memory', 'side_question', 'suggestion',
+          ].map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="field"><span>Provider Profile</span>
+        <select name="providerProfileId" required>
+          <option value="">选择 Provider</option>
+          ${profiles.map((profile) => `<option value="${escapeHtml(profile.profileId)}">${escapeHtml(profile.displayName)}</option>`).join('')}
+        </select>
+      </label>
+      <label class="field"><span>模型 ID</span><input name="modelId" list="provider-model-options" required placeholder="选择或输入模型 ID"></label>
+      <datalist id="provider-model-options">${modelOptions.map((model) => `<option value="${escapeHtml(model)}"></option>`).join('')}</datalist>
+      <button class="secondary route-submit" type="submit" ${providerUi.busy || !profiles.length ? 'disabled' : ''}>保存 Assignment</button>
+    </form>`;
+}
+
+function providerAssignmentList(assignments, profiles) {
+  const profileNames = new Map(profiles.map((profile) => [profile.profileId, profile.displayName]));
+  return `
+    <section class="assignment-stack">
+      <div class="section-head compact"><h2>当前路由矩阵</h2><span>${assignments.length} 条</span></div>
+      ${assignments.length ? assignments.map((assignment) => `
+        <article class="assignment-row">
+          <div><strong>${escapeHtml(assignment.role)}</strong><span>${escapeHtml(scopeLabel(assignment))}</span></div>
+          <i></i>
+          <div class="assignment-target"><strong>${escapeHtml(profileNames.get(assignment.providerProfileId) || assignment.providerProfileId)}</strong><span>${escapeHtml(assignment.modelId)}</span></div>
+          <button class="ghost danger-text" type="button" data-delete-assignment="${escapeHtml(assignment.assignmentId)}">×</button>
+        </article>`).join('') : '<div class="empty-provider">尚未设置模型角色。至少配置一条 global / main 路由，产品 Agent 才能开始推理。</div>'}
+    </section>`;
+}
+
+function wireProviderSettings() {
+  document.querySelector('.retry-providers')?.addEventListener('click', () => refreshProviderSnapshot());
+  document.getElementById('cancel-profile-edit')?.addEventListener('click', () => {
+    providerUi.editingProfileId = null;
+    renderReady(currentState);
+  });
+  document.getElementById('provider-preset')?.addEventListener('change', applySelectedPreset);
+  document.getElementById('provider-profile-form')?.addEventListener('submit', submitProviderProfile);
+  document.getElementById('provider-assignment-form')?.addEventListener('submit', submitAssignment);
+  document.getElementById('assignment-scope')?.addEventListener('change', syncAssignmentScope);
+  syncAssignmentScope();
+  for (const button of document.querySelectorAll('[data-edit-profile]')) {
+    button.addEventListener('click', () => {
+      providerUi.editingProfileId = button.dataset.editProfile;
+      providerUi.message = null;
+      renderReady(currentState);
+      document.getElementById('provider-profile-form')?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+  for (const button of document.querySelectorAll('[data-delete-profile]')) {
+    button.addEventListener('click', () => deleteProviderProfile(button.dataset.deleteProfile));
+  }
+  for (const button of document.querySelectorAll('[data-delete-assignment]')) {
+    button.addEventListener('click', () => deleteAssignment(button.dataset.deleteAssignment));
+  }
+}
+
+async function refreshProviderSnapshot(message = null) {
+  providerUi = { ...providerUi, phase: 'loading', error: null, message, busy: false };
+  if (workspaceView === 'providers') renderReady(currentState);
+  try {
+    const snapshot = await bridge.getProviderSnapshot();
+    providerUi = {
+      ...providerUi,
+      phase: 'ready',
+      snapshot,
+      error: null,
+      message,
+      busy: false,
+    };
+  } catch (error) {
+    providerUi = {
+      ...providerUi,
+      phase: 'error',
+      error: publicError(error, '无法读取 Provider 配置'),
+      message: null,
+      busy: false,
+    };
+  }
+  if (workspaceView === 'providers' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+async function submitProviderProfile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const editingProfileId = providerUi.editingProfileId;
+  const apiKey = String(data.get('apiKey') || '').trim();
+  const profile = {
+    presetId: String(data.get('presetId') || '') || null,
+    displayName: data.get('displayName'),
+    protocol: data.get('protocol'),
+    baseUrl: data.get('baseUrl'),
+    authKind: data.get('authKind'),
+    enabledModels: parseModels(data.get('enabledModels')),
+  };
+  form.elements.apiKey.value = '';
+  await runProviderOperation(async () => {
+    if (editingProfileId) {
+      await bridge.updateProviderProfile({ profileId: editingProfileId, profile });
+      if (apiKey) await bridge.replaceProviderSecret({ profileId: editingProfileId, apiKey });
+    } else {
+      await bridge.createProviderProfile({ profile, apiKey });
+    }
+    providerUi.editingProfileId = null;
+  }, editingProfileId ? 'Provider 已更新，Key 输入已清空。' : 'Provider 已安全保存，Key 输入已清空。');
+}
+
+async function submitAssignment(event) {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  const scopeKind = String(data.get('scopeKind'));
+  await runProviderOperation(() => bridge.upsertModelAssignment({
+    scopeKind,
+    scopeId: scopeKind === 'global' ? null : data.get('scopeId'),
+    role: data.get('role'),
+    providerProfileId: data.get('providerProfileId'),
+    modelId: data.get('modelId'),
+  }), '模型角色已写入 Host 路由表。');
+}
+
+async function deleteProviderProfile(profileId) {
+  if (!window.confirm('删除 Provider 会同时移除依赖它的 Assignment。已有 Session Binding 仍保留历史快照。继续吗？')) return;
+  await runProviderOperation(() => bridge.deleteProviderProfile(profileId), 'Provider 已删除。');
+}
+
+async function deleteAssignment(assignmentId) {
+  await runProviderOperation(() => bridge.deleteModelAssignment(assignmentId), 'Assignment 已删除。');
+}
+
+async function runProviderOperation(operation, successMessage) {
+  providerUi = { ...providerUi, busy: true, error: null, message: null };
+  renderReady(currentState);
+  try {
+    await operation();
+    await refreshProviderSnapshot(successMessage);
+  } catch (error) {
+    providerUi = {
+      ...providerUi,
+      phase: 'ready',
+      busy: false,
+      error: publicError(error, 'Provider 操作失败'),
+      message: null,
+    };
+    renderReady(currentState);
+  }
+}
+
+function applySelectedPreset(event) {
+  const preset = (providerUi.snapshot?.catalog?.providers || [])
+    .find((item) => item.presetId === event.currentTarget.value);
+  if (!preset) return;
+  const form = document.getElementById('provider-profile-form');
+  form.elements.displayName.value = preset.displayName || '';
+  form.elements.protocol.value = preset.protocol || 'openai_responses';
+  form.elements.baseUrl.value = preset.defaultBaseUrl || '';
+  form.elements.authKind.value = preset.authKind || 'bearer_api_key';
+  form.elements.enabledModels.value = (preset.models || []).map((model) => model.modelId).join('\n');
+}
+
+function syncAssignmentScope() {
+  const scope = document.getElementById('assignment-scope');
+  const field = document.getElementById('assignment-agent-field');
+  if (!scope || !field) return;
+  const select = field.querySelector('select');
+  const isAgent = scope.value === 'agent';
+  select.disabled = !isAgent;
+  field.classList.toggle('field-disabled', !isAgent);
+}
+
+function collectModelOptions(profiles, catalog) {
+  const models = new Set();
+  for (const profile of profiles) {
+    for (const model of profile.enabledModels || []) models.add(model);
+  }
+  for (const provider of catalog.providers || []) {
+    for (const model of provider.models || []) models.add(model.modelId);
+  }
+  return [...models].sort();
+}
+
+function parseModels(value) {
+  return [...new Set(String(value || '').split(/[\n,]/).map((item) => item.trim()).filter(Boolean))];
+}
+
+function option(value, label, selected) {
+  return `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`;
+}
+
+function protocolLabel(protocol) {
+  return ({
+    openai_responses: 'OpenAI Responses',
+    openai_chat: 'OpenAI Chat',
+    anthropic_messages: 'Anthropic Messages',
+  })[protocol] || protocol || '未知协议';
+}
+
+function scopeLabel(assignment) {
+  if (assignment.scopeKind === 'global') return '全局默认';
+  return `${assignment.scopeKind} / ${assignment.scopeId || '—'}`;
+}
+
+function publicError(error, fallback) {
+  const message = String(error?.message || fallback);
+  return message
+    .replace(/sk-[A-Za-z0-9_-]+/g, '[已隐藏]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [已隐藏]')
+    .slice(0, 500);
 }
 
 function agentCard(agent, index, activatingAgentId) {
