@@ -28,8 +28,8 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；D1d2a laziness、D1d2b recap 已接入 Host Authority | D1d2c：接入 memory 后台消费者 |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类、必要压缩、laziness 和 recap 已保证实际 endpoint、credential、model 与 Turn Route 一致 | 处理 memory 与补充审计消费者，再进入 subagent |
+| Provider Control Plane | 切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已完成；D1d2a laziness、D1d2b recap、D1d2c memory 已接入 Host Authority | D1d2d：收口 `/btw` 与 suggestion |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt、图片、权限分类、必要压缩、laziness、recap 和 memory 已保证实际 endpoint、credential、model 与 Turn Route 一致 | 收口补充审计消费者，再进入 subagent |
 | Provider UI | 尚未向 Renderer 暴露 Provider 管理能力 | 切片 E：真实 Sampling 接通后实现最小设置 UI |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
@@ -736,12 +736,13 @@ Probe、Usage 或真实付费 Provider E2E。
 
 ### 循环 12：Provider 切片 D1d2——后台消费者
 
-状态：开发中；D1d2a laziness、D1d2b recap 已完成，D1d2c memory 调用链审计中
+状态：开发中；D1d2a laziness、D1d2b recap、D1d2c memory 已完成，D1d2d 补充消费者调用链审计中
 
 阶段提交：
 
 - `9e84d75 feat: bind product laziness sampling`
 - `cc3020c feat: bind product recap sampling`
+- `0519733 feat: bind product memory sampling`
 
 已完成子模块 D1d2a：
 
@@ -810,14 +811,48 @@ D1d2b 计划复盘：
 - 下一轮进入 D1d2c memory。必须先确认每个 dream 阶段、重试边界、conversation/
   artifact 副作用和现有失败重试语义，再决定一次任务对应一条还是多条 logical route。
 
+已完成子模块 D1d2c：
+
+- 真实调用链不是一个多阶段 dream，而是三个彼此独立的单次推理消费者：
+  dream consolidation、memory flush 和 memory note rewrite；三者统一使用 `memory`
+  role，但分别创建 `aux:memory:dream:<uuid>`、`aux:memory:flush:<uuid>` 和
+  `aux:memory:rewrite:<uuid>`；
+- 产品 Session 的 `memory` Assignment 是模型权威：它覆盖普通 Session 的 ChatState
+  dream model、可选 `flush_model` 和 rewrite 的 `grok-build` 默认值；普通 Session
+  保留原有三条 direct SamplingClient/streaming 路径；
+- Dream 与 Rewrite 通过现有 SamplerActor non-broadcast side-query 收集；Flush 先由
+  actor 接收并写 Turn Route，再只把可取消的 Pending request 移入多线程 runtime，
+  保留原“不阻塞 LocalSet”和 AbortOnDrop 语义；
+- 每次调用重新执行 Access Guard、Binding/Lease 与 Vault 解析；失败保持原 dream 计数、
+  flush error/锁释放、rewrite 错误返回语义，不回退 Grok default Provider。
+
+D1d2c 验证：
+
+- 产品 memory E2E 2 项通过：专用 `memory-model`/独立 Key 覆盖 Dream、Flush、Rewrite，
+  main fallback 单独通过；三类 synthetic id 与实际 model 一致；
+- 同一 E2E 验证订阅失效和 Vault 删除均零网络、零幽灵 Route；
+- memory config 12 项、inline auto-compaction/memory flush 27 项、AgentMesh360 60 项
+  全部通过；
+- `cargo check --tests`、Rustfmt、`git diff --check` 与 library + tests Clippy
+  `-D warnings` 通过。
+
+D1d2c 计划复盘：
+
+- 原计划只写了 memory dream，真实文件还包含 flush 和 note rewrite；三条路径现已同时
+  收口，避免长期在线 Agent 在自动 flush 或用户保存 note 时旁路 BYOK；
+- 三个操作互不重试、也不共享一次后台事务，因此各自一条 logical route 比人为复用
+  Active route 更准确；只有单个操作内部未来增加重试时才复用对应 route；
+- D1d2d 的范围保持为 `/btw`、command suggestion 和 prompt suggestion，不夹带
+  subagent、Trace classifier 或 Provider UI。下一步从用户可见的 `/btw` 开始。
+
 本轮目标：
 
 1. ~~D1d2a 先接 `laziness` role：产品 Session 的远端检测必须经实时 Access Guard、
    Binding/Lease 和 SamplerActor side-query；失败只跳过检测，不换 Provider；~~ 已完成
 2. ~~D1d2b 接 `recap` role：每次任务使用独立 synthetic logical turn id，失败保留原会话
    与可重试状态；~~ 已完成
-3. D1d2c 接 `memory` role：后台 dream 每次执行重新验证订阅，禁止从常驻 Session
-   缓存 credential 或 Grok default config；
+3. ~~D1d2c 接 `memory` role：后台 dream、flush 与 note rewrite 每次执行重新验证订阅，
+   禁止从常驻 Session 缓存 credential 或 Grok default config；~~ 已完成
 4. D1d2d 收口复核新发现的 `/btw` 与 suggestion 辅助消费者；
 5. 为每个子模块分别覆盖专用 Assignment、main fallback、Vault/订阅失败零网络和普通
    Grok Session 回归。
@@ -828,12 +863,12 @@ D1d2b 计划复盘：
 - recap 与 memory 可能跨用户 Turn 或在窗口不可见时运行，必须在 laziness 验证
   synthetic id、实时 Guard 和 side-query 隔离后再接入；
 - D1d2b 已证明 request builder 可以安全读取同一租约的非持久化 config 快照，同时保持
-  “actor 接收后才记账”；memory 如需多阶段请求应复用同一 Active route，不能重复解析
-  Assignment；
+  “actor 接收后才记账”；D1d2c 进一步确认每个 memory 操作是独立单次请求，不应在三个
+  操作之间复用 route；
 - D1d2 完成前不进入 subagent route delegation；Provider UI、Probe、Usage 和真实付费
   Provider E2E 仍不是本轮范围。
 
-D1d2c 验收条件：每次 memory dream 重新通过实时 Access Guard 和 `memory`
-Binding/Lease；同一后台任务的阶段与重试保持不可变路由；订阅、Vault、网络或解析失败
-不删除 Session/Memory 状态且不访问其他 Provider；普通 Grok Session 行为不变，格式、
-Clippy、AgentMesh360 与 memory 回归通过。
+D1d2d 验收条件：`/btw` 使用 `side_question` role，command/prompt suggestion 使用
+`suggestion` role；产品 Session 的三条远端请求均经过实时 Guard、Binding/Lease 与
+SamplerActor side-query，专用 Assignment/main fallback 与失败零网络通过；普通 Grok
+Session 原路径不变，格式、Clippy、AgentMesh360 与对应 Session 回归通过。

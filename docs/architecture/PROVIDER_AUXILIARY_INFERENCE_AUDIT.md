@@ -1,6 +1,6 @@
 # 产品 Agent 辅助推理旁路审计与 D1d 接入计划
 
-状态：持续审计，D1d0/D1d1/D1d2a/D1d2b 已实现，D1d2c 开发中
+状态：持续审计，D1d0/D1d1/D1d2a/D1d2b/D1d2c 已实现，D1d2d 开发中
 
 审计日期：2026-07-23
 
@@ -51,7 +51,9 @@ Session 继续使用原路径。
 | P0 | Subagent 推理 | `mvp_agent::subagent_coordinator::build_subagent_spawn_context` 复制默认 `sampling_config`、AuthManager | 产品 Agent 能生成 subagent，但 subagent 没有产品 Binding/Lease，可能失败或走 Grok 默认路由 | 子 Agent 获得不可伪造的 Host 路由委托；默认使用 `subagent` role，缺省回退 `main` Assignment |
 | P1 | Laziness 检测 | `acp_session_impl::laziness` → `prepare_chat_completion` | 可选质量检测在 BYOK 下失效或旁路 | 使用 `laziness` role；失败只跳过检测，不换 Provider |
 | P1 | Recap/回顾 | `acp_session_impl::recap::handle_recap` 单次 collect | between-turn/background 推理未记录真实路由 | 使用 `recap` role和独立 synthetic turn id；失败保留原会话 |
-| P1 | Memory dream | `acp_session_impl::memory_dream` 多处 collect/stream | 后台常驻 Agent 可能在用户不看窗口时旁路采样 | 使用 `memory` role和独立 synthetic turn id；订阅 Guard 每次重验 |
+| P1 | Memory dream | `memory_dream::run_dream_model_call` → direct collect | 后台常驻 Agent 可能在用户不看窗口时旁路采样 | 使用 `memory` role和 `aux:memory:dream:<uuid>`；订阅 Guard 每次重验 |
+| P1 | Memory flush | `memory_dream::run_memory_flush` → direct collect | interval/pre-compaction flush 可能在不可见时旁路采样，`flush_model` 可能偏离产品 Assignment | 使用 `memory` role和 `aux:memory:flush:<uuid>`；产品 Assignment 是模型权威 |
+| P2 | Memory note rewrite | `memory_dream::handle_rewrite_memory_note` → direct stream，硬编码 `grok-build` | 用户保存持久 note 时可能绕过 BYOK，或在无 Grok 登录时失败 | 使用 `memory` role和 `aux:memory:rewrite:<uuid>`；失败保留原错误语义 |
 | P1 | `/btw` side question | `acp_session_impl::recap::handle_side_question` → direct collect | 用户可见的旁路问答可能使用 Grok 默认 Provider，且没有 Turn Route | 使用 `side_question` role和独立 synthetic turn id；缺省回退 main |
 | P2 | AI shell command suggestion | `acp_session_impl::recap::handle_ai_suggest` → direct stream | 自动建议可能旁路 BYOK 路由 | 与 prompt suggestion 共用 `suggestion` role；失败保持现有无建议语义 |
 | P2 | Prompt suggestion | `acp_session_impl::recap::handle_suggest_prompt` → direct collect | 自动建议可能旁路 BYOK 路由 | 使用 `suggestion` role；失败保持现有无建议语义 |
@@ -167,10 +169,10 @@ Vault 丢失和订阅失效均在网络提交前失败并保留 Session。
 
 ### D1d2：后台消费者
 
-状态：**开发中；D1d2a laziness（`9e84d75`）、D1d2b recap（`cc3020c`）已实现，
-D1d2c memory 进行中**
+状态：**开发中；D1d2a laziness（`9e84d75`）、D1d2b recap（`cc3020c`）、
+D1d2c memory（`0519733`）已实现，D1d2d 补充消费者进行中**
 
-1. ~~接入 laziness 与 recap；~~ 已完成。继续接入 memory dream；
+1. ~~接入 laziness、recap、memory dream/flush/note rewrite；~~ 已完成；
 2. 每次后台执行重新检查 Access Guard；
 3. 使用 synthetic logical turn id 并验证 Session 历史不因失败被删除。
 
@@ -185,6 +187,13 @@ Recap 接入结论（2026-07-23）：真实 `handle_recap` 每次任务只有一
 以实际 backend/model/context window 构建请求，再经既有 SamplerActor side-query 提交；
 专用 role 与 main fallback 均已通过 E2E。订阅失效或 Vault 丢失时零网络、零幽灵 Route，
 不推进 watermark、不修改 conversation，手动 spinner 仍按原协议清理。
+
+Memory 接入结论（2026-07-23）：Dream、Flush、Note Rewrite 是三个独立单次请求，统一
+使用 `memory` role，但按操作分别生成 synthetic id。产品 Assignment 模型覆盖普通
+ChatState dream model、`flush_model` 与 rewrite 的 `grok-build` 默认值；普通 Session
+保持原 direct 路径。三类请求都由现有 SamplerActor non-broadcast side-query 接收，
+Flush 仍把 Pending request 移入多线程 runtime 并保留 AbortOnDrop。专用 role、main
+fallback、订阅失效和 Vault 丢失已通过 E2E，失败路径零网络、零幽灵 Route。
 
 持续审计修正（2026-07-23）：同一 `recap.rs` 的 `/btw`、AI shell command suggestion
 和 prompt suggestion 是独立消费者，不能计入 recap 已完成范围。它们分别规划为

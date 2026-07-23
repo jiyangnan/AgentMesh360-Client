@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1 已实现，切片 D1d2c 开发中
+状态：调研完成，切片 A/B/C/D0/D1a/D1b/D1c0/D1c1/D1c2/D1d0/D1d1/D1d2a/D1d2b/D1d2c 已实现，切片 D1d2d 开发中
 
 调研日期：2026-07-22
 
@@ -33,9 +33,11 @@ two-pass 与 single-pass 必要压缩接到 `compaction` Binding，固定专用�
 同一逻辑压缩重试幂等和失败前零网络。D1d2a 已将 between-turn laziness classifier 接到
 `laziness` Binding，固定专用模型、main fallback 与失败只跳过检测；D1d2b 已将 recap
 接到 `recap` Binding，并按实际 backend/model/context window 构建请求，订阅/Vault
-失败保持零网络和会话不变。持续审计另发现 `/btw` 与 command/prompt suggestion 三个
-独立消费者，已规划为 D1d2d；memory、这些补充消费者、subagent、Provider UI 与真实
-Provider E2E 仍是目标能力。
+失败保持零网络和会话不变。D1d2c 已将 dream、flush 与 note rewrite 三类独立请求接到
+`memory` Binding，以产品 Assignment 覆盖旧的 ChatState/flush_model/grok-build 默认
+模型，并固定每次实时 Guard 和失败零网络。持续审计另发现 `/btw` 与 command/prompt
+suggestion 三个独立消费者，正在 D1d2d 收口；这些补充消费者、subagent、Provider UI
+与真实 Provider E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
