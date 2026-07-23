@@ -30,7 +30,7 @@ Provider 分阶段计划以
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1 已完成；Renderer 管理桥复用 Host ACP | 保持 Host 单一权威，随 E2 设置页补契约回归 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者与 subagent 均保证实际 endpoint、credential、model 与 Turn Route 一致 | 保持真实链路回归，进入设置与 Probe 产品化 |
-| Provider UI | Renderer 已有订阅门禁后的 Profile/Catalog/Assignment 安全桥，尚无设置页 | 切片 E2：最小 Provider 设置页与本地校验反馈 |
+| Provider UI | E1 安全桥与 E2 Provider 设置页已完成，可管理 Profile 与 global/agent Assignment | 切片 E3：用户主动触发的分级 Probe 契约 |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
 ## 开发循环记录
@@ -1041,7 +1041,9 @@ E1 计划复盘：
 
 ### 循环 16：Provider 切片 E2——最小设置页
 
-状态：已规划，下一开发切片
+状态：已完成
+
+本地提交：`e42a06e feat: add provider routing settings workspace`
 
 本轮目标：
 
@@ -1056,3 +1058,59 @@ Key；桌面单测、语法检查和真实浏览器视觉 smoke 通过。
 
 本轮非目标：不做 Session Binding 迁移 UI、自动 Provider fallback、付费 Probe、
 Catalog 在线更新或外部 Provider 发布验收。
+
+已经实现：
+
+- 侧边栏新增可键盘操作的“Provider 设置”，登录/订阅页面和常驻 Agent 首页保持原入口；
+- 设置页从 E1 snapshot 展示 Profile 数、Assignment 数、Catalog revision、公开端点、
+  协议、enabled models、凭据配置状态和尾号；
+- 支持按 Catalog 预设填充 OpenAI/xAI/Anthropic 等配置，也支持自定义三协议兼容端点；
+- 支持创建/编辑/删除 Profile，编辑时可选替换 Key；Key 提交前即从当前表单值复制，
+  随后立即清空输入，操作完成后重新从 Host 拉公开 snapshot；
+- 支持 global/agent 范围和 `main`、`subagent`、`vision`、`compaction`、`memory`
+  等稳定 role 的 Assignment upsert/delete；
+- 界面明确标注“保存不自动测试模型，也不产生 Provider 费用”，没有实现静默 fallback
+  或自动付费请求；
+- 切换账户、退出、blocked 或 unavailable 时清除 Renderer 内存中的 Provider snapshot，
+  防止跨账户保留公开配置。
+
+验证证据：
+
+- 桌面单元/契约测试：24 项通过，1 项可选真实 Host 测试按原配置跳过；
+- Electron 交互 smoke 验证预设填充、一次性 Key 提交、提交后输入为空且 DOM 不含 Key，
+  以及 global/main Assignment 参数；
+- 1180×760 Retina 视觉 smoke 分别检查设置页首屏、滚动底部和原常驻 Agent 首页：
+  Profile 卡片、路由矩阵、表单尾部均可见，无横向溢出，旧首页无回归；
+- `npm run check`、smoke 脚本语法检查与 `git diff --check` 通过。
+
+E2 计划复盘：
+
+- 前端设计保持现有深色持久 Agent 工作台，新增的是“路由控制台”而非另一套应用；
+  Profile→Role→Provider 的视觉关系与 Host Authority 状态被放在首屏；
+- UI 没有持有 Host client、Vault handle 或 Credential Ref；重新加载只读取 E1 公共快照；
+- 本轮实现了 global/agent Assignment，刻意没有提供 Session Binding 迁移入口，避免在
+  没有兼容性预检时让用户误以为可以无损换 Provider；
+- 真实外部 Provider、Probe、Usage、Catalog 在线更新和发布验收仍未实现，文案没有把
+  本机 mock E2E 误写成外部 Provider 已验证。
+
+### 循环 17：Provider 切片 E3——显式分级 Probe
+
+状态：已规划，下一开发切片
+
+本轮目标：
+
+1. 定义 Probe 请求/响应和审计记录，区分 `local_validation`、`metadata` 与
+   `minimal_inference`，每一级都必须由用户明确触发；
+2. `local_validation` 只做格式、协议、端点分类、模型/Assignment 一致性检查，零网络；
+3. `metadata` 只有在 Provider 明确存在非计费元数据接口时才可启用，否则显示“不支持”，
+   不把 401/404 伪装成模型不可用；
+4. `minimal_inference` 显示可能产生 Provider 费用并二次确认，使用临时 Probe Turn，
+   不改变任何产品 Session Binding 或历史；
+5. 结果只保存非秘密诊断摘要、时间和级别，不保存请求正文、响应正文、Key 或 Header。
+
+验收条件：保存 Profile 仍然零网络；blocked/订阅失效时不可 Probe；取消确认零网络；
+失败不切换 Provider；请求只使用被测 Profile 的短时 Vault lease；UI 清楚区分“格式有效”
+和“真实模型已响应”。
+
+本轮非目标：不实现自动周期健康检查、后台付费 Probe、Session 自动迁移、Provider
+fallback 或 Usage 计费汇总。
