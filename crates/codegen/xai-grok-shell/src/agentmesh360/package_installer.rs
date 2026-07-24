@@ -18,7 +18,9 @@ use super::package_artifact::{
 #[cfg(test)]
 use super::agent_packages::AgentPackageCatalog;
 #[cfg(test)]
-use super::package_artifact::{FILE_MANIFEST_PATH, TrustedPublisherStore};
+use super::package_artifact::FILE_MANIFEST_PATH;
+#[cfg(test)]
+use super::package_trust::TrustedPublisherStore;
 
 #[cfg(test)]
 const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";

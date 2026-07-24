@@ -14,6 +14,9 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use super::agent_packages::{AgentPackageCatalog, AgentPackageManifest};
+#[cfg(test)]
+use super::package_trust::TrustedPublisherKey;
+use super::package_trust::TrustedPublisherStore;
 
 const SIGNATURE_SCHEMA_VERSION: u32 = 1;
 const FILE_MANIFEST_SCHEMA_VERSION: u32 = 1;
@@ -50,40 +53,6 @@ struct PackageFileRecord {
     path: String,
     size: u64,
     sha256: String,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct TrustedPublisherKey {
-    pub key_id: &'static str,
-    pub publisher: &'static str,
-    pub public_key: [u8; 32],
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct TrustedPublisherStore {
-    keys: HashMap<&'static str, TrustedPublisherKey>,
-}
-
-impl TrustedPublisherStore {
-    pub(crate) fn embedded() -> Self {
-        // Production publisher keys are intentionally not fabricated in H1a. Until an audited
-        // AgentMesh360 release key is embedded, the production trust store rejects every
-        // externally supplied Package.
-        Self::default()
-    }
-
-    #[cfg(test)]
-    pub(super) fn with_key(key: TrustedPublisherKey) -> Self {
-        Self {
-            keys: HashMap::from([(key.key_id, key)]),
-        }
-    }
-
-    fn get(&self, key_id: &str) -> Result<&TrustedPublisherKey> {
-        self.keys
-            .get(key_id)
-            .ok_or_else(|| anyhow!("Agent Package signature key is not trusted"))
-    }
 }
 
 pub(crate) struct PackageArtifactVerifier {
@@ -796,8 +765,8 @@ mod tests {
             PackageArtifactVerifier::with_trust_store(
                 self.temp.path(),
                 TrustedPublisherStore::with_key(TrustedPublisherKey {
-                    key_id: TEST_KEY_ID,
-                    publisher: TEST_PUBLISHER,
+                    key_id: TEST_KEY_ID.into(),
+                    publisher: TEST_PUBLISHER.into(),
                     public_key: self.signing_key.verifying_key().to_bytes(),
                 }),
             )
