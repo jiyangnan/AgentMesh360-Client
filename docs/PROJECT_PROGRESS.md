@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1：远端 Registry 快照、可信 server time 与持久防回滚缓存 |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1b：可信 server time、持久防回滚与 last-known-good 缓存 |
 
 ## 开发循环记录
 
@@ -1895,3 +1895,68 @@ H2b1 下一切片：
 3. 在本地持久化已接受的 trust/registry 最高 sequence、原始签名文档和校验状态，
    实现跨重启防回滚与过期失败关闭；
 4. 只提供订阅门禁后的只读远端可用更新状态；仍不开放下载或安装 mutation。
+
+### 循环 26：动态 Agent Package H2b1a——签名远端 Registry Snapshot
+
+状态：实现、自主测试与本机 Kimi 交叉测试已完成；网络、缓存、下载和安装仍关闭
+
+计划复核与切片理由：原 H2b1 同时包含远端目录契约、Core 可信时间、跨重启缓存和只读
+更新状态，任一层出错都可能模糊信任边界。本轮先只建立一个纯验证器，把“服务器宣称
+有哪些版本”和“客户端愿意下载什么”之间的签名契约固定下来；它只接收调用方已经拿到
+的文档，不主动访问网络，也不写本地状态。
+
+H2b1a 已经实现：
+
+1. 新增严格 JSON `PackageRegistrySnapshot` v1：包含正整数 `revision`、`rootKeyId`、
+   `trustBundleSequence`、Snapshot 有效期、按 `packageId` 唯一排序的 Package 记录和
+   root signature；
+2. 每条 Package 记录把 `packageId/agentId/version/publisher`、Artifact URL/SHA-256
+   和 Envelope URL/SHA-256 绑定到同一个签名 revision；Package/Agent 标识约束与 v1
+   Manifest 对齐，version 必须是 canonical SemVer；
+3. Artifact/Envelope 地址只接受最大 4 KiB 的 canonical HTTPS URL，拒绝用户凭据和
+   fragment；摘要只接受 64 字符小写 SHA-256；
+4. 文档最大 1 MiB、最多 256 个 Package，严格拒绝未知字段、重复 packageId/agentId、
+   非法顺序、过期/未来时间窗和旧 revision；
+5. 签名载荷有独立 domain separator；所有自由文本字段先 canonical Base64，再进入
+   确定性逐行 payload，避免 URL 或版本字符串造成分隔符歧义；root 继续使用 H2b0 的
+   Ed25519 strict verifier；
+6. 验证 API 不接受可伪造的裸 trust sequence，而是直接消费已验证的
+   `TrustedPublisherStore`，要求 Snapshot 的 sequence 和 rootKeyId 与其完全一致；
+7. Registry 中的每个 publisher 还必须至少拥有一个当前 active Publisher key，避免
+   已全部 retired/revoked 的发布者仍显示成可用下载；
+8. 返回的 Verified Snapshot 只含签名覆盖的数据和
+   `revision/trustBundleSequence/rootKeyId/packageCount` 非秘密审计投影。
+
+H2b1a 继续保持的关闭边界：
+
+- `TrustedRootStore::embedded()` 与生产 Publisher Bundle 仍为空，所以生产环境无法
+  接受任何远端 Snapshot；
+- 不读取 Core bootstrap 时间，不访问 Registry URL，不缓存原始文档，不持久化最高
+  revision/sequence，不下载 Artifact/Envelope，不开放 ACP/UI 或安装 mutation；
+- URL 可能包含签名 query，未来只允许 Host 内部使用，不能进入公开状态响应或日志。
+
+H2b1a 自主验证：
+
+- 新增 4 项测试，覆盖双 Package 正向验证、Artifact URL 篡改、未知 root、过期、
+  revision 回滚、Trust Bundle sequence/root 不匹配、乱序/重复身份、不可信 publisher、
+  非 HTTPS URL、非法摘要、未知字段、非法签名和生产空 root 失败关闭；
+- H2b0 Trust Bundle 与 H1 Artifact 专项回归继续通过；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：104 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 与
+  `git diff --check` 通过；
+- 本机 Kimi 通读全部代码和三份中文文档，独立实跑完整 104 项测试、Clippy、Rustfmt
+  与 `git diff --check`，全部通过；逐项确认 payload 全字段覆盖且无分隔歧义、tamper
+  实际抵达 root signature、Trust Store sequence/root/publisher 绑定不可绕过、H2b0
+  验签重构无回归、无网络/写入/公开 URL 泄露，Blocker/High/Medium/Low 均为零并明确
+  给出 PASS，H2b1a 正式关闭。
+
+H2b1a 代码提交：`0cc5194`（`feat: verify remote package registry snapshots`）。
+
+H2b1b 下一切片（须等 H2b1a 双方验证关闭后启动）：
+
+1. 从 Core bootstrap 获取并解析可信 `server_time`，建立有界的新鲜度/单调时钟投影；
+2. 在 `state.db` 增加原始签名 Trust Bundle/Registry Snapshot、最高 sequence/revision、
+   验证时间与失败状态，事务化拒绝跨重启回滚；
+3. 离线时只能在签名有效期和已验证缓存边界内展示 last-known-good，只读状态不得泄露
+   URL/query、文件路径、账户标识或原始错误；
+4. 本切片仍不下载或安装 Package；网络抓取和 mutation 在后续独立门禁中实现。

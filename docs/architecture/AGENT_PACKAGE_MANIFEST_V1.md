@@ -248,3 +248,34 @@ H2b0 已完成自主测试和两轮本机 Kimi 交叉测试，但只交付验证
 `minimumSequence` 尚未持久化，远端可信时间、Registry Snapshot、缓存、防回滚状态、
 下载和安装入口都属于 H2b1 以后。因此当前外部 Package 仍全部拒绝，不能把本节解读为
 生产密钥已经上线。
+
+## 11. H2b1a Package Registry Snapshot v1（已通过交叉测试）
+
+H2b1a 在 Publisher Trust Bundle 之上增加 root 签名的远端目录契约：
+
+```text
+已验证的 Publisher Trust Store（sequence + rootKeyId + active publishers）
+  + 客户端内置 Root Store
+  -> 验证 Package Registry Snapshot
+  -> 获得只读 Verified Remote Package Records
+```
+
+Snapshot 最大 1 MiB、最多 256 条记录，包含 `schemaVersion`、`revision`、
+`rootKeyId`、`trustBundleSequence`、`generatedAt`、`expiresAt`、`packages` 和
+`signature`。记录按 `packageId` 严格递增，`agentId` 在整个 Snapshot 内也必须唯一。
+每条记录签名绑定：
+
+| 身份 | 远端对象 |
+| --- | --- |
+| `packageId`、`agentId`、canonical SemVer、`publisher` | Artifact canonical HTTPS URL 与小写 SHA-256 |
+| 同一组 Package 身份 | Signature Envelope canonical HTTPS URL 与小写 SHA-256 |
+
+自由文本字段以 canonical Base64 进入有独立 domain separator 的确定性 payload；
+Snapshot root signature 复用 H2b0 的 Ed25519 strict verifier。验证器直接接收已经验证的
+`TrustedPublisherStore`，要求 sequence 与 rootKeyId 完全一致，并拒绝没有 active key
+的 publisher，不能由调用方传入一个裸 sequence 冒充信任事实。
+
+H2b1a 已完成自主测试和本机 Kimi 交叉测试，但仍是纯验证层：生产 Root/Bundle 为空，
+不联网、不缓存、不下载、不安装。Core 可信时间、持久最高 revision/sequence、
+last-known-good 缓存和只读更新状态属于 H2b1b；Registry URL 和可能存在的 query
+只能留在 Host 内部，不能投影到公开响应或日志。
