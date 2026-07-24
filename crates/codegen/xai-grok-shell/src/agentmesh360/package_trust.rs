@@ -7,6 +7,8 @@ use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
+use super::access::ClientAccess;
+
 const TRUST_BUNDLE_SCHEMA_VERSION: u32 = 1;
 const MAX_TRUST_BUNDLE_BYTES: usize = 64 * 1024;
 const MAX_PUBLISHER_KEYS: usize = 64;
@@ -38,29 +40,27 @@ impl TrustedPublisherStore {
         // H2b0 deliberately adds the signed rotation/revocation mechanism without fabricating a
         // production root. Until an audited root key and signed bundle ship, external Packages
         // remain rejected.
-        let roots = TrustedRootStore::embedded();
-        let Some(document) = EMBEDDED_PUBLISHER_TRUST_BUNDLE else {
-            return Self::default();
-        };
-        match Self::from_signed_bundle(document, &roots, Utc::now(), 0) {
-            Ok(store) => {
-                let audit = store.audit();
-                tracing::info!(
-                    trust_sequence = audit.trust_sequence,
-                    root_key_id = audit.root_key_id.as_deref().unwrap_or("none"),
-                    active_key_count = audit.active_key_count,
-                    "loaded embedded Agent Package publisher trust"
-                );
-                store
-            }
-            Err(error) => {
-                tracing::error!(%error, "embedded Agent Package publisher trust is invalid");
-                Self::default()
-            }
+        if EMBEDDED_PUBLISHER_TRUST_BUNDLE.is_some() {
+            tracing::error!(
+                "embedded Agent Package publisher trust requires a fresh Core time gate"
+            );
         }
+        Self::default()
     }
 
     pub(crate) fn from_signed_bundle(
+        document: &str,
+        roots: &TrustedRootStore,
+        access: &ClientAccess,
+        minimum_sequence: u64,
+    ) -> Result<Self> {
+        let now = access
+            .trusted_server_now()
+            .context("Agent Package publisher trust requires fresh Core server time")?;
+        Self::from_signed_bundle_at(document, roots, now, minimum_sequence)
+    }
+
+    fn from_signed_bundle_at(
         document: &str,
         roots: &TrustedRootStore,
         now: DateTime<Utc>,
@@ -371,8 +371,9 @@ mod tests {
             key_id: ROOT_KEY_ID.into(),
             public_key: root.verifying_key().to_bytes(),
         });
+        let access = ClientAccess::with_trusted_time_for_test(now);
 
-        let store = TrustedPublisherStore::from_signed_bundle(&document, &roots, now, 7)
+        let store = TrustedPublisherStore::from_signed_bundle(&document, &roots, &access, 7)
             .expect("trusted bundle");
 
         assert_eq!(
@@ -387,6 +388,21 @@ mod tests {
         assert!(store.get("agentmesh360-release-b").is_ok());
         assert!(store.get("agentmesh360-release-retired").is_err());
         assert!(store.get("agentmesh360-release-revoked").is_err());
+
+        access.invalidate();
+        assert!(
+            TrustedPublisherStore::from_signed_bundle(&document, &roots, &access, 7)
+                .expect_err("invalidated trusted time")
+                .to_string()
+                .contains("fresh Core server time")
+        );
+        let stale_access = ClientAccess::with_stale_trusted_time_for_test(now);
+        assert!(
+            TrustedPublisherStore::from_signed_bundle(&document, &roots, &stale_access, 7)
+                .expect_err("stale trusted time")
+                .to_string()
+                .contains("fresh Core server time")
+        );
     }
 
     #[test]
@@ -406,7 +422,7 @@ mod tests {
         tampered.keys[0].publisher = "attacker".into();
         let tampered = serde_json::to_string(&tampered).expect("tampered");
         assert!(
-            TrustedPublisherStore::from_signed_bundle(&tampered, &roots, now, 7)
+            TrustedPublisherStore::from_signed_bundle_at(&tampered, &roots, now, 7)
                 .expect_err("tamper")
                 .to_string()
                 .contains("signature")
@@ -417,7 +433,7 @@ mod tests {
         sign_bundle(&mut unknown_root, &root);
         let unknown_root = serde_json::to_string(&unknown_root).expect("unknown root");
         assert!(
-            TrustedPublisherStore::from_signed_bundle(&unknown_root, &roots, now, 7)
+            TrustedPublisherStore::from_signed_bundle_at(&unknown_root, &roots, now, 7)
                 .expect_err("unknown root")
                 .to_string()
                 .contains("not trusted")
@@ -427,7 +443,7 @@ mod tests {
         sign_bundle(&mut bundle, &root);
         let document = serde_json::to_string(&bundle).expect("bundle");
         assert!(
-            TrustedPublisherStore::from_signed_bundle(
+            TrustedPublisherStore::from_signed_bundle_at(
                 &document,
                 &roots,
                 Utc.with_ymd_and_hms(2026, 8, 1, 0, 0, 0)
@@ -440,7 +456,7 @@ mod tests {
             .contains("validity")
         );
         assert!(
-            TrustedPublisherStore::from_signed_bundle(&document, &roots, now, 8)
+            TrustedPublisherStore::from_signed_bundle_at(&document, &roots, now, 8)
                 .expect_err("rollback")
                 .to_string()
                 .contains("stale")
@@ -451,7 +467,7 @@ mod tests {
         sign_bundle(&mut unsorted, &root);
         let unsorted = serde_json::to_string(&unsorted).expect("unsorted");
         assert!(
-            TrustedPublisherStore::from_signed_bundle(&unsorted, &roots, now, 7)
+            TrustedPublisherStore::from_signed_bundle_at(&unsorted, &roots, now, 7)
                 .expect_err("unsorted")
                 .to_string()
                 .contains("uniquely sorted")
@@ -462,7 +478,7 @@ mod tests {
         sign_bundle(&mut invalid_key, &root);
         let invalid_key = serde_json::to_string(&invalid_key).expect("invalid key");
         assert!(
-            TrustedPublisherStore::from_signed_bundle(&invalid_key, &roots, now, 7)
+            TrustedPublisherStore::from_signed_bundle_at(&invalid_key, &roots, now, 7)
                 .expect_err("invalid Ed25519 key")
                 .to_string()
                 .contains("public key")

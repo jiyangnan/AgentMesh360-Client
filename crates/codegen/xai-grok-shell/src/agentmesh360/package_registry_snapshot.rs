@@ -8,6 +8,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use super::access::ClientAccess;
 use super::package_trust::{PublisherTrustAudit, TrustedPublisherStore, TrustedRootStore};
 
 const REGISTRY_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
@@ -28,6 +29,19 @@ impl PackageRegistrySnapshotVerifier {
     }
 
     pub(crate) fn verify_document(
+        &self,
+        document: &str,
+        access: &ClientAccess,
+        minimum_revision: u64,
+        trusted_publishers: &TrustedPublisherStore,
+    ) -> Result<VerifiedPackageRegistrySnapshot> {
+        let now = access
+            .trusted_server_now()
+            .context("Agent Package registry requires fresh Core server time")?;
+        self.verify_document_at(document, now, minimum_revision, trusted_publishers)
+    }
+
+    fn verify_document_at(
         &self,
         document: &str,
         now: DateTime<Utc>,
@@ -310,14 +324,11 @@ mod tests {
         let now = timestamp(2026, 7, 24, 12, 0, 0);
         let mut snapshot = snapshot_fixture();
         sign_snapshot(&mut snapshot, &root);
+        let document = serde_json::to_string(&snapshot).expect("registry snapshot");
+        let access = ClientAccess::with_trusted_time_for_test(now);
 
         let verified = verifier
-            .verify_document(
-                &serde_json::to_string(&snapshot).expect("registry snapshot"),
-                now,
-                42,
-                &trust,
-            )
+            .verify_document(&document, &access, 42, &trust)
             .expect("verified registry snapshot");
 
         assert_eq!(
@@ -333,6 +344,23 @@ mod tests {
         assert_eq!(verified.packages[1].agent_id, "job-agent");
         assert_eq!(verified.generated_at, timestamp(2026, 7, 1, 0, 0, 0));
         assert_eq!(verified.expires_at, timestamp(2026, 8, 1, 0, 0, 0));
+
+        access.invalidate();
+        assert!(
+            verifier
+                .verify_document(&document, &access, 42, &trust)
+                .expect_err("invalidated access")
+                .to_string()
+                .contains("fresh Core server time")
+        );
+        let stale_access = ClientAccess::with_stale_trusted_time_for_test(now);
+        assert!(
+            verifier
+                .verify_document(&document, &stale_access, 42, &trust)
+                .expect_err("stale trusted server time")
+                .to_string()
+                .contains("fresh Core server time")
+        );
     }
 
     #[test]
@@ -348,7 +376,7 @@ mod tests {
             "https://packages.agentmesh360.com/deploy-agent/1.0.1.tar.zst".into();
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&tampered).expect("tampered registry"),
                     now,
                     42,
@@ -365,7 +393,7 @@ mod tests {
         let unknown_trust = publisher_trust(7, "unknown-root");
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&unknown_root).expect("unknown root registry"),
                     now,
                     42,
@@ -381,14 +409,14 @@ mod tests {
         let document = serde_json::to_string(&valid).expect("valid registry");
         assert!(
             verifier
-                .verify_document(&document, timestamp(2026, 8, 1, 0, 0, 0), 42, &trust)
+                .verify_document_at(&document, timestamp(2026, 8, 1, 0, 0, 0), 42, &trust)
                 .expect_err("expired")
                 .to_string()
                 .contains("validity")
         );
         assert!(
             verifier
-                .verify_document(&document, now, 43, &trust)
+                .verify_document_at(&document, now, 43, &trust)
                 .expect_err("stale revision")
                 .to_string()
                 .contains("stale")
@@ -396,7 +424,7 @@ mod tests {
         let newer_trust = publisher_trust(8, ROOT_KEY_ID);
         assert!(
             verifier
-                .verify_document(&document, now, 42, &newer_trust)
+                .verify_document_at(&document, now, 42, &newer_trust)
                 .expect_err("trust mismatch")
                 .to_string()
                 .contains("trust sequence")
@@ -404,7 +432,7 @@ mod tests {
         let different_root_trust = publisher_trust(7, "agentmesh360-root-test-rotated");
         assert!(
             verifier
-                .verify_document(&document, now, 42, &different_root_trust)
+                .verify_document_at(&document, now, 42, &different_root_trust)
                 .expect_err("trust root mismatch")
                 .to_string()
                 .contains("trust root")
@@ -423,7 +451,7 @@ mod tests {
         sign_snapshot(&mut unsorted, &root);
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&unsorted).expect("unsorted registry"),
                     now,
                     42,
@@ -439,7 +467,7 @@ mod tests {
         sign_snapshot(&mut duplicate_agent, &root);
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&duplicate_agent).expect("duplicate agent registry"),
                     now,
                     42,
@@ -456,7 +484,7 @@ mod tests {
         sign_snapshot(&mut insecure_url, &root);
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&insecure_url).expect("insecure URL registry"),
                     now,
                     42,
@@ -472,7 +500,7 @@ mod tests {
         sign_snapshot(&mut invalid_digest, &root);
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&invalid_digest).expect("invalid digest registry"),
                     now,
                     42,
@@ -488,7 +516,7 @@ mod tests {
         sign_snapshot(&mut untrusted_publisher, &root);
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&untrusted_publisher)
                         .expect("untrusted publisher registry"),
                     now,
@@ -517,7 +545,7 @@ mod tests {
             .insert("unexpected".into(), Value::Bool(true));
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&unknown_field).expect("unknown field registry"),
                     now,
                     42,
@@ -531,7 +559,7 @@ mod tests {
         snapshot.signature = BASE64.encode([0_u8; 63]);
         assert!(
             verifier
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&snapshot).expect("invalid signature registry"),
                     now,
                     42,
@@ -546,7 +574,7 @@ mod tests {
         sign_snapshot(&mut signed, &root);
         assert!(
             PackageRegistrySnapshotVerifier::embedded()
-                .verify_document(
+                .verify_document_at(
                     &serde_json::to_string(&signed).expect("production registry"),
                     now,
                     42,

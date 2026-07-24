@@ -1,12 +1,15 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use agent_client_protocol as acp;
+use chrono::{DateTime, Utc};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_CORE_BASE_URL: &str = "https://api.agentmesh360.com";
 const CLIENT_BOOTSTRAP_PATH: &str = "/v1/account/client-bootstrap";
+const TRUSTED_TIME_MAX_AGE: Duration = Duration::from_secs(10 * 60);
+const TRUSTED_TIME_MAX_WALL_DRIFT: Duration = Duration::from_secs(2 * 60);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all(serialize = "camelCase", deserialize = "snake_case"))]
@@ -62,6 +65,7 @@ enum AccessState {
     Granted {
         response: ClientBootstrapResponse,
         valid_until: Instant,
+        trusted_time: TrustedServerTime,
     },
     Denied(ClientBootstrapResponse),
 }
@@ -76,6 +80,80 @@ pub enum BootstrapError {
     VerificationUnavailable,
     #[error("AgentMesh360 Core returned an unsupported bootstrap contract")]
     UnsupportedContract,
+}
+
+#[derive(Clone, Debug)]
+struct TrustedServerTime {
+    server_time: DateTime<Utc>,
+    observed_at: Instant,
+    observed_wall_time: SystemTime,
+    fresh_until: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum TrustedTimeError {
+    #[error("AgentMesh360 trusted server time is unavailable")]
+    Unavailable,
+    #[error("AgentMesh360 trusted server time is stale")]
+    Stale,
+}
+
+impl TrustedServerTime {
+    fn new(
+        server_time: DateTime<Utc>,
+        observed_at: Instant,
+        membership_valid_for: Duration,
+    ) -> Result<Self, BootstrapError> {
+        Self::new_at(
+            server_time,
+            observed_at,
+            SystemTime::now(),
+            membership_valid_for,
+        )
+    }
+
+    fn new_at(
+        server_time: DateTime<Utc>,
+        observed_at: Instant,
+        observed_wall_time: SystemTime,
+        membership_valid_for: Duration,
+    ) -> Result<Self, BootstrapError> {
+        let fresh_for = TRUSTED_TIME_MAX_AGE.min(membership_valid_for);
+        let fresh_until = observed_at
+            .checked_add(fresh_for)
+            .ok_or(BootstrapError::UnsupportedContract)?;
+        Ok(Self {
+            server_time,
+            observed_at,
+            observed_wall_time,
+            fresh_until,
+        })
+    }
+
+    fn current_time_at(
+        &self,
+        now: Instant,
+        wall_time: SystemTime,
+    ) -> Result<DateTime<Utc>, TrustedTimeError> {
+        if now >= self.fresh_until {
+            return Err(TrustedTimeError::Stale);
+        }
+        let elapsed = now
+            .checked_duration_since(self.observed_at)
+            .ok_or(TrustedTimeError::Unavailable)?;
+        let wall_elapsed = wall_time
+            .duration_since(self.observed_wall_time)
+            .map_err(|_| TrustedTimeError::Stale)?;
+        let wall_drift = wall_elapsed.abs_diff(elapsed);
+        if wall_drift > TRUSTED_TIME_MAX_WALL_DRIFT {
+            return Err(TrustedTimeError::Stale);
+        }
+        let elapsed =
+            chrono::Duration::from_std(elapsed).map_err(|_| TrustedTimeError::Unavailable)?;
+        self.server_time
+            .checked_add_signed(elapsed)
+            .ok_or(TrustedTimeError::Unavailable)
+    }
 }
 
 impl BootstrapError {
@@ -142,6 +220,71 @@ impl ClientAccess {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn with_trusted_time_for_test(server_time: DateTime<Utc>) -> Self {
+        Self::with_trusted_time_elapsed_for_test(server_time, Duration::ZERO)
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_stale_trusted_time_for_test(server_time: DateTime<Utc>) -> Self {
+        Self::with_trusted_time_elapsed_for_test(server_time, TRUSTED_TIME_MAX_AGE)
+    }
+
+    #[cfg(test)]
+    fn with_trusted_time_elapsed_for_test(server_time: DateTime<Utc>, elapsed: Duration) -> Self {
+        let access = Self::new("http://127.0.0.1");
+        let now = Instant::now();
+        let observed_at = now
+            .checked_sub(elapsed)
+            .expect("test trusted time observation");
+        let observed_wall_time = SystemTime::now()
+            .checked_sub(elapsed)
+            .expect("test trusted wall time observation");
+        let trusted_time = TrustedServerTime::new_at(
+            server_time,
+            observed_at,
+            observed_wall_time,
+            TRUSTED_TIME_MAX_AGE,
+        )
+        .expect("test trusted time anchor");
+        let valid_until = now
+            .checked_add(Duration::from_secs(3600))
+            .expect("test access validity");
+        *access.state.lock() = AccessState::Granted {
+            response: ClientBootstrapResponse {
+                schema_version: 1,
+                server_time: server_time.to_rfc3339(),
+                account: BootstrapAccount {
+                    id: 1,
+                    email: "trusted-time-test@example.invalid".into(),
+                    account_id: 1,
+                    display_name: None,
+                    avatar_url: None,
+                },
+                subscription: BootstrapSubscription {
+                    status: "active".into(),
+                    source: "test".into(),
+                    plan: None,
+                    period_start: None,
+                    period_end: None,
+                    auto_renews: false,
+                },
+                credits: BootstrapCredits {
+                    balance: 0,
+                    source: "test".into(),
+                    expires_at: None,
+                },
+                access: BootstrapAccess {
+                    can_enter_client: true,
+                    reason: "test".into(),
+                },
+            },
+            valid_until,
+            trusted_time,
+        };
+        access
+    }
+
     pub async fn bootstrap(
         &self,
         access_token: &str,
@@ -178,10 +321,16 @@ impl ClientAccess {
         }
 
         if bootstrap.access.can_enter_client {
-            let valid_for = membership_valid_for(&bootstrap)?;
+            let (server_time, valid_for) = granted_bootstrap_validity(&bootstrap)?;
+            let observed_at = Instant::now();
+            let valid_until = observed_at
+                .checked_add(valid_for)
+                .ok_or(BootstrapError::UnsupportedContract)?;
+            let trusted_time = TrustedServerTime::new(server_time, observed_at, valid_for)?;
             *self.state.lock() = AccessState::Granted {
                 response: bootstrap.clone(),
-                valid_until: Instant::now() + valid_for,
+                valid_until,
+                trusted_time,
             };
         } else {
             *self.state.lock() = AccessState::Denied(bootstrap.clone());
@@ -211,6 +360,7 @@ impl ClientAccess {
             AccessState::Granted {
                 response,
                 valid_until,
+                ..
             } if Instant::now() < *valid_until => Some(response.account.account_id),
             AccessState::Granted { .. } | AccessState::Denied(_) | AccessState::Unverified => None,
         }
@@ -218,6 +368,20 @@ impl ClientAccess {
 
     pub fn require(&self) -> Result<(), acp::Error> {
         require_state(&self.state.lock(), None)
+    }
+
+    pub(super) fn trusted_server_now(&self) -> Result<DateTime<Utc>, TrustedTimeError> {
+        let now = Instant::now();
+        match &*self.state.lock() {
+            AccessState::Granted {
+                valid_until,
+                trusted_time,
+                ..
+            } if now < *valid_until => trusted_time.current_time_at(now, SystemTime::now()),
+            AccessState::Granted { .. } | AccessState::Denied(_) | AccessState::Unverified => {
+                Err(TrustedTimeError::Unavailable)
+            }
+        }
     }
 
     pub fn guard(&self, owner_account_id: i64) -> ClientAccessGuard {
@@ -233,6 +397,7 @@ fn require_state(state: &AccessState, expected_account_id: Option<i64>) -> Resul
         AccessState::Granted {
             response,
             valid_until,
+            ..
         } if Instant::now() < *valid_until
             && expected_account_id
                 .is_none_or(|expected| expected == response.account.account_id) =>
@@ -243,6 +408,7 @@ fn require_state(state: &AccessState, expected_account_id: Option<i64>) -> Resul
         AccessState::Granted {
             response,
             valid_until,
+            ..
         } if Instant::now() < *valid_until => {
             Err(acp::Error::auth_required().data(serde_json::json!({
                 "code": "agentmesh360_access_required",
@@ -269,10 +435,12 @@ fn require_state(state: &AccessState, expected_account_id: Option<i64>) -> Resul
     }
 }
 
-fn membership_valid_for(response: &ClientBootstrapResponse) -> Result<Duration, BootstrapError> {
-    let server_time = chrono::DateTime::parse_from_rfc3339(&response.server_time)
+fn granted_bootstrap_validity(
+    response: &ClientBootstrapResponse,
+) -> Result<(DateTime<Utc>, Duration), BootstrapError> {
+    let server_time = DateTime::parse_from_rfc3339(&response.server_time)
         .map_err(|_| BootstrapError::UnsupportedContract)?
-        .with_timezone(&chrono::Utc);
+        .with_timezone(&Utc);
     let period_end = response
         .subscription
         .period_end
@@ -283,7 +451,7 @@ fn membership_valid_for(response: &ClientBootstrapResponse) -> Result<Duration, 
                 .map(|value| value.and_utc())
                 .map_err(|_| BootstrapError::UnsupportedContract)
         })?;
-    (period_end - server_time)
+    let valid_for = (period_end - server_time)
         .to_std()
         .map_err(|_| BootstrapError::UnsupportedContract)
         .and_then(|duration| {
@@ -292,7 +460,8 @@ fn membership_valid_for(response: &ClientBootstrapResponse) -> Result<Duration, 
             } else {
                 Ok(duration)
             }
-        })
+        })?;
+    Ok((server_time, valid_for))
 }
 
 #[cfg(test)]
@@ -346,12 +515,24 @@ mod tests {
         assert!(client_wire.get("schema_version").is_none());
         assert!(access.is_granted());
         assert_eq!(access.current_account_id(), Some(1));
+        let trusted_time = access
+            .trusted_server_now()
+            .expect("fresh trusted server time");
+        let bootstrap_time = DateTime::parse_from_rfc3339("2026-07-22T00:00:00Z")
+            .expect("bootstrap time")
+            .with_timezone(&Utc);
+        assert!(trusted_time >= bootstrap_time);
+        assert!(trusted_time < bootstrap_time + chrono::Duration::seconds(5));
         access.require().expect("granted");
         let guard = access.guard(1);
         guard.require().expect("matching live account guard");
         assert!(access.guard(2).require().is_err());
         access.invalidate();
         assert!(!access.is_granted());
+        assert!(matches!(
+            access.trusted_server_now(),
+            Err(TrustedTimeError::Unavailable)
+        ));
         assert!(guard.require().is_err());
         assert_eq!(access.current_account_id(), None);
         let request = server.await.expect("server");
@@ -377,6 +558,10 @@ mod tests {
 
         assert!(!response.access.can_enter_client);
         assert!(!access.is_granted());
+        assert!(matches!(
+            access.trusted_server_now(),
+            Err(TrustedTimeError::Unavailable)
+        ));
         assert_eq!(access.current_account_id(), None);
         let error = access.require().expect_err("denied");
         assert_eq!(error.code, acp::Error::auth_required().code);
@@ -417,5 +602,102 @@ mod tests {
         ));
         assert!(!access.is_granted());
         let _ = elapsed_server.await.expect("server");
+
+        let invalid_time = ACTIVE_BODY.replace(
+            "\"server_time\":\"2026-07-22T00:00:00Z\"",
+            "\"server_time\":\"not-a-time\"",
+        );
+        let (base_url, invalid_time_server) = serve_once("200 OK", &invalid_time).await;
+        let access = ClientAccess::new(base_url);
+        assert!(matches!(
+            access.bootstrap("fresh-jwt").await,
+            Err(BootstrapError::UnsupportedContract)
+        ));
+        assert!(matches!(
+            access.trusted_server_now(),
+            Err(TrustedTimeError::Unavailable)
+        ));
+        let _ = invalid_time_server.await.expect("server");
+    }
+
+    #[test]
+    fn trusted_server_time_uses_monotonic_elapsed_time_and_expires_fail_closed() {
+        let server_time = DateTime::parse_from_rfc3339("2026-07-22T00:00:00Z")
+            .expect("server time")
+            .with_timezone(&Utc);
+        let observed_at = Instant::now();
+        let observed_wall_time = SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000_000);
+        let anchor = TrustedServerTime::new_at(
+            server_time,
+            observed_at,
+            observed_wall_time,
+            Duration::from_secs(3600),
+        )
+        .expect("trusted time anchor");
+
+        assert_eq!(
+            anchor
+                .current_time_at(
+                    observed_at + Duration::from_secs(90),
+                    observed_wall_time + Duration::from_secs(90)
+                )
+                .expect("fresh time"),
+            server_time + chrono::Duration::seconds(90)
+        );
+        assert_eq!(
+            anchor.current_time_at(
+                observed_at + TRUSTED_TIME_MAX_AGE,
+                observed_wall_time + TRUSTED_TIME_MAX_AGE
+            ),
+            Err(TrustedTimeError::Stale)
+        );
+        assert_eq!(
+            anchor.current_time_at(
+                observed_at
+                    .checked_sub(Duration::from_secs(1))
+                    .expect("earlier instant"),
+                observed_wall_time
+            ),
+            Err(TrustedTimeError::Unavailable)
+        );
+        assert_eq!(
+            anchor.current_time_at(
+                observed_at + Duration::from_secs(60),
+                observed_wall_time
+                    .checked_sub(Duration::from_secs(1))
+                    .expect("rolled-back wall time")
+            ),
+            Err(TrustedTimeError::Stale)
+        );
+        assert_eq!(
+            anchor.current_time_at(
+                observed_at + Duration::from_secs(60),
+                observed_wall_time + Duration::from_secs(5 * 60)
+            ),
+            Err(TrustedTimeError::Stale)
+        );
+
+        let short_membership = TrustedServerTime::new_at(
+            server_time,
+            observed_at,
+            observed_wall_time,
+            Duration::from_secs(30),
+        )
+        .expect("short trusted time anchor");
+        assert!(
+            short_membership
+                .current_time_at(
+                    observed_at + Duration::from_secs(29),
+                    observed_wall_time + Duration::from_secs(29)
+                )
+                .is_ok()
+        );
+        assert_eq!(
+            short_membership.current_time_at(
+                observed_at + Duration::from_secs(30),
+                observed_wall_time + Duration::from_secs(30)
+            ),
+            Err(TrustedTimeError::Stale)
+        );
     }
 }
