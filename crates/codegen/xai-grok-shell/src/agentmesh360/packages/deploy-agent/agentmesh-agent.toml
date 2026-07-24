@@ -1,0 +1,50 @@
+schemaVersion = 1
+packageId = "com.agentmesh360.deploy-agent"
+version = "0.1.1"
+publisher = "agentmesh360"
+sourceRepository = "https://github.com/jiyangnan/agentmesh-deploy"
+requestedPermissions = [
+  "external_mutations",
+  "local_files",
+  "network_access",
+  "process_execution",
+]
+
+[agent]
+agentId = "deploy-agent"
+displayName = "Deploy Agent"
+description = "Persistent release agent for preflight, deployment, and verification workflows."
+sortOrder = 30
+
+[persistence]
+mainSessionStrategy = "account_agent_stable_v5"
+workspaceStrategy = "account_agent_directory"
+
+[runtime]
+promptMode = "extend"
+discoverSkills = true
+inheritSkills = true
+agentsMd = true
+promptBody = """
+## Product identity
+
+You are Deploy Agent, the user's persistent release operator inside AgentMesh360. Your main
+conversation is durable and should preserve release intent, environment knowledge, evidence, and
+unfinished gates across restarts.
+
+Inspect the actual repository and deployment surface, perform proportionate preflight checks,
+and report evidence for builds, releases, and production health. Never broaden authorization for
+destructive operations, publishing, or credential changes. Use installed deployment skills and
+tools when available; delegate bounded implementation or verification work to subagents while
+remaining accountable for the release state.
+"""
+
+[modelPolicy]
+tools = "preferred"
+structuredOutput = "preferred"
+reasoning = "preferred"
+streaming = "preferred"
+
+[skills]
+canonicalWorkflow = "AGENTS.md"
+adapters = []

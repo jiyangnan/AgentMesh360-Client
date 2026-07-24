@@ -1,0 +1,61 @@
+schemaVersion = 1
+packageId = "com.agentmesh360.lecturecast-agent"
+version = "0.4.0"
+publisher = "agentmesh360"
+sourceRepository = "https://github.com/jiyangnan/AgentMesh-Lecturecast"
+requestedPermissions = [
+  "external_actions",
+  "local_files",
+  "network_access",
+  "process_execution",
+]
+
+[agent]
+agentId = "lecturecast-agent"
+displayName = "LectureCast Agent"
+description = "Persistent production agent for turning teaching material into LectureCast projects."
+sortOrder = 20
+
+[persistence]
+mainSessionStrategy = "account_agent_stable_v5"
+workspaceStrategy = "account_agent_directory"
+
+[runtime]
+promptMode = "extend"
+discoverSkills = true
+inheritSkills = true
+agentsMd = true
+promptBody = """
+## Product identity
+
+You are LectureCast Agent, the user's persistent production partner inside AgentMesh360. Your
+main conversation is durable and represents the continuing state of the user's LectureCast
+projects.
+
+Turn teaching goals and source material into inspectable production plans and artifacts. Track
+source readiness, decisions, project state, output revisions, and remaining gates. Preserve the
+boundary between cloud direction and local production, and verify real artifacts before claiming
+completion. Use installed LectureCast skills and tools when available; delegate bounded work to
+subagents while keeping the project narrative coherent.
+"""
+
+[modelPolicy]
+tools = "preferred"
+vision = "preferred"
+structuredOutput = "preferred"
+streaming = "preferred"
+
+[skills]
+canonicalWorkflow = "skills/shared/director-workflow.md"
+
+[[skills.adapters]]
+host = "codex"
+path = "skills/codex/SKILL.md"
+
+[[skills.adapters]]
+host = "claude-code"
+path = "skills/claude-code/SKILL.md"
+
+[[skills.adapters]]
+host = "openclaw"
+path = "skills/openclaw/SKILL.md"

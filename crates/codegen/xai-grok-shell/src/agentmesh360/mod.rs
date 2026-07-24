@@ -6,12 +6,12 @@
 //! deterministic main conversation per activated product agent.
 
 mod access;
+mod agent_packages;
 mod credential_lease;
 mod credential_vault;
 mod model_assignments;
 mod model_policy;
 mod model_routing;
-mod profiles;
 mod provider_catalog;
 mod provider_probes;
 mod provider_profiles;
@@ -38,6 +38,7 @@ use registry::{AgentRegistry, ProductAgentRecord};
 pub const ACCOUNT_BOOTSTRAP_METHOD: &str = "x.agentmesh360/account/bootstrap";
 pub const AGENTS_LIST_METHOD: &str = "x.agentmesh360/agents/list";
 pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
+pub const AGENT_PACKAGES_CATALOG_METHOD: &str = "x.agentmesh360/agent-packages/catalog";
 
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
@@ -304,6 +305,12 @@ struct AgentListResponse {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AgentPackageCatalogResponse<'a> {
+    catalog: &'a agent_packages::AgentPackageCatalog,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ActivateResponse {
     agent: ProductAgentRecord,
     resumed: bool,
@@ -365,6 +372,7 @@ pub(crate) async fn handle(
             serde_json::to_value(AgentListResponse { agents })
                 .expect("AgentListResponse is serializable")
         }),
+        AGENT_PACKAGES_CATALOG_METHOD => package_catalog(agent),
         AGENTS_ACTIVATE_METHOD => {
             let request: ActivateRequest = crate::extensions::parse_params(args)?;
             activate(agent, &request.agent_id)
@@ -514,6 +522,11 @@ fn list_agents(agent: &MvpAgent) -> Result<Vec<ProductAgentRecord>> {
     Ok(records)
 }
 
+fn package_catalog(agent: &MvpAgent) -> Result<serde_json::Value> {
+    let catalog = agent.agentmesh360.registry().package_catalog()?;
+    serde_json::to_value(AgentPackageCatalogResponse { catalog }).map_err(Into::into)
+}
+
 async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> {
     let owner_account_id = current_account_id(agent)?;
     let record = agent
@@ -548,7 +561,7 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
         .as_deref()
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("activation did not allocate a workspace"))?;
-    let profile = profiles::profile_for(agent_id)?;
+    let profile = agent.agentmesh360.registry().agent_definition(agent_id)?;
     let persisted_cwd = crate::session::resolve_local_session_any_cwd(session_id.0.as_ref());
     let mut meta = acp::Meta::new();
     meta.insert("agentProfile".into(), profile.to_json_value());

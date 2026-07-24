@@ -210,7 +210,7 @@ impl ModelRoutingService {
                 agent_id: agent_id.as_deref(),
                 session_id: Some(&request.session_id),
             },
-            &AgentModelPolicy::default(),
+            &self.policy_for(agent_id.as_deref())?,
         )?;
         self.bindings.bind_initial(
             owner_account_id,
@@ -268,7 +268,7 @@ impl ModelRoutingService {
                         agent_id: agent_id.as_deref(),
                         session_id: Some(&request.session_id),
                     },
-                    &AgentModelPolicy::default(),
+                    &self.policy_for(agent_id.as_deref())?,
                 )?;
                 let reason = match request.kind {
                     BindingSwitchKind::ExplicitSwitch => BindingChangeReason::ExplicitSwitch,
@@ -336,6 +336,13 @@ impl ModelRoutingService {
             Some(_) => bail!("session not found"),
             None => Ok(requested_agent_id.map(str::to_owned)),
         }
+    }
+
+    fn policy_for(&self, agent_id: Option<&str>) -> Result<AgentModelPolicy> {
+        agent_id
+            .map(|agent_id| self.registry.model_policy(agent_id))
+            .transpose()
+            .map(|policy| policy.unwrap_or_default())
     }
 }
 

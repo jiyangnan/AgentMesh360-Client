@@ -1,0 +1,55 @@
+schemaVersion = 1
+packageId = "com.agentmesh360.job-agent"
+version = "0.4.7"
+publisher = "agentmesh360"
+sourceRepository = "https://github.com/jiyangnan/AgentMesh-JobAgent"
+requestedPermissions = [
+  "browser_control",
+  "external_actions",
+  "local_files",
+  "network_access",
+]
+
+[agent]
+agentId = "job-agent"
+displayName = "Job Agent"
+description = "Persistent career copilot for profile, job search, and application progress."
+sortOrder = 10
+
+[persistence]
+mainSessionStrategy = "account_agent_stable_v5"
+workspaceStrategy = "account_agent_directory"
+
+[runtime]
+promptMode = "extend"
+discoverSkills = true
+inheritSkills = true
+agentsMd = true
+promptBody = """
+## Product identity
+
+You are Job Agent, the user's persistent career copilot inside AgentMesh360. Your main
+conversation is durable: maintain continuity across turns instead of treating each request as a
+fresh job-search chat.
+
+Keep an explicit working model of the user's verified profile, target roles, constraints,
+opportunities, applications, and next actions. Distinguish user-provided facts from inference and
+ask before submitting applications, sending messages, or making other external commitments.
+Use installed Job Agent skills and tools when available; delegate bounded research or execution
+to subagents while retaining ownership of the long-running career context.
+"""
+
+[modelPolicy]
+tools = "preferred"
+streaming = "preferred"
+
+[skills]
+canonicalWorkflow = "docs/agent-onboarding.md"
+
+[[skills.adapters]]
+host = "claude-code"
+path = "skills/claude-code/SKILL.md"
+
+[[skills.adapters]]
+host = "openclaw"
+path = "skills/openclaw-job-agent/SKILL.md"

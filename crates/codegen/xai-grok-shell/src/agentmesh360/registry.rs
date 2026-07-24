@@ -6,39 +6,12 @@ use chrono::{SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use xai_grok_agent::AgentDefinition;
 
-#[derive(Clone, Copy, Debug)]
-struct BuiltinAgentSpec {
-    agent_id: &'static str,
-    display_name: &'static str,
-    description: &'static str,
-    version: &'static str,
-    sort_order: i64,
-}
-
-const BUILTIN_AGENTS: [BuiltinAgentSpec; 3] = [
-    BuiltinAgentSpec {
-        agent_id: "job-agent",
-        display_name: "Job Agent",
-        description: "Persistent career copilot for profile, job search, and application progress.",
-        version: "0.1.0",
-        sort_order: 10,
-    },
-    BuiltinAgentSpec {
-        agent_id: "lecturecast-agent",
-        display_name: "LectureCast Agent",
-        description: "Persistent production agent for turning teaching material into LectureCast projects.",
-        version: "0.1.0",
-        sort_order: 20,
-    },
-    BuiltinAgentSpec {
-        agent_id: "deploy-agent",
-        display_name: "Deploy Agent",
-        description: "Persistent release agent for preflight, deployment, and verification workflows.",
-        version: "0.1.0",
-        sort_order: 30,
-    },
-];
+use super::agent_packages::{
+    AgentPackageCatalog, AgentPackageManifest, MainSessionStrategy, WorkspaceStrategy,
+};
+use super::model_policy::AgentModelPolicy;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -62,6 +35,7 @@ pub struct ProductAgentRecord {
 pub struct AgentRegistry {
     state_home: PathBuf,
     db_path: PathBuf,
+    package_catalog: Result<AgentPackageCatalog, String>,
 }
 
 impl Default for AgentRegistry {
@@ -77,7 +51,22 @@ impl AgentRegistry {
         Self {
             state_home,
             db_path,
+            package_catalog: AgentPackageCatalog::builtin().map_err(|error| error.to_string()),
         }
+    }
+
+    pub(crate) fn package_catalog(&self) -> Result<&AgentPackageCatalog> {
+        self.package_catalog
+            .as_ref()
+            .map_err(|error| anyhow!("Agent Package Catalog is unavailable: {error}"))
+    }
+
+    pub(crate) fn agent_definition(&self, agent_id: &str) -> Result<AgentDefinition> {
+        self.package(agent_id)?.agent_definition()
+    }
+
+    pub(crate) fn model_policy(&self, agent_id: &str) -> Result<AgentModelPolicy> {
+        Ok(self.package(agent_id)?.model_policy.clone())
     }
 
     pub fn claim_legacy_and_seed(&self, owner_account_id: i64) -> Result<()> {
@@ -175,18 +164,22 @@ impl AgentRegistry {
         agent_id: &str,
     ) -> Result<ProductAgentRecord> {
         validate_owner(owner_account_id)?;
-        if !BUILTIN_AGENTS.iter().any(|spec| spec.agent_id == agent_id) {
-            return Err(anyhow!("unknown AgentMesh360 product agent: {agent_id}"));
-        }
-        let workspace_dir = self
-            .state_home
-            .join("workspaces")
-            .join(owner_account_id.to_string())
-            .join(agent_id);
+        let package = self.package(agent_id)?;
+        let workspace_dir = match package.persistence.workspace_strategy {
+            WorkspaceStrategy::AccountAgentDirectory => self
+                .state_home
+                .join("workspaces")
+                .join(owner_account_id.to_string())
+                .join(agent_id),
+        };
         std::fs::create_dir_all(&workspace_dir).with_context(|| {
             format!("create product agent workspace {}", workspace_dir.display())
         })?;
-        let main_session_id = stable_main_session_id(owner_account_id, agent_id).to_string();
+        let main_session_id = match package.persistence.main_session_strategy {
+            MainSessionStrategy::AccountAgentStableV5 => {
+                stable_main_session_id(owner_account_id, agent_id).to_string()
+            }
+        };
         let now = now();
         let conn = self.open()?;
         self.seed_builtins(&conn, owner_account_id)?;
@@ -237,7 +230,8 @@ impl AgentRegistry {
 
     fn seed_builtins(&self, conn: &Connection, owner_account_id: i64) -> Result<()> {
         let now = now();
-        for spec in BUILTIN_AGENTS {
+        for package in &self.package_catalog()?.packages {
+            let agent = &package.agent;
             conn.execute(
                 "INSERT INTO product_agents (owner_account_id, agent_id, display_name, description, version, \
                  sort_order, desired_state, runtime_state, updated_at) \
@@ -248,16 +242,20 @@ impl AgentRegistry {
                  sort_order = excluded.sort_order",
                 params![
                     owner_account_id,
-                    spec.agent_id,
-                    spec.display_name,
-                    spec.description,
-                    spec.version,
-                    spec.sort_order,
+                    agent.agent_id,
+                    agent.display_name,
+                    agent.description,
+                    package.version,
+                    agent.sort_order,
                     now
                 ],
             )?;
         }
         Ok(())
+    }
+
+    fn package(&self, agent_id: &str) -> Result<&AgentPackageManifest> {
+        self.package_catalog()?.package_for_agent(agent_id)
     }
 
     fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProductAgentRecord> {
@@ -430,6 +428,7 @@ mod tests {
         );
         assert_eq!(claimed.workspace_dir.as_deref(), Some("/legacy/workspace"));
         assert_eq!(claimed.desired_state, "running");
+        assert_eq!(claimed.version, "0.4.7");
         registry
             .claim_legacy_and_seed(42)
             .expect("seed second account");
