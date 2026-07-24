@@ -17,6 +17,21 @@ app.whenReady().then(async () => {
     writes.push({ kind: 'assignment', payload: assignment });
     return { assignment: providerSnapshot().assignments[0] };
   });
+  ipcMain.handle('provider:run-probe', (_event, payload) => {
+    writes.push({ kind: 'probe', payload });
+    return {
+      probe: {
+        probeId: `probe_${writes.length}`,
+        providerProfileId: payload.profileId,
+        modelId: payload.modelId,
+        level: payload.level,
+        status: 'passed',
+        networkAttempted: payload.level === 'minimal_inference',
+        mayIncurCost: payload.level === 'minimal_inference',
+        completedAt: new Date().toISOString(),
+      },
+    };
+  });
   for (const channel of [
     'identity:login',
     'identity:logout',
@@ -93,6 +108,55 @@ app.whenReady().then(async () => {
       modelId: 'gpt-5',
     },
   );
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('[data-probe-level=\"minimal_inference\"]') !== null",
+  ));
+
+  await window.webContents.executeJavaScript(`
+    (() => {
+      window.confirm = () => false;
+      document.querySelector('[data-probe-level="minimal_inference"]').click();
+    })()
+  `);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(writes.some((write) => write.kind === 'probe'), false);
+
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-probe-level=\"local_validation\"]').click()",
+  );
+  await waitFor(() => writes.some((write) => write.kind === 'probe'));
+  assert.deepEqual(
+    writes.find((write) => write.kind === 'probe').payload,
+    {
+      profileId: 'pp_openai',
+      modelId: 'gpt-5',
+      level: 'local_validation',
+      confirmPaidInference: false,
+    },
+  );
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('[data-probe-level=\"minimal_inference\"]') !== null",
+  ));
+
+  await window.webContents.executeJavaScript(`
+    (() => {
+      window.confirm = () => true;
+      document.querySelector('[data-probe-level="minimal_inference"]').click();
+    })()
+  `);
+  await waitFor(() => writes.filter((write) => write.kind === 'probe').length === 2);
+  assert.deepEqual(
+    writes.filter((write) => write.kind === 'probe')[1].payload,
+    {
+      profileId: 'pp_openai',
+      modelId: 'gpt-5',
+      level: 'minimal_inference',
+      confirmPaidInference: true,
+    },
+  );
+  const probeDom = await window.webContents.executeJavaScript('document.body.innerText');
+  assert.equal(probeDom.includes('模型已真实响应'), true);
+  assert.equal(probeDom.includes('sk-renderer-one-shot'), false);
 
   await app.quit();
 }).catch((error) => {
@@ -168,5 +232,6 @@ function providerSnapshot() {
         modelId: 'gpt-5',
       },
     ],
+    probes: [],
   };
 }

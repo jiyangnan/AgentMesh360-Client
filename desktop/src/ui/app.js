@@ -212,6 +212,7 @@ function agentWorkspaceView(state) {
 function providerSettingsView(state) {
   const profiles = providerUi.snapshot?.profiles || [];
   const assignments = providerUi.snapshot?.assignments || [];
+  const probes = providerUi.snapshot?.probes || [];
   const catalog = providerUi.snapshot?.catalog || { providers: [] };
   return `
     <header class="workspace-header provider-header">
@@ -230,13 +231,14 @@ function providerSettingsView(state) {
       <section class="provider-overview" aria-label="Provider 状态">
         <div><span>Profiles</span><strong>${profiles.length}</strong></div>
         <div><span>Assignments</span><strong>${assignments.length}</strong></div>
+        <div><span>Probe records</span><strong>${probes.length}</strong></div>
         <div><span>Catalog revision</span><strong>${escapeHtml(catalog.catalogRevision || '—')}</strong></div>
         <p>保存配置不会自动测试模型，也不会产生 Provider 费用。</p>
       </section>
       <div class="provider-layout">
         <section class="provider-column">
           ${providerProfileEditor(catalog, profiles)}
-          ${providerProfileList(profiles, assignments)}
+          ${providerProfileList(profiles, assignments, probes)}
         </section>
         <section class="provider-column route-column">
           ${providerAssignmentEditor(state, profiles, catalog)}
@@ -297,12 +299,14 @@ function providerProfileEditor(catalog, profiles) {
     </form>`;
 }
 
-function providerProfileList(profiles, assignments) {
+function providerProfileList(profiles, assignments, probes) {
   return `
     <section class="profile-stack">
       <div class="section-head compact"><h2>已连接 Provider</h2><span>${profiles.length} 个</span></div>
       ${profiles.length ? profiles.map((profile) => {
         const routes = assignments.filter((assignment) => assignment.providerProfileId === profile.profileId).length;
+        const latestProbe = probes.find((probe) => probe.providerProfileId === profile.profileId);
+        const models = Array.isArray(profile.enabledModels) ? profile.enabledModels : [];
         return `
           <article class="profile-row">
             <div class="profile-sigil">${escapeHtml((profile.displayName || '?').slice(0, 1).toUpperCase())}</div>
@@ -315,9 +319,37 @@ function providerProfileList(profiles, assignments) {
               <button class="ghost" type="button" data-edit-profile="${escapeHtml(profile.profileId)}">编辑</button>
               <button class="ghost danger-text" type="button" data-delete-profile="${escapeHtml(profile.profileId)}">删除</button>
             </div>
+            <div class="probe-console">
+              <div class="probe-model">
+                <span>检查模型</span>
+                <select aria-label="${escapeHtml(profile.displayName)} Probe 模型" ${models.length ? '' : 'disabled'}>
+                  ${models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="probe-actions">
+                <button class="probe-action local" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="local_validation" ${providerUi.busy || !models.length ? 'disabled' : ''}>本地检查</button>
+                <button class="probe-action metadata" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="metadata" ${providerUi.busy || !models.length ? 'disabled' : ''}>元数据</button>
+                <button class="probe-action inference" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="minimal_inference" ${providerUi.busy || !models.length ? 'disabled' : ''}>真实响应 <i>可能计费</i></button>
+              </div>
+              ${probeResult(latestProbe)}
+            </div>
           </article>`;
       }).join('') : '<div class="empty-provider">还没有 Provider。先从上方接入你的第一个 BYOK 端点。</div>'}
     </section>`;
+}
+
+function probeResult(probe) {
+  if (!probe) {
+    return '<div class="probe-result empty"><i></i><span>尚未检查</span><small>保存 Profile 不会自动发起 Probe</small></div>';
+  }
+  const label = probeStatusLabel(probe);
+  const detail = probeDetail(probe);
+  return `
+    <div class="probe-result ${escapeHtml(probe.status || 'unknown')}">
+      <i></i>
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(detail)}</small>
+    </div>`;
 }
 
 function providerAssignmentEditor(state, profiles, catalog) {
@@ -400,6 +432,9 @@ function wireProviderSettings() {
   for (const button of document.querySelectorAll('[data-delete-assignment]')) {
     button.addEventListener('click', () => deleteAssignment(button.dataset.deleteAssignment));
   }
+  for (const button of document.querySelectorAll('[data-probe-profile]')) {
+    button.addEventListener('click', () => runProviderProbe(button));
+  }
 }
 
 async function refreshProviderSnapshot(message = null) {
@@ -475,6 +510,39 @@ async function deleteAssignment(assignmentId) {
   await runProviderOperation(() => bridge.deleteModelAssignment(assignmentId), 'Assignment 已删除。');
 }
 
+async function runProviderProbe(button) {
+  const level = button.dataset.probeLevel;
+  const profileId = button.dataset.probeProfile;
+  const modelId = button.closest('.probe-console')?.querySelector('select')?.value;
+  let confirmPaidInference = false;
+  if (level === 'minimal_inference') {
+    confirmPaidInference = window.confirm(
+      `即将向 ${modelId || '所选模型'} 发送一次最小推理请求。此请求可能产生 Provider 费用，但不会写入任何 Agent 会话。继续吗？`,
+    );
+    if (!confirmPaidInference) return;
+  }
+  providerUi = { ...providerUi, busy: true, error: null, message: null };
+  renderReady(currentState);
+  try {
+    const response = await bridge.runProviderProbe({
+      profileId,
+      modelId,
+      level,
+      confirmPaidInference,
+    });
+    await refreshProviderSnapshot(probeNotice(response?.probe));
+  } catch (error) {
+    providerUi = {
+      ...providerUi,
+      phase: 'ready',
+      busy: false,
+      error: publicError(error, 'Provider Probe 失败'),
+      message: null,
+    };
+    renderReady(currentState);
+  }
+}
+
 async function runProviderOperation(operation, successMessage) {
   providerUi = { ...providerUi, busy: true, error: null, message: null };
   renderReady(currentState);
@@ -545,6 +613,51 @@ function protocolLabel(protocol) {
 function scopeLabel(assignment) {
   if (assignment.scopeKind === 'global') return '全局默认';
   return `${assignment.scopeKind} / ${assignment.scopeId || '—'}`;
+}
+
+function probeStatusLabel(probe) {
+  if (probe.level === 'minimal_inference' && probe.status === 'passed') return '模型已真实响应';
+  if (probe.level === 'local_validation' && probe.status === 'passed') return '本地配置有效';
+  if (probe.status === 'unsupported') return '元数据检查不支持';
+  if (probe.status === 'confirmation_required') return '等待付费确认';
+  if (probe.status === 'failed') return '检查未通过';
+  return '检查已完成';
+}
+
+function probeDetail(probe) {
+  const network = probe.networkAttempted ? '已向 Provider 发出请求' : '零网络';
+  const model = probe.modelId || '未知模型';
+  return `${model} · ${network} · ${formatProbeTime(probe.completedAt)}`;
+}
+
+function probeNotice(probe) {
+  if (!probe) return 'Provider 检查已完成。';
+  if (probe.level === 'minimal_inference' && probe.status === 'passed') {
+    return '模型已真实响应；本次最小推理可能产生 Provider 费用，且未写入 Agent 会话。';
+  }
+  if (probe.level === 'local_validation' && probe.status === 'passed') {
+    return '本地配置、模型与 Vault 凭据有效；此次检查未连接 Provider。';
+  }
+  if (probe.status === 'unsupported') {
+    return 'Catalog 未声明安全的非计费元数据端点；此次检查未连接 Provider。';
+  }
+  if (probe.status === 'failed') {
+    return probe.networkAttempted
+      ? 'Provider 已收到最小请求，但模型未成功响应；路由未发生切换。'
+      : '本地检查未通过；没有连接 Provider，也没有切换路由。';
+  }
+  return '检查已完成，没有改变任何 Agent 会话或 Provider 路由。';
+}
+
+function formatProbeTime(value) {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.valueOf())) return '时间未知';
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
 function publicError(error, fallback) {

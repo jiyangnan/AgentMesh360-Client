@@ -36,6 +36,17 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     'provider:delete-assignment',
     String(assignmentId || '').slice(0, 200),
   ),
+  runProviderProbe: ({
+    profileId,
+    modelId,
+    level,
+    confirmPaidInference = false,
+  } = {}) => ipcRenderer.invoke('provider:run-probe', {
+    profileId: String(profileId || '').slice(0, 200),
+    modelId: String(modelId || '').slice(0, 200),
+    level: String(level || '').slice(0, 40),
+    confirmPaidInference: confirmPaidInference === true,
+  }),
   openSubscription: () => ipcRenderer.invoke('external:open-subscription'),
   openRegistration: () => ipcRenderer.invoke('external:open-registration'),
   onState: (listener) => {

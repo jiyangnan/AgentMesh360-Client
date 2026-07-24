@@ -7,6 +7,11 @@ const PROVIDER_PROTOCOLS = new Set([
 ]);
 const PROVIDER_AUTH_KINDS = new Set(['bearer_api_key', 'x_api_key']);
 const ASSIGNMENT_SCOPES = new Set(['global', 'agent', 'session']);
+const PROVIDER_PROBE_LEVELS = new Set([
+  'local_validation',
+  'metadata',
+  'minimal_inference',
+]);
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,199}$/;
 const SECRET_KEYS = new Set([
@@ -35,15 +40,17 @@ class ProviderController {
 
   async getSnapshot() {
     this.#requireReady();
-    const [profiles, catalog, assignments] = await Promise.all([
+    const [profiles, catalog, assignments, probes] = await Promise.all([
       this.host.listProviderProfiles(),
       this.host.getProviderCatalog(),
       this.host.listModelAssignments(),
+      this.host.listProviderProbes(),
     ]);
     return publicProviderPayload({
       profiles: profiles?.profiles || [],
       catalog: catalog?.catalog || null,
       assignments: assignments?.assignments || [],
+      probes: probes?.probes || [],
     });
   }
 
@@ -99,6 +106,26 @@ class ProviderController {
       await this.host.deleteModelAssignment(
         normalizeIdentifier(assignmentId, 'Model Assignment ID'),
       ),
+    );
+  }
+
+  async runProbe({ profileId, modelId, level, confirmPaidInference = false } = {}) {
+    this.#requireReady();
+    const normalizedLevel = String(level || '');
+    if (!PROVIDER_PROBE_LEVELS.has(normalizedLevel)) {
+      throw new Error('Provider Probe 级别无效');
+    }
+    const confirmed = confirmPaidInference === true;
+    if (normalizedLevel !== 'minimal_inference' && confirmed) {
+      throw new Error('只有最小推理 Probe 可以包含付费确认');
+    }
+    return publicProviderPayload(
+      await this.host.runProviderProbe({
+        profileId: normalizeIdentifier(profileId, 'Provider Profile ID'),
+        modelId: normalizeModelId(modelId),
+        level: normalizedLevel,
+        confirmPaidInference: confirmed,
+      }),
     );
   }
 

@@ -38,6 +38,9 @@ test('snapshot is ready-gated and strips every secret-bearing field', async () =
     async listModelAssignments() {
       return { assignments: [{ assignmentId: 'ma_1234', role: 'main' }] };
     },
+    async listProviderProbes() {
+      return { probes: [] };
+    },
   };
   const identity = { getState: () => ({ phase: 'ready' }) };
   const controller = new ProviderController({ identity, host });
@@ -148,4 +151,62 @@ test('public payload recursively removes authorization material', () => {
     },
   });
   assert.deepEqual(publicValue, { nested: { safe: 'visible' } });
+});
+
+test('explicit Probe is ready-gated, validated, and returns only public diagnostics', async () => {
+  const calls = [];
+  const identity = { getState: () => ({ phase: 'ready' }) };
+  const host = {
+    async runProviderProbe(request) {
+      calls.push(request);
+      return {
+        probe: {
+          probeId: 'probe_1234',
+          providerProfileId: request.profileId,
+          modelId: request.modelId,
+          level: request.level,
+          status: 'passed',
+          networkAttempted: true,
+          authorization: 'Bearer private',
+          apiKey: 'sk-private',
+        },
+      };
+    },
+  };
+  const controller = new ProviderController({ identity, host });
+
+  const result = await controller.runProbe({
+    profileId: 'pp_1234',
+    modelId: 'gpt-5',
+    level: 'minimal_inference',
+    confirmPaidInference: true,
+  });
+  assert.deepEqual(calls, [{
+    profileId: 'pp_1234',
+    modelId: 'gpt-5',
+    level: 'minimal_inference',
+    confirmPaidInference: true,
+  }]);
+  assert.equal(result.probe.status, 'passed');
+  assert.equal(Object.hasOwn(result.probe, 'authorization'), false);
+  assert.equal(Object.hasOwn(result.probe, 'apiKey'), false);
+  await assert.rejects(
+    () => controller.runProbe({
+      profileId: 'pp_1234',
+      modelId: 'gpt-5',
+      level: 'metadata',
+      confirmPaidInference: true,
+    }),
+    /只有最小推理/,
+  );
+
+  identity.getState = () => ({ phase: 'blocked' });
+  await assert.rejects(
+    () => controller.runProbe({
+      profileId: 'pp_1234',
+      modelId: 'gpt-5',
+      level: 'local_validation',
+    }),
+    /订阅验证/,
+  );
 });

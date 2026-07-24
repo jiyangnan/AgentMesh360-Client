@@ -126,6 +126,9 @@ function registerIpc(identity, providers) {
   ipcMain.handle('provider:delete-assignment', (_event, assignmentId) => {
     return providers.deleteAssignment(assignmentId);
   });
+  ipcMain.handle('provider:run-probe', (_event, request) => {
+    return providers.runProbe(request);
+  });
   ipcMain.handle('external:open-subscription', () => openAllowedExternal(SUBSCRIPTION_URL));
   ipcMain.handle('external:open-registration', () => openAllowedExternal(REGISTRATION_URL));
 }

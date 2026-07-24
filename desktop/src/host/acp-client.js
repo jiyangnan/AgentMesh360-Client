@@ -106,6 +106,24 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/providers/catalog', {});
   }
 
+  async runProviderProbe({
+    profileId,
+    modelId,
+    level,
+    confirmPaidInference = false,
+  }) {
+    return this.#extension('x.agentmesh360/providers/probes/run', {
+      profileId,
+      modelId,
+      level,
+      confirmPaidInference,
+    });
+  }
+
+  async listProviderProbes(profileId = null) {
+    return this.#extension('x.agentmesh360/providers/probes/list', { profileId });
+  }
+
   async listModelAssignments() {
     return this.#extension('x.agentmesh360/model-assignments/list', {});
   }

@@ -23,6 +23,7 @@ app.whenReady().then(async () => {
     'provider:delete-profile',
     'provider:upsert-assignment',
     'provider:delete-assignment',
+    'provider:run-probe',
   ]) {
     ipcMain.handle(channel, () => providerFixture());
   }
@@ -145,6 +146,30 @@ function providerFixture() {
         role: 'subagent',
         providerProfileId: 'pp_anthropic',
         modelId: 'claude-opus-4-1',
+      },
+    ],
+    probes: [
+      {
+        probeId: 'probe_openai',
+        providerProfileId: 'pp_openai',
+        modelId: 'gpt-5',
+        level: 'minimal_inference',
+        status: 'passed',
+        networkAttempted: true,
+        mayIncurCost: true,
+        endpointClassification: 'official',
+        completedAt: '2026-07-24T08:35:00.000Z',
+      },
+      {
+        probeId: 'probe_anthropic',
+        providerProfileId: 'pp_anthropic',
+        modelId: 'claude-opus-4-1',
+        level: 'local_validation',
+        status: 'passed',
+        networkAttempted: false,
+        mayIncurCost: false,
+        endpointClassification: 'official',
+        completedAt: '2026-07-24T08:32:00.000Z',
       },
     ],
   };

@@ -133,6 +133,51 @@ test('Provider catalog and model assignments use Host-owned routing extensions',
   await client.stop();
 });
 
+test('Provider Probe methods preserve explicit level and paid confirmation', async () => {
+  const received = [];
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/providers/probes/list') {
+      return { result: { probes: [] } };
+    }
+    return {
+      result: {
+        probe: {
+          probeId: 'probe_1234',
+          status: 'confirmation_required',
+          networkAttempted: false,
+        },
+      },
+    };
+  });
+  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+
+  const unconfirmed = await client.runProviderProbe({
+    profileId: 'pp_1234',
+    modelId: 'gpt-5',
+    level: 'minimal_inference',
+    confirmPaidInference: false,
+  });
+  const history = await client.listProviderProbes('pp_1234');
+
+  assert.equal(unconfirmed.probe.status, 'confirmation_required');
+  assert.deepEqual(history.probes, []);
+  assert.deepEqual(received[1], {
+    jsonrpc: '2.0',
+    id: 2,
+    method: '_x.agentmesh360/providers/probes/run',
+    params: {
+      profileId: 'pp_1234',
+      modelId: 'gpt-5',
+      level: 'minimal_inference',
+      confirmPaidInference: false,
+    },
+  });
+  assert.deepEqual(received[2].params, { profileId: 'pp_1234' });
+  await client.stop();
+});
+
 test('Session Provider Binding methods keep route snapshots Host-owned', async () => {
   const received = [];
   const binding = {
