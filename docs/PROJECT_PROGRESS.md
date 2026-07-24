@@ -26,12 +26,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0 已让专属 Grok Leader 在 UI 退出后继续运行并可恢复同一 Main Session | G1：Leader 崩溃重建、产品准入恢复与系统登录启动 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码 | 签名安装包 Login Item 平台 E2E；当前主线回到动态 Package |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
+| 动态 Agent Package | H0 已实现 Manifest v1、三个内置 Package、只读 Catalog、运行时投影与旧状态兼容 | H1：可信签名产物、staging、原子安装、权限差异与回滚 |
 
 ## 开发循环记录
 
@@ -1446,11 +1446,13 @@ G2 计划复盘：
 
 ### 循环 22：动态 Agent Package H0——统一 Manifest 与内置目录迁移
 
-状态：已规划，下一开发切片
+状态：已完成
 
 启动理由：共享 Host 生命周期和 Provider Control Plane 已有可验证基础。当前
 Job/LectureCast/Deploy 仍硬编码在 Registry，无法满足“未来新增 Agent 同时可作为宿主
 Skill 安装、又可无客户端发版进入持久 Agent 客户端”的原始要求。
+
+本地提交：`b4c0be8 feat: derive product agents from package manifests`
 
 本轮目标：
 
@@ -1468,3 +1470,73 @@ Skill 安装、又可无客户端发版进入持久 Agent 客户端”的原始�
 验收条件：三个内置 Agent 完全来自同一 Manifest Schema；旧 `state.db` 无数据丢失；
 未知字段/版本/权限失败关闭；Package 元数据不含 Provider Key、Token 或用户业务数据；
 文档明确客户端持久 Agent 与宿主 Skill 是同一 Package 的两个受控投影。
+
+已经实现：
+
+- 新增严格的 Agent Package Manifest v1：Package/Agent 身份、SemVer、发布来源、
+  请求权限、Main Session/Workspace 策略、AgentDefinition、Model Policy、
+  Canonical Workflow 与宿主 Skill Adapter 使用同一 Schema；
+- Job Agent `0.4.7`、LectureCast Agent `0.4.0`、Deploy Agent `0.1.1` 各自拥有
+  独立内置 Manifest；Adapter 完全来自现有仓库事实，不为 Deploy 虚构尚不存在的
+  Skill；
+- 删除 Registry 的 `BUILTIN_AGENTS` 和独立 `profiles.rs` 硬编码；Registry 目录、
+  激活 Profile、确定性 Main Session、账户 Workspace 与 RouteCompiler Model Policy
+  均从同一 Manifest 投影；
+- 新增订阅门禁后的只读 ACP
+  `x.agentmesh360/agent-packages/catalog`；它只返回 Package 公共元数据，不返回
+  Vault 句柄、密钥、Token、账户、Session、Workspace 实际路径或用户数据；
+- 未支持 Schema、未知字段/权限、非法 SemVer、重复身份/排序/Adapter、路径穿越和
+  带凭据/参数的源 URL 全部失败关闭；内置 Catalog 无旧硬编码 fallback；
+- 旧 `state.db` 认领/升级回归证明 Main Session、Workspace、激活时间和运行意图
+  保持不变，同时 Package 管理的展示元数据和版本更新到 Manifest；
+- 新增
+  [`architecture/AGENT_PACKAGE_MANIFEST_V1.md`](architecture/AGENT_PACKAGE_MANIFEST_V1.md)，
+  固定“一个 Package、客户端持久 Agent 与宿主 Skill 两个受控投影”的边界。
+
+验证证据：
+
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：72 项通过；
+- Package 失败关闭专项：6 项通过；
+- Registry/旧状态兼容专项：5 项通过；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings` 通过；
+- Rustfmt（显式 workspace edition 2024）与 `git diff --check` 通过；
+- 测试没有下载、解包或执行远端 Package，没有读取 Provider Key 或真实用户数据。
+
+H0 计划复盘：
+
+- 与蓝图一致：客户端持久 Agent 和宿主 Skill 已共享一个 Manifest 来源，稳定
+  `agentId` 继续保护 Main Session 身份；
+- Model Policy 不再停留在文档字段，Initial Binding 与显式切换都会读取对应
+  Package Policy；
+- `requestedPermissions` 仍是声明，不会绕过 Host/Sandbox/Core 权限边界；
+- H0 没有把“可读取 Manifest”夸大为“已支持动态安装”：签名、staging、原子提交、
+  权限差异确认、迁移与回滚均未实现；
+- 三个内置 Package 仍随 Host 二进制发布，因此下一轮必须先建立可信本地安装事务，
+  再连接远端 Registry。
+
+### 循环 23：动态 Agent Package H1——签名产物与原子安装事务
+
+状态：已规划，下一开发切片
+
+启动理由：H0 已消除 Agent 定义的双重硬编码，但 Package 仍是编译期资源。若现在直接
+接远端 Registry，损坏、路径穿越、签名伪造或半完成升级都可能污染 Active Agent。
+必须先完成本地可信安装边界，再允许任何网络分发。
+
+本轮目标：
+
+1. 定义确定性的 Package 文件清单、内容摘要、签名信封与受信发布者密钥；
+2. 安装前在隔离 staging 校验签名、Schema、路径、解包大小、Host/Schema 兼容性和
+   `agentId` 不变约束；
+3. 建立 Active/Previous 版本的本地 Package Registry，通过原子目录切换提交，
+   失败不改变当前 Active Package；
+4. 权限集合增加时返回 `approval_required`，不得静默升级；
+5. 增加篡改、未知密钥、Zip/Tar 路径穿越、断电式中断、升级与回滚回归；
+6. 模块完成后再次更新本文档和产品蓝图，再规划 H2 远端 Registry 与宿主 Skill
+   安装投影。
+
+本轮非目标：不连接线上 Package Registry、不自动更新、不执行 Package 脚本或迁移、
+不允许第三方自签名信任、不在 Renderer 解包、不把 Provider/订阅凭据写入 Package。
+
+验收条件：只有受信签名且完全校验通过的 Package 才能成为 Active；安装失败和进程
+中断保留旧 Active；权限增加必须显式批准；回滚不改变 `agentId` 或 Main Session；
+所有测试使用临时目录和测试密钥，不修改真实安装目录。
