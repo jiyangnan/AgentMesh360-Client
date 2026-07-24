@@ -2,15 +2,19 @@
 
 use xai_grok_shell::sampling::{ApiBackend, Client, SamplerConfig};
 
+pub mod provider_contract_harness;
+
 /// Create a sampling client configured for a mock server. Shared by the
 /// integration tests so the ~30-field `SamplerConfig` literal lives in one
 /// place (`SamplerConfig` has no `Default`).
+#[allow(dead_code)]
 pub fn create_test_client(base_url: &str, api_backend: ApiBackend) -> Client {
     create_test_client_with_extra_headers(base_url, api_backend, &[])
 }
 
 /// Like [`create_test_client`] but seeds `SamplerConfig::extra_headers`, so a
 /// test can assert that session-injected headers reach the wire.
+#[allow(dead_code)]
 pub fn create_test_client_with_extra_headers(
     base_url: &str,
     api_backend: ApiBackend,

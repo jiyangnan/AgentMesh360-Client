@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1/E1/E2/E3 已实现，切片 F0 已启动
+状态：调研完成，切片 A/B/C/D0/D1/E1/E2/E3 与 F0a 已实现；F0b 真实契约待外部凭据
 
 调研日期：2026-07-22
 
@@ -969,10 +969,19 @@ lease 复用既有 Grok Sampling，且不改变 Session Binding、Turn Route 或
 
 ### 切片 F：Gemini 兼容 Spike 与预设扩展
 
-- 对 Google 官方 OpenAI 兼容端点执行完整 Harness 契约测试；
-- 验证 Streaming、Tool Call、Reasoning、Structured Output 和 thinking 状态；
+- F0a 已核验 Google 官方 OpenAI Chat 兼容端点、Bearer 认证、Streaming、Function
+  Calling、Structured Output 与 `reasoning_effort` 文档边界；
+- F0a 已实现可复用、默认零费用的 OpenAI Chat Provider Harness，并提供双重显式
+  opt-in 的真实 Gemini 契约入口；
+- F0a 确认当前 Chat 数据模型无法保真回传 Gemini thought signature，也没有受控
+  `extra_body` 通道；这是持久多轮 Agent 的 Catalog 准入阻断项；
+- F0b 需用用户明确提供的测试 Key 验证真实 Streaming、Tool Call、Reasoning、
+  Structured Output，并捕获脱敏的 thought signature Tool Loop fixture；
 - 通过后加入 Google 预设，再逐步加入 DeepSeek、Kimi、GLM、Qwen 等声明式预设；
 - Native/Interactions 需求单独形成 Spike 结论，不阻塞 M1。
+
+完整事实、测试入口、准入条件与下一步见
+[`GEMINI_OPENAI_COMPATIBILITY_SPIKE.md`](GEMINI_OPENAI_COMPATIBILITY_SPIKE.md)。
 
 ### 切片 G：独立后台 Host 验收
 

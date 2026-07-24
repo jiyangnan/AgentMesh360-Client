@@ -28,7 +28,7 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；Renderer 管理桥复用 Host ACP | 切片 F0：Gemini 官方 OpenAI 兼容契约 Spike |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
@@ -1191,15 +1191,15 @@ E3 完成复盘：
 - 现有通过证据仍是本机协议级 mock，不等于 OpenAI、xAI、Anthropic 或 Gemini
   外部账号已完成付费 E2E；正式 Provider 预设继续以独立契约证据为准。
 
-### 循环 18：Provider 切片 F0——Gemini 官方 OpenAI 兼容契约 Spike
+### 循环 18：Provider 切片 F0a——Gemini 官方边界与契约 Harness
 
-状态：已规划，下一开发切片
+状态：已完成；真实 Provider F0b 受外部凭据和 thought state 缺口阻断
 
 本轮目标：
 
 1. 以 Google 官方文档为准，固化 OpenAI 兼容端点、认证、模型与已知兼容边界；
 2. 建立可复用的 Provider 兼容契约套件，覆盖 Streaming、Tool Call、Reasoning、
-   Structured Output 与 thinking 状态，而不是只检查 `/models`；
+   Structured Output，并把 thinking 状态保真作为独立准入门，而不是只检查 `/models`；
 3. 增加显式 opt-in 的真实 Gemini 契约入口，缺少用户提供的 Gemini Key 时明确跳过，
    不读取现有 Provider Vault 或其他环境秘密；
 4. 只有真实兼容契约通过后才把 Gemini 加入内置官方预设；未通过期间用户仍可通过
@@ -1211,3 +1211,61 @@ E3 完成复盘：
 
 本轮非目标：不实现 Gemini Native / Interactions、Google Search/Files/Live、Vertex
 ADC、远端 Catalog、自动 fallback，也不在没有真实契约证据时发布 Gemini 官方预设。
+
+已经实现：
+
+- 以 Google 2026-07-21 更新的一手文档核验官方 Base URL、Bearer 认证、Chat
+  Completions、Streaming、Function Calling、Structured Output、`reasoning_effort`
+  和兼容层 beta 边界；
+- 新增 Provider-neutral `run_openai_chat_contract`，通过现有 Grok
+  `SamplingClient` 依次检查 Streaming 文本、Tool Call/JSON 参数、strict Structured
+  Output 和 Reasoning 请求，不建立平行 HTTP 栈；
+- 默认 mock 契约验证四次请求的 endpoint、Bearer、stream、Tool、Schema 与
+  `reasoning_effort` wire shape，并验证响应解析和 Target Debug 不泄露 Key；
+- 新增真实 Gemini ignored test，同时要求
+  `AGENTMESH360_GEMINI_CONTRACT=1`、专用 API Key 和显式模型，避免
+  `cargo test --ignored` 意外花费或读取 Provider Vault；
+- 源码审计确认 Chat request/response/Session 类型当前没有 Google `extra_body` 与
+  thought signature 保真通道；Google 官方又要求无状态多轮场景原样回传 signature，
+  因而将它列为持久 Agent Catalog 准入阻断项；
+- 内置 Catalog 单测显式拒绝提前加入 Google 官方 endpoint；完整结论、运行方式和
+  F0b 准入门见
+  [`architecture/GEMINI_OPENAI_COMPATIBILITY_SPIKE.md`](architecture/GEMINI_OPENAI_COMPATIBILITY_SPIKE.md)。
+
+验证证据：
+
+- `test_provider_contracts`：3 项本机零费用测试通过，1 项真实 Gemini 测试按设计忽略；
+- 完整 `xai-grok-shell agentmesh360 --lib`：67 项通过；
+- 新契约测试目标的 Clippy `-D warnings`、Rustfmt 与 `git diff --check` 通过；
+- 没有设置或读取任何 Gemini Key，没有对 Google 发网络请求，没有产生 Provider 费用；
+- 真实 Gemini、跨轮 Tool Loop、跨重启 signature 回放仍未验证，因此 Catalog 保持不变。
+
+F0a 计划复盘：
+
+- 没有因为官方文档列出能力就伪造 `probe_verified`，也没有把当前示例模型硬编码进
+  Catalog；
+- 契约复用产品实际 SamplingClient，而不是用 curl 成功代替 Harness 兼容；
+- 双重 opt-in、Key 脱敏和零重试减少了意外计费与秘密暴露风险；
+- 发现的 signature 缺口直接改变准入结论：即使基础四项真实测试通过，Gemini 仍不能
+  自动成为持久产品 Agent 的正式预设。
+
+### 循环 19：独立后台 Host G0——生命周期现状审计与协议设计
+
+状态：已规划，下一开发切片
+
+启动理由：F0b 需要用户明确提供外部 Gemini 测试凭据，而且 thought signature 的真实
+wire shape 不能靠猜测；该外部门槛不应阻塞所有持久 Agent 共同需要的后台 Host。
+
+本轮目标：
+
+1. 画清 Electron、Host 子进程、Session Store、Vault 与订阅重验的实际生命周期；
+2. 定义单实例 Host ownership、socket/lock、版本握手、UI attach/detach 和优雅退出协议；
+3. 增加只读诊断，证明当前 UI 退出会终止 Host，并固定目标态验收脚本；
+4. 先形成 ADR 与最小 Supervisor seam，再决定 macOS LaunchAgent/登录项实现范围；
+5. 模块完成后再次更新本文档、复核蓝图并进入 G1。
+
+本轮非目标：不立刻注册系统自启动、不改 Provider Vault 格式、不实现后台自动付费
+Probe、不加入 Gemini 预设、不迁移动态 Agent Package。
+
+验收条件：现状与目标态不混写；单实例/版本不匹配/孤儿 Host/订阅失效/桌面重连都有
+明确状态机；诊断不含 access token、Provider Key 或用户对话；默认测试不改系统登录项。

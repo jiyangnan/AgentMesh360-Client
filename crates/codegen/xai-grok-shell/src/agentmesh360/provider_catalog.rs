@@ -287,6 +287,15 @@ mod tests {
         assert!(catalog.provider("openai").is_some());
         assert!(catalog.provider("xai").is_some());
         assert!(catalog.provider("anthropic").is_some());
+        assert!(
+            !catalog.providers.iter().any(|provider| {
+                provider
+                    .default_base_url
+                    .as_deref()
+                    .is_some_and(|url| url.contains("generativelanguage.googleapis.com"))
+            }),
+            "Gemini must stay out of the built-in Catalog until the live contract and thought-state round trip pass"
+        );
         assert_eq!(
             catalog.provider("anthropic").expect("anthropic").quirks,
             [ProviderQuirk::AnthropicVersion2023_06_01]
