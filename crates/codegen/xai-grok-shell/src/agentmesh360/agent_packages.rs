@@ -135,13 +135,17 @@ impl AgentPackageCatalog {
             .context("load built-in AgentMesh360 Agent Packages")
     }
 
+    pub(crate) fn parse_document(document: &str) -> Result<AgentPackageManifest> {
+        let manifest: AgentPackageManifest =
+            toml::from_str(document).context("parse Agent Package Manifest")?;
+        validate_manifest(&manifest)?;
+        Ok(manifest)
+    }
+
     fn from_documents(documents: &[&str]) -> Result<Self> {
         let mut packages = Vec::with_capacity(documents.len());
         for document in documents {
-            let manifest: AgentPackageManifest =
-                toml::from_str(document).context("parse Agent Package Manifest")?;
-            validate_manifest(&manifest)?;
-            packages.push(manifest);
+            packages.push(Self::parse_document(document)?);
         }
         validate_catalog(&packages)?;
         packages.sort_by_key(|package| package.agent.sort_order);

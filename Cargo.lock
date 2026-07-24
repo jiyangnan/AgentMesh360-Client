@@ -13676,6 +13676,7 @@ dependencies = [
  "dhat",
  "dirs 6.0.0",
  "dunce",
+ "ed25519-dalek",
  "filetime",
  "flate2",
  "fs2",

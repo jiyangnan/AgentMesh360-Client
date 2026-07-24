@@ -12,6 +12,7 @@ mod credential_vault;
 mod model_assignments;
 mod model_policy;
 mod model_routing;
+mod package_artifact;
 mod provider_catalog;
 mod provider_probes;
 mod provider_profiles;
