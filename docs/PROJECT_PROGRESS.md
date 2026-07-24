@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-23
+最近更新：2026-07-24
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -28,9 +28,9 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1/E1 已完成；Renderer 管理桥复用 Host ACP | 保持 Host 单一权威，随 E2 设置页补契约回归 |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2 与 E3a 已完成；Renderer 管理桥复用 Host ACP | 保持 Host 单一权威，完成 E3b 显式 Probe 交互 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者与 subagent 均保证实际 endpoint、credential、model 与 Turn Route 一致 | 保持真实链路回归，进入设置与 Probe 产品化 |
-| Provider UI | E1 安全桥与 E2 Provider 设置页已完成，可管理 Profile 与 global/agent Assignment | 切片 E3：用户主动触发的分级 Probe 契约 |
+| Provider UI | E1 安全桥与 E2 Provider 设置页已完成，可管理 Profile 与 global/agent Assignment | E3b：接入分级 Probe、付费确认与非秘密历史 |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
 ## 开发循环记录
@@ -1095,7 +1095,7 @@ E2 计划复盘：
 
 ### 循环 17：Provider 切片 E3——显式分级 Probe
 
-状态：已规划，下一开发切片
+状态：E3a Host 合同已完成，E3b 桌面交互开发中
 
 本轮目标：
 
@@ -1114,3 +1114,41 @@ E2 计划复盘：
 
 本轮非目标：不实现自动周期健康检查、后台付费 Probe、Session 自动迁移、Provider
 fallback 或 Usage 计费汇总。
+
+#### E3a Host Probe 合同检查点
+
+本地提交：`b8f7ad0 feat: add explicit provider probe contract`
+
+已经实现：
+
+- `state.db v6` 新增账户隔离的 `provider_probe_results`，只保存级别、状态、Provider /
+  Model 标识、端点分类、Assignment 数量、稳定摘要、时间与时延，不保存 Key、Header、
+  请求正文或响应正文；
+- 新增 `providers/probes/run` 与 `providers/probes/list` Host ACP 方法，并置于通用
+  Provider 方法分发之前，避免被旧 Provider handler 误接；
+- `local_validation` 校验 Profile、启用模型、端点、协议与 Vault credential，全程零网络；
+- 当前 Catalog 未声明非计费元数据端点，因此 `metadata` 明确返回 `unsupported`，
+  全程零网络，不用 401/404 猜测模型状态；
+- 未二次确认的 `minimal_inference` 返回 `confirmation_required` 且零网络；确认后才使用
+  被测 Profile 的非序列化短时 Vault lease 与既有 Grok Sampling Client 发出一次
+  20 秒超时、16 token 上限、无工具的 Probe；
+- Probe 不读取或创建 Session Provider Binding，不写 Turn Route，不改变产品 Agent
+  的 Session 历史或路由；订阅不可用时在任何网络调用前失败关闭。
+
+验证证据：
+
+- 4 项 Provider Probe 定向测试通过：本地/元数据零网络、付费确认闸门、确认后真实
+  Responses SSE mock 请求、订阅拒绝零网络；
+- 1 项 Probe lease 定向测试通过：无需 Session Binding，可投影三协议所需配置且
+  序列化与 Debug 均不含秘密；
+- 1 项 `state.db v6` 初始化测试通过；`cargo fmt --all -- --check` 与
+  `git diff --check` 通过。
+
+E3a 计划复盘：
+
+- Host 仍是订阅、Vault、网络权限、Provider 路由和审计摘要的唯一权威，Renderer
+  不会拿到 credential ref 或 Host client；
+- “保存 Profile”路径未接入 Probe，继续保证保存配置不联网、不测试模型、不产生费用；
+- Catalog 没有足够证据时选择可审计的“不支持”，没有为了表面成功增加私有 Provider
+  特判或隐式 fallback；
+- 下一切片 E3b 只接公开 Probe 契约、用户确认和结果显示，不在前端复制鉴权或采样逻辑。
