@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{OptionalExtension, Row, TransactionBehavior, params};
+use serde::Serialize;
 use sha2::{Digest as _, Sha256};
 
 use super::access::ClientAccess;
@@ -12,7 +13,8 @@ use super::package_registry_snapshot::{
 use super::package_trust::{TrustedPublisherStore, TrustedRootStore};
 use super::state;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct PackageTrustCacheAudit {
     pub root_key_id: String,
     pub trust_sequence: u64,
@@ -23,6 +25,7 @@ pub(crate) struct PackageTrustCacheAudit {
     pub verified_at: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 pub(crate) struct PackageTrustCacheStore {
     state_home: PathBuf,
     roots: TrustedRootStore,
@@ -37,7 +40,10 @@ impl PackageTrustCacheStore {
     }
 
     #[cfg(test)]
-    fn in_home_with_roots(state_home: impl Into<PathBuf>, roots: TrustedRootStore) -> Self {
+    pub(super) fn in_home_with_roots(
+        state_home: impl Into<PathBuf>,
+        roots: TrustedRootStore,
+    ) -> Self {
         Self {
             state_home: state_home.into(),
             roots,
@@ -50,11 +56,26 @@ impl PackageTrustCacheStore {
         registry_document: &str,
         access: &ClientAccess,
     ) -> Result<PackageTrustCacheAudit> {
+        self.accept_conditional_documents(Some(trust_document), Some(registry_document), access)
+    }
+
+    pub(super) fn accept_conditional_documents(
+        &self,
+        trust_document: Option<&str>,
+        registry_document: Option<&str>,
+        access: &ClientAccess,
+    ) -> Result<PackageTrustCacheAudit> {
         let mut connection = state::open(&self.state_home)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .context("start Agent Package trust cache update")?;
         let current = read_cached_row(&transaction)?;
+        let trust_document = trust_document
+            .or_else(|| current.as_ref().map(|row| row.trust_document.as_str()))
+            .ok_or_else(|| anyhow!("Agent Package publisher trust cache is unavailable"))?;
+        let registry_document = registry_document
+            .or_else(|| current.as_ref().map(|row| row.registry_document.as_str()))
+            .ok_or_else(|| anyhow!("Agent Package registry cache is unavailable"))?;
         let minimum_sequence = current
             .as_ref()
             .map(|row| positive_u64("trust sequence", row.trust_sequence))

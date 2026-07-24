@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 9;
+const SCHEMA_VERSION: u32 = 10;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -196,6 +196,15 @@ CREATE TABLE IF NOT EXISTS package_trust_cache (
     verified_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS package_registry_fetch_state (
+    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+    trust_etag TEXT,
+    trust_last_modified TEXT,
+    registry_etag TEXT,
+    registry_last_modified TEXT,
+    checked_at TEXT NOT NULL
+);
 "#;
 
 pub(super) fn default_state_home() -> PathBuf {
@@ -342,7 +351,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v9_schema() {
+    fn initializes_the_shared_v10_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -353,7 +362,7 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
-                     ('agent_package_registry', 'model_assignments', 'package_trust_cache', \
+                     ('agent_package_registry', 'model_assignments', 'package_registry_fetch_state', 'package_trust_cache', \
                       'product_agents', 'provider_profiles', 'provider_probe_results', 'session_provider_bindings', \
                       'turn_route_records') ORDER BY name",
                 )
@@ -364,12 +373,13 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         assert_eq!(
             tables,
             [
                 "agent_package_registry",
                 "model_assignments",
+                "package_registry_fetch_state",
                 "package_trust_cache",
                 "product_agents",
                 "provider_probe_results",
@@ -440,7 +450,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -540,7 +550,7 @@ mod tests {
             )
             .expect("binding tables");
 
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         assert_eq!(owner, 41);
         assert_eq!(binding_tables, 2);
     }
@@ -567,7 +577,7 @@ mod tests {
                 .expect("collect columns")
         };
 
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         assert!(columns.contains(&"active_file_manifest_sha256".to_owned()));
         assert!(columns.contains(&"previous_file_manifest_sha256".to_owned()));
     }
@@ -637,7 +647,7 @@ mod tests {
             )
             .expect("Package Registry table");
 
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
         assert_eq!(registry_table, 1);
     }
@@ -680,9 +690,56 @@ mod tests {
             })
             .expect("Package Trust Cache row count");
 
-        assert_eq!(version, 9);
+        assert_eq!(version, 10);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
         assert_eq!(cache_rows, 0);
+    }
+
+    #[test]
+    fn upgrades_v9_without_losing_signed_package_metadata() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            conn.execute_batch(
+                "DROP TABLE package_registry_fetch_state;
+                 INSERT INTO package_trust_cache (
+                   singleton_id, root_key_id, trust_sequence, trust_document,
+                   trust_document_sha256, trust_expires_at, registry_revision,
+                   registry_document, registry_document_sha256, registry_expires_at,
+                   verified_at, updated_at
+                 ) VALUES (
+                   1, 'root-test', 7, '{}', 'trust-digest', '2026-08-01T00:00:00Z',
+                   42, '{}', 'registry-digest', '2026-08-01T00:00:00Z',
+                   '2026-07-24T00:00:00Z', '2026-07-24T00:00:00Z'
+                 );
+                 PRAGMA user_version = 9;",
+            )
+            .expect("prepare v9 database");
+        }
+
+        let conn = open(temp.path()).expect("upgrade v9 database");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let cached: (i64, i64) = conn
+            .query_row(
+                "SELECT trust_sequence, registry_revision FROM package_trust_cache \
+                 WHERE singleton_id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("preserved Package Trust Cache");
+        let fetch_rows: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM package_registry_fetch_state",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Package Registry fetch state count");
+
+        assert_eq!(version, 10);
+        assert_eq!(cached, (7, 42));
+        assert_eq!(fetch_rows, 0);
     }
 
     fn prepare_v7_package_registry(conn: &Connection, with_row: bool) {

@@ -14,6 +14,7 @@ mod model_policy;
 mod model_routing;
 mod package_artifact;
 mod package_installer;
+mod package_registry_fetcher;
 mod package_registry_snapshot;
 mod package_trust;
 mod package_trust_cache;
@@ -52,6 +53,7 @@ pub(crate) struct AgentMesh360Runtime {
     provider_probes:
         provider_probes::ProviderProbeService<credential_vault::RuntimeCredentialVault>,
     model_routing: model_routing::ModelRoutingService,
+    package_registry_fetcher: package_registry_fetcher::PackageRegistryFetcher,
     access: access::ClientAccess,
     state_home: PathBuf,
     credential_vault: credential_vault::RuntimeCredentialVault,
@@ -94,6 +96,9 @@ impl AgentMesh360Runtime {
                 credential_vault.clone(),
             ),
             model_routing,
+            package_registry_fetcher: package_registry_fetcher::PackageRegistryFetcher::embedded(
+                &state_home,
+            ),
             access,
             state_home,
             credential_vault,
@@ -330,6 +335,7 @@ struct AgentPackageCatalogResponse<'a> {
 struct AgentPackageStatusResponse {
     catalog_generation: u64,
     catalog_revision: Option<u64>,
+    remote_registry: package_registry_fetcher::PackageRegistryFetchStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_refresh_issue: Option<package_installer::PackageStatusIssue>,
     packages: Vec<package_installer::InstalledPackageStatus>,
@@ -383,6 +389,7 @@ pub(crate) async fn handle(
                         }
                         spawn_restore_activated_agents(agent);
                         spawn_access_expiry(agent, access_generation);
+                        spawn_package_registry_refresh(agent);
                     } else {
                         suspend_product_agents(agent, true);
                     }
@@ -464,6 +471,37 @@ fn spawn_access_expiry(agent: &MvpAgent, access_generation: u64) {
         }
         if agent.agentmesh360.access.require().is_err() {
             suspend_product_agents(agent, true);
+        }
+    });
+}
+
+fn spawn_package_registry_refresh(agent: &MvpAgent) {
+    if matches!(
+        agent
+            .agentmesh360
+            .package_registry_fetcher
+            .status(&agent.agentmesh360.access)
+            .outcome,
+        package_registry_fetcher::PackageRegistryFetchOutcome::Disabled
+    ) {
+        return;
+    }
+    let agent_ref = LocalRef::new(agent);
+    tokio::task::spawn_local(async move {
+        let agent = agent_ref.get();
+        let status = agent
+            .agentmesh360
+            .package_registry_fetcher
+            .refresh(&agent.agentmesh360.access)
+            .await;
+        if matches!(
+            status.outcome,
+            package_registry_fetcher::PackageRegistryFetchOutcome::Unavailable
+        ) {
+            tracing::warn!(
+                reason = ?status.reason,
+                "Agent Package remote registry is unavailable"
+            );
         }
     });
 }
@@ -609,6 +647,10 @@ fn package_status(agent: &MvpAgent) -> Result<serde_json::Value> {
     serde_json::to_value(AgentPackageStatusResponse {
         catalog_generation: health.generation,
         catalog_revision: health.catalog_revision,
+        remote_registry: agent
+            .agentmesh360
+            .package_registry_fetcher
+            .status(&agent.agentmesh360.access),
         last_refresh_issue: health.last_issue,
         packages,
     })
@@ -1199,6 +1241,8 @@ mod tests {
                 .expect("read-only Package status");
                 assert_eq!(status["catalogGeneration"], 1);
                 assert!(status["catalogRevision"].as_u64().is_some());
+                assert_eq!(status["remoteRegistry"]["outcome"], "disabled");
+                assert_eq!(status["remoteRegistry"]["reason"], "not_configured");
                 let packages = status["packages"].as_array().expect("Package statuses");
                 assert_eq!(
                     packages
