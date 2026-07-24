@@ -304,3 +304,62 @@ H2b1b1 已完成自主测试和本机 Kimi 交叉测试。Trust Bundle 与 Regis
 误填，也不会退回本机时间。H2b1b1 不持久化时间，不改数据库，不读取远端 Registry；
 进程重启和时间锚过期都必须重新 bootstrap。持久签名文档、最高 sequence/revision 与
 last-known-good 属于 H2b1b2。
+
+## 13. H2b1b2/H2b1c 持久信任缓存与只读远端获取（已通过交叉测试）
+
+H2b1b2 把签名 Trust Bundle、Registry Snapshot 和已接受的最高 sequence/revision
+原文写入 `state.db v9`。写入使用单一 `IMMEDIATE` 事务；每次读取都以当前
+`ClientAccess`、内置 Root 和缓存原文重新验签，而不是信任数据库中的解析结果。旧
+revision 的 rollback、同 revision 不同内容的 equivocation、root/sequence 绑定错误、
+缓存损坏或 Access 过期都失败关闭。
+
+H2b1c 在该缓存之前增加 Host-owned 双文档 Fetcher，并将数据库加法升级到 v10：
+
+- 固定生产 origin，禁止 credentials/query/fragment 和重定向；
+- Trust Bundle/Registry 分别限制为 64 KiB/1 MiB，只接受 JSON 200 或 304；
+- ETag/Last-Modified 仅作为非秘密条件请求优化，成功验签后才更新；
+- 304 必须使用缓存原文按当前 Access 重新验签，不延长签名有效期或 Core 时间锚；
+- 远端失败只能退化到可重新验签的 last-known-good，否则 unavailable；
+- 状态只公开固定 outcome/reason 与脱敏 Trust Audit，不公开 URL、路径、账户、token
+  或响应正文。
+
+生产 endpoint、Root Store 和 embedded Trust Bundle 仍为空，因此真实构建不会发起
+Package 网络请求或接受远端 Package。两切片均已通过自主测试和本机 Kimi 交叉测试。
+
+## 14. H2b2a Artifact/Envelope 受限下载（已通过交叉测试）
+
+下载器公开给内部调用方的选择输入只有 `package_id` 和当前 `ClientAccess`：
+
+```text
+ClientAccess
+  -> 重新验证持久 Trust Bundle + Registry Snapshot
+  -> 由签名 Registry Record 选择 URL + digest + Package 身份
+  -> 下载 Envelope（64 KiB）与 Artifact（32 MiB）
+  -> Registry digest
+  -> Publisher Envelope 签名 + Archive/Manifest/文件库存
+  -> Registry package/agent/version/publisher 身份
+  -> 会自动清理的 VerifiedPackageDownload
+```
+
+生产 URL 必须属于 `https://packages.agentmesh360.com`，禁止凭据、query、fragment 和
+重定向。loopback transport 映射只在测试编译中存在，签名测试记录本身仍使用生产
+HTTPS URL。
+
+每次操作创建独立的 `.downloads/download-<uuid>`；Unix 目录和文件以 `0700`、`0600`
+创建，并拒绝符号链接形式的下载根目录。下载同时约束声明长度和实际 stream 字节，
+逐块写入、逐块计算 SHA-256。任何传输、MIME、上限、digest、签名、Archive 或身份
+错误，以及 future 被取消，都会由所有权 Drop Guard 清理本次下载；成功返回后提取
+staging 仍由 `VerifiedStagedPackage` 所有。
+
+`PackageDownloadAudit` 只包含 package/agent/version 与字节数。H2b2a 不移动到正式
+versions、不修改 Active/Previous/本地 Registry/Catalog、不请求权限，也不开放
+ACP/UI。它已经通过 6 项专项测试、121 项 AgentMesh360 自主测试和本机 Kimi 独立
+交叉测试；Kimi 实跑相同两组测试、Clippy、Rustfmt 与 diff-check，问题分级全部为零。
+
+## 15. H2b2b 计划：验证结果到权限审批/安装事务的窄交接
+
+下一切片只允许把 `VerifiedPackageDownload` 的所有权交给既有
+`PackageInstallService`。新增权限必须先形成绑定 package/version/digest/权限集合的
+一次性审批挑战；只有当前 Access 和完全匹配的批准才能继续。安装应复用现有不可变
+versions、Active/Previous、SQLite CAS 与 Shared Runtime Catalog 原子刷新，不能按
+调用方 URL/路径重新读取，也不能在本切片开放生产密钥、ACP 或桌面 UI。

@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2、H2b1c 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2a：受限 Artifact/Envelope 下载到临时 staging |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2、H2b1c、H2b2a 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2b：验证下载结果到权限审批/本地安装事务的窄交接 |
 
 ## 开发循环记录
 
@@ -2158,3 +2158,69 @@ H2b2a 下一切片（须等 H2b1c Kimi 交叉测试关闭后启动）：
 3. 将已下载的 Envelope/Artifact 交给既有 `package_artifact` 验签与库存验证，但仍不
    解包到正式 versions、不请求权限、不开放安装 mutation；
 4. 定义脱敏下载状态和取消/超时边界，不记录 URL、路径、账户、token 或响应正文。
+
+### 循环 30：动态 Agent Package H2b2a——受限下载与验证暂存
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2b1c 已经能获得并重新验证 Trust Bundle/Registry，但把任意 URL、digest
+或本机目标路径交给调用方仍会破坏 Host-owned 信任边界。H2b2a 因此只接受
+`package_id + ClientAccess`，由 Host 从当前重新验签的 Registry Record 选择
+Artifact/Envelope；输出仍是会自动清理的已验证暂存对象，不接触正式版本目录、权限
+批准、Active/Previous、运行时 Catalog 或 ACP。
+
+H2b2a 已经实现：
+
+1. 新增 Host-owned `PackageArtifactDownloader`。调用方不能注入 URL、digest、publisher
+   或路径；下载前必须以当前 Core 可信时间重新验证持久 Registry/Trust Cache；
+2. Registry 中的 Artifact/Envelope URL 只接受固定
+   `https://packages.agentmesh360.com` origin，禁止 credentials/query/fragment，
+   HTTP Client 禁止重定向；loopback transport override 只在 `cfg(test)` 存在；
+3. 每次操作使用独立 `packages/.downloads/download-<uuid>`，Unix 目录/文件分别以
+   `0700`/`0600` 创建；已存在的 `.downloads` 必须是真实目录，符号链接在发起网络前
+   拒绝；
+4. Envelope 上限 64 KiB、Artifact 上限 32 MiB；同时检查 Content-Length 与实际
+   stream 累计字节，按类型限制 MIME，流式写盘并计算 SHA-256；
+5. 先比对 Registry 绑定的 Envelope/Artifact digest，再调用既有
+   `PackageArtifactVerifier` 验证 Publisher 签名、Archive 安全、Manifest、文件库存
+   和内容 digest；最后再次比对 package/agent/version/publisher 身份；
+6. 下载操作的 Drop Guard 在成功、错误和异步取消时清理下载目录；返回的
+   `VerifiedPackageDownload` 继续拥有提取 staging 的清理责任。审计对象只包含
+   package/agent/version 和两个字节数，不含 URL、路径、digest、账户或响应正文；
+7. 生产 root、Trust Bundle 和 metadata endpoint 仍为空，因此生产路径继续
+   fail-closed；本切片没有新增真实网络、安装或权限批准入口。
+
+H2b2a 继续保持的关闭边界：
+
+- 不移动到 `packages/versions`，不修改 `agent_package_registry`、Active/Previous 或
+  Shared Runtime Catalog；
+- 不开放下载/安装/更新/回滚 ACP，不把测试 loopback override 带入生产；
+- 不把订阅准入、Publisher 签名和权限批准合并为一个门槛；
+- 本切片只保证一次下载操作的临时目录清理；正式安装后的 orphan 回收仍未开放。
+
+H2b2a 自主验证：
+
+- 下载器专项 6 项通过，覆盖成功验签暂存、Artifact digest 篡改、Registry/Manifest
+  身份不一致、无效 Access 零网络、声明超大 Envelope 在 Artifact 请求前拒绝，以及
+  `.downloads` 符号链接逃逸零网络拒绝；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：121 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过。
+- 本机 Kimi 全文逐行通读 711 行下载器、五处信任链/测试接线 diff 与三份中文文档，
+  独立实跑下载器 6 项、AgentMesh360 121 项、Clippy、Rustfmt 和 `git diff --check`
+  全部通过；确认调用面收口、生产/test 传输隔离、双层上限、完整 digest/签名/身份链、
+  私有权限、符号链接拒绝、错误/取消清理、零 mutation 与审计脱敏。Blocker/High/
+  Medium/Low 均为零并明确给出 PASS，H2b2a 正式关闭。
+
+H2b2a 代码提交：`358a428`（`feat: download verified agent packages`）。
+
+H2b2b 下一切片（须等 H2b2a Kimi 交叉测试关闭后启动）：
+
+1. 以所有权方式把 `VerifiedPackageDownload` 交给既有 `PackageInstallService`，不得
+   根据 URL/路径重新读取或重新下载，也不得绕过 Registry 身份绑定；
+2. 下载完成后先返回新增权限的脱敏审批请求；只有匹配当前
+   package/version/digest/权限集合的一次性批准才能进入本地安装事务；
+3. 安装仍复用既有不可变 versions、Active/Previous 和 Catalog 刷新原子性，不在
+   H2b2b 暴露桌面 ACP/UI 或启用生产 root/endpoints；
+4. 验收覆盖下载后篡改/替换、过期 Access、批准重放/错包、事务失败和双方 staging
+   清理，继续执行自主测试与本机 Kimi 交叉测试硬门槛。
