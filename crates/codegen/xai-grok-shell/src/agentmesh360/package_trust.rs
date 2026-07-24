@@ -98,10 +98,19 @@ impl TrustedPublisherStore {
 
     #[cfg(test)]
     pub(super) fn with_key(key: TrustedPublisherKey) -> Self {
+        Self::with_key_and_audit(key, 0, None)
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_key_and_audit(
+        key: TrustedPublisherKey,
+        trust_sequence: u64,
+        root_key_id: Option<String>,
+    ) -> Self {
         Self {
             keys: HashMap::from([(key.key_id.clone(), key)]),
-            trust_sequence: 0,
-            root_key_id: None,
+            trust_sequence,
+            root_key_id,
         }
     }
 
@@ -109,6 +118,12 @@ impl TrustedPublisherStore {
         self.keys
             .get(key_id)
             .ok_or_else(|| anyhow!("Agent Package signature key is not trusted"))
+    }
+
+    pub(crate) fn trusts_publisher(&self, publisher: &str) -> bool {
+        self.keys
+            .values()
+            .any(|trusted| trusted.publisher == publisher)
     }
 
     pub(crate) fn audit(&self) -> PublisherTrustAudit {
@@ -139,29 +154,40 @@ impl TrustedRootStore {
     }
 
     #[cfg(test)]
-    fn with_key(key: TrustedRootKey) -> Self {
+    pub(super) fn with_key(key: TrustedRootKey) -> Self {
         Self {
             keys: HashMap::from([(key.key_id.clone(), key)]),
         }
     }
 
     fn verify(&self, bundle: &PublisherTrustBundle) -> Result<()> {
+        self.verify_signed_payload(
+            &bundle.root_key_id,
+            &bundle.signature,
+            trust_bundle_signature_payload(bundle).as_bytes(),
+            "Agent Package publisher trust",
+        )
+    }
+
+    pub(super) fn verify_signed_payload(
+        &self,
+        root_key_id: &str,
+        signature: &str,
+        payload: &[u8],
+        subject: &'static str,
+    ) -> Result<()> {
         let root = self
             .keys
-            .get(&bundle.root_key_id)
-            .ok_or_else(|| anyhow!("Agent Package publisher trust root is not trusted"))?;
+            .get(root_key_id)
+            .ok_or_else(|| anyhow!("{subject} root is not trusted"))?;
         let verifying_key = VerifyingKey::from_bytes(&root.public_key)
-            .context("load Agent Package publisher trust root")?;
-        let signature_bytes =
-            decode_canonical_base64("Agent Package publisher trust signature", &bundle.signature)?;
+            .with_context(|| format!("load {subject} root"))?;
+        let signature_bytes = decode_canonical_base64(&format!("{subject} signature"), signature)?;
         let signature = Signature::from_slice(&signature_bytes)
-            .context("parse Agent Package publisher trust signature")?;
+            .with_context(|| format!("parse {subject} signature"))?;
         verifying_key
-            .verify_strict(
-                trust_bundle_signature_payload(bundle).as_bytes(),
-                &signature,
-            )
-            .context("verify Agent Package publisher trust signature")
+            .verify_strict(payload, &signature)
+            .with_context(|| format!("verify {subject} signature"))
     }
 }
 
