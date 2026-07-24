@@ -134,12 +134,15 @@ H1a 定义 `.ampkg.tar.zst` 产物、外部 JSON 签名信封和包内
 | `signature` | 对确定性文本信封的 Ed25519 签名 |
 
 验证使用 Ed25519 strict verification，先检查完整 Artifact digest 与发布密钥，再创建
-staging。解包后还会逐文件核对 uniquely sorted 的路径、长度与 SHA-256 清单，因此
-Artifact 完整性和 Package 文件清单形成双层验证。
+staging。Artifact 只打开一次：验签前完成摘要后 rewind 同一文件句柄，再由该句柄
+解包，避免“验签一个文件、解包另一个文件”的 TOCTOU。解包后还会逐文件核对
+uniquely sorted 的路径、长度与 SHA-256 清单，因此 Artifact 完整性和 Package
+文件清单形成双层验证。
 
 staging 失败关闭边界包括：
 
-- 压缩产物最大 32 MiB、单文件最大 32 MiB、解包总量最大 128 MiB、最多 1024 个文件；
+- 压缩产物最大 32 MiB、单文件最大 32 MiB、解包总量最大 128 MiB、最多 1024 个
+  文件和 2048 个 Archive entry；目录 entry 也计入上限；
 - 拒绝绝对路径、反斜杠、`.`、`..`、重复路径、symlink、hardlink 和其他非普通文件；
 - staging 目录使用不可复用名称创建，Unix 目录为 `0700`、文件为 `0600`；
 - `agentmesh-agent.toml`、文件清单、Canonical Workflow 和所有声明的 Adapter 文件
@@ -153,8 +156,10 @@ staging 失败关闭边界包括：
 
 ## 8. H1b 已实现的原子安装与回滚
 
-H1b 在共享 `state.db v7` 中增加 `agent_package_registry`，每个 `packageId` 只保存一个
-Active 和一个 Previous 指针。安装顺序固定为：
+H1b 最初在共享 `state.db v7` 中增加 `agent_package_registry`；独立交叉测试发现
+Previous 回滚只检查身份、没有可信的已解包文件锚点后，Registry 加固为 `state.db v8`。
+每个 `packageId` 只保存一个 Active 和一个 Previous 指针，并为两者保存已签名
+`package-files.v1.json` 的 SHA-256。安装顺序固定为：
 
 1. H1a 完成签名、Artifact、文件清单、Schema、引用和身份验证；
 2. 比较 Active 与新 Manifest 的权限集合；首次安装按“从零权限增加”处理；
@@ -162,16 +167,23 @@ Active 和一个 Previous 指针。安装顺序固定为：
 4. 对 staging 文件执行同步，再在同一 Package 文件系统中原子 rename 到不可变版本目录；
 5. 通过 SQLite `IMMEDIATE` transaction 比较并提交 Active/Previous 指针；
 6. 数据库提交失败时，旧 Active 不变；已 rename 的新目录只会成为未引用 orphan；
-7. 显式 rollback 在单个 SQLite transaction 中交换 Active/Previous。
+7. 显式 rollback 先将文件清单摘要与 Registry 锚点比对，再逐项复核整棵已安装目录的
+   路径、类型、数量、大小与 SHA-256；全部通过后才在单个 SQLite transaction 中交换
+   Active/Previous；
+8. 同 digest 的幂等重装也复核 Active 目录，不能用幂等捷径掩盖安装后篡改。
 
 安装/升级还固定以下不变量：
 
 - 一个 `agentId` 只能属于一个已安装 `packageId`；
 - 同一 `packageId` 的升级不能改变 `agentId`；
-- 同一版本不能换成另一个 Artifact digest；
+- 相同 SemVer precedence 不能通过 build metadata 换成另一个 Artifact digest；
 - 低于 Active 的版本不能伪装成普通升级，只能回到已验证的 Previous；
-- Active/Previous 记录保存版本、Artifact digest、相对路径、已批准权限和签名 key ID；
-- v6→v7 迁移不改变既有 Agent Main Session、Provider Profile、Binding 或其他状态。
+- Active/Previous 记录保存版本、Artifact digest、文件清单 digest、相对路径、
+  已批准权限和签名 key ID；
+- v6→v8 迁移不改变既有 Agent Main Session、Provider Profile、Binding 或其他状态；
+  空的 v7 Package Registry 可无损升级。由于 v7 从未开放生产入口，若开发数据库中
+  已存在缺少可信文件清单锚点的 v7 Package 行，迁移会保留原数据并失败关闭，要求删除
+  该未发布开发记录后重新安装，绝不在迁移时从可能已篡改的目录反向“补签”摘要。
 
 当前安装服务仍是 Host 私有模块，没有 ACP/Renderer mutation 入口；生产 Trust Store
 仍为空，因此不会对真实用户目录产生动态安装。正式发布密钥、权限确认 UI 和管理入口
@@ -181,7 +193,8 @@ Active 和一个 Previous 指针。安装顺序固定为：
 
 H2 负责“动态分发与双投影”：
 
-- 让本地 Registry 的 Active Package 在启动/安装后合并进运行时 Catalog；
+- 复用 H1 的锚定文件清单复验，让本地 Registry 的 Active Package 在启动/安装后合并
+  进运行时 Catalog；
 - 从 AgentMesh360 Package Registry 获取签名元数据和产物；
 - 用户确认新增权限后安装/升级；
 - 生成或安装 Manifest 声明的宿主 Skill Adapter；

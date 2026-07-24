@@ -14,13 +14,19 @@ Provider 分阶段计划以
 
 每完成一个可独立验收的模块或功能，都必须按以下顺序继续：
 
-1. 更新本文档，记录实现边界、提交和验证证据；
-2. 对照产品蓝图和专项计划，检查是否出现职责、顺序或安全边界漂移；
-3. 明确下一轮目标、非目标和验收条件；
-4. 把下一轮任务加入执行计划并开始开发；
-5. 验证完成后再次进入本闭环。
+1. 先完成本机自主测试，记录测试范围、命令和结果；
+2. 把变更范围、架构约束和测试要求交给本机 Kimi，由它独立审查代码并执行交叉测试；
+3. Kimi 发现任何未关闭的问题时，修复后重新执行自主测试和 Kimi 复测，直到双方验证
+   都通过；不得把“仅审查未执行”“建议以后处理”冒充交叉测试通过；
+4. 更新本文档，记录实现边界、提交、自主测试和 Kimi 交叉测试证据；
+5. 对照产品蓝图和专项计划，检查是否出现职责、顺序或安全边界漂移；
+6. 明确下一轮目标、非目标和验收条件；
+7. 把下一轮任务加入执行计划并开始开发；
+8. 验证完成后再次进入本闭环。
 
-“代码完成”不等于一轮工作结束；进展、计划复盘和下一轮启动都属于完成条件。
+“代码完成”不等于一轮工作结束；自主测试、本机 Kimi 交叉测试、问题闭环、进展更新、
+计划复盘和下一轮启动都属于完成条件。Kimi 的结论必须记录其实际检查范围、执行过的
+命令和可复核结果，不记录或要求暴露模型的隐藏推理。
 
 ## 当前实施状态
 
@@ -31,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 已实现 Manifest、签名验证、安全 staging、Active/Previous 原子安装、权限批准、显式回滚与 state.db v7 Registry；生产入口仍关闭 | H2a：把 Active Package 合并进运行时 Catalog，并先开放只读管理状态 |
+| 动态 Agent Package | H0/H1 已实现 Manifest、单文件句柄验签/解包、锚定文件清单、安全 staging、Active/Previous 原子安装、权限批准、完整性回滚与 state.db v8 Registry；生产入口仍关闭 | H2a：把复验通过的 Active Package 合并进运行时 Catalog，并先开放只读管理状态 |
 
 ## 开发循环记录
 
@@ -1516,11 +1522,13 @@ H0 计划复盘：
 
 ### 循环 23：动态 Agent Package H1——签名产物与原子安装事务
 
-状态：已完成源码与开发验收；生产发布密钥和安装入口保持关闭
+状态：已完成源码、自主测试与两轮 Kimi 交叉测试；生产发布密钥和安装入口保持关闭
 
 H1a 本地提交：`8d0a865 feat: verify signed agent package artifacts`
 
 H1b 本地提交：`cde8195 feat: add atomic agent package registry`
+
+H1c 修复提交：`1903b46 fix: harden agent package integrity lifecycle`
 
 启动理由：H0 已消除 Agent 定义的双重硬编码，但 Package 仍是编译期资源。若现在直接
 接远端 Registry，损坏、路径穿越、签名伪造或半完成升级都可能污染 Active Agent。
@@ -1589,7 +1597,7 @@ H1b 紧接着实现：
 
 H1b 已经实现：
 
-- `state.db` 升级为 v7，增加全客户端级 `agent_package_registry`；Package 安装状态
+- `state.db` 升级为 v8，增加并加固全客户端级 `agent_package_registry`；Package 安装状态
   不复制到每个订阅账户，产品 Agent 实例和 Main Session 仍按账户隔离；
 - Registry 对每个 `packageId` 保存 Active/Previous 的版本、Artifact digest、相对
   不可变目录、批准权限和签名 key ID，并用 CHECK 约束 Previous 必须全有或全无；
@@ -1601,7 +1609,7 @@ H1b 已经实现：
   换 digest，低版本不能走普通升级；
 - 显式 rollback 在一个事务中交换 Active/Previous，Manifest 身份必须仍与
   `packageId`、`agentId` 和 Previous 版本一致；
-- v6→v7 迁移回归保留既有产品 Agent Main Session，H0 的旧 v2/v3/v4 数据回归继续
+- v6→v8 迁移回归保留既有产品 Agent Main Session，H0 的旧 v2/v3/v4 数据回归继续
   通过；
 - Package 根目录在 Unix 为 `0700`；重复安装同一 digest 只有在 Active 目录仍存在时
   才按幂等成功处理。
@@ -1610,13 +1618,49 @@ H1b 验证证据：
 
 - 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：83 项通过；
 - Package Artifact + Installer 专项：10 项通过；
-- state v7 与 v2/v3/v4/v6 迁移专项：6 项通过；
+- state v7→v8 与 v2/v3/v4/v6→v8 迁移专项：8 项通过；
 - `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt edition 2024 与
   `git diff --check` 通过；
 - 中断注入证明 rename 后 Registry 提交失败时，旧 Active/Previous 不变，新目录只
   是未引用 orphan；
 - 所有安装/升级/回滚测试均使用临时目录和伪造 digest；生产 Trust Store、真实安装
   目录、网络、Provider Key 和用户数据均未触及。
+
+H1c 本机 Kimi 独立交叉测试与修复：
+
+- 本机 Kimi Code `0.26.0` 独立审查 `b4c0be8^..0c6f437`，实际执行
+  `cargo test -p xai-grok-shell agentmesh360 --lib`（原实现 83 项通过）和
+  `cargo clippy -p xai-grok-shell --lib -- -D warnings`（通过）；它没有修改仓库；
+- Kimi 判定原 H1 不能关闭：Previous 回滚只重读 Manifest 身份，没有可信的整树内容
+  锚点；同时指出验签摘要与解包两次打开 Artifact 的 TOCTOU、目录 entry 不计数、
+  未知 Agent 路由语义未锁定和 SemVer build metadata 边界；
+- 修复后 Artifact 只打开一次，摘要并验签后 rewind 同一文件句柄解包；Archive
+  所有 entry（包括目录）受 2048 上限约束；
+- `state.db v8` 为 Active/Previous 保存已签名 `package-files.v1.json` 的 SHA-256。
+  rollback 和幂等重装先比对该锚点，再复核整树路径、类型、数量、大小、文件 digest、
+  Manifest 身份与引用文件；任何篡改均保持 Registry 指针不变；
+- 空 v7 Registry 可无损升级；已有 v7 开发记录因从未保存可信锚点而保留原数据并
+  失败关闭，不能从可能已篡改的目录反向补写“可信”摘要；
+- 相同 SemVer precedence 不得通过 build metadata 更换 Artifact，未知产品
+  `agentId` 的 Provider 路由明确失败关闭并由回归测试固定。
+
+H1c 自主复测证据：
+
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：90 项通过、0 失败；14 项
+  本机 mock Core/Provider 测试在默认沙箱因 localhost bind 被拒，按原测试边界允许
+  本机临时端口后同一完整命令全部通过；
+- Artifact 专项 8 项、Installer 专项 6 项、state v8 专项 8 项和未知 Agent 路由
+  契约 1 项全部通过；新增覆盖同文件句柄、目录 entry 炸弹、Active/Previous 文件及
+  清单篡改、Registry 指针不变、SemVer build metadata 和 v7 锚点迁移；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 与
+  `git diff --check` 通过；
+- Kimi 恢复同一审查 Session，重新读取全部修复 diff，并独立执行完整 90 项测试和
+  Clippy；原 H-1/M-1/M-2/L-1/L-2 均判定已修复，没有新增 blocker/high/medium 或
+  需本轮处理的 low，最终结论为 `PASS —— 允许 H0/H1 本轮关闭`；
+- Kimi 只保留两个非阻塞观察：rollback 整树复验会延长本地 SQLite 写锁持有时间，
+  以及同 UID 可理论竞争文件清单的 metadata/open；在同 UID 已可直接改 DB、Package
+  大小受限且本地低竞争的威胁模型下不扩大暴露面。orphan 只读诊断与安全清理仍按计划
+  留给 H2a。
 
 H1 完整复盘：
 
