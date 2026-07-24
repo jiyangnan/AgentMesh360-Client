@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -113,6 +113,36 @@ CREATE TABLE IF NOT EXISTS turn_route_records (
 
 CREATE INDEX IF NOT EXISTS idx_turn_route_records_session
     ON turn_route_records(owner_account_id, session_id, role, submitted_at);
+
+CREATE TABLE IF NOT EXISTS provider_probe_results (
+    probe_id TEXT PRIMARY KEY,
+    owner_account_id INTEGER NOT NULL CHECK(owner_account_id > 0),
+    provider_profile_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    level TEXT NOT NULL CHECK(level IN (
+        'local_validation', 'metadata', 'minimal_inference'
+    )),
+    status TEXT NOT NULL CHECK(status IN (
+        'passed', 'failed', 'unsupported', 'confirmation_required'
+    )),
+    network_attempted INTEGER NOT NULL CHECK(network_attempted IN (0, 1)),
+    may_incur_cost INTEGER NOT NULL CHECK(may_incur_cost IN (0, 1)),
+    endpoint_classification TEXT NOT NULL CHECK(endpoint_classification IN (
+        'official', 'aggregator', 'gateway', 'custom', 'local'
+    )),
+    endpoint_origin TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    assignment_count INTEGER NOT NULL CHECK(assignment_count >= 0),
+    summary_code TEXT NOT NULL,
+    summary_message TEXT NOT NULL,
+    warnings_json TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL CHECK(latency_ms >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_probe_results_owner
+    ON provider_probe_results(owner_account_id, completed_at DESC, probe_id);
 "#;
 
 pub(super) fn default_state_home() -> PathBuf {
@@ -227,7 +257,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v5_schema() {
+    fn initializes_the_shared_v6_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -239,7 +269,8 @@ mod tests {
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
                      ('model_assignments', 'product_agents', 'provider_profiles', \
-                      'session_provider_bindings', 'turn_route_records') ORDER BY name",
+                      'provider_probe_results', 'session_provider_bindings', \
+                      'turn_route_records') ORDER BY name",
                 )
                 .expect("prepare table query");
             stmt.query_map([], |row| row.get(0))
@@ -248,12 +279,13 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         assert_eq!(
             tables,
             [
                 "model_assignments",
                 "product_agents",
+                "provider_probe_results",
                 "provider_profiles",
                 "session_provider_bindings",
                 "turn_route_records"
@@ -321,7 +353,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -421,7 +453,7 @@ mod tests {
             )
             .expect("binding tables");
 
-        assert_eq!(version, 5);
+        assert_eq!(version, 6);
         assert_eq!(owner, 41);
         assert_eq!(binding_tables, 2);
     }

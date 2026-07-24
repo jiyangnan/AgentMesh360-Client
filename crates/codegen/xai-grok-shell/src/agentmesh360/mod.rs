@@ -13,6 +13,7 @@ mod model_policy;
 mod model_routing;
 mod profiles;
 mod provider_catalog;
+mod provider_probes;
 mod provider_profiles;
 mod providers;
 pub mod registry;
@@ -41,6 +42,8 @@ pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
     providers: providers::ProviderService<credential_vault::RuntimeCredentialVault>,
+    provider_probes:
+        provider_probes::ProviderProbeService<credential_vault::RuntimeCredentialVault>,
     model_routing: model_routing::ModelRoutingService,
     access: access::ClientAccess,
     state_home: PathBuf,
@@ -72,6 +75,10 @@ impl AgentMesh360Runtime {
             registry: AgentRegistry::in_home(&state_home),
             providers: providers::ProviderService::new(
                 provider_profiles::ProviderProfileStore::in_home(&state_home),
+                credential_vault.clone(),
+            ),
+            provider_probes: provider_probes::ProviderProbeService::in_home(
+                &state_home,
                 credential_vault.clone(),
             ),
             model_routing: model_routing::ModelRoutingService::in_home(&state_home),
@@ -375,6 +382,26 @@ pub(crate) async fn handle(
                 owner_account_id,
                 args,
             );
+        }
+        method if provider_probes::handles(method) => {
+            let owner_account_id = agent
+                .agentmesh360
+                .access
+                .current_account_id()
+                .ok_or_else(|| anyhow!("AgentMesh360 account access is unavailable"))?;
+            return provider_probes::handle(
+                &agent.agentmesh360.provider_probes,
+                owner_account_id,
+                args,
+                &|| {
+                    agent
+                        .agentmesh360
+                        .access
+                        .require()
+                        .map_err(|_| anyhow!("AgentMesh360 subscription access is unavailable"))
+                },
+            )
+            .await;
         }
         method if method.starts_with("x.agentmesh360/providers/") => {
             let owner_account_id = agent

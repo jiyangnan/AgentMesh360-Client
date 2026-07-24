@@ -2,10 +2,15 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use xai_grok_sampler::{BearerResolver, SamplerConfig, SamplingClient, SharedBearerResolver};
+use xai_grok_sampler::{
+    AuthScheme, BearerResolver, SamplerConfig, SamplingClient, SharedBearerResolver,
+};
+use xai_grok_sampling_types::ApiBackend;
 
 use super::credential_vault::{CredentialRef, CredentialVault, SecretValue, SystemCredentialVault};
-use super::provider_profiles::{ProviderProfileRecord, ProviderProfileStore};
+use super::provider_profiles::{
+    ProviderAuthKind, ProviderProfileRecord, ProviderProfileStore, ProviderProtocol,
+};
 use super::session_bindings::{SessionBindingStore, SessionProviderBinding};
 
 /// Host-owned, short-lived authority to use one Provider credential.
@@ -58,6 +63,37 @@ impl BearerResolver for LeaseCredential {
 pub struct LeasedSamplingRoute {
     binding: SessionProviderBinding,
     sampler_config: SamplerConfig,
+}
+
+/// A short-lived, non-serializable route used only by an explicit Provider
+/// Probe. It is intentionally not a Session Binding and cannot mutate product
+/// Session routing or write a Turn Route.
+pub struct LeasedProbeRoute {
+    sampler_config: SamplerConfig,
+}
+
+impl std::fmt::Debug for LeasedProbeRoute {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LeasedProbeRoute")
+            .field("base_url", &self.sampler_config.base_url)
+            .field("model", &self.sampler_config.model)
+            .field("api_backend", &self.sampler_config.api_backend)
+            .field("credential_present", &true)
+            .finish()
+    }
+}
+
+impl LeasedProbeRoute {
+    pub fn into_client(self) -> Result<SamplingClient> {
+        SamplingClient::new(self.sampler_config)
+            .context("prepare existing Grok Sampling client for Provider Probe")
+    }
+
+    #[cfg(test)]
+    fn sampler_config(&self) -> &SamplerConfig {
+        &self.sampler_config
+    }
 }
 
 impl fmt::Debug for LeasedSamplingRoute {
@@ -142,6 +178,28 @@ impl<V: CredentialVault> CredentialLeaseResolver<V> {
         project(binding, lease)
     }
 
+    /// Resolve one saved Profile directly for a user-confirmed Probe.
+    ///
+    /// This path deliberately does not create/read a Session Binding because
+    /// a Probe must never change an Agent's frozen route. The model must
+    /// already be enabled on the Profile.
+    pub fn resolve_profile_probe(
+        &self,
+        owner_account_id: i64,
+        profile_id: &str,
+        model_id: &str,
+    ) -> Result<LeasedProbeRoute> {
+        let profile = self
+            .profiles
+            .get(owner_account_id, profile_id)
+            .context("resolve Provider Profile for Probe")?;
+        if !profile.enabled_models.iter().any(|model| model == model_id) {
+            bail!("Probe model is not enabled by the Provider Profile");
+        }
+        let lease = self.lease(&profile)?;
+        project_probe(&profile, model_id, lease)
+    }
+
     fn lease(&self, profile: &ProviderProfileRecord) -> Result<CredentialLease> {
         if !profile.credential_configured {
             bail!("bound Provider credential is not configured");
@@ -211,6 +269,38 @@ fn project(binding: SessionProviderBinding, lease: CredentialLease) -> Result<Le
     Ok(LeasedSamplingRoute {
         binding,
         sampler_config,
+    })
+}
+
+fn project_probe(
+    profile: &ProviderProfileRecord,
+    model_id: &str,
+    lease: CredentialLease,
+) -> Result<LeasedProbeRoute> {
+    if lease.provider_profile_id != profile.profile_id
+        || lease.profile_route_revision != profile.route_revision
+    {
+        bail!("Credential Lease does not match the Provider Profile under Probe");
+    }
+    let bearer_resolver: SharedBearerResolver = lease.credential;
+    Ok(LeasedProbeRoute {
+        sampler_config: SamplerConfig {
+            api_key: None,
+            base_url: profile.base_url.clone(),
+            model: model_id.to_owned(),
+            max_completion_tokens: Some(32),
+            api_backend: match profile.protocol {
+                ProviderProtocol::OpenaiResponses => ApiBackend::Responses,
+                ProviderProtocol::OpenaiChat => ApiBackend::ChatCompletions,
+                ProviderProtocol::AnthropicMessages => ApiBackend::Messages,
+            },
+            auth_scheme: match profile.auth_kind {
+                ProviderAuthKind::BearerApiKey => AuthScheme::Bearer,
+                ProviderAuthKind::XApiKey => AuthScheme::XApiKey,
+            },
+            bearer_resolver: Some(bearer_resolver),
+            ..SamplerConfig::default()
+        },
     })
 }
 
@@ -303,6 +393,79 @@ mod tests {
                 },
             )
             .expect("binding");
+    }
+
+    fn add_profile_only(
+        state_home: &std::path::Path,
+        vault: &MemoryCredentialVault,
+        protocol: ProviderProtocol,
+        auth_kind: ProviderAuthKind,
+    ) {
+        let credential_ref = CredentialRef::generate();
+        vault
+            .put(
+                &credential_ref,
+                &SecretValue::new(SECRET.into()).expect("secret"),
+            )
+            .expect("store credential");
+        ProviderProfileStore::in_home(state_home)
+            .insert(
+                41,
+                "pp_probe",
+                credential_ref.as_str(),
+                "1234",
+                &ProviderProfileInput {
+                    preset_id: None,
+                    display_name: "Probe Provider".into(),
+                    protocol,
+                    base_url: "https://probe.example/v1".into(),
+                    auth_kind,
+                    enabled_models: vec!["model-probe".into()],
+                }
+                .normalized()
+                .expect("profile input"),
+            )
+            .expect("profile");
+    }
+
+    #[test]
+    fn profile_probe_lease_requires_no_session_binding_and_never_serializes_secret() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let vault = MemoryCredentialVault::default();
+        add_profile_only(
+            temp.path(),
+            &vault,
+            ProviderProtocol::AnthropicMessages,
+            ProviderAuthKind::XApiKey,
+        );
+        let resolver = CredentialLeaseResolver::in_home(temp.path(), vault);
+
+        let leased = resolver
+            .resolve_profile_probe(41, "pp_probe", "model-probe")
+            .expect("resolve direct Profile Probe lease");
+        assert_eq!(leased.sampler_config().api_backend, ApiBackend::Messages);
+        assert_eq!(leased.sampler_config().auth_scheme, AuthScheme::XApiKey);
+        assert_eq!(leased.sampler_config().max_completion_tokens, Some(32));
+        let serialized =
+            serde_json::to_string(leased.sampler_config()).expect("serialize probe config");
+        let debug = format!("{leased:?}");
+        assert!(!serialized.contains(SECRET));
+        assert!(!debug.contains(SECRET));
+
+        assert!(
+            resolver
+                .resolve_profile_probe(42, "pp_probe", "model-probe")
+                .expect_err("another account cannot lease the Profile")
+                .to_string()
+                .contains("resolve Provider Profile")
+        );
+        assert!(
+            resolver
+                .resolve_profile_probe(41, "pp_probe", "other-model")
+                .expect_err("disabled model cannot be probed")
+                .to_string()
+                .contains("not enabled")
+        );
     }
 
     #[test]
