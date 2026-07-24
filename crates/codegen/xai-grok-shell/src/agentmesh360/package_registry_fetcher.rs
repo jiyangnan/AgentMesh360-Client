@@ -19,7 +19,7 @@ use super::state;
 #[cfg(test)]
 use super::package_trust::TrustedRootStore;
 
-const PRODUCTION_PACKAGE_ORIGIN: &str = "https://packages.agentmesh360.com";
+pub(super) const PRODUCTION_PACKAGE_ORIGIN: &str = "https://packages.agentmesh360.com";
 const PRODUCTION_TRUST_BUNDLE_URL: Option<&str> = None;
 const PRODUCTION_REGISTRY_URL: Option<&str> = None;
 const TRUST_BUNDLE_RESPONSE_LIMIT: usize = 64 * 1024;
@@ -261,7 +261,7 @@ impl RemotePackageMetadataEndpoints {
     }
 }
 
-fn validate_endpoint(url: &Url, allow_loopback_http: bool) -> Result<(), ()> {
+pub(super) fn validate_endpoint(url: &Url, allow_loopback_http: bool) -> Result<(), ()> {
     let scheme_allowed = url.scheme() == "https"
         || (allow_loopback_http
             && url.scheme() == "http"

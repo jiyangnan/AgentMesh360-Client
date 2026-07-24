@@ -312,9 +312,39 @@ pub(super) fn signed_registry_document_for_test(
     trust_bundle_sequence: u64,
     digest_character: char,
 ) -> String {
+    let artifact_url = "https://packages.agentmesh360.com/job-agent/1.2.0.tar.zst";
+    signed_registry_record_document_for_test(
+        root,
+        root_key_id,
+        revision,
+        trust_bundle_sequence,
+        "job-agent",
+        "job-agent",
+        "1.2.0",
+        artifact_url,
+        &digest_character.to_string().repeat(64),
+        &format!("{artifact_url}.signature.json"),
+        &"a".repeat(64),
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn signed_registry_record_document_for_test(
+    root: &ed25519_dalek::SigningKey,
+    root_key_id: &str,
+    revision: u64,
+    trust_bundle_sequence: u64,
+    package_id: &str,
+    agent_id: &str,
+    version: &str,
+    artifact_url: &str,
+    artifact_sha256: &str,
+    envelope_url: &str,
+    envelope_sha256: &str,
+) -> String {
     use ed25519_dalek::Signer as _;
 
-    let artifact_url = "https://packages.agentmesh360.com/job-agent/1.2.0.tar.zst";
     let mut snapshot = PackageRegistrySnapshot {
         schema_version: REGISTRY_SNAPSHOT_SCHEMA_VERSION,
         revision,
@@ -323,14 +353,14 @@ pub(super) fn signed_registry_document_for_test(
         generated_at: "2026-07-01T00:00:00Z".into(),
         expires_at: "2026-08-01T00:00:00Z".into(),
         packages: vec![RemotePackageRecord {
-            package_id: "job-agent".into(),
-            agent_id: "job-agent".into(),
-            version: "1.2.0".into(),
+            package_id: package_id.into(),
+            agent_id: agent_id.into(),
+            version: version.into(),
             publisher: "agentmesh360".into(),
             artifact_url: artifact_url.into(),
-            artifact_sha256: digest_character.to_string().repeat(64),
-            envelope_url: format!("{artifact_url}.signature.json"),
-            envelope_sha256: "a".repeat(64),
+            artifact_sha256: artifact_sha256.into(),
+            envelope_url: envelope_url.into(),
+            envelope_sha256: envelope_sha256.into(),
         }],
         signature: String::new(),
     };

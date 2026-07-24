@@ -8,7 +8,7 @@ use sha2::{Digest as _, Sha256};
 
 use super::access::ClientAccess;
 use super::package_registry_snapshot::{
-    PackageRegistrySnapshotVerifier, VerifiedPackageRegistrySnapshot,
+    PackageRegistrySnapshotVerifier, RemotePackageRecord, VerifiedPackageRegistrySnapshot,
 };
 use super::package_trust::{TrustedPublisherStore, TrustedRootStore};
 use super::state;
@@ -184,6 +184,30 @@ impl PackageTrustCacheStore {
         &self,
         access: &ClientAccess,
     ) -> Result<Option<PackageTrustCacheAudit>> {
+        self.load_verified(access)
+            .map(|verified| verified.map(|verified| verified.audit))
+    }
+
+    pub(super) fn load_verified_package(
+        &self,
+        package_id: &str,
+        access: &ClientAccess,
+    ) -> Result<Option<VerifiedRemotePackage>> {
+        let Some(verified) = self.load_verified(access)? else {
+            return Ok(None);
+        };
+        let record = verified
+            .registry
+            .packages
+            .into_iter()
+            .find(|record| record.package_id == package_id);
+        Ok(record.map(|record| VerifiedRemotePackage {
+            record,
+            trusted_publishers: verified.trusted_publishers,
+        }))
+    }
+
+    fn load_verified(&self, access: &ClientAccess) -> Result<Option<VerifiedPackageTrustCache>> {
         let connection = state::open(&self.state_home)?;
         let Some(cached) = read_cached_row(&connection)? else {
             return Ok(None);
@@ -229,13 +253,29 @@ impl PackageTrustCacheStore {
             bail!("Agent Package trust cache metadata does not match signed documents");
         }
 
-        Ok(Some(cache_audit(
+        let audit = cache_audit(
             cached.root_key_id,
             &trusted_publishers,
             &registry,
             verified_at,
-        )?))
+        )?;
+        Ok(Some(VerifiedPackageTrustCache {
+            audit,
+            trusted_publishers,
+            registry,
+        }))
     }
+}
+
+pub(super) struct VerifiedRemotePackage {
+    pub record: RemotePackageRecord,
+    pub trusted_publishers: TrustedPublisherStore,
+}
+
+struct VerifiedPackageTrustCache {
+    audit: PackageTrustCacheAudit,
+    trusted_publishers: TrustedPublisherStore,
+    registry: VerifiedPackageRegistrySnapshot,
 }
 
 fn cache_audit(

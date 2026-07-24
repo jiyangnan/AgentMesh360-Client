@@ -68,7 +68,6 @@ impl PackageArtifactVerifier {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn with_trust_store(
         state_home: impl AsRef<Path>,
         trust_store: TrustedPublisherStore,
@@ -575,6 +574,101 @@ fn set_private_file_permissions(path: &Path) -> Result<()> {
     #[cfg(not(unix))]
     let _ = path;
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) struct DownloadArtifactFixture {
+    pub artifact: Vec<u8>,
+    pub envelope: String,
+    pub artifact_sha256: String,
+    pub envelope_sha256: String,
+}
+
+#[cfg(test)]
+pub(super) fn download_artifact_fixture_for_test() -> DownloadArtifactFixture {
+    use ed25519_dalek::{Signer as _, SigningKey};
+
+    const JOB_MANIFEST: &str = include_str!("packages/job-agent/agentmesh-agent.toml");
+    let mut files = HashMap::from([
+        (
+            PACKAGE_MANIFEST_PATH.to_owned(),
+            JOB_MANIFEST.as_bytes().to_vec(),
+        ),
+        (
+            "docs/agent-onboarding.md".into(),
+            b"# Job Agent workflow\n".to_vec(),
+        ),
+        (
+            "skills/claude-code/SKILL.md".into(),
+            b"# Claude Code adapter\n".to_vec(),
+        ),
+        (
+            "skills/openclaw-job-agent/SKILL.md".into(),
+            b"# OpenClaw adapter\n".to_vec(),
+        ),
+    ]);
+    let mut records = files
+        .iter()
+        .map(|(path, contents)| PackageFileRecord {
+            path: path.clone(),
+            size: contents.len() as u64,
+            sha256: lower_hex(&Sha256::digest(contents)),
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|left, right| left.path.cmp(&right.path));
+    files.insert(
+        FILE_MANIFEST_PATH.into(),
+        serde_json::to_vec(&PackageFileManifest {
+            schema_version: FILE_MANIFEST_SCHEMA_VERSION,
+            files: records,
+        })
+        .expect("serialize Package download fixture inventory"),
+    );
+
+    let mut artifact = Vec::new();
+    {
+        let encoder = zstd::stream::write::Encoder::new(&mut artifact, 3).expect("zstd");
+        let mut archive = tar::Builder::new(encoder);
+        let mut paths = files.keys().cloned().collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            let contents = &files[&path];
+            let mut header = tar::Header::new_gnu();
+            header.set_path(&path).expect("fixture path");
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o600);
+            header.set_cksum();
+            archive
+                .append(&header, contents.as_slice())
+                .expect("append fixture file");
+        }
+        let encoder = archive.into_inner().expect("finish fixture tar");
+        encoder.finish().expect("finish fixture zstd");
+    }
+    let artifact_sha256 = lower_hex(&Sha256::digest(&artifact));
+    let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+    let mut envelope = PackageSignatureEnvelope {
+        schema_version: SIGNATURE_SCHEMA_VERSION,
+        key_id: "agentmesh360-release-test".into(),
+        publisher: "agentmesh360".into(),
+        package_id: "com.agentmesh360.job-agent".into(),
+        version: "0.4.7".into(),
+        artifact_sha256: artifact_sha256.clone(),
+        signature: String::new(),
+    };
+    envelope.signature = BASE64.encode(
+        signing_key
+            .sign(signature_payload(&envelope).as_bytes())
+            .to_bytes(),
+    );
+    let envelope = serde_json::to_string(&envelope).expect("serialize Package download envelope");
+    let envelope_sha256 = lower_hex(&Sha256::digest(envelope.as_bytes()));
+    DownloadArtifactFixture {
+        artifact,
+        envelope,
+        artifact_sha256,
+        envelope_sha256,
+    }
 }
 
 #[cfg(test)]
