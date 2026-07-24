@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1b：可信 server time、持久防回滚与 last-known-good 缓存 |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1b2：v9 持久防回滚与 last-known-good 缓存 |
 
 ## 开发循环记录
 
@@ -1960,3 +1960,68 @@ H2b1b 下一切片（须等 H2b1a 双方验证关闭后启动）：
 3. 离线时只能在签名有效期和已验证缓存边界内展示 last-known-good，只读状态不得泄露
    URL/query、文件路径、账户标识或原始错误；
 4. 本切片仍不下载或安装 Package；网络抓取和 mutation 在后续独立门禁中实现。
+
+### 循环 27：动态 Agent Package H2b1b1——Core 可信时间门禁
+
+状态：实现、自主测试与本机 Kimi 交叉测试已完成；数据库、远端抓取和安装仍关闭
+
+计划复核：H2b1a 的验证函数原本接收任意 `DateTime<Utc>`。这适合纯契约测试，但如果
+生产调用方直接传 `Utc::now()`，用户修改系统时间就可能让过期 Trust Bundle 或 Registry
+Snapshot 继续通过。本切片把时间来源收口到已经通过订阅准入的 `ClientAccess`，持久
+缓存和 Schema 升级仍留给 H2b1b2。
+
+H2b1b1 已经实现：
+
+1. 有效 Core bootstrap 同时解析 `server_time` 和订阅 `period_end`；两者任一格式错误、
+   周期已结束、持续时间为零或 `Instant` 截止点溢出，整个 bootstrap 失败关闭；
+2. `AccessState::Granted` 保存 `server_time`、接收时的单调 `Instant`、本机 `SystemTime`
+   观察值和新鲜度截止点；可信当前时间只用 `server_time + Instant elapsed` 计算，
+   本机墙钟永远不能把可信时间向前或向后推进；
+3. 时间锚最多有效 10 分钟，并且不会超过订阅剩余时间；当前桌面身份控制器每 5 分钟
+   重新 bootstrap，允许一次有限调度余量，但不能离线沿用整个会员周期；
+4. 墙钟仅作失败关闭的休眠/改钟探针：它和单调时钟的 elapsed 相差超过 2 分钟，或墙钟
+   回退到观察值之前，时间锚立即 stale，要求重新 bootstrap；它不会延长有效期；
+5. 未验证、订阅拒绝、已过订阅截止、显式 `invalidate` 或 stale 锚都不提供可信时间；
+6. Trust Bundle 与 Registry Snapshot 的生产验证 API 都不再接收裸时间或可长期持有的
+   时间 token，而是直接接收当前 `ClientAccess`，在每次验签当下同时检查订阅与时间
+   锚；任一失败都在 JSON/签名验证之前关闭；
+7. 两个显式时间验证函数都降为各自模块私有，只供同模块边界测试；未来 embedded
+   Bundle 即使被误填，也会失败关闭并要求先接入新鲜 Core 时间，不能回退到
+   `Utc::now()`。
+
+H2b1b1 继续保持的关闭边界：
+
+- 不持久化 server time/Instant/SystemTime；进程重启必须重新 Core bootstrap；
+- 不修改 `state.db` Schema，不缓存 Trust Bundle/Registry 文档，不读取网络 Registry，
+  不下载 Artifact/Envelope，不开放 ACP/UI 或安装 mutation；
+- 本机墙钟只会触发拒绝，绝不作为签名文档的可信时间源。
+
+H2b1b1 自主验证：
+
+- 新增 1 项时间锚专项测试，并扩展 Access/Registry 既有测试，覆盖单调推进、10 分钟
+  半开截止、订阅剩余 30 秒提前截止、Instant 倒退、墙钟回退、墙钟/单调时钟漂移超过
+  2 分钟、非法 `server_time`、Denied/Unverified/invalidate/stale 全部失败关闭；
+- Trust Bundle 与 Registry 正向验证都使用当前 Granted `ClientAccess`；同一 Access
+  被 invalidate 后，以及仍 Granted 但时间锚 stale 时，都在 JSON/验签前拒绝；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：105 项通过、0 失败；
+- 首次静态检查发现手写 Duration 差值触发 `manual_abs_diff`，已改用标准
+  `Duration::abs_diff` 后重跑完整 105 项测试；
+- 最终 `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 与
+  `git diff --check` 通过；
+- 本机 Kimi 通读三个代码文件和四份中文文档，独立实跑完整 105 项测试、Clippy、
+  Rustfmt 与 `git diff --check`，全部通过；grep 实证相关三个文件中 `Utc::now` 为零，
+  并确认墙钟不能推进可信时间、10 分钟/订阅截止半开边界、invalidate/Denied/expired
+  无 token 旁路、Trust Bundle/Registry 都受门禁、溢出/非法输入失败关闭且无网络/持久
+  化/泄露。Blocker/High/Medium/Low 均为零并明确给出 PASS，H2b1b1 正式关闭。
+
+H2b1b1 代码提交：`8e6cb31`（`feat: gate package trust on core time`）。
+
+H2b1b2 下一切片：
+
+1. 将 `state.db` 升级为 v9，新增单行 Package Trust Cache，原子保存 rootKeyId、最高
+   Trust Bundle sequence、最高 Registry revision、原始签名文档摘要、有效期与验证时间；
+2. 写入必须同时验证两个签名文档并在同一事务中比较旧最高值，拒绝 sequence/revision
+   回滚和 root/trust 绑定拆分；
+3. 启动读取缓存时必须用新 bootstrap 的可信时间重新验签；只能返回脱敏
+   last-known-good 审计状态，不能返回 URL/query、原始文档、路径或底层错误；
+4. 仍不下载或安装 Package；远端抓取和 mutation 继续作为独立切片。

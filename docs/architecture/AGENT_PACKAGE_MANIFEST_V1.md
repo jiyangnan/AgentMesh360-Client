@@ -279,3 +279,28 @@ H2b1a 已完成自主测试和本机 Kimi 交叉测试，但仍是纯验证层�
 不联网、不缓存、不下载、不安装。Core 可信时间、持久最高 revision/sequence、
 last-known-good 缓存和只读更新状态属于 H2b1b；Registry URL 和可能存在的 query
 只能留在 Host 内部，不能投影到公开响应或日志。
+
+## 12. H2b1b1 Core 可信时间门禁（已通过交叉测试）
+
+生产 Trust Bundle 与 Registry Snapshot 验证都不接受本机 `Utc::now()` 或调用方构造
+的裸时间。只有成功通过 `/v1/account/client-bootstrap` 的 `ClientAccess` 能提供时间锚：
+
+```text
+Core server_time + 接收时 Instant
+  -> 用 Instant elapsed 单调推进
+  -> 最多 10 分钟，且不超过订阅 period_end
+  -> 当前 Access 仍 Granted
+  -> Trust Bundle / Registry Snapshot 时间窗验证
+```
+
+接收时同时保存本机 `SystemTime`，但它只用于失败关闭：墙钟回退，或与单调时钟的
+elapsed 漂移超过 2 分钟，锚立即 stale，以覆盖系统休眠或手工改钟；墙钟从不参与可信
+时间计算，也不能延长 10 分钟截止点。Denied、Unverified、显式 invalidate、订阅截止
+或非法 Core 时间都不能提供锚。
+
+H2b1b1 已完成自主测试和本机 Kimi 交叉测试。Trust Bundle 与 Registry Snapshot 的
+公开模块接口都直接接收当前 `ClientAccess` 并在验签当下取时间；显式
+`DateTime<Utc>` 入口保持各自模块私有，仅供边界测试。未来 embedded Bundle 即使被
+误填，也不会退回本机时间。H2b1b1 不持久化时间，不改数据库，不读取远端 Registry；
+进程重启和时间锚过期都必须重新 bootstrap。持久签名文档、最高 sequence/revision 与
+last-known-good 属于 H2b1b2。

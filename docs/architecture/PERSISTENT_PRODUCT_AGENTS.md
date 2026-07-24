@@ -64,6 +64,11 @@ AgentMesh360 Core 的默认地址为 `https://api.agentmesh360.com`；本地开�
 
 Host 使用 Core 的 `server_time` 与 `period_end` 计算单调时钟截止点，避免客户端时钟
 偏差导致越权；即使 UI 没有及时刷新，当前准入也不会超过服务端返回的会员周期。
+远端 Agent Package 签名文档使用更窄的时间门禁：成功 bootstrap 后以 `server_time`
+为锚、只用 `Instant` 推进，最多新鲜 10 分钟且不超过会员剩余时间。`SystemTime`
+仅用于检测超过 2 分钟的墙钟漂移、回退或休眠差异并失败关闭，不能推进可信时间。
+Trust Bundle 与 Registry 验证都在当下重新检查 Access 仍 Granted；进程重启、
+invalidate 或锚 stale 都必须重新 bootstrap。
 
 ## ACP 接口
 
