@@ -77,6 +77,13 @@ Snapshot 只能在同一个 `IMMEDIATE` 事务内验签、比较旧最高 sequen
 验证时间，不返回原始文档、URL、路径或账户数据。Registry 中的 Artifact/Envelope URL
 不得携带 credentials、query 或 fragment；未来授权走内存 Header/短期 lease。
 
+`state.db` v10 继续加入非秘密条件请求状态。Host 只从固定生产 HTTPS origin 获取
+Trust Bundle 与 Registry，禁止重定向并限制连接/总超时和解码后响应字节；ETag 与
+Last-Modified 只有在两份文档被 Trust Cache 接受后才更新。304 仍使用当前
+`ClientAccess` 重新验签缓存原文，不延长签名有效期或 Core 时间锚。远端失败只能返回
+脱敏 `last_known_good`/`unavailable` 原因；生产 endpoint/root 未发布前 Fetcher 保持
+`disabled`，不会访问测试地址。
+
 ## ACP 接口
 
 当前客户端接口包括：

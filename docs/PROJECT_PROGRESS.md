@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1c：只读远端获取、条件请求与脱敏状态 |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2、H2b1c 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2a：受限 Artifact/Envelope 下载到临时 staging |
 
 ## 开发循环记录
 
@@ -2091,3 +2091,70 @@ H2b1c 下一切片（须等 H2b1b2 Kimi 交叉测试关闭后启动）：
 3. 定义脱敏 fetch/cache 状态和 last-known-good 退化原因，不暴露 URL、query、路径、
    账户、token 或原始响应；
 4. H2b1c 仍不下载 Artifact/Envelope，不开放安装 mutation。
+
+### 循环 29：动态 Agent Package H2b1c——只读远端获取与条件缓存
+
+状态：实现、自主测试与本机 Kimi 交叉测试已完成
+
+计划复核：H2b1a/b 已经完成签名目录契约、Core 可信时间和跨重启 last-known-good，
+但尚无 Host 网络入口。H2b1c 只让 Host 获取 Trust Bundle/Registry 两份元数据并调用
+既有信任缓存；它不解释签名、不自行修改 maxima、不下载 Artifact/Envelope，也不触发
+安装。生产 endpoint 与 root/bundle 同时保持空值，避免把测试域名或未经审计的密钥
+误写成发布配置。
+
+H2b1c 已经实现：
+
+1. 新增 Host-owned `PackageRegistryFetcher`，客户端总超时 15 秒、连接超时 5 秒、
+   禁止重定向；生产配置只接受固定 `https://packages.agentmesh360.com` origin，URL
+   禁止 credentials/query/fragment，测试构造器只放行同 origin 的 loopback HTTP；
+2. Trust Bundle 响应上限 64 KiB、Registry 响应上限 1 MiB；同时检查 Content-Length
+   和实际解码后 stream 累计字节，只接受 200 `application/json` 或 304；
+3. 两份文档都取得后，Fetcher 只调用 Trust Cache 的条件接受入口；200 提供新文档，
+   304 使用缓存原文，但两者都必须在同一 `IMMEDIATE` 事务中按当前 Access 重新验签。
+   新旧 Trust/Registry 发生发布竞态时会由 root/sequence/revision 绑定失败关闭；
+4. `state.db` 从 v9 加法升级到 v10，新增单行 `package_registry_fetch_state`，只保存
+   经过长度/格式约束的非秘密 ETag/Last-Modified 和检查时间，不保存 URL、响应或错误；
+5. 只有签名缓存接受成功后才更新条件 validator。304 不延长文档有效期或 Core 时间锚；
+   validator 落盘失败时签名缓存仍保持可信，但状态明确退化为 last-known-good；
+6. Transport、HTTP status、响应过大/非法、验签拒绝、缓存损坏和 validator 写入失败
+   都映射为固定枚举；状态只暴露 outcome/reason、是否发出条件请求和脱敏信任审计；
+7. 有新鲜缓存时远端失败返回 `last_known_good`，没有可重新验签缓存则
+   `unavailable`。无有效订阅/时间锚在发起网络前阻断；
+8. Host 在准入成功后拥有自动刷新入口；当前生产 endpoint 未配置，因此不会发起真实
+   网络请求。既有订阅门禁的 Package Status 增加 `remoteRegistry` 脱敏状态。
+
+H2b1c 继续保持的关闭边界：
+
+- 生产 Trust Bundle、root 和两个远端 endpoint 均为空；真实用户仍只看到内置/本地
+  已安装 Package；
+- 不下载 Artifact/Envelope，不创建下载 staging，不执行 Archive 验签或解压；
+- 不开放安装/更新/回滚 ACP mutation，不改变权限批准，不刷新 Active Catalog；
+- ETag/Last-Modified 只优化请求，不参与真实性、版本或有效期判断。
+
+H2b1c 自主验证：
+
+- 新增 4 项 Fetcher 专项测试，覆盖首次双 200 接受、持久 ETag 后双 304、条件 Header、
+  304 重新验签、无效更新退回且不替换 last-known-good、响应体上限、Access invalidate
+  前置阻断与生产禁用；
+- 新增 v9→v10 迁移测试，证明现有 Trust sequence/revision 不丢失且 fetch state 初始
+  为空；Package Status 回归确认生产 `remoteRegistry = disabled/not_configured`；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：115 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过。
+- 本机 Kimi 全文逐行通读新增的 844 行 Fetcher、三处接线/缓存/Schema diff 和三份中文
+  文档，独立实跑 115 项测试、Clippy、Rustfmt 与 `git diff --check` 全部通过；确认固定
+  endpoint/禁重定向、双层响应上限、双文档发布竞态失败关闭、validator 防 Header 注入、
+  304 重新验签、Access 零网络、两事务崩溃边界、v9→v10 迁移、状态脱敏和无下载/
+  mutation。Blocker/High/Medium/Low 均为零并明确给出 PASS，H2b1c 正式关闭。
+
+H2b1c 代码提交：`c7306aa`（`feat: fetch remote package metadata`）。
+
+H2b2a 下一切片（须等 H2b1c Kimi 交叉测试关闭后启动）：
+
+1. 只从已重新验证的 Registry Record 选择 Artifact/Envelope URL 和 digest，固定 HTTPS
+   origin、禁止重定向/凭据/query，并执行响应/磁盘配额；
+2. 下载到每次操作独立的临时 staging，流式计算 SHA-256；任一失败清理本次临时文件，
+   不接触 Active/Previous 或 Package Registry；
+3. 将已下载的 Envelope/Artifact 交给既有 `package_artifact` 验签与库存验证，但仍不
+   解包到正式 versions、不请求权限、不开放安装 mutation；
+4. 定义脱敏下载状态和取消/超时边界，不记录 URL、路径、账户、token 或响应正文。
