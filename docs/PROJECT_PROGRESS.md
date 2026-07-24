@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2、H2b1c、H2b2a 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2b：验证下载结果到权限审批/本地安装事务的窄交接 |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2、H2b1c、H2b2a、H2b2b 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2c：安装提交后的 Shared Runtime Catalog 原子刷新与产品 Agent 投影 |
 
 ## 开发循环记录
 
@@ -2224,3 +2224,74 @@ H2b2b 下一切片（须等 H2b2a Kimi 交叉测试关闭后启动）：
    H2b2b 暴露桌面 ACP/UI 或启用生产 root/endpoints；
 4. 验收覆盖下载后篡改/替换、过期 Access、批准重放/错包、事务失败和双方 staging
    清理，继续执行自主测试与本机 Kimi 交叉测试硬门槛。
+
+### 循环 31：动态 Agent Package H2b2b——一次性权限批准与安装窄交接
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2b2a 返回的 `VerifiedPackageDownload` 已经同时绑定签名 Registry、
+Publisher Envelope 和提取库存，但原 `PackageInstallService::install(path, envelope,
+bool)` 仍允许内部调用方重新传路径和一个裸批准布尔值。H2b2b 删除该入口，只允许新的
+Delivery Service 消费验证对象所有权；批准是 Host 内存中的短期能力，不落盘、不由
+Renderer 构造。
+
+H2b2b 已经实现：
+
+1. 新增 Host-owned `PackageDeliveryService`。生产入口只接收
+   `package_id + ClientAccess`，先执行既有受限下载，再生成审批或直接安装；当前只
+   注册内部模块，尚未接 ACP/UI；
+2. `VerifiedPackageInstallPlan` 绑定 package/agent/version、Artifact digest、完整
+   requested permissions、相对当前 Active 的 added permissions、当时的 Active
+   digest 和幂等状态；该计划不实现 Serialize，不进入公开响应或日志；
+3. 对存在新增权限的安装返回随机 UUID v7 审批 ID、package/version、added
+   permissions 和 TTL 秒数。审批内部绑定当前账户，最多同时保留 32 项，默认 10
+   分钟；无效订阅、错误 ID 或其他账户不能消费合法审批；
+4. 审批从 Map 中先移除再安装，因此只能使用一次；TTL 由运行时任务主动回收，同时
+   每次请求也同步清理过期项。过期、Host 退出或拒绝都会 Drop
+   `VerifiedPackageDownload` 并删除 staging；
+5. 批准时再次验证 staging 文件库存和 Manifest，重新计算当前安装计划并与原计划完整
+   比较；任何文件篡改、Active digest/权限/身份变化都会使批准失效；
+6. 匹配后把 `VerifiedStagedPackage` 所有权交给既有不可变 versions + SQLite CAS
+   安装事务。CAS 继续防止计划复核后发生的并发 Active 变化；失败不会切换 Active；
+7. 删除 `PackageInstallService` 原来的任意 artifact path/envelope/裸布尔入口，避免
+   未来生产 Trust Store 启用后绕过 Delivery 审批链。
+
+H2b2b 继续保持的关闭边界：
+
+- 安装成功会更新本地 Package Registry/Active/Previous，但本切片不刷新 Host 的
+  Shared Runtime Catalog，也不自动投影已有账户的 Product Agent 行；
+- 不开放下载/批准/安装/更新/回滚 ACP 或桌面 UI，不启用生产 endpoint/root/bundle；
+- 审批不跨 Host 重启恢复；重启后必须重新下载、重新验证和重新批准；
+- 安装事务失败产生的不可见 immutable version orphan 仍由既有只读状态识别，自动
+  orphan 回收尚未开放。
+
+H2b2b 自主验证：
+
+- Delivery 专项 7 项通过：签名 Registry→下载→审批→安装端到端、审批前零 mutation、
+  序列化脱敏、一次性重放拒绝、无效 Access/错误 ID 不消耗合法审批、staging 篡改
+  拒绝并清理、安装状态变化使绑定计划失效、TTL 同步/异步回收；
+- Installer 10 项回归通过，覆盖权限增量、升级/幂等/回滚、事务中断、Catalog 和
+  状态完整性；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：128 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过。
+- 本机 Kimi 全文逐行通读 595 行 Delivery Service、Installer/Downloader/接线 diff
+  与三份中文文档，独立实跑 Delivery 7 项、Installer 10 项、AgentMesh360 128 项、
+  Clippy、Rustfmt 和 `git diff --check` 全部通过；确认调用面收口、完整不可序列化
+  plan、challenge 脱敏、账户/一次性/TTL/容量边界、批准前零 mutation、批准时重验、
+  CAS 防竞态和未刷新 Runtime Catalog 的诚实边界。Blocker/High/Medium/Low 均为零
+  并明确给出 PASS，H2b2b 正式关闭。
+
+H2b2b 代码提交：`05b6435`（`feat: gate package installs on approval`）。
+
+H2b2c 下一切片（须等 H2b2b Kimi 交叉测试关闭后启动）：
+
+1. 让安装成功结果触发同一 Host 的 Shared Runtime Catalog 原子刷新，并使新/升级
+   Agent 在后续账户列表/激活时按 Manifest 投影；
+2. 安装已提交但 Catalog 刷新失败时，保留 last-known-good Catalog、记录脱敏健康
+   状态并返回“已安装、尚未运行时可见”的明确结果，禁止谎报回滚成功；
+3. 并发安装/刷新必须串行化或按 generation 验证，不能让旧刷新覆盖新 Active；
+4. 仍不开放 ACP/UI/生产 Trust 配置；验收覆盖新 Agent、内置升级、刷新失败恢复、
+   跨账户投影与双方测试门槛。
+
+H2b2c 状态：已进入设计与现有 Shared Runtime Catalog 并发边界审计。

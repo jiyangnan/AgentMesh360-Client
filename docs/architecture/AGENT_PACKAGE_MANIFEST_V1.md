@@ -356,10 +356,31 @@ versions、不修改 Active/Previous/本地 Registry/Catalog、不请求权限�
 ACP/UI。它已经通过 6 项专项测试、121 项 AgentMesh360 自主测试和本机 Kimi 独立
 交叉测试；Kimi 实跑相同两组测试、Clippy、Rustfmt 与 diff-check，问题分级全部为零。
 
-## 15. H2b2b 计划：验证结果到权限审批/安装事务的窄交接
+## 15. H2b2b 一次性权限批准与安装窄交接（已通过交叉测试）
 
-下一切片只允许把 `VerifiedPackageDownload` 的所有权交给既有
-`PackageInstallService`。新增权限必须先形成绑定 package/version/digest/权限集合的
-一次性审批挑战；只有当前 Access 和完全匹配的批准才能继续。安装应复用现有不可变
-versions、Active/Previous、SQLite CAS 与 Shared Runtime Catalog 原子刷新，不能按
-调用方 URL/路径重新读取，也不能在本切片开放生产密钥、ACP 或桌面 UI。
+`PackageDeliveryService` 是下载结果进入安装事务的唯一内部入口。审批挑战公开字段只有
+随机 ID、package/version、新增权限和剩余 TTL；Host 内存中的不可序列化计划还绑定
+agent、Artifact digest、完整请求权限集合、当时 Active digest 与幂等状态。审批同时
+绑定发起下载的订阅账户，默认十分钟、最多 32 项，并由运行时定时任务和每次请求双重
+回收。
+
+批准时 Host 会重新检查 Access、staging 文件库存和 Manifest，再按当前本地 Registry
+计算新计划。只有完整计划相等时才先消费审批、再把 `VerifiedStagedPackage` 所有权
+交给既有不可变 versions 与 SQLite CAS；计划检查后的并发 Active 变化继续由 CAS
+拒绝。原来接收任意 artifact path、Envelope 和裸批准布尔值的安装入口已删除。
+
+本切片已经通过 7 项 Delivery 专项、10 项 Installer 回归、128 项 AgentMesh360
+自主测试和本机 Kimi 独立交叉测试；Kimi 实跑全部相同测试与静态检查，四级问题均为
+零。它只提交本地 Active/Previous，不刷新 Shared Runtime Catalog，不开放 ACP/UI，
+也不启用生产 endpoint/root/bundle。
+
+## 16. H2b2c 计划：安装后的运行时原子可见性
+
+下一切片把成功安装结果与同一 Host 的 Shared Runtime Catalog 刷新组合起来。刷新成功
+后，新 Agent 或内置升级才可在后续账户列表/激活中按 Manifest 投影；刷新失败必须保留
+last-known-good Catalog，并明确报告“安装已提交但尚未运行时可见”，不能伪装为安装
+回滚。并发安装/刷新还需保证旧快照不能覆盖新 Active。本切片仍不开放 ACP、桌面 UI
+或生产 Trust 配置。
+
+H2b2c 已进入设计与既有 `SharedPackageCatalog` refresh gate、generation 和
+last-known-good 失败语义审计。
