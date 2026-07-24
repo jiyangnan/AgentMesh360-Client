@@ -5,6 +5,11 @@ const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
+const {
+  prepareHostRuntime,
+  publicHostRuntime,
+  resolveHostRuntime,
+} = require('./runtime');
 
 const INITIALIZE_PARAMS = Object.freeze({
   protocolVersion: 1,
@@ -42,12 +47,13 @@ class AcpHostClient extends EventEmitter {
     requestTimeoutMs = 20000,
   } = {}) {
     super();
+    this.runtime = resolveHostRuntime({ env });
     const resolved = command
-      ? { command, args: args || ['agent', '--no-leader', 'stdio'] }
-      : resolveHostCommand({ env, resourcesPath });
+      ? { command, args: args || this.runtime.args }
+      : resolveHostCommand({ env: this.runtime.env, resourcesPath, args: this.runtime.args });
     this.command = resolved.command;
     this.args = resolved.args;
-    this.env = env;
+    this.env = this.runtime.env;
     this.spawnImpl = spawnImpl;
     this.requestTimeoutMs = requestTimeoutMs;
     this.child = null;
@@ -59,6 +65,7 @@ class AcpHostClient extends EventEmitter {
   async start() {
     if (this.startPromise) return this.startPromise;
     if (this.child) return;
+    prepareHostRuntime(this.runtime);
     this.startPromise = this.#spawnAndInitialize();
     try {
       await this.startPromise;
@@ -191,7 +198,13 @@ class AcpHostClient extends EventEmitter {
     this.startPromise = null;
     this.#rejectPending(new HostRequestError('host_stopped', 'Agent Host 已停止'));
     if (!child || child.killed) return;
+    // In persistent_leader mode this terminates only the disposable stdio
+    // bridge. The Grok Leader owns the Host and survives UI detach.
     child.kill('SIGTERM');
+  }
+
+  getRuntimeStatus() {
+    return publicHostRuntime(this.runtime, Boolean(this.child));
   }
 
   async #spawnAndInitialize() {
@@ -312,9 +325,13 @@ function hostErrorMessage(error) {
   return 'Agent Host 请求失败';
 }
 
-function resolveHostCommand({ env = process.env, resourcesPath = process.resourcesPath } = {}) {
+function resolveHostCommand({
+  env = process.env,
+  resourcesPath = process.resourcesPath,
+  args = ['agent', '--leader', 'stdio'],
+} = {}) {
   if (env.AGENTMESH360_HOST_BIN) {
-    return { command: env.AGENTMESH360_HOST_BIN, args: ['agent', '--no-leader', 'stdio'] };
+    return { command: env.AGENTMESH360_HOST_BIN, args };
   }
   const candidates = [];
   if (resourcesPath) candidates.push(path.join(resourcesPath, 'bin', 'agentmesh360-host'));
@@ -324,7 +341,7 @@ function resolveHostCommand({ env = process.env, resourcesPath = process.resourc
   const local = candidates.find((candidate) => fs.existsSync(candidate));
   return {
     command: local || 'grok',
-    args: ['agent', '--no-leader', 'stdio'],
+    args,
   };
 }
 

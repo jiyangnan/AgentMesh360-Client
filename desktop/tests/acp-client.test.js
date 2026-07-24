@@ -6,6 +6,11 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const { AcpHostClient, resolveHostCommand } = require('../src/host/acp-client');
 
+const embeddedHostEnv = {
+  ...process.env,
+  AGENTMESH360_HOST_MODE: 'embedded',
+};
+
 test('ACP client initializes the Host and unwraps AgentMesh360 extension responses', async () => {
   const received = [];
   const spawnImpl = () => fakeChild((request) => {
@@ -19,8 +24,14 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
     }
     return { result: null, error: 'unsupported' };
   });
-  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
 
+  assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
   const bootstrap = await client.bootstrap('access-token-private');
   const list = await client.listAgents();
 
@@ -30,14 +41,16 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.equal(received[0].params._meta.clientIdentifier, 'agentmesh360-desktop');
   assert.equal(received[1].method, '_x.agentmesh360/account/bootstrap');
   assert.deepEqual(received[1].params, { accessToken: 'access-token-private' });
+  assert.equal(client.getRuntimeStatus().bridgeState, 'connected');
   await client.stop();
+  assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
 });
 
 test('Host command resolution prefers explicit and packaged binaries', () => {
   assert.equal(resolveHostCommand({ env: { AGENTMESH360_HOST_BIN: '/custom/host' } }).command, '/custom/host');
   const fallback = resolveHostCommand({ env: {}, resourcesPath: '/definitely/missing' });
   assert.ok(['grok', '/Users/ferdinandji/AgentMesh360-Client/target/release/xai-grok-pager', '/Users/ferdinandji/AgentMesh360-Client/target/debug/xai-grok-pager'].includes(fallback.command));
-  assert.deepEqual(fallback.args, ['agent', '--no-leader', 'stdio']);
+  assert.deepEqual(fallback.args, ['agent', '--leader', 'stdio']);
 });
 
 test('Provider management uses write-only AgentMesh360 Host extensions', async () => {
@@ -61,7 +74,12 @@ test('Provider management uses write-only AgentMesh360 Host extensions', async (
     }
     return { result: { profile: { profileId: 'pp_1234', credentialLastFour: '1234' } } };
   });
-  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
 
   await client.listProviderProfiles();
   const created = await client.createProviderProfile(profile, 'sk-test-1234');
@@ -110,7 +128,12 @@ test('Provider catalog and model assignments use Host-owned routing extensions',
     }
     return { result: { assignment: { assignmentId: 'ma_1234', ...assignment } } };
   });
-  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
 
   await client.getProviderCatalog();
   await client.listModelAssignments();
@@ -151,7 +174,12 @@ test('Provider Probe methods preserve explicit level and paid confirmation', asy
       },
     };
   });
-  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
 
   const unconfirmed = await client.runProviderProbe({
     profileId: 'pp_1234',
@@ -201,7 +229,12 @@ test('Session Provider Binding methods keep route snapshots Host-owned', async (
     }
     return { result: { binding } };
   });
-  const client = new AcpHostClient({ command: '/fake/host', spawnImpl, requestTimeoutMs: 500 });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
 
   await client.resolveSessionBinding({ sessionId: 'session-a', role: 'main', agentId: 'job-agent' });
   const history = await client.getSessionBindingHistory({
