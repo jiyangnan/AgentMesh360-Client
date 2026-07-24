@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -11,17 +11,19 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use walkdir::WalkDir;
 
 use super::agent_packages::{AgentPackageCatalog, AgentPackageManifest};
 
 const SIGNATURE_SCHEMA_VERSION: u32 = 1;
 const FILE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
-const FILE_MANIFEST_PATH: &str = "package-files.v1.json";
+pub(super) const FILE_MANIFEST_PATH: &str = "package-files.v1.json";
 const MAX_ARTIFACT_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_FILE_COUNT: usize = 1024;
+const MAX_ARCHIVE_ENTRY_COUNT: usize = 2048;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -116,7 +118,7 @@ impl PackageArtifactVerifier {
         let envelope: PackageSignatureEnvelope =
             serde_json::from_str(envelope_document).context("parse Agent Package signature")?;
         validate_envelope(&envelope)?;
-        let artifact_sha256 = digest_artifact(artifact_path)?;
+        let (artifact, artifact_sha256) = open_and_digest_artifact(artifact_path)?;
         if artifact_sha256 != envelope.artifact_sha256 {
             bail!("Agent Package artifact digest does not match signed envelope");
         }
@@ -130,10 +132,11 @@ impl PackageArtifactVerifier {
         create_private_dir(&self.staging_root)?;
         let staging_dir = self.staging_root.join(format!("verify-{}", Uuid::now_v7()));
         create_private_new_dir(&staging_dir)?;
-        match extract_and_verify(artifact_path, &staging_dir, &envelope) {
-            Ok(manifest) => Ok(VerifiedStagedPackage {
+        match extract_and_verify(artifact, &staging_dir, &envelope) {
+            Ok((manifest, file_manifest_sha256)) => Ok(VerifiedStagedPackage {
                 manifest,
                 artifact_sha256,
+                file_manifest_sha256,
                 signature_key_id: envelope.key_id,
                 staging_dir: Some(staging_dir),
             }),
@@ -166,6 +169,7 @@ impl PackageArtifactVerifier {
 pub(crate) struct VerifiedStagedPackage {
     pub manifest: AgentPackageManifest,
     pub artifact_sha256: String,
+    pub file_manifest_sha256: String,
     pub signature_key_id: String,
     staging_dir: Option<PathBuf>,
 }
@@ -189,6 +193,8 @@ impl VerifiedStagedPackage {
         Self {
             manifest,
             artifact_sha256: artifact_sha256.into(),
+            file_manifest_sha256: digest_file_manifest(&staging_dir)
+                .expect("test Package file manifest digest"),
             signature_key_id: signature_key_id.into(),
             staging_dir: Some(staging_dir),
         }
@@ -248,8 +254,11 @@ fn signature_payload(envelope: &PackageSignatureEnvelope) -> String {
     )
 }
 
-fn digest_artifact(path: &Path) -> Result<String> {
-    let metadata = fs::metadata(path)
+fn open_and_digest_artifact(path: &Path) -> Result<(File, String)> {
+    let mut file = File::open(path)
+        .with_context(|| format!("open Agent Package artifact {}", path.display()))?;
+    let metadata = file
+        .metadata()
         .with_context(|| format!("read Agent Package artifact metadata {}", path.display()))?;
     if !metadata.is_file() {
         bail!("Agent Package artifact must be a regular file");
@@ -257,27 +266,38 @@ fn digest_artifact(path: &Path) -> Result<String> {
     if metadata.len() == 0 || metadata.len() > MAX_ARTIFACT_BYTES {
         bail!("Agent Package artifact size is outside the allowed range");
     }
-    let mut file = File::open(path)
-        .with_context(|| format!("open Agent Package artifact {}", path.display()))?;
     let mut digest = Sha256::new();
     std::io::copy(&mut file, &mut digest).context("hash Agent Package artifact")?;
-    Ok(lower_hex(&digest.finalize()))
+    file.seek(SeekFrom::Start(0))
+        .context("rewind verified Agent Package artifact")?;
+    Ok((file, lower_hex(&digest.finalize())))
+}
+
+#[cfg(test)]
+fn digest_artifact(path: &Path) -> Result<String> {
+    open_and_digest_artifact(path).map(|(_, digest)| digest)
 }
 
 fn extract_and_verify(
-    artifact_path: &Path,
+    artifact: File,
     staging_dir: &Path,
     envelope: &PackageSignatureEnvelope,
-) -> Result<AgentPackageManifest> {
-    let artifact = File::open(artifact_path).context("open signed Agent Package artifact")?;
+) -> Result<(AgentPackageManifest, String)> {
     let decoder =
         zstd::stream::read::Decoder::new(artifact).context("decode Agent Package zstd artifact")?;
     let mut archive = tar::Archive::new(decoder);
     let mut extracted_files = HashSet::new();
     let mut total_size = 0_u64;
+    let mut entry_count = 0_usize;
 
     for entry in archive.entries().context("read Agent Package archive")? {
         let mut entry = entry.context("read Agent Package archive entry")?;
+        entry_count = entry_count
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("Agent Package archive entry count overflow"))?;
+        if entry_count > MAX_ARCHIVE_ENTRY_COUNT {
+            bail!("Agent Package archive contains too many entries");
+        }
         let entry_type = entry.header().entry_type();
         let path = entry.path().context("read Agent Package entry path")?;
         let normalized = normalized_package_path(&path)?;
@@ -340,7 +360,8 @@ fn extract_and_verify(
         bail!("Agent Package identity does not match its signed envelope");
     }
     verify_referenced_paths(staging_dir, &manifest)?;
-    Ok(manifest)
+    let file_manifest_sha256 = digest_file_manifest(staging_dir)?;
+    Ok((manifest, file_manifest_sha256))
 }
 
 fn verify_file_manifest(staging_dir: &Path, extracted_files: &HashSet<PathBuf>) -> Result<()> {
@@ -390,6 +411,83 @@ fn verify_file_manifest(staging_dir: &Path, extracted_files: &HashSet<PathBuf>) 
         }
     }
     Ok(())
+}
+
+pub(super) fn verify_installed_package_tree(
+    directory: &Path,
+    expected_file_manifest_sha256: &str,
+) -> Result<AgentPackageManifest> {
+    validate_sha256("fileManifestSha256", expected_file_manifest_sha256)?;
+    let actual_file_manifest_sha256 = digest_file_manifest(directory)?;
+    if actual_file_manifest_sha256 != expected_file_manifest_sha256 {
+        bail!("installed Agent Package file manifest digest is invalid");
+    }
+
+    let mut extracted_files = HashSet::new();
+    let mut entry_count = 0_usize;
+    let mut total_size = 0_u64;
+    for entry in WalkDir::new(directory).follow_links(false).min_depth(1) {
+        let entry = entry.context("walk installed Agent Package")?;
+        entry_count = entry_count
+            .checked_add(1)
+            .ok_or_else(|| anyhow!("installed Agent Package entry count overflow"))?;
+        if entry_count > MAX_ARCHIVE_ENTRY_COUNT {
+            bail!("installed Agent Package contains too many entries");
+        }
+        if entry.file_type().is_symlink() {
+            bail!("installed Agent Package contains a symlink");
+        }
+        let relative = entry
+            .path()
+            .strip_prefix(directory)
+            .context("installed Agent Package path escaped its root")?;
+        let normalized = normalized_package_path(relative)?;
+        if entry.file_type().is_dir() {
+            continue;
+        }
+        if !entry.file_type().is_file() || !extracted_files.insert(normalized) {
+            bail!("installed Agent Package contains an invalid or duplicate file");
+        }
+        if extracted_files.len() > MAX_FILE_COUNT {
+            bail!("installed Agent Package contains too many files");
+        }
+        let size = entry
+            .metadata()
+            .context("read installed Agent Package file metadata")?
+            .len();
+        if size > MAX_FILE_BYTES {
+            bail!("installed Agent Package file exceeds the allowed size");
+        }
+        total_size = total_size
+            .checked_add(size)
+            .ok_or_else(|| anyhow!("installed Agent Package size overflow"))?;
+        if total_size > MAX_UNPACKED_BYTES {
+            bail!("installed Agent Package size exceeds the allowed limit");
+        }
+    }
+    if !extracted_files.contains(Path::new(PACKAGE_MANIFEST_PATH))
+        || !extracted_files.contains(Path::new(FILE_MANIFEST_PATH))
+    {
+        bail!("installed Agent Package is missing a required manifest");
+    }
+    verify_file_manifest(directory, &extracted_files)?;
+    let manifest_document = read_bounded_text(
+        &directory.join(PACKAGE_MANIFEST_PATH),
+        MAX_FILE_BYTES as usize,
+    )?;
+    let manifest = AgentPackageCatalog::parse_document(&manifest_document)?;
+    verify_referenced_paths(directory, &manifest)?;
+    Ok(manifest)
+}
+
+fn digest_file_manifest(directory: &Path) -> Result<String> {
+    let path = directory.join(FILE_MANIFEST_PATH);
+    let metadata = fs::symlink_metadata(&path)
+        .with_context(|| format!("read Package file manifest metadata {}", path.display()))?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_FILE_BYTES {
+        bail!("Agent Package file manifest is invalid");
+    }
+    digest_unbounded_file(&path)
 }
 
 fn verify_referenced_paths(staging_dir: &Path, manifest: &AgentPackageManifest) -> Result<()> {
@@ -534,6 +632,7 @@ mod tests {
         assert_eq!(verified.manifest.version, "0.4.7");
         assert_eq!(verified.signature_key_id, TEST_KEY_ID);
         assert_eq!(verified.artifact_sha256.len(), 64);
+        assert_eq!(verified.file_manifest_sha256.len(), 64);
         assert!(
             verified
                 .staging_path()
@@ -624,6 +723,65 @@ mod tests {
             .expect_err("identity mismatch");
 
         assert!(error.to_string().contains("identity"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extraction_reuses_the_file_handle_that_was_digested() {
+        let fixture = fixture();
+        let envelope: PackageSignatureEnvelope =
+            serde_json::from_str(&fixture.envelope).expect("envelope");
+        let (artifact, digest) =
+            open_and_digest_artifact(&fixture.artifact_path).expect("open verified artifact");
+        assert_eq!(digest, envelope.artifact_sha256);
+
+        fs::remove_file(&fixture.artifact_path).expect("unlink original artifact");
+        let mut replacement = fixture_files_with_inventory();
+        replacement.insert(
+            "docs/agent-onboarding.md".into(),
+            b"# attacker-controlled replacement\n".to_vec(),
+        );
+        write_archive(&fixture.artifact_path, &replacement, None);
+        let staging_dir = fixture.temp.path().join("same-file-handle");
+        create_private_new_dir(&staging_dir).expect("staging");
+
+        extract_and_verify(artifact, &staging_dir, &envelope)
+            .expect("extract originally verified file handle");
+        assert_eq!(
+            fs::read_to_string(staging_dir.join("docs/agent-onboarding.md"))
+                .expect("read extracted workflow"),
+            "# Job Agent workflow\n"
+        );
+    }
+
+    #[test]
+    fn rejects_archive_with_too_many_directory_entries() {
+        let fixture = fixture();
+        write_archive_with_directories(
+            &fixture.artifact_path,
+            &fixture_files_with_inventory(),
+            MAX_ARCHIVE_ENTRY_COUNT,
+        );
+        let mut envelope: PackageSignatureEnvelope =
+            serde_json::from_str(&fixture.envelope).expect("envelope");
+        envelope.artifact_sha256 =
+            digest_artifact(&fixture.artifact_path).expect("artifact digest");
+        resign_envelope(&mut envelope, &fixture.signing_key);
+        let envelope = serde_json::to_string(&envelope).expect("envelope json");
+
+        let error = fixture
+            .verifier()
+            .verify_to_staging(&fixture.artifact_path, &envelope)
+            .expect_err("directory entry limit");
+
+        assert!(error.to_string().contains("too many entries"));
+        assert!(
+            fixture
+                .staging_root()
+                .read_dir()
+                .map(|mut entries| entries.next().is_none())
+                .unwrap_or(true)
+        );
     }
 
     struct Fixture {
@@ -746,6 +904,37 @@ mod tests {
         }
         if let Some(path) = malicious_path {
             append_raw_path(&mut archive, path, b"escape");
+        }
+        let encoder = archive.into_inner().expect("finish tar");
+        encoder.finish().expect("finish zstd");
+    }
+
+    fn write_archive_with_directories(
+        destination: &Path,
+        files: &HashMap<String, Vec<u8>>,
+        directory_count: usize,
+    ) {
+        let output = File::create(destination).expect("artifact");
+        let encoder = zstd::stream::write::Encoder::new(output, 3).expect("zstd");
+        let mut archive = tar::Builder::new(encoder);
+        let mut paths = files.keys().cloned().collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            append_file(&mut archive, &path, &files[&path]);
+        }
+        for index in 0..directory_count {
+            let mut header = tar::Header::new_gnu();
+            header
+                .set_path(format!("empty/{index:04}"))
+                .expect("directory path");
+            header.set_entry_type(tar::EntryType::Directory);
+            header.set_size(0);
+            header.set_mode(0o700);
+            header.set_mtime(0);
+            header.set_cksum();
+            archive
+                .append(&header, Cursor::new(Vec::<u8>::new()))
+                .expect("append directory");
         }
         let encoder = archive.into_inner().expect("finish tar");
         encoder.finish().expect("finish zstd");

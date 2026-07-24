@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 7;
+const SCHEMA_VERSION: u32 = 8;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -149,11 +149,13 @@ CREATE TABLE IF NOT EXISTS agent_package_registry (
     agent_id TEXT NOT NULL UNIQUE,
     active_version TEXT NOT NULL,
     active_artifact_sha256 TEXT NOT NULL,
+    active_file_manifest_sha256 TEXT NOT NULL,
     active_relative_path TEXT NOT NULL,
     active_permissions_json TEXT NOT NULL,
     active_signature_key_id TEXT NOT NULL,
     previous_version TEXT,
     previous_artifact_sha256 TEXT,
+    previous_file_manifest_sha256 TEXT,
     previous_relative_path TEXT,
     previous_permissions_json TEXT,
     previous_signature_key_id TEXT,
@@ -163,6 +165,7 @@ CREATE TABLE IF NOT EXISTS agent_package_registry (
         (
             previous_version IS NULL
             AND previous_artifact_sha256 IS NULL
+            AND previous_file_manifest_sha256 IS NULL
             AND previous_relative_path IS NULL
             AND previous_permissions_json IS NULL
             AND previous_signature_key_id IS NULL
@@ -171,6 +174,7 @@ CREATE TABLE IF NOT EXISTS agent_package_registry (
         (
             previous_version IS NOT NULL
             AND previous_artifact_sha256 IS NOT NULL
+            AND previous_file_manifest_sha256 IS NOT NULL
             AND previous_relative_path IS NOT NULL
             AND previous_permissions_json IS NOT NULL
             AND previous_signature_key_id IS NOT NULL
@@ -214,6 +218,9 @@ pub(super) fn open(state_home: &Path) -> Result<Connection> {
     if current_version < 4 {
         migrate_product_agents_to_v4(&transaction)?;
     }
+    if current_version == 7 {
+        migrate_agent_package_registry_to_v8(&transaction)?;
+    }
     transaction
         .execute_batch(SCHEMA)
         .context("initialize AgentMesh360 state database")?;
@@ -224,6 +231,35 @@ pub(super) fn open(state_home: &Path) -> Result<Connection> {
         .commit()
         .context("commit AgentMesh360 state migration")?;
     Ok(conn)
+}
+
+fn migrate_agent_package_registry_to_v8(transaction: &Transaction<'_>) -> Result<()> {
+    let table_exists = transaction
+        .query_row(
+            "SELECT 1 FROM sqlite_master \
+             WHERE type = 'table' AND name = 'agent_package_registry'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !table_exists {
+        return Ok(());
+    }
+    let package_count: u32 =
+        transaction.query_row("SELECT COUNT(*) FROM agent_package_registry", [], |row| {
+            row.get(0)
+        })?;
+    if package_count != 0 {
+        anyhow::bail!(
+            "Agent Package Registry v7 entries lack trusted file-manifest integrity anchors; \
+             remove the unpublished development entries and reinstall signed Packages"
+        );
+    }
+    transaction
+        .execute_batch("DROP TABLE agent_package_registry;")
+        .context("replace empty Agent Package Registry v7 schema")?;
+    Ok(())
 }
 
 fn migrate_product_agents_to_v4(transaction: &Transaction<'_>) -> Result<()> {
@@ -291,7 +327,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v7_schema() {
+    fn initializes_the_shared_v8_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -313,7 +349,7 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         assert_eq!(
             tables,
             [
@@ -388,7 +424,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -488,9 +524,60 @@ mod tests {
             )
             .expect("binding tables");
 
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         assert_eq!(owner, 41);
         assert_eq!(binding_tables, 2);
+    }
+
+    #[test]
+    fn upgrades_empty_v7_package_registry_with_integrity_anchor_columns() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            prepare_v7_package_registry(&conn, false);
+        }
+
+        let conn = open(temp.path()).expect("upgrade empty v7 registry");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let columns = {
+            let mut stmt = conn
+                .prepare("PRAGMA table_info(agent_package_registry)")
+                .expect("table info");
+            stmt.query_map([], |row| row.get::<_, String>(1))
+                .expect("query columns")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("collect columns")
+        };
+
+        assert_eq!(version, 8);
+        assert!(columns.contains(&"active_file_manifest_sha256".to_owned()));
+        assert!(columns.contains(&"previous_file_manifest_sha256".to_owned()));
+    }
+
+    #[test]
+    fn refuses_to_blindly_anchor_existing_v7_package_rows() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            prepare_v7_package_registry(&conn, true);
+        }
+
+        let error = open(temp.path()).expect_err("unanchored v7 Package row");
+        assert!(error.to_string().contains("lack trusted"));
+        let conn =
+            rusqlite::Connection::open(temp.path().join("state.db")).expect("reopen v7 database");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let rows: u32 = conn
+            .query_row("SELECT COUNT(*) FROM agent_package_registry", [], |row| {
+                row.get(0)
+            })
+            .expect("registry rows");
+        assert_eq!(version, 7);
+        assert_eq!(rows, 1);
     }
 
     #[test]
@@ -534,8 +621,52 @@ mod tests {
             )
             .expect("Package Registry table");
 
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
         assert_eq!(registry_table, 1);
+    }
+
+    fn prepare_v7_package_registry(conn: &Connection, with_row: bool) {
+        conn.execute_batch(
+            "DROP TABLE agent_package_registry;
+             CREATE TABLE agent_package_registry (
+               package_id TEXT PRIMARY KEY,
+               agent_id TEXT NOT NULL UNIQUE,
+               active_version TEXT NOT NULL,
+               active_artifact_sha256 TEXT NOT NULL,
+               active_relative_path TEXT NOT NULL,
+               active_permissions_json TEXT NOT NULL,
+               active_signature_key_id TEXT NOT NULL,
+               previous_version TEXT,
+               previous_artifact_sha256 TEXT,
+               previous_relative_path TEXT,
+               previous_permissions_json TEXT,
+               previous_signature_key_id TEXT,
+               installed_at TEXT NOT NULL,
+               updated_at TEXT NOT NULL
+             );
+             PRAGMA user_version = 7;",
+        )
+        .expect("prepare v7 Package Registry");
+        if with_row {
+            conn.execute(
+                "INSERT INTO agent_package_registry (
+                   package_id, agent_id, active_version, active_artifact_sha256,
+                   active_relative_path, active_permissions_json, active_signature_key_id,
+                   installed_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                rusqlite::params![
+                    "com.agentmesh360.job-agent",
+                    "job-agent",
+                    "0.4.7",
+                    "a".repeat(64),
+                    "versions/com.agentmesh360.job-agent/0.4.7/a",
+                    "[]",
+                    "agentmesh360-test-2026",
+                    "2026-07-24T00:00:00Z"
+                ],
+            )
+            .expect("insert v7 Package row");
+        }
     }
 }

@@ -10,11 +10,17 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use super::agent_packages::{AgentPackageCatalog, AgentPackageManifest, PackagePermission};
+use super::agent_packages::{AgentPackageManifest, PackagePermission};
 use super::package_artifact::{
-    PackageArtifactVerifier, TrustedPublisherStore, VerifiedStagedPackage,
+    PackageArtifactVerifier, VerifiedStagedPackage, verify_installed_package_tree,
 };
 
+#[cfg(test)]
+use super::agent_packages::AgentPackageCatalog;
+#[cfg(test)]
+use super::package_artifact::{FILE_MANIFEST_PATH, TrustedPublisherStore};
+
+#[cfg(test)]
 const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -22,6 +28,7 @@ const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
 pub(crate) struct InstalledPackageVersion {
     pub version: String,
     pub artifact_sha256: String,
+    pub file_manifest_sha256: String,
     pub relative_path: String,
     pub requested_permissions: Vec<PackagePermission>,
     pub signature_key_id: String,
@@ -110,33 +117,38 @@ impl PackageInstallService {
             .clone()
             .ok_or_else(|| anyhow!("Agent Package has no previous version to roll back"))?;
         let previous_dir = self.resolve_installed_path(&previous.relative_path)?;
-        let manifest = read_installed_manifest(&previous_dir)?;
-        if manifest.package_id != current.package_id
-            || manifest.agent.agent_id != current.agent_id
-            || manifest.version != previous.version
-        {
-            bail!("previous Agent Package identity is invalid");
-        }
+        let manifest =
+            verify_installed_package_tree(&previous_dir, &previous.file_manifest_sha256)?;
+        ensure_installed_identity(
+            &manifest,
+            &current.package_id,
+            &current.agent_id,
+            &previous.version,
+        )?;
 
         let active_permissions = serde_json::to_string(&current.active.requested_permissions)?;
         let previous_permissions = serde_json::to_string(&previous.requested_permissions)?;
         let updated_at = now();
         transaction.execute(
             "UPDATE agent_package_registry SET \
-             active_version = ?2, active_artifact_sha256 = ?3, active_relative_path = ?4, \
-             active_permissions_json = ?5, active_signature_key_id = ?6, \
-             previous_version = ?7, previous_artifact_sha256 = ?8, previous_relative_path = ?9, \
-             previous_permissions_json = ?10, previous_signature_key_id = ?11, updated_at = ?12 \
+             active_version = ?2, active_artifact_sha256 = ?3, \
+             active_file_manifest_sha256 = ?4, active_relative_path = ?5, \
+             active_permissions_json = ?6, active_signature_key_id = ?7, \
+             previous_version = ?8, previous_artifact_sha256 = ?9, \
+             previous_file_manifest_sha256 = ?10, previous_relative_path = ?11, \
+             previous_permissions_json = ?12, previous_signature_key_id = ?13, updated_at = ?14 \
              WHERE package_id = ?1",
             params![
                 package_id,
                 previous.version,
                 previous.artifact_sha256,
+                previous.file_manifest_sha256,
                 previous.relative_path,
                 previous_permissions,
                 previous.signature_key_id,
                 current.active.version,
                 current.active.artifact_sha256,
+                current.active.file_manifest_sha256,
                 current.active.relative_path,
                 active_permissions,
                 current.active.signature_key_id,
@@ -165,7 +177,15 @@ impl PackageInstallService {
             .is_some_and(|record| record.active.artifact_sha256 == verified.artifact_sha256)
         {
             let current = current.expect("checked current Package");
-            self.resolve_installed_path(&current.active.relative_path)?;
+            let active_dir = self.resolve_installed_path(&current.active.relative_path)?;
+            let active_manifest =
+                verify_installed_package_tree(&active_dir, &current.active.file_manifest_sha256)?;
+            ensure_installed_identity(
+                &active_manifest,
+                &current.package_id,
+                &current.agent_id,
+                &current.active.version,
+            )?;
             return Ok(PackageInstallResult::Installed {
                 package: Box::new(current),
             });
@@ -208,6 +228,7 @@ impl PackageInstallService {
         let package = self.commit_registry(
             &manifest,
             &verified.artifact_sha256,
+            &verified.file_manifest_sha256,
             &verified.signature_key_id,
             &relative_path,
             expected_active_digest.as_deref(),
@@ -231,11 +252,18 @@ impl PackageInstallService {
         }
         let incoming = Version::parse(&manifest.version)?;
         let active = Version::parse(&current.active.version)?;
-        if incoming < active {
-            bail!("Agent Package downgrade requires explicit rollback");
-        }
-        if incoming == active && current.active.artifact_sha256 != artifact_sha256 {
-            bail!("Agent Package version is immutable and cannot change artifact digest");
+        match incoming.cmp_precedence(&active) {
+            std::cmp::Ordering::Less => {
+                bail!("Agent Package downgrade requires explicit rollback");
+            }
+            std::cmp::Ordering::Equal
+                if incoming != active || current.active.artifact_sha256 != artifact_sha256 =>
+            {
+                bail!(
+                    "Agent Package SemVer precedence is immutable and cannot change build metadata or artifact digest"
+                );
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -274,6 +302,7 @@ impl PackageInstallService {
         &self,
         manifest: &AgentPackageManifest,
         artifact_sha256: &str,
+        file_manifest_sha256: &str,
         signature_key_id: &str,
         relative_path: &str,
         expected_active_digest: Option<&str>,
@@ -313,21 +342,25 @@ impl PackageInstallService {
                 serde_json::to_string(&current.active.requested_permissions)?;
             transaction.execute(
                 "UPDATE agent_package_registry SET agent_id = ?2, \
-                 active_version = ?3, active_artifact_sha256 = ?4, active_relative_path = ?5, \
-                 active_permissions_json = ?6, active_signature_key_id = ?7, \
-                 previous_version = ?8, previous_artifact_sha256 = ?9, \
-                 previous_relative_path = ?10, previous_permissions_json = ?11, \
-                 previous_signature_key_id = ?12, updated_at = ?13 WHERE package_id = ?1",
+                 active_version = ?3, active_artifact_sha256 = ?4, \
+                 active_file_manifest_sha256 = ?5, active_relative_path = ?6, \
+                 active_permissions_json = ?7, active_signature_key_id = ?8, \
+                 previous_version = ?9, previous_artifact_sha256 = ?10, \
+                 previous_file_manifest_sha256 = ?11, previous_relative_path = ?12, \
+                 previous_permissions_json = ?13, previous_signature_key_id = ?14, \
+                 updated_at = ?15 WHERE package_id = ?1",
                 params![
                     manifest.package_id,
                     manifest.agent.agent_id,
                     manifest.version,
                     artifact_sha256,
+                    file_manifest_sha256,
                     relative_path,
                     permissions,
                     signature_key_id,
                     current.active.version,
                     current.active.artifact_sha256,
+                    current.active.file_manifest_sha256,
                     current.active.relative_path,
                     previous_permissions,
                     current.active.signature_key_id,
@@ -338,14 +371,15 @@ impl PackageInstallService {
             transaction.execute(
                 "INSERT INTO agent_package_registry (
                    package_id, agent_id, active_version, active_artifact_sha256,
-                   active_relative_path, active_permissions_json, active_signature_key_id,
-                   installed_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                   active_file_manifest_sha256, active_relative_path, active_permissions_json,
+                   active_signature_key_id, installed_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
                 params![
                     manifest.package_id,
                     manifest.agent.agent_id,
                     manifest.version,
                     artifact_sha256,
+                    file_manifest_sha256,
                     relative_path,
                     permissions,
                     signature_key_id,
@@ -400,11 +434,13 @@ struct RawInstalledPackageRecord {
     agent_id: String,
     active_version: String,
     active_artifact_sha256: String,
+    active_file_manifest_sha256: String,
     active_relative_path: String,
     active_permissions_json: String,
     active_signature_key_id: String,
     previous_version: Option<String>,
     previous_artifact_sha256: Option<String>,
+    previous_file_manifest_sha256: Option<String>,
     previous_relative_path: Option<String>,
     previous_permissions_json: Option<String>,
     previous_signature_key_id: Option<String>,
@@ -416,9 +452,10 @@ fn read_record(conn: &Connection, package_id: &str) -> Result<Option<InstalledPa
     let raw = conn
         .query_row(
             "SELECT package_id, agent_id, active_version, active_artifact_sha256, \
-             active_relative_path, active_permissions_json, active_signature_key_id, \
-             previous_version, previous_artifact_sha256, previous_relative_path, \
-             previous_permissions_json, previous_signature_key_id, installed_at, updated_at \
+             active_file_manifest_sha256, active_relative_path, active_permissions_json, \
+             active_signature_key_id, previous_version, previous_artifact_sha256, \
+             previous_file_manifest_sha256, previous_relative_path, previous_permissions_json, \
+             previous_signature_key_id, installed_at, updated_at \
              FROM agent_package_registry WHERE package_id = ?1",
             [package_id],
             |row| {
@@ -427,16 +464,18 @@ fn read_record(conn: &Connection, package_id: &str) -> Result<Option<InstalledPa
                     agent_id: row.get(1)?,
                     active_version: row.get(2)?,
                     active_artifact_sha256: row.get(3)?,
-                    active_relative_path: row.get(4)?,
-                    active_permissions_json: row.get(5)?,
-                    active_signature_key_id: row.get(6)?,
-                    previous_version: row.get(7)?,
-                    previous_artifact_sha256: row.get(8)?,
-                    previous_relative_path: row.get(9)?,
-                    previous_permissions_json: row.get(10)?,
-                    previous_signature_key_id: row.get(11)?,
-                    installed_at: row.get(12)?,
-                    updated_at: row.get(13)?,
+                    active_file_manifest_sha256: row.get(4)?,
+                    active_relative_path: row.get(5)?,
+                    active_permissions_json: row.get(6)?,
+                    active_signature_key_id: row.get(7)?,
+                    previous_version: row.get(8)?,
+                    previous_artifact_sha256: row.get(9)?,
+                    previous_file_manifest_sha256: row.get(10)?,
+                    previous_relative_path: row.get(11)?,
+                    previous_permissions_json: row.get(12)?,
+                    previous_signature_key_id: row.get(13)?,
+                    installed_at: row.get(14)?,
+                    updated_at: row.get(15)?,
                 })
             },
         )
@@ -448,6 +487,7 @@ fn parse_record(raw: RawInstalledPackageRecord) -> Result<InstalledPackageRecord
     let active = InstalledPackageVersion {
         version: raw.active_version,
         artifact_sha256: raw.active_artifact_sha256,
+        file_manifest_sha256: raw.active_file_manifest_sha256,
         relative_path: raw.active_relative_path,
         requested_permissions: serde_json::from_str(&raw.active_permissions_json)
             .context("parse Active Agent Package permissions")?,
@@ -456,20 +496,23 @@ fn parse_record(raw: RawInstalledPackageRecord) -> Result<InstalledPackageRecord
     let previous = match (
         raw.previous_version,
         raw.previous_artifact_sha256,
+        raw.previous_file_manifest_sha256,
         raw.previous_relative_path,
         raw.previous_permissions_json,
         raw.previous_signature_key_id,
     ) {
-        (None, None, None, None, None) => None,
+        (None, None, None, None, None, None) => None,
         (
             Some(version),
             Some(artifact_sha256),
+            Some(file_manifest_sha256),
             Some(relative_path),
             Some(permissions),
             Some(key),
         ) => Some(InstalledPackageVersion {
             version,
             artifact_sha256,
+            file_manifest_sha256,
             relative_path,
             requested_permissions: serde_json::from_str(&permissions)
                 .context("parse Previous Agent Package permissions")?,
@@ -512,14 +555,19 @@ fn added_permissions(
         .collect()
 }
 
-fn read_installed_manifest(directory: &Path) -> Result<AgentPackageManifest> {
-    let path = directory.join(PACKAGE_MANIFEST_PATH);
-    let metadata = fs::metadata(&path).context("read installed Agent Package Manifest metadata")?;
-    if !metadata.is_file() || metadata.len() > 1024 * 1024 {
-        bail!("installed Agent Package Manifest is invalid");
+fn ensure_installed_identity(
+    manifest: &AgentPackageManifest,
+    package_id: &str,
+    agent_id: &str,
+    version: &str,
+) -> Result<()> {
+    if manifest.package_id != package_id
+        || manifest.agent.agent_id != agent_id
+        || manifest.version != version
+    {
+        bail!("installed Agent Package identity is invalid");
     }
-    let document = fs::read_to_string(&path).context("read installed Agent Package Manifest")?;
-    AgentPackageCatalog::parse_document(&document)
+    Ok(())
 }
 
 fn create_private_dir(path: &Path) -> Result<()> {
@@ -568,6 +616,8 @@ fn now() -> String {
 
 #[cfg(test)]
 mod tests {
+    use sha2::{Digest, Sha256};
+
     use super::*;
 
     const JOB_MANIFEST: &str = include_str!("packages/job-agent/agentmesh-agent.toml");
@@ -723,11 +773,104 @@ mod tests {
             .expect_err("same version new digest");
         assert!(digest_error.to_string().contains("immutable"));
 
+        let build_metadata =
+            JOB_MANIFEST.replacen("version = \"0.4.7\"", "version = \"0.4.7+replacement\"", 1);
+        let build_metadata_error = service
+            .install_verified_for_test(verified(temp.path(), &build_metadata, 'd'), true)
+            .expect_err("same precedence with new build metadata");
+        assert!(
+            build_metadata_error
+                .to_string()
+                .contains("SemVer precedence")
+        );
+
         let downgrade = JOB_MANIFEST.replacen("version = \"0.4.7\"", "version = \"0.4.6\"", 1);
         let downgrade_error = service
-            .install_verified_for_test(verified(temp.path(), &downgrade, 'd'), true)
+            .install_verified_for_test(verified(temp.path(), &downgrade, 'e'), true)
             .expect_err("implicit downgrade");
         assert!(downgrade_error.to_string().contains("explicit rollback"));
+    }
+
+    #[test]
+    fn rollback_rejects_tampered_previous_content_or_inventory_without_changing_active() {
+        for tamper_inventory in [false, true] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let service = service(temp.path());
+            installed(
+                service
+                    .install_verified_for_test(verified(temp.path(), JOB_MANIFEST, 'a'), true)
+                    .expect("install first"),
+            );
+            installed(
+                service
+                    .install_verified_for_test(
+                        verified(temp.path(), &upgraded_manifest(), 'b'),
+                        true,
+                    )
+                    .expect("upgrade"),
+            );
+            let before = service
+                .get(JOB_PACKAGE_ID)
+                .expect("registry")
+                .expect("installed record");
+            let previous = before.previous.as_ref().expect("previous");
+            let previous_dir = temp.path().join("packages").join(&previous.relative_path);
+            let tampered_path = if tamper_inventory {
+                previous_dir.join(FILE_MANIFEST_PATH)
+            } else {
+                previous_dir.join("docs/agent-onboarding.md")
+            };
+            let tampered_contents: &[u8] = if tamper_inventory {
+                b"tampered after verified install"
+            } else {
+                b"# Bad Agent workflow\n"
+            };
+            fs::write(&tampered_path, tampered_contents).expect("tamper previous package");
+
+            let error = service
+                .rollback(JOB_PACKAGE_ID)
+                .expect_err("tampered previous must not become Active");
+            assert!(error.to_string().contains("digest"));
+            assert_eq!(
+                service
+                    .get(JOB_PACKAGE_ID)
+                    .expect("registry")
+                    .expect("installed record"),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn idempotent_reinstall_rejects_tampered_active_content() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = service(temp.path());
+        let before = installed(
+            service
+                .install_verified_for_test(verified(temp.path(), JOB_MANIFEST, 'a'), true)
+                .expect("install"),
+        );
+        let active_dir = temp
+            .path()
+            .join("packages")
+            .join(&before.active.relative_path);
+        fs::write(
+            active_dir.join("docs/agent-onboarding.md"),
+            b"# Bad Agent workflow\n",
+        )
+        .expect("tamper Active Package");
+
+        let error = service
+            .install_verified_for_test(verified(temp.path(), JOB_MANIFEST, 'a'), true)
+            .expect_err("tampered idempotent install");
+        assert!(error.to_string().contains("digest"));
+        assert_eq!(
+            service
+                .get(JOB_PACKAGE_ID)
+                .expect("registry")
+                .expect("installed record"),
+            before
+        );
     }
 
     fn service(state_home: &Path) -> PackageInstallService {
@@ -743,13 +886,56 @@ mod tests {
                 .join("test-staging")
                 .join(format!("{}-{}", digest_byte, Uuid::now_v7()));
         fs::create_dir_all(&staging_dir).expect("staging");
-        fs::write(staging_dir.join(PACKAGE_MANIFEST_PATH), document).expect("write manifest");
+        write_test_package_tree(&staging_dir, document);
         VerifiedStagedPackage::for_test(
             manifest,
             digest_byte.to_string().repeat(64),
             "agentmesh360-test-2026",
             staging_dir,
         )
+    }
+
+    fn write_test_package_tree(staging_dir: &Path, document: &str) {
+        let files = [
+            (PACKAGE_MANIFEST_PATH, document.as_bytes()),
+            ("docs/agent-onboarding.md", b"# Job Agent workflow\n"),
+            ("skills/claude-code/SKILL.md", b"# Claude Code adapter\n"),
+            (
+                "skills/openclaw-job-agent/SKILL.md",
+                b"# OpenClaw adapter\n",
+            ),
+        ];
+        let mut records = Vec::new();
+        for (relative_path, contents) in files {
+            let destination = staging_dir.join(relative_path);
+            fs::create_dir_all(destination.parent().expect("file parent")).expect("file parent");
+            fs::write(&destination, contents).expect("write test Package file");
+            records.push(serde_json::json!({
+                "path": relative_path,
+                "size": contents.len(),
+                "sha256": lower_hex(&Sha256::digest(contents)),
+            }));
+        }
+        records.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
+        fs::write(
+            staging_dir.join(FILE_MANIFEST_PATH),
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "files": records,
+            }))
+            .expect("serialize file manifest"),
+        )
+        .expect("write file manifest");
+    }
+
+    fn lower_hex(bytes: &[u8]) -> String {
+        use std::fmt::Write as _;
+
+        let mut output = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            write!(&mut output, "{byte:02x}").expect("hex");
+        }
+        output
     }
 
     fn upgraded_manifest() -> String {

@@ -986,6 +986,31 @@ mod tests {
     }
 
     #[test]
+    fn binding_fails_closed_for_unknown_product_agent_policy() {
+        let (temp, catalog, profiles, assignments) = setup();
+        insert_profile(&profiles, "https://models.example/v1");
+        insert_assignment(&assignments);
+        let service = ModelRoutingService::new(catalog, temp.path());
+
+        let error = service
+            .resolve_binding(
+                17,
+                &BindingLookupRequest {
+                    session_id: "non-product-session".into(),
+                    role: "main".into(),
+                    agent_id: Some("unknown-agent".into()),
+                },
+            )
+            .expect_err("unknown product Agent policy must fail closed");
+
+        assert!(
+            error
+                .to_string()
+                .contains("unknown AgentMesh360 product agent")
+        );
+    }
+
+    #[test]
     fn binding_rejects_another_accounts_product_session() {
         let (temp, catalog, profiles, assignments) = setup();
         insert_profile(&profiles, "https://models.example/v1");
