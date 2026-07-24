@@ -196,8 +196,14 @@ H2 负责“动态分发与双投影”：
 - **H2a1 已实现**：复用 H1 的锚定文件清单复验，让本地 Registry 的 Active Package
   在 Host 启动时确定性合并进运行时 Catalog；Registry、AgentDefinition、Model
   Policy、Session/Workspace 均消费同一合并结果；
-- 安装/回滚后通过显式 refresh 更新运行时 Catalog；
-- 提供不暴露绝对路径的只读 Active/Previous/invalid/orphan 状态；
+- **H2a2 已实现并通过两轮 Kimi 交叉测试**：Host 通过原子共享 Catalog 快照让 Runtime、Model
+  Routing 和产品 Turn 复用同一结果；安装/回滚后可调用 Host 私有显式 refresh，失败
+  保留最后可信快照与稳定 Main Session；
+- 提供订阅门禁且不暴露绝对路径、digest、签名 key、账户或 Session 数据的只读
+  Active/Previous/invalid/orphan 状态；用户主动读取状态会复验已安装树，但普通 Turn
+  不会逐次访问 Package 文件；
+- 状态存储不可读时返回固定 `status-inventory` 故障条目，Catalog 不可用时只返回固定
+  公开错误；原始 anyhow/OS 诊断只进入 Host 日志；
 - 从 AgentMesh360 Package Registry 获取签名元数据和产物；
 - 用户确认新增权限后安装/升级；
 - 生成或安装 Manifest 声明的宿主 Skill Adapter；

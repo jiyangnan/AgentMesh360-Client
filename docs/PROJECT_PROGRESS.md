@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 与 H2a1 已实现 Manifest、可信安装/回滚，以及启动时复验 Active 并合并运行时 Catalog；生产入口仍关闭 | H2a2：安装/回滚显式 refresh 与只读 Package 管理状态 |
+| 动态 Agent Package | H0/H1、H2a1 与 H2a2 已完成自主测试和两轮 Kimi 交叉测试：可信安装/回滚、启动复验、共享 Catalog 快照、显式 refresh、只读脱敏状态；生产入口仍关闭 | H2b：生产信任根、远端 Registry 与权限确认 |
 
 ## 开发循环记录
 
@@ -1752,3 +1752,64 @@ H2a2 下一切片：
 验收条件：同一 Runtime 内普通 Turn 不触发 Package 整树复验；refresh 成功后新 Agent
 可见且 Main Session 稳定，refresh 失败保留旧 Catalog；状态响应不含 HOME、绝对路径、
 Token、Key、账户 ID、Session ID 或用户数据；自主测试与 Kimi 交叉测试均通过。
+
+H2a2 计划复核：
+
+- 共享的是 Host 的 Catalog 控制面，不为每个产品 Agent 或每个 Turn 新建一份 Harness；
+- 普通 Registry、Model Routing、Session Turn 只读取不可变内存快照；只有 Host 启动、
+  未来安装/回滚成功后的显式 refresh，以及用户主动读取状态时才访问 Package 文件；
+- refresh 必须先在锁外完成 SQLite 一致性读取和 Active 整树复验，再一次替换共享快照；
+  失败只能记录诊断，不能清空最后可信 Catalog、重建 Session 或修改 Package；
+- 管理 ACP 只读且沿用客户端订阅硬门禁；内部完整错误链只用于本机诊断，对 Renderer
+  仅返回稳定错误码与固定脱敏摘要。
+
+H2a2 已经实现：
+
+- `AgentRegistry` 现在持有 Runtime 共享的 `ArcSwapOption<AgentPackageCatalog>`；克隆
+  Registry、Runtime 管理路由与产品 Turn 路由均复用同一快照，普通 Turn 不再调用
+  `AgentRegistry::in_home`，因此不会逐 Turn 读取 SQLite 或重哈希 Active 树；
+- refresh 使用独立串行门闩，复验成功后在状态写锁内原子替换 Catalog 并递增
+  generation；失败保留相同的最后可信 `Arc`，只更新脱敏故障状态；
+- Host 提供 crate-private 的显式 refresh service，为以后安装/回滚 mutation 成功后的
+  唯一生效点；当前仍没有对 Renderer 暴露 refresh、安装或回滚方法；
+- 新增订阅门禁后的只读
+  `x.agentmesh360/agent-packages/status`：报告 `catalogGeneration`、revision、built-in、
+  installed-active、installed-previous、invalid 与 orphan；
+- 状态扫描重新验证 Active/Previous，但不改变 Registry 和文件；orphan 仅按已校验的
+  packageId/SemVer 输出相对身份，设置 1,024 项安全上限，不返回路径、artifact digest、
+  signature key、权限明细、账户或 Session 数据；
+- 完整内部错误链仍保留给 Host；状态面使用
+  `package_integrity_failed`、`package_identity_conflict`、
+  `approved_permissions_mismatch` 等稳定错误码和固定英文摘要，不拼接本机路径。
+- 即使状态目录本身无法打开，状态 ACP 也会成功降级成固定
+  `status-inventory/package_validation_failed` 条目；Catalog ACP 失败只返回固定
+  `Agent Package Catalog is unavailable`，两者都不会经通用扩展错误信封透传原始
+  anyhow/OS 文本。
+
+H2a2 自主验证：
+
+- 实现提交：`32a662e feat: share refreshable agent package catalog`；
+- 新增 3 项回归，分别覆盖共享快照/显式 refresh/失败保留最后可信 Catalog 与稳定
+  Main Session、Previous/invalid/orphan 分类与脱敏、订阅门禁和 Host 私有 refresh；
+- 针对性测试第一次发现新 Host E2E 缺少 Tokio `LocalSet`，修正测试 Harness 后，
+  三项全部通过；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：97 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过；
+- 本机 Kimi 第一次独立通读 8 个文件的完整 diff，并实跑 97 项测试、Clippy 和
+  `git diff --check`，结论为 `PASS —— 允许 H2a2 关闭`；仅记录并发安装 rename 到
+  Registry commit 之间可能瞬时误报 orphan、以及按需状态全量复验的非阻塞观察；
+- 我随后按更严格口径补上状态目录打不开时的真实故障注入和 Catalog/Status 固定公开
+  错误，重新自主执行 97 项测试与全部静态检查；Kimi 第二次复测同样实跑 97 项测试、
+  Clippy、Rustfmt 与 diff check，确认没有 raw error/path 出口，最终维持 `PASS`；
+- Kimi 第二轮唯一 low 是把上述固定失败文案和 `status-inventory` 降级补入本文档，
+  本条已经关闭；H2a2 正式完成。
+
+H2b 预备方向（须等 H2a2 Kimi 闭环后再启动）：
+
+1. 定义生产 Publisher Trust Store 的密钥注入、轮换、吊销和审计流程，不把测试 key
+   或私钥带入客户端；
+2. 设计订阅门禁后的远端 Package Registry 元数据获取与本地缓存，下载、验签、权限
+   确认、安装、refresh 各自保持独立失败边界；
+3. 设计用户可理解的权限增量确认与只读状态 UI，mutation 仍由 Host 窄接口控制；
+4. 保持同一 Manifest 同时投影持久客户端 Agent 与外部宿主 Agent Skill Adapter。
