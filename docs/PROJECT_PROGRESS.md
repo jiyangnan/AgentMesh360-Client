@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 已实现 Manifest、单文件句柄验签/解包、锚定文件清单、安全 staging、Active/Previous 原子安装、权限批准、完整性回滚与 state.db v8 Registry；生产入口仍关闭 | H2a：把复验通过的 Active Package 合并进运行时 Catalog，并先开放只读管理状态 |
+| 动态 Agent Package | H0/H1 与 H2a1 已实现 Manifest、可信安装/回滚，以及启动时复验 Active 并合并运行时 Catalog；生产入口仍关闭 | H2a2：安装/回滚显式 refresh 与只读 Package 管理状态 |
 
 ## 开发循环记录
 
@@ -1676,7 +1676,7 @@ H1 完整复盘：
 
 ### 循环 24：动态 Agent Package H2a——本地 Active Catalog 与只读管理
 
-状态：已规划，下一开发切片
+状态：第一切片 H2a1 已完成自主测试与本机 Kimi 交叉测试；H2a2 紧接着开发
 
 启动理由：H1 已能安全产生本地 Active 指针，但 Agent Registry 尚未消费它。直接接
 远端目录只会得到“下载和安装成功、客户端仍看不见 Agent”的半集成。H2a 必须先让本地
@@ -1699,3 +1699,56 @@ Active Package 成为可恢复、可诊断的运行时目录。
 验收条件：重启后本地 Active Agent 可见且使用同一 `agentId`/Main Session；损坏或
 身份冲突的 Active 失败关闭且不污染内置 Catalog；只读状态不含绝对路径/用户数据；
 内置三个 Agent 在没有安装记录时行为不变。
+
+H2a1 计划复核：
+
+- 继续复用 H1 的锚定整树复验，不建立第二套“启动时简化校验”；
+- 先完成 Host 启动加载，不把 refresh、状态 ACP、远端下载和权限 UI 混进同一切片；
+- 内置身份只能被相同 `packageId + agentId` 且不低于内置 SemVer precedence 的
+  已验证 Active 覆盖；不同 packageId 不能抢占内置 agentId；
+- 新 Agent 可追加，但仍必须满足 Catalog 的唯一 packageId、agentId 和 sortOrder。
+
+H2a1 已经实现：
+
+- `PackageInstallService` 在一个一致性读取事务中按 packageId 排序读取 Active Registry，
+  对每个目录复用 `verify_installed_package_tree`，并再次核对 Registry 身份和已批准
+  权限；任一错误使整个运行时 Catalog 失败关闭；
+- `AgentRegistry::in_home` 启动时加载上述已验证 Manifest，再与三个内置 Package
+  确定性合并；无安装记录时仍返回原内置 revision 与顺序；
+- 同 packageId 的合法升级可替换内置 Manifest；不同 packageId 抢占内置 agentId、
+  低版本、相同 precedence 的 build metadata 替换、重复 sortOrder 均拒绝；
+- 合并 Catalog 的 revision 由排序后 packageId、version、agentId 的 SHA-256 前缀
+  确定性生成，不依赖进程随机 Hash；
+- Registry 列表、AgentDefinition、Model Policy、激活、账户 Workspace 与稳定 Main
+  Session 全部消费同一合并 Catalog；新 Agent 重启后可见，内置升级也不重置 agentId；
+- Catalog 缓存保留完整 anyhow 错误链，损坏 Active 不仅失败关闭，还能在后续只读状态
+  中显示具体 digest/身份冲突原因，而不是只剩“Catalog unavailable”。
+
+H2a1 自主验证：
+
+- 实现提交：`90a135b feat: load verified active package catalog`；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：94 项通过、0 失败；
+- 新增 4 项回归覆盖内置升级、新 Agent 追加、AgentDefinition/Model Policy 投影、
+  稳定 Main Session、篡改 Active、agentId 抢占、内置降级与确定性 revision；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过；
+- 本机 Kimi 恢复既有审查 Session，独立读取 `219b951` 后的完整 diff，重新执行
+  94 项完整测试与 Clippy，确认启动复验、合并、失败关闭和新 Agent 全链均符合目标，
+  没有 blocker/high/medium，最终结论为 `PASS —— 允许 H2a1 关闭`；
+- Kimi 将两条 low 明确归入 H2a2：动态安装开放前，不能让每个产品 Turn 重新哈希
+  全部 Active 树，应使用共享 Catalog 快照和显式 refresh；只读状态不得直接透传可能
+  含本机绝对路径的内部 anyhow 错误链，必须输出稳定错误码和脱敏摘要。
+
+H2a2 下一切片：
+
+1. 让 AgentMesh360 Runtime 持有可原子替换的共享 Catalog 快照，Model Routing 与
+   Session Turn 复用它，不在每 Turn 重读 SQLite 或重哈希 Package；
+2. 增加 Host 私有 refresh service；安装/回滚成功后可显式刷新，失败保留旧快照且不
+   重置既有 Main Session；
+3. 增加订阅门禁后的只读 Package 状态 ACP，区分 built-in、installed-active、
+   Previous、invalid、orphan，只返回相对身份、稳定错误码和脱敏摘要；
+4. 不开放安装/回滚 mutation ACP，不自动删除 orphan，不嵌入生产公钥。
+
+验收条件：同一 Runtime 内普通 Turn 不触发 Package 整树复验；refresh 成功后新 Agent
+可见且 Main Session 稳定，refresh 失败保留旧 Catalog；状态响应不含 HOME、绝对路径、
+Token、Key、账户 ID、Session ID 或用户数据；自主测试与 Kimi 交叉测试均通过。

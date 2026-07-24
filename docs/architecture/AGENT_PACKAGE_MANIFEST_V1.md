@@ -193,8 +193,11 @@ Previous 回滚只检查身份、没有可信的已解包文件锚点后，Regis
 
 H2 负责“动态分发与双投影”：
 
-- 复用 H1 的锚定文件清单复验，让本地 Registry 的 Active Package 在启动/安装后合并
-  进运行时 Catalog；
+- **H2a1 已实现**：复用 H1 的锚定文件清单复验，让本地 Registry 的 Active Package
+  在 Host 启动时确定性合并进运行时 Catalog；Registry、AgentDefinition、Model
+  Policy、Session/Workspace 均消费同一合并结果；
+- 安装/回滚后通过显式 refresh 更新运行时 Catalog；
+- 提供不暴露绝对路径的只读 Active/Previous/invalid/orphan 状态；
 - 从 AgentMesh360 Package Registry 获取签名元数据和产物；
 - 用户确认新增权限后安装/升级；
 - 生成或安装 Manifest 声明的宿主 Skill Adapter；
@@ -202,4 +205,5 @@ H2 负责“动态分发与双投影”：
 - 让新增 Agent 在未超出已支持 Schema/Capability 时无需客户端发版。
 
 H2 完成前，远端 Package 不会被下载、解包或执行；H1 安装服务也不会暴露给客户端
-界面。当前三个内置 Package 继续是唯一生产可用目录。
+界面。运行时已经能消费通过复验的本地 Active，但生产 Trust Store 与安装入口仍为空，
+所以当前三个内置 Package 继续是唯一生产可用目录。
