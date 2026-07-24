@@ -4,6 +4,7 @@ use std::path::{Component, Path};
 use anyhow::{Context, Result, anyhow, bail};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use url::Url;
 use xai_grok_agent::AgentDefinition;
 
@@ -175,6 +176,61 @@ impl AgentPackageCatalog {
             .find(|package| package.agent.agent_id == agent_id)
             .ok_or_else(|| anyhow!("unknown AgentMesh360 product agent: {agent_id}"))
     }
+
+    pub(crate) fn with_installed_active(
+        installed_active: Vec<AgentPackageManifest>,
+    ) -> Result<Self> {
+        let mut catalog = Self::builtin()?;
+        if installed_active.is_empty() {
+            return Ok(catalog);
+        }
+
+        for installed in installed_active {
+            validate_manifest(&installed)?;
+            if let Some(index) = catalog
+                .packages
+                .iter()
+                .position(|package| package.package_id == installed.package_id)
+            {
+                let builtin = &catalog.packages[index];
+                if builtin.agent.agent_id != installed.agent.agent_id {
+                    bail!(
+                        "installed Agent Package cannot change the built-in packageId to another agentId"
+                    );
+                }
+                let builtin_version = Version::parse(&builtin.version)?;
+                let installed_version = Version::parse(&installed.version)?;
+                match installed_version.cmp_precedence(&builtin_version) {
+                    std::cmp::Ordering::Less => {
+                        bail!("installed Agent Package cannot downgrade a built-in Package");
+                    }
+                    std::cmp::Ordering::Equal if installed_version != builtin_version => {
+                        bail!(
+                            "installed Agent Package cannot replace a built-in Package with equal SemVer precedence"
+                        );
+                    }
+                    _ => {}
+                }
+                catalog.packages[index] = installed;
+                continue;
+            }
+            if catalog
+                .packages
+                .iter()
+                .any(|package| package.agent.agent_id == installed.agent.agent_id)
+            {
+                bail!("installed Agent Package agentId conflicts with another Package");
+            }
+            catalog.packages.push(installed);
+        }
+
+        validate_catalog(&catalog.packages)?;
+        catalog
+            .packages
+            .sort_by_key(|package| package.agent.sort_order);
+        catalog.catalog_revision = calculate_catalog_revision(&catalog.packages);
+        Ok(catalog)
+    }
 }
 
 impl AgentPackageManifest {
@@ -265,6 +321,23 @@ fn validate_catalog(packages: &[AgentPackageManifest]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn calculate_catalog_revision(packages: &[AgentPackageManifest]) -> u64 {
+    let mut digest = Sha256::new();
+    digest.update(b"agentmesh360-agent-package-catalog-v1\n");
+    for package in packages {
+        digest.update(package.package_id.as_bytes());
+        digest.update(b"\0");
+        digest.update(package.version.as_bytes());
+        digest.update(b"\0");
+        digest.update(package.agent.agent_id.as_bytes());
+        digest.update(b"\n");
+    }
+    let bytes: [u8; 8] = digest.finalize()[..8]
+        .try_into()
+        .expect("SHA-256 prefix is eight bytes");
+    u64::from_be_bytes(bytes).max(1)
 }
 
 fn validate_identifier(field: &str, value: &str, allow_period: bool) -> Result<()> {
@@ -408,6 +481,88 @@ mod tests {
             assert!(
                 !json.contains(forbidden),
                 "found forbidden field {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn installed_active_upgrades_builtin_and_appends_new_agent_deterministically() {
+        let upgraded = AgentPackageCatalog::parse_document(&JOB_DOCUMENT.replacen(
+            "version = \"0.4.7\"",
+            "version = \"0.4.8\"",
+            1,
+        ))
+        .expect("upgraded built-in");
+        let new_agent_document = JOB_DOCUMENT
+            .replacen(
+                "packageId = \"com.agentmesh360.job-agent\"",
+                "packageId = \"com.agentmesh360.research-agent\"",
+                1,
+            )
+            .replacen("version = \"0.4.7\"", "version = \"0.1.0\"", 1)
+            .replacen("agentId = \"job-agent\"", "agentId = \"research-agent\"", 1)
+            .replacen(
+                "displayName = \"Job Agent\"",
+                "displayName = \"Research Agent\"",
+                1,
+            )
+            .replacen("sortOrder = 10", "sortOrder = 40", 1);
+        let new_agent =
+            AgentPackageCatalog::parse_document(&new_agent_document).expect("new Agent");
+
+        let catalog =
+            AgentPackageCatalog::with_installed_active(vec![new_agent, upgraded]).expect("merge");
+
+        assert_eq!(catalog.packages.len(), 4);
+        assert_eq!(
+            catalog
+                .package_for_agent("job-agent")
+                .expect("upgraded Job Agent")
+                .version,
+            "0.4.8"
+        );
+        assert_eq!(
+            catalog
+                .packages
+                .iter()
+                .map(|package| package.agent.agent_id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "job-agent",
+                "lecturecast-agent",
+                "deploy-agent",
+                "research-agent"
+            ]
+        );
+        assert_ne!(catalog.catalog_revision, BUILTIN_CATALOG_REVISION);
+    }
+
+    #[test]
+    fn installed_active_cannot_hijack_or_downgrade_builtin_identity() {
+        let hijack = JOB_DOCUMENT.replacen(
+            "packageId = \"com.agentmesh360.job-agent\"",
+            "packageId = \"com.example.job-agent\"",
+            1,
+        );
+        let hijack = AgentPackageCatalog::parse_document(&hijack).expect("hijack manifest");
+        assert!(
+            AgentPackageCatalog::with_installed_active(vec![hijack])
+                .expect_err("agentId hijack")
+                .to_string()
+                .contains("conflicts")
+        );
+
+        for version in ["0.4.6", "0.4.7+replacement"] {
+            let replacement = JOB_DOCUMENT.replacen(
+                "version = \"0.4.7\"",
+                &format!("version = \"{version}\""),
+                1,
+            );
+            let replacement =
+                AgentPackageCatalog::parse_document(&replacement).expect("replacement");
+            assert!(
+                AgentPackageCatalog::with_installed_active(vec![replacement]).is_err(),
+                "version {version} must not replace the built-in Package"
             );
         }
     }

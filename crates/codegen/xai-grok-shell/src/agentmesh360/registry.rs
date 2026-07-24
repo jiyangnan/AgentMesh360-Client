@@ -12,6 +12,7 @@ use super::agent_packages::{
     AgentPackageCatalog, AgentPackageManifest, MainSessionStrategy, WorkspaceStrategy,
 };
 use super::model_policy::AgentModelPolicy;
+use super::package_installer::PackageInstallService;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -48,10 +49,11 @@ impl AgentRegistry {
     pub fn in_home(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
         let db_path = state_home.join("state.db");
+        let package_catalog = load_runtime_package_catalog(&state_home);
         Self {
             state_home,
             db_path,
-            package_catalog: AgentPackageCatalog::builtin().map_err(|error| error.to_string()),
+            package_catalog: package_catalog.map_err(|error| format!("{error:#}")),
         }
     }
 
@@ -274,6 +276,14 @@ impl AgentRegistry {
             last_error: row.get(11)?,
         })
     }
+}
+
+fn load_runtime_package_catalog(state_home: &std::path::Path) -> Result<AgentPackageCatalog> {
+    let installed = PackageInstallService::in_home(state_home)
+        .verified_active_manifests()
+        .context("verify installed Active Agent Packages")?;
+    AgentPackageCatalog::with_installed_active(installed)
+        .context("merge built-in and installed Active Agent Packages")
 }
 
 pub fn stable_main_session_id(owner_account_id: i64, agent_id: &str) -> Uuid {

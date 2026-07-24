@@ -107,6 +107,38 @@ impl PackageInstallService {
         read_record(&conn, package_id)
     }
 
+    pub(crate) fn verified_active_manifests(&self) -> Result<Vec<AgentPackageManifest>> {
+        let mut conn = super::state::open(&self.state_home)?;
+        let transaction = conn.transaction_with_behavior(TransactionBehavior::Deferred)?;
+        let package_ids = {
+            let mut statement = transaction
+                .prepare("SELECT package_id FROM agent_package_registry ORDER BY package_id ASC")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        let mut manifests = Vec::with_capacity(package_ids.len());
+        for package_id in package_ids {
+            let record = read_record(&transaction, &package_id)?
+                .ok_or_else(|| anyhow!("Agent Package Registry changed while loading Catalog"))?;
+            let active_dir = self.resolve_installed_path(&record.active.relative_path)?;
+            let manifest =
+                verify_installed_package_tree(&active_dir, &record.active.file_manifest_sha256)?;
+            ensure_installed_identity(
+                &manifest,
+                &record.package_id,
+                &record.agent_id,
+                &record.active.version,
+            )?;
+            if manifest.requested_permissions != record.active.requested_permissions {
+                bail!("installed Agent Package permissions differ from their approved Registry");
+            }
+            manifests.push(manifest);
+        }
+        transaction.commit()?;
+        Ok(manifests)
+    }
+
     pub(crate) fn rollback(&self, package_id: &str) -> Result<InstalledPackageRecord> {
         let mut conn = super::state::open(&self.state_home)?;
         let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -619,6 +651,8 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::*;
+    use crate::agentmesh360::model_policy::CapabilityRequirement;
+    use crate::agentmesh360::registry::{AgentRegistry, stable_main_session_id};
 
     const JOB_MANIFEST: &str = include_str!("packages/job-agent/agentmesh-agent.toml");
     const JOB_PACKAGE_ID: &str = "com.agentmesh360.job-agent";
@@ -873,6 +907,114 @@ mod tests {
         );
     }
 
+    #[test]
+    fn runtime_catalog_loads_verified_active_upgrade_and_new_agent() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = service(temp.path());
+        installed(
+            service
+                .install_verified_for_test(
+                    verified(temp.path(), &runtime_upgrade_manifest(), 'b'),
+                    true,
+                )
+                .expect("install upgraded Job Agent"),
+        );
+        installed(
+            service
+                .install_verified_for_test(verified(temp.path(), &new_agent_manifest(), 'c'), true)
+                .expect("install new Agent"),
+        );
+
+        let registry = AgentRegistry::in_home(temp.path());
+        let catalog = registry.package_catalog().expect("runtime Catalog");
+        assert_eq!(catalog.packages.len(), 4);
+        assert_eq!(
+            catalog
+                .package_for_agent("job-agent")
+                .expect("Job Agent")
+                .version,
+            "0.4.8"
+        );
+        assert!(
+            catalog.package_for_agent("research-agent").is_ok(),
+            "new verified Agent is present"
+        );
+        assert!(
+            registry
+                .agent_definition("job-agent")
+                .expect("runtime Agent definition")
+                .prompt_body
+                .as_deref()
+                .is_some_and(|prompt| prompt.contains("Runtime Upgraded Job Agent"))
+        );
+        assert_eq!(
+            registry
+                .model_policy("job-agent")
+                .expect("runtime Model Policy")
+                .tools,
+            CapabilityRequirement::Required
+        );
+        let activated = registry
+            .prepare_activation(41, "research-agent")
+            .expect("activate dynamic Agent");
+        let expected_session = stable_main_session_id(41, "research-agent").to_string();
+        assert_eq!(
+            activated.main_session_id.as_deref(),
+            Some(expected_session.as_str())
+        );
+        assert_eq!(registry.list(41).expect("runtime Agents").len(), 4);
+    }
+
+    #[test]
+    fn runtime_catalog_fails_closed_for_tampered_or_conflicting_active_package() {
+        let tampered_home = tempfile::tempdir().expect("tempdir");
+        let tampered_service = service(tampered_home.path());
+        let installed_package = installed(
+            tampered_service
+                .install_verified_for_test(
+                    verified(tampered_home.path(), &upgraded_manifest(), 'b'),
+                    true,
+                )
+                .expect("install upgraded Job Agent"),
+        );
+        fs::write(
+            tampered_home
+                .path()
+                .join("packages")
+                .join(installed_package.active.relative_path)
+                .join("docs/agent-onboarding.md"),
+            b"# Bad Agent workflow\n",
+        )
+        .expect("tamper Active Package");
+        let tampered_registry = AgentRegistry::in_home(tampered_home.path());
+        assert!(
+            tampered_registry
+                .package_catalog()
+                .expect_err("tampered Active Package")
+                .to_string()
+                .contains("digest")
+        );
+
+        let conflict_home = tempfile::tempdir().expect("tempdir");
+        let conflict_service = service(conflict_home.path());
+        installed(
+            conflict_service
+                .install_verified_for_test(
+                    verified(conflict_home.path(), &conflicting_agent_manifest(), 'c'),
+                    true,
+                )
+                .expect("install conflicting Package"),
+        );
+        let conflicting_registry = AgentRegistry::in_home(conflict_home.path());
+        assert!(
+            conflicting_registry
+                .package_catalog()
+                .expect_err("agentId conflict")
+                .to_string()
+                .contains("conflicts")
+        );
+    }
+
     fn service(state_home: &Path) -> PackageInstallService {
         // The transaction tests start after H1a verification, so no production or test signing
         // key is needed here.
@@ -946,6 +1088,37 @@ mod tests {
                 "  \"network_access\",\n  \"process_execution\",\n]",
                 1,
             )
+    }
+
+    fn new_agent_manifest() -> String {
+        JOB_MANIFEST
+            .replacen(
+                "packageId = \"com.agentmesh360.job-agent\"",
+                "packageId = \"com.agentmesh360.research-agent\"",
+                1,
+            )
+            .replacen("version = \"0.4.7\"", "version = \"0.1.0\"", 1)
+            .replacen("agentId = \"job-agent\"", "agentId = \"research-agent\"", 1)
+            .replacen(
+                "displayName = \"Job Agent\"",
+                "displayName = \"Research Agent\"",
+                1,
+            )
+            .replacen("sortOrder = 10", "sortOrder = 40", 1)
+    }
+
+    fn runtime_upgrade_manifest() -> String {
+        upgraded_manifest()
+            .replacen("You are Job Agent", "You are Runtime Upgraded Job Agent", 1)
+            .replacen("tools = \"preferred\"", "tools = \"required\"", 1)
+    }
+
+    fn conflicting_agent_manifest() -> String {
+        JOB_MANIFEST.replacen(
+            "packageId = \"com.agentmesh360.job-agent\"",
+            "packageId = \"com.example.job-agent\"",
+            1,
+        )
     }
 
     fn installed(result: PackageInstallResult) -> InstalledPackageRecord {
