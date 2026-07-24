@@ -1,6 +1,6 @@
 # AgentMesh360 Agent Package Manifest v1
 
-状态：H0 已实现；签名分发与安装事务待 H1/H2
+状态：H0 与 H1a 已实现；Active 安装事务和动态分发待 H1b/H2
 
 本文档固定 AgentMesh360 产品 Agent 的第一个版本化 Package 契约。它解决的核心问题
 不是“把 Prompt 搬进 TOML”，而是让客户端里的持久 Agent 与用户自行安装到 Codex、
@@ -120,15 +120,44 @@ H0 对以下情况直接拒绝整个 Package Catalog，不使用旧硬编码回�
 账户 ID、Session ID、Workspace 实际路径或用户业务数据字段。Provider 密钥仍只存在
 于 Host-owned Vault。
 
-## 7. H1/H2 边界
+## 7. H1a 已实现的签名产物验证
 
-H1 负责“可信安装”：
+H1a 定义 `.ampkg.tar.zst` 产物、外部 JSON 签名信封和包内
+`package-files.v1.json`。签名信封包含：
 
-- 定义确定性的 Package 文件清单和内容摘要；
-- 使用 AgentMesh360 信任根校验发布签名；
-- 先解包到隔离 staging，完成 Schema、路径、大小、兼容性和权限差异检查；
+| 字段 | 含义 |
+| --- | --- |
+| `schemaVersion` | 签名信封版本，当前只接受 `1` |
+| `keyId` / `publisher` | 必须同时匹配 Host 内置的受信发布密钥 |
+| `packageId` / `version` | 与解包后的 Manifest 身份再次交叉校验 |
+| `artifactSha256` | 对完整压缩产物的 SHA-256 |
+| `signature` | 对确定性文本信封的 Ed25519 签名 |
+
+验证使用 Ed25519 strict verification，先检查完整 Artifact digest 与发布密钥，再创建
+staging。解包后还会逐文件核对 uniquely sorted 的路径、长度与 SHA-256 清单，因此
+Artifact 完整性和 Package 文件清单形成双层验证。
+
+staging 失败关闭边界包括：
+
+- 压缩产物最大 32 MiB、单文件最大 32 MiB、解包总量最大 128 MiB、最多 1024 个文件；
+- 拒绝绝对路径、反斜杠、`.`、`..`、重复路径、symlink、hardlink 和其他非普通文件；
+- staging 目录使用不可复用名称创建，Unix 目录为 `0700`、文件为 `0600`；
+- `agentmesh-agent.toml`、文件清单、Canonical Workflow 和所有声明的 Adapter 文件
+  必须真实存在；
+- 校验对象离开作用域但未提交时自动删除 staging；验证失败也清理 staging；
+- 未知 key、签名篡改、Artifact 篡改、清单遗漏和签名/Manifest 身份不一致全部拒绝。
+
+生产信任根目前故意为空。正式 AgentMesh360 发布公钥和轮换方案完成独立审计之前，
+外部 Package 全部拒绝；测试只使用临时目录和固定测试密钥。H1a 没有 ACP 安装入口，
+不会读取网络、真实 Package 目录或用户凭据。
+
+## 8. H1b/H2 边界
+
+H1b 继续负责“可信安装”：
+
 - 通过原子目录切换提交安装，失败时不改变 Active Package；
 - 在本地 Registry 记录 Active/Previous 版本和安装审计；
+- 在提交前计算权限差异，新增权限必须显式批准；
 - 升级不得改变 `agentId`，降级/回滚必须是显式事务。
 
 H2 负责“动态分发与双投影”：

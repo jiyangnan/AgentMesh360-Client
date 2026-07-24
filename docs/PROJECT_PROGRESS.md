@@ -31,7 +31,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0 已实现 Manifest v1、三个内置 Package、只读 Catalog、运行时投影与旧状态兼容 | H1：可信签名产物、staging、原子安装、权限差异与回滚 |
+| 动态 Agent Package | H0 已实现 Manifest v1 与运行时投影；H1a 已实现 Ed25519 签名产物、双层摘要和安全 staging | H1b：Active/Previous 原子安装、权限差异与回滚 |
 
 ## 开发循环记录
 
@@ -1516,7 +1516,9 @@ H0 计划复盘：
 
 ### 循环 23：动态 Agent Package H1——签名产物与原子安装事务
 
-状态：已规划，下一开发切片
+状态：H1a 已完成，H1b 继续开发
+
+H1a 本地提交：`8d0a865 feat: verify signed agent package artifacts`
 
 启动理由：H0 已消除 Agent 定义的双重硬编码，但 Package 仍是编译期资源。若现在直接
 接远端 Registry，损坏、路径穿越、签名伪造或半完成升级都可能污染 Active Agent。
@@ -1540,3 +1542,45 @@ H0 计划复盘：
 验收条件：只有受信签名且完全校验通过的 Package 才能成为 Active；安装失败和进程
 中断保留旧 Active；权限增加必须显式批准；回滚不改变 `agentId` 或 Main Session；
 所有测试使用临时目录和测试密钥，不修改真实安装目录。
+
+H1a 已经实现：
+
+- 定义外部 JSON 签名信封：Schema、`keyId`、publisher、Package 身份、版本、
+  Artifact SHA-256 与 Ed25519 签名进入确定性签名文本；
+- 采用 `ed25519-dalek 2.2` 的 strict verification，同时检查 scalar 与 group element
+  malleability，不用“普通 verify 成功”降低 Package 唯一签名要求；
+- `.ampkg.tar.zst` 完整 Artifact 先验签，再创建 staging；包内
+  `package-files.v1.json` 对所有其他普通文件按唯一排序逐项核对路径、大小和 SHA-256；
+- 限制 Artifact/单文件/解包总量/文件数，拒绝路径穿越、绝对路径、反斜杠、重复文件、
+  symlink、hardlink、未知 entry 和缺失引用；
+- 解包后再次交叉检查签名信封与 Manifest 的 publisher、`packageId`、version，并确认
+  Canonical Workflow 和每个 Skill Adapter 都是真实文件；
+- Unix staging 目录/文件分别设为 `0700`/`0600`；失败或未提交对象析构时删除 staging；
+- 生产信任根保持空集合：正式发布公钥未审计前，外部 Package 一律拒绝；只有单测
+  可以注入临时测试密钥。
+
+H1a 验证证据：
+
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：78 项通过；
+- H1a 专项 6 项通过：合法签名、Artifact 篡改、未知 key、路径穿越、未列出文件、
+  签名/Manifest 身份不一致；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt edition 2024 与
+  `git diff --check` 通过；
+- 验证完全离线，使用临时目录与固定测试私钥；未连接远端 Registry，未修改真实
+  Package 安装目录，未读取用户或 Provider 凭据。
+
+H1a 计划复盘：
+
+- 顺序与蓝图一致：先建立 Host-owned 信任与 staging，再做安装入口或网络分发；
+- 签名只证明受信发布者与 Artifact 完整性，不自动授予 Manifest 声明的权限；
+- 没有伪造生产公钥或用测试 key 进入正式 Trust Store；
+- 当前 `VerifiedStagedPackage` 仍是短生命周期验证对象，尚未成为 Active，也没有接入
+  Agent Registry；因此 H1b 必须先完成文件系统提交与 Registry 指针的一致性。
+
+H1b 紧接着实现：
+
+1. 不可变版本目录和 Active/Previous 本地 Registry；
+2. staging → 版本目录的同文件系统原子 rename，再以 SQLite transaction 提交指针；
+3. `agentId` 不变与权限增量 `approval_required`；
+4. 数据库提交失败留下的只能是未引用版本，旧 Active 指针保持不变；
+5. 显式 rollback 交换 Active/Previous，保持产品 Main Session 身份。
