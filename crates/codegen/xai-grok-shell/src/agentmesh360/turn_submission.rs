@@ -5,6 +5,7 @@ use super::access::ClientAccessGuard;
 use super::credential_lease::{CredentialLeaseResolver, LeasedSamplingRoute};
 use super::credential_vault::{CredentialVault, RuntimeCredentialVault};
 use super::model_routing::ModelRoutingService;
+use super::registry::AgentRegistry;
 use super::session_bindings::SessionProviderBinding;
 use super::turn_routes::{TurnRouteRecord, TurnRouteStore};
 
@@ -92,6 +93,7 @@ pub struct AgentMeshSessionRouteContext {
     access: ClientAccessGuard,
     state_home: std::path::PathBuf,
     vault: RuntimeCredentialVault,
+    registry: AgentRegistry,
 }
 
 impl AgentMeshSessionRouteContext {
@@ -101,6 +103,7 @@ impl AgentMeshSessionRouteContext {
         access: ClientAccessGuard,
         state_home: std::path::PathBuf,
         vault: RuntimeCredentialVault,
+        registry: AgentRegistry,
     ) -> Self {
         Self {
             owner_account_id,
@@ -109,6 +112,7 @@ impl AgentMeshSessionRouteContext {
             access,
             state_home,
             vault,
+            registry,
         }
     }
 
@@ -141,12 +145,8 @@ impl AgentMeshSessionRouteContext {
         self.access
             .require()
             .map_err(|_| anyhow::anyhow!("AgentMesh360 subscription access is unavailable"))?;
-        ModelRoutingService::in_home(&self.state_home).ensure_product_binding(
-            self.owner_account_id,
-            session_id,
-            &self.agent_id,
-            role,
-        )?;
+        ModelRoutingService::in_home_with_registry(&self.state_home, self.registry.clone())
+            .ensure_product_binding(self.owner_account_id, session_id, &self.agent_id, role)?;
         let resolver = CredentialLeaseResolver::in_home(&self.state_home, self.vault.clone());
         let prepared = TurnSubmissionCoordinator::in_home(&self.state_home).prepare(
             &resolver,

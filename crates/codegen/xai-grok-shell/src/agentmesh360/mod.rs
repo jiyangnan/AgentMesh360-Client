@@ -41,6 +41,7 @@ pub const ACCOUNT_BOOTSTRAP_METHOD: &str = "x.agentmesh360/account/bootstrap";
 pub const AGENTS_LIST_METHOD: &str = "x.agentmesh360/agents/list";
 pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
 pub const AGENT_PACKAGES_CATALOG_METHOD: &str = "x.agentmesh360/agent-packages/catalog";
+pub const AGENT_PACKAGES_STATUS_METHOD: &str = "x.agentmesh360/agent-packages/status";
 
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
@@ -74,8 +75,13 @@ impl AgentMesh360Runtime {
         access: access::ClientAccess,
         credential_vault: credential_vault::RuntimeCredentialVault,
     ) -> Self {
+        let registry = AgentRegistry::in_home(&state_home);
+        let model_routing = model_routing::ModelRoutingService::in_home_with_registry(
+            &state_home,
+            registry.clone(),
+        );
         Self {
-            registry: AgentRegistry::in_home(&state_home),
+            registry,
             providers: providers::ProviderService::new(
                 provider_profiles::ProviderProfileStore::in_home(&state_home),
                 credential_vault.clone(),
@@ -84,7 +90,7 @@ impl AgentMesh360Runtime {
                 &state_home,
                 credential_vault.clone(),
             ),
-            model_routing: model_routing::ModelRoutingService::in_home(&state_home),
+            model_routing,
             access,
             state_home,
             credential_vault,
@@ -239,6 +245,10 @@ impl AgentMesh360Runtime {
         &self.registry
     }
 
+    pub(crate) fn refresh_package_catalog(&self) -> Result<()> {
+        self.registry.refresh_package_catalog().map(|_| ())
+    }
+
     pub(crate) fn pin(&self, session_id: acp::SessionId) {
         self.pinned_sessions.borrow_mut().insert(session_id);
     }
@@ -281,6 +291,7 @@ impl AgentMesh360Runtime {
             self.access.guard(owner_account_id),
             self.state_home.clone(),
             self.credential_vault.clone(),
+            self.registry.clone(),
         )))
     }
 }
@@ -309,6 +320,16 @@ struct AgentListResponse {
 #[serde(rename_all = "camelCase")]
 struct AgentPackageCatalogResponse<'a> {
     catalog: &'a agent_packages::AgentPackageCatalog,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentPackageStatusResponse {
+    catalog_generation: u64,
+    catalog_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_refresh_issue: Option<package_installer::PackageStatusIssue>,
+    packages: Vec<package_installer::InstalledPackageStatus>,
 }
 
 #[derive(Debug, Serialize)]
@@ -375,6 +396,7 @@ pub(crate) async fn handle(
                 .expect("AgentListResponse is serializable")
         }),
         AGENT_PACKAGES_CATALOG_METHOD => package_catalog(agent),
+        AGENT_PACKAGES_STATUS_METHOD => package_status(agent),
         AGENTS_ACTIVATE_METHOD => {
             let request: ActivateRequest = crate::extensions::parse_params(args)?;
             activate(agent, &request.agent_id)
@@ -525,8 +547,69 @@ fn list_agents(agent: &MvpAgent) -> Result<Vec<ProductAgentRecord>> {
 }
 
 fn package_catalog(agent: &MvpAgent) -> Result<serde_json::Value> {
-    let catalog = agent.agentmesh360.registry().package_catalog()?;
-    serde_json::to_value(AgentPackageCatalogResponse { catalog }).map_err(Into::into)
+    let catalog = agent
+        .agentmesh360
+        .registry()
+        .package_catalog()
+        .map_err(|_| anyhow!("Agent Package Catalog is unavailable"))?;
+    serde_json::to_value(AgentPackageCatalogResponse {
+        catalog: catalog.as_ref(),
+    })
+    .map_err(Into::into)
+}
+
+fn package_status(agent: &MvpAgent) -> Result<serde_json::Value> {
+    use package_installer::{InstalledPackageStatus, PackageStatusKind};
+
+    let health = agent.agentmesh360.registry().package_catalog_health();
+    let builtins = agent_packages::AgentPackageCatalog::builtin()
+        .map_err(|_| anyhow!("Built-in Agent Package Catalog is unavailable"))?;
+    let mut packages = builtins
+        .packages
+        .into_iter()
+        .map(|package| InstalledPackageStatus {
+            kind: PackageStatusKind::BuiltIn,
+            package_id: package.package_id,
+            agent_id: Some(package.agent.agent_id),
+            version: Some(package.version),
+            slot: None,
+            issue: None,
+        })
+        .collect::<Vec<_>>();
+    match package_installer::PackageInstallService::in_home(&agent.agentmesh360.state_home)
+        .inspect_status()
+    {
+        Ok(installed) => packages.extend(installed),
+        Err(error) => {
+            let issue = package_installer::classify_package_error(&error);
+            tracing::error!(%error, "failed to inspect local Agent Package status");
+            packages.push(InstalledPackageStatus {
+                kind: PackageStatusKind::Invalid,
+                package_id: "status-inventory".into(),
+                agent_id: None,
+                version: None,
+                slot: None,
+                issue: Some(issue),
+            });
+        }
+    }
+    if let Some(issue) = &health.last_issue {
+        packages.push(InstalledPackageStatus {
+            kind: PackageStatusKind::Invalid,
+            package_id: "runtime-catalog".into(),
+            agent_id: None,
+            version: None,
+            slot: None,
+            issue: Some(issue.clone()),
+        });
+    }
+    serde_json::to_value(AgentPackageStatusResponse {
+        catalog_generation: health.generation,
+        catalog_revision: health.catalog_revision,
+        last_refresh_issue: health.last_issue,
+        packages,
+    })
+    .map_err(Into::into)
 }
 
 async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> {
@@ -1074,6 +1157,97 @@ mod tests {
             MvpAgent::new(gateway, &Config::default(), auth_manager, None).expect("test agent");
         agent.agentmesh360 = AgentMesh360Runtime::for_host_test(state_home, core_base_url);
         (agent, gateway_rx)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn package_status_is_subscription_gated_read_only_and_path_redacted() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (agent, _gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+
+                let denied = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_STATUS_METHOD, serde_json::json!({})),
+                )
+                .await
+                .expect_err("status requires subscription access");
+                assert_eq!(denied.code, acp::Error::auth_required().code);
+
+                handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "sentinel-bootstrap-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap response");
+                let _ = core.await.expect("Core request task");
+
+                let status = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_STATUS_METHOD, serde_json::json!({})),
+                )
+                .await
+                .map(ext_result)
+                .expect("read-only Package status");
+                assert_eq!(status["catalogGeneration"], 1);
+                assert!(status["catalogRevision"].as_u64().is_some());
+                let packages = status["packages"].as_array().expect("Package statuses");
+                assert_eq!(
+                    packages
+                        .iter()
+                        .filter(|package| package["kind"] == "built_in")
+                        .count(),
+                    3
+                );
+                let json = serde_json::to_string(&status).expect("serialize status");
+                assert!(!json.contains(&state_home.path().display().to_string()));
+                assert!(!json.contains("relativePath"));
+                assert!(!json.contains("artifactSha256"));
+                assert!(!json.contains("signatureKeyId"));
+
+                agent
+                    .agentmesh360
+                    .refresh_package_catalog()
+                    .expect("Host-private explicit refresh");
+                assert_eq!(
+                    agent
+                        .agentmesh360
+                        .registry()
+                        .package_catalog_health()
+                        .generation,
+                    2
+                );
+
+                std::fs::remove_dir_all(state_home.path()).expect("remove state directory");
+                std::fs::write(state_home.path(), b"not a directory")
+                    .expect("replace state directory with a file");
+                let degraded = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_STATUS_METHOD, serde_json::json!({})),
+                )
+                .await
+                .map(ext_result)
+                .expect("status degrades to a redacted inventory issue");
+                assert!(degraded["packages"].as_array().is_some_and(|packages| {
+                    packages.iter().any(|package| {
+                        package["kind"] == "invalid"
+                            && package["packageId"] == "status-inventory"
+                            && package["issue"]["code"] == "package_validation_failed"
+                    })
+                }));
+                let degraded_json =
+                    serde_json::to_string(&degraded).expect("serialize degraded status");
+                assert!(!degraded_json.contains(&state_home.path().display().to_string()));
+                assert!(!degraded_json.contains("not a directory"));
+                std::fs::remove_file(state_home.path()).expect("remove blocking state file");
+                std::fs::create_dir(state_home.path()).expect("restore temp directory");
+            })
+            .await;
     }
 
     #[tokio::test(flavor = "current_thread")]

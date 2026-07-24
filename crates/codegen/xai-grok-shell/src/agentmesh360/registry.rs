@@ -1,8 +1,11 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
+use arc_swap::ArcSwapOption;
 use chrono::{SecondsFormat, Utc};
+use parking_lot::{Mutex, RwLock};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -12,7 +15,7 @@ use super::agent_packages::{
     AgentPackageCatalog, AgentPackageManifest, MainSessionStrategy, WorkspaceStrategy,
 };
 use super::model_policy::AgentModelPolicy;
-use super::package_installer::PackageInstallService;
+use super::package_installer::{PackageInstallService, PackageStatusIssue, classify_package_error};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -32,11 +35,47 @@ pub struct ProductAgentRecord {
     pub last_error: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AgentRegistry {
     state_home: PathBuf,
     db_path: PathBuf,
-    package_catalog: Result<AgentPackageCatalog, String>,
+    package_catalog: Arc<SharedPackageCatalog>,
+}
+
+struct SharedPackageCatalog {
+    live: ArcSwapOption<AgentPackageCatalog>,
+    refresh_gate: Mutex<()>,
+    state: RwLock<PackageCatalogState>,
+}
+
+#[derive(Clone, Debug)]
+struct CatalogRefreshFailure {
+    diagnostic: String,
+    issue: PackageStatusIssue,
+}
+
+#[derive(Clone, Debug, Default)]
+struct PackageCatalogState {
+    generation: u64,
+    last_failure: Option<CatalogRefreshFailure>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PackageCatalogHealth {
+    pub generation: u64,
+    pub catalog_revision: Option<u64>,
+    pub last_issue: Option<PackageStatusIssue>,
+}
+
+impl std::fmt::Debug for AgentRegistry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AgentRegistry")
+            .field("state_home", &self.state_home)
+            .field("db_path", &self.db_path)
+            .field("package_catalog_health", &self.package_catalog_health())
+            .finish()
+    }
 }
 
 impl Default for AgentRegistry {
@@ -49,18 +88,75 @@ impl AgentRegistry {
     pub fn in_home(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
         let db_path = state_home.join("state.db");
-        let package_catalog = load_runtime_package_catalog(&state_home);
-        Self {
+        let registry = Self {
             state_home,
             db_path,
-            package_catalog: package_catalog.map_err(|error| format!("{error:#}")),
+            package_catalog: Arc::new(SharedPackageCatalog {
+                live: ArcSwapOption::empty(),
+                refresh_gate: Mutex::new(()),
+                state: RwLock::new(PackageCatalogState::default()),
+            }),
+        };
+        let _ = registry.refresh_package_catalog();
+        registry
+    }
+
+    pub(crate) fn package_catalog(&self) -> Result<Arc<AgentPackageCatalog>> {
+        if let Some(catalog) = self.package_catalog.live.load_full() {
+            return Ok(catalog);
+        }
+        let state = self.package_catalog.state.read();
+        let diagnostic = state
+            .last_failure
+            .as_ref()
+            .map(|failure| failure.diagnostic.as_str())
+            .unwrap_or("Catalog has not been initialized");
+        Err(anyhow!(
+            "Agent Package Catalog is unavailable: {diagnostic}"
+        ))
+    }
+
+    pub(crate) fn refresh_package_catalog(&self) -> Result<Arc<AgentPackageCatalog>> {
+        let _refresh_guard = self.package_catalog.refresh_gate.lock();
+        match load_runtime_package_catalog(&self.state_home) {
+            Ok(catalog) => {
+                let catalog = Arc::new(catalog);
+                let mut state = self.package_catalog.state.write();
+                self.package_catalog.live.store(Some(catalog.clone()));
+                state.generation = state.generation.saturating_add(1);
+                state.last_failure = None;
+                Ok(catalog)
+            }
+            Err(error) => {
+                let diagnostic = format!("{error:#}");
+                let failure = CatalogRefreshFailure {
+                    issue: classify_package_error(&error),
+                    diagnostic: diagnostic.clone(),
+                };
+                self.package_catalog.state.write().last_failure = Some(failure);
+                Err(anyhow!(
+                    "Agent Package Catalog refresh failed: {diagnostic}"
+                ))
+            }
         }
     }
 
-    pub(crate) fn package_catalog(&self) -> Result<&AgentPackageCatalog> {
-        self.package_catalog
+    pub(crate) fn package_catalog_health(&self) -> PackageCatalogHealth {
+        let state = self.package_catalog.state.read();
+        let catalog_revision = self
+            .package_catalog
+            .live
+            .load()
             .as_ref()
-            .map_err(|error| anyhow!("Agent Package Catalog is unavailable: {error}"))
+            .map(|catalog| catalog.catalog_revision);
+        PackageCatalogHealth {
+            generation: state.generation,
+            catalog_revision,
+            last_issue: state
+                .last_failure
+                .as_ref()
+                .map(|failure| failure.issue.clone()),
+        }
     }
 
     pub(crate) fn agent_definition(&self, agent_id: &str) -> Result<AgentDefinition> {
@@ -232,7 +328,8 @@ impl AgentRegistry {
 
     fn seed_builtins(&self, conn: &Connection, owner_account_id: i64) -> Result<()> {
         let now = now();
-        for package in &self.package_catalog()?.packages {
+        let catalog = self.package_catalog()?;
+        for package in &catalog.packages {
             let agent = &package.agent;
             conn.execute(
                 "INSERT INTO product_agents (owner_account_id, agent_id, display_name, description, version, \
@@ -256,8 +353,8 @@ impl AgentRegistry {
         Ok(())
     }
 
-    fn package(&self, agent_id: &str) -> Result<&AgentPackageManifest> {
-        self.package_catalog()?.package_for_agent(agent_id)
+    fn package(&self, agent_id: &str) -> Result<AgentPackageManifest> {
+        Ok(self.package_catalog()?.package_for_agent(agent_id)?.clone())
     }
 
     fn row_to_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProductAgentRecord> {

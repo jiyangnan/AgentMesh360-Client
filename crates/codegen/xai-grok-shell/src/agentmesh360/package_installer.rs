@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::path::{Component, Path, PathBuf};
 
@@ -62,6 +62,97 @@ pub(crate) enum PackageInstallResult {
     Installed {
         package: Box<InstalledPackageRecord>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PackageStatusIssue {
+    pub code: String,
+    pub summary: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PackageStatusKind {
+    BuiltIn,
+    InstalledActive,
+    InstalledPrevious,
+    Invalid,
+    Orphan,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PackageStatusSlot {
+    Active,
+    Previous,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct InstalledPackageStatus {
+    pub kind: PackageStatusKind,
+    pub package_id: String,
+    pub agent_id: Option<String>,
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot: Option<PackageStatusSlot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issue: Option<PackageStatusIssue>,
+}
+
+pub(crate) fn classify_package_error(error: &anyhow::Error) -> PackageStatusIssue {
+    let diagnostic = format!("{error:#}").to_ascii_lowercase();
+    let (code, summary) = if diagnostic.contains("digest")
+        || diagnostic.contains("file manifest")
+        || diagnostic.contains("contents")
+    {
+        (
+            "package_integrity_failed",
+            "Installed package contents failed integrity verification.",
+        )
+    } else if diagnostic.contains("permissions differ") {
+        (
+            "approved_permissions_mismatch",
+            "Installed package permissions differ from the approved registry.",
+        )
+    } else if diagnostic.contains("identity")
+        || diagnostic.contains("conflict")
+        || diagnostic.contains("downgrade")
+        || diagnostic.contains("semver")
+    {
+        (
+            "package_identity_conflict",
+            "Installed package identity or version conflicts with the runtime catalog.",
+        )
+    } else if diagnostic.contains("path is invalid") || diagnostic.contains("escaped package") {
+        (
+            "installed_path_invalid",
+            "Installed package storage metadata is invalid.",
+        )
+    } else if diagnostic.contains("directory is missing")
+        || diagnostic.contains("no such file")
+        || diagnostic.contains("not found")
+    {
+        (
+            "installed_content_missing",
+            "Installed package content is missing.",
+        )
+    } else if diagnostic.contains("registry") || diagnostic.contains("sqlite") {
+        (
+            "package_registry_invalid",
+            "The local package registry could not be read safely.",
+        )
+    } else {
+        (
+            "package_validation_failed",
+            "The installed package could not be validated.",
+        )
+    };
+    PackageStatusIssue {
+        code: code.into(),
+        summary: summary.into(),
+    }
 }
 
 pub(crate) struct PackageInstallService {
@@ -137,6 +228,187 @@ impl PackageInstallService {
         }
         transaction.commit()?;
         Ok(manifests)
+    }
+
+    pub(crate) fn inspect_status(&self) -> Result<Vec<InstalledPackageStatus>> {
+        let conn = super::state::open(&self.state_home)?;
+        let raw_records = read_status_records(&conn)?;
+        let mut referenced_paths = BTreeSet::new();
+        let mut statuses = Vec::new();
+        for raw in raw_records {
+            referenced_paths.insert(raw.active_relative_path.clone());
+            if let Some(previous_path) = &raw.previous_relative_path {
+                referenced_paths.insert(previous_path.clone());
+            }
+            let fallback_package_id = status_identity(&raw.package_id, "unrecognized-package");
+            let fallback_agent_id = Some(status_identity(&raw.agent_id, "unrecognized-agent"));
+            let fallback_version = status_version(&raw.active_version);
+            match parse_record(raw) {
+                Ok(record) => {
+                    statuses.push(self.inspect_version_status(
+                        &record,
+                        &record.active,
+                        PackageStatusSlot::Active,
+                    ));
+                    if let Some(previous) = &record.previous {
+                        statuses.push(self.inspect_version_status(
+                            &record,
+                            previous,
+                            PackageStatusSlot::Previous,
+                        ));
+                    }
+                }
+                Err(error) => statuses.push(InstalledPackageStatus {
+                    kind: PackageStatusKind::Invalid,
+                    package_id: fallback_package_id,
+                    agent_id: fallback_agent_id,
+                    version: fallback_version,
+                    slot: None,
+                    issue: Some(classify_package_error(&error)),
+                }),
+            }
+        }
+        statuses.extend(self.inspect_orphans(&referenced_paths));
+        statuses.sort_by(|left, right| {
+            (
+                &left.package_id,
+                left.kind,
+                left.version.as_deref().unwrap_or_default(),
+            )
+                .cmp(&(
+                    &right.package_id,
+                    right.kind,
+                    right.version.as_deref().unwrap_or_default(),
+                ))
+        });
+        Ok(statuses)
+    }
+
+    fn inspect_version_status(
+        &self,
+        record: &InstalledPackageRecord,
+        version: &InstalledPackageVersion,
+        slot: PackageStatusSlot,
+    ) -> InstalledPackageStatus {
+        let verification = (|| {
+            let package_dir = self.resolve_installed_path(&version.relative_path)?;
+            let manifest =
+                verify_installed_package_tree(&package_dir, &version.file_manifest_sha256)?;
+            ensure_installed_identity(
+                &manifest,
+                &record.package_id,
+                &record.agent_id,
+                &version.version,
+            )?;
+            if manifest.requested_permissions != version.requested_permissions {
+                bail!("installed Agent Package permissions differ from their approved Registry");
+            }
+            Ok(())
+        })();
+        let kind = match (slot, verification.is_ok()) {
+            (PackageStatusSlot::Active, true) => PackageStatusKind::InstalledActive,
+            (PackageStatusSlot::Previous, true) => PackageStatusKind::InstalledPrevious,
+            (_, false) => PackageStatusKind::Invalid,
+        };
+        InstalledPackageStatus {
+            kind,
+            package_id: status_identity(&record.package_id, "unrecognized-package"),
+            agent_id: Some(status_identity(&record.agent_id, "unrecognized-agent")),
+            version: status_version(&version.version),
+            slot: Some(slot),
+            issue: verification
+                .err()
+                .map(|error| classify_package_error(&error)),
+        }
+    }
+
+    fn inspect_orphans(&self, referenced_paths: &BTreeSet<String>) -> Vec<InstalledPackageStatus> {
+        const MAX_STORAGE_ENTRIES: usize = 1_024;
+
+        let versions_root = self.package_root.join("versions");
+        let mut visited = 0usize;
+        let mut orphans = BTreeMap::<(String, Option<String>), ()>::new();
+        let mut limited = false;
+        let package_entries = match read_directories(&versions_root) {
+            Ok(entries) => entries,
+            Err(_) => return vec![storage_inventory_issue()],
+        };
+        for package_entry in package_entries {
+            visited += 1;
+            if visited > MAX_STORAGE_ENTRIES {
+                limited = true;
+                break;
+            }
+            let raw_package_id = package_entry.file_name().to_string_lossy().into_owned();
+            let version_entries = match read_directories(&package_entry.path()) {
+                Ok(entries) => entries,
+                Err(_) => return vec![storage_inventory_issue()],
+            };
+            for version_entry in version_entries {
+                visited += 1;
+                if visited > MAX_STORAGE_ENTRIES {
+                    limited = true;
+                    break;
+                }
+                let raw_version = version_entry.file_name().to_string_lossy().into_owned();
+                let copy_entries = match read_directories(&version_entry.path()) {
+                    Ok(entries) => entries,
+                    Err(_) => return vec![storage_inventory_issue()],
+                };
+                for copy_entry in copy_entries {
+                    visited += 1;
+                    if visited > MAX_STORAGE_ENTRIES {
+                        limited = true;
+                        break;
+                    }
+                    let copy_path = copy_entry.path();
+                    let Ok(relative_path) = copy_path.strip_prefix(&self.package_root) else {
+                        continue;
+                    };
+                    let relative_path = relative_path.to_string_lossy().into_owned();
+                    if !referenced_paths.contains(&relative_path) {
+                        orphans.insert(
+                            (
+                                status_identity(&raw_package_id, "unrecognized-package"),
+                                status_version(&raw_version),
+                            ),
+                            (),
+                        );
+                    }
+                }
+                if limited {
+                    break;
+                }
+            }
+            if limited {
+                break;
+            }
+        }
+        let mut statuses = orphans
+            .into_keys()
+            .map(|(package_id, version)| InstalledPackageStatus {
+                kind: PackageStatusKind::Orphan,
+                package_id,
+                agent_id: None,
+                version,
+                slot: None,
+                issue: None,
+            })
+            .collect::<Vec<_>>();
+        if limited {
+            statuses.push(InstalledPackageStatus {
+                kind: PackageStatusKind::Invalid,
+                package_id: "storage-inventory".into(),
+                agent_id: None,
+                version: None,
+                slot: None,
+                issue: Some(PackageStatusIssue {
+                    code: "package_inventory_limit_reached".into(),
+                    summary: "Package storage inventory exceeded the safe inspection limit.".into(),
+                }),
+            });
+        }
+        statuses
     }
 
     pub(crate) fn rollback(&self, package_id: &str) -> Result<InstalledPackageRecord> {
@@ -480,6 +752,20 @@ struct RawInstalledPackageRecord {
     updated_at: String,
 }
 
+fn read_status_records(conn: &Connection) -> Result<Vec<RawInstalledPackageRecord>> {
+    let mut statement = conn.prepare(
+        "SELECT package_id, agent_id, active_version, active_artifact_sha256, \
+         active_file_manifest_sha256, active_relative_path, active_permissions_json, \
+         active_signature_key_id, previous_version, previous_artifact_sha256, \
+         previous_file_manifest_sha256, previous_relative_path, previous_permissions_json, \
+         previous_signature_key_id, installed_at, updated_at \
+         FROM agent_package_registry ORDER BY package_id ASC",
+    )?;
+    let rows = statement.query_map([], raw_record_from_row)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("read Agent Package Registry status")
+}
+
 fn read_record(conn: &Connection, package_id: &str) -> Result<Option<InstalledPackageRecord>> {
     let raw = conn
         .query_row(
@@ -490,29 +776,31 @@ fn read_record(conn: &Connection, package_id: &str) -> Result<Option<InstalledPa
              previous_signature_key_id, installed_at, updated_at \
              FROM agent_package_registry WHERE package_id = ?1",
             [package_id],
-            |row| {
-                Ok(RawInstalledPackageRecord {
-                    package_id: row.get(0)?,
-                    agent_id: row.get(1)?,
-                    active_version: row.get(2)?,
-                    active_artifact_sha256: row.get(3)?,
-                    active_file_manifest_sha256: row.get(4)?,
-                    active_relative_path: row.get(5)?,
-                    active_permissions_json: row.get(6)?,
-                    active_signature_key_id: row.get(7)?,
-                    previous_version: row.get(8)?,
-                    previous_artifact_sha256: row.get(9)?,
-                    previous_file_manifest_sha256: row.get(10)?,
-                    previous_relative_path: row.get(11)?,
-                    previous_permissions_json: row.get(12)?,
-                    previous_signature_key_id: row.get(13)?,
-                    installed_at: row.get(14)?,
-                    updated_at: row.get(15)?,
-                })
-            },
+            raw_record_from_row,
         )
         .optional()?;
     raw.map(parse_record).transpose()
+}
+
+fn raw_record_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawInstalledPackageRecord> {
+    Ok(RawInstalledPackageRecord {
+        package_id: row.get(0)?,
+        agent_id: row.get(1)?,
+        active_version: row.get(2)?,
+        active_artifact_sha256: row.get(3)?,
+        active_file_manifest_sha256: row.get(4)?,
+        active_relative_path: row.get(5)?,
+        active_permissions_json: row.get(6)?,
+        active_signature_key_id: row.get(7)?,
+        previous_version: row.get(8)?,
+        previous_artifact_sha256: row.get(9)?,
+        previous_file_manifest_sha256: row.get(10)?,
+        previous_relative_path: row.get(11)?,
+        previous_permissions_json: row.get(12)?,
+        previous_signature_key_id: row.get(13)?,
+        installed_at: row.get(14)?,
+        updated_at: row.get(15)?,
+    })
 }
 
 fn parse_record(raw: RawInstalledPackageRecord) -> Result<InstalledPackageRecord> {
@@ -560,6 +848,56 @@ fn parse_record(raw: RawInstalledPackageRecord) -> Result<InstalledPackageRecord
         installed_at: raw.installed_at,
         updated_at: raw.updated_at,
     })
+}
+
+fn read_directories(path: &Path) -> Result<Vec<fs::DirEntry>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(path).context("read Agent Package storage inventory")? {
+        let entry = entry.context("read Agent Package storage entry")?;
+        if entry
+            .file_type()
+            .context("read Agent Package storage entry type")?
+            .is_dir()
+        {
+            entries.push(entry);
+        }
+    }
+    entries.sort_by_key(|entry| entry.file_name());
+    Ok(entries)
+}
+
+fn status_identity(value: &str, fallback: &str) -> String {
+    if !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        value.to_owned()
+    } else {
+        fallback.into()
+    }
+}
+
+fn status_version(value: &str) -> Option<String> {
+    Version::parse(value).ok().map(|_| value.to_owned())
+}
+
+fn storage_inventory_issue() -> InstalledPackageStatus {
+    InstalledPackageStatus {
+        kind: PackageStatusKind::Invalid,
+        package_id: "storage-inventory".into(),
+        agent_id: None,
+        version: None,
+        slot: None,
+        issue: Some(PackageStatusIssue {
+            code: "package_storage_unreadable".into(),
+            summary: "Package storage inventory could not be read safely.".into(),
+        }),
+    }
 }
 
 fn added_permissions(
@@ -648,10 +986,13 @@ fn now() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use sha2::{Digest, Sha256};
 
     use super::*;
     use crate::agentmesh360::model_policy::CapabilityRequirement;
+    use crate::agentmesh360::model_routing::ModelRoutingService;
     use crate::agentmesh360::registry::{AgentRegistry, stable_main_session_id};
 
     const JOB_MANIFEST: &str = include_str!("packages/job-agent/agentmesh-agent.toml");
@@ -1013,6 +1354,142 @@ mod tests {
                 .to_string()
                 .contains("conflicts")
         );
+    }
+
+    #[test]
+    fn shared_runtime_catalog_refreshes_atomically_and_retains_last_good_snapshot() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let registry = AgentRegistry::in_home(temp.path());
+        let routing = ModelRoutingService::in_home_with_registry(temp.path(), registry.clone());
+        let initial = registry.package_catalog().expect("initial Catalog");
+        let initial_revision = initial.catalog_revision;
+        let active_job = registry
+            .prepare_activation(41, "job-agent")
+            .expect("activate built-in Job Agent");
+
+        let service = service(temp.path());
+        installed(
+            service
+                .install_verified_for_test(
+                    verified(temp.path(), &runtime_upgrade_manifest(), 'b'),
+                    true,
+                )
+                .expect("install upgraded Job Agent"),
+        );
+        let research = installed(
+            service
+                .install_verified_for_test(verified(temp.path(), &new_agent_manifest(), 'c'), true)
+                .expect("install Research Agent"),
+        );
+
+        assert!(
+            registry
+                .package_catalog()
+                .expect("pre-refresh snapshot")
+                .package_for_agent("research-agent")
+                .is_err(),
+            "install does not mutate the live snapshot implicitly"
+        );
+        assert_eq!(
+            routing
+                .agent_catalog_revision_for_test()
+                .expect("routing snapshot"),
+            initial_revision
+        );
+
+        let refreshed = registry.refresh_package_catalog().expect("refresh Catalog");
+        assert!(refreshed.package_for_agent("research-agent").is_ok());
+        assert_ne!(refreshed.catalog_revision, initial_revision);
+        assert_eq!(
+            routing
+                .agent_catalog_revision_for_test()
+                .expect("shared routing snapshot"),
+            refreshed.catalog_revision
+        );
+        let refreshed_job = registry
+            .prepare_activation(41, "job-agent")
+            .expect("reactivate upgraded Job Agent");
+        assert_eq!(refreshed_job.main_session_id, active_job.main_session_id);
+
+        fs::write(
+            temp.path()
+                .join("packages")
+                .join(research.active.relative_path)
+                .join("docs/agent-onboarding.md"),
+            b"# Tampered after refresh\n",
+        )
+        .expect("tamper installed Research Agent");
+        let last_good = registry.package_catalog().expect("last good Catalog");
+        registry
+            .refresh_package_catalog()
+            .expect_err("tampered refresh must fail");
+        let retained = registry.package_catalog().expect("retained Catalog");
+        assert!(Arc::ptr_eq(&last_good, &retained));
+        assert_eq!(
+            routing
+                .agent_catalog_revision_for_test()
+                .expect("Turn routing keeps the shared snapshot"),
+            last_good.catalog_revision
+        );
+        let health = registry.package_catalog_health();
+        let issue = health.last_issue.expect("redacted refresh issue");
+        assert_eq!(issue.code, "package_integrity_failed");
+        assert!(!issue.summary.contains(&temp.path().display().to_string()));
+    }
+
+    #[test]
+    fn read_only_status_distinguishes_previous_invalid_and_orphan_without_paths() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = service(temp.path());
+        installed(
+            service
+                .install_verified_for_test(verified(temp.path(), JOB_MANIFEST, 'a'), true)
+                .expect("initial install"),
+        );
+        let upgraded = installed(
+            service
+                .install_verified_for_test(verified(temp.path(), &upgraded_manifest(), 'b'), true)
+                .expect("upgrade"),
+        );
+        fs::write(
+            temp.path()
+                .join("packages")
+                .join(&upgraded.active.relative_path)
+                .join("docs/agent-onboarding.md"),
+            b"# Tampered Active\n",
+        )
+        .expect("tamper Active Package");
+        fs::create_dir_all(
+            temp.path()
+                .join("packages/versions/com.example.orphan/0.1.0/unreferenced-copy"),
+        )
+        .expect("create orphan");
+
+        let statuses = service.inspect_status().expect("read-only status");
+        assert!(statuses.iter().any(|status| {
+            status.kind == PackageStatusKind::Invalid
+                && status.slot == Some(PackageStatusSlot::Active)
+                && status
+                    .issue
+                    .as_ref()
+                    .is_some_and(|issue| issue.code == "package_integrity_failed")
+        }));
+        assert!(statuses.iter().any(|status| {
+            status.kind == PackageStatusKind::InstalledPrevious
+                && status.slot == Some(PackageStatusSlot::Previous)
+                && status.version.as_deref() == Some("0.4.7")
+        }));
+        assert!(statuses.iter().any(|status| {
+            status.kind == PackageStatusKind::Orphan
+                && status.package_id == "com.example.orphan"
+                && status.version.as_deref() == Some("0.1.0")
+        }));
+
+        let json = serde_json::to_string(&statuses).expect("serialize status");
+        assert!(!json.contains(&temp.path().display().to_string()));
+        assert!(!json.contains("relativePath"));
+        assert!(!json.contains("artifactSha256"));
+        assert!(!json.contains("signatureKeyId"));
     }
 
     fn service(state_home: &Path) -> PackageInstallService {

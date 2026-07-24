@@ -137,13 +137,21 @@ impl Default for ModelRoutingService {
 impl ModelRoutingService {
     pub fn in_home(state_home: impl AsRef<std::path::Path>) -> Self {
         let state_home = state_home.as_ref();
+        Self::in_home_with_registry(state_home, AgentRegistry::in_home(state_home))
+    }
+
+    pub(crate) fn in_home_with_registry(
+        state_home: impl AsRef<std::path::Path>,
+        registry: AgentRegistry,
+    ) -> Self {
+        let state_home = state_home.as_ref();
         let catalog = ProviderCatalog::builtin();
         Self {
             catalog: catalog.clone(),
             assignments: ModelAssignmentStore::in_home(state_home),
             bindings: SessionBindingStore::in_home(state_home),
             turn_routes: TurnRouteStore::in_home(state_home),
-            registry: AgentRegistry::in_home(state_home),
+            registry,
             compiler: RouteCompiler::in_home(catalog, state_home),
         }
     }
@@ -184,6 +192,11 @@ impl ModelRoutingService {
                 agent_id: Some(agent_id.to_owned()),
             },
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn agent_catalog_revision_for_test(&self) -> Result<u64> {
+        Ok(self.registry.package_catalog()?.catalog_revision)
     }
 
     fn resolve_binding(
