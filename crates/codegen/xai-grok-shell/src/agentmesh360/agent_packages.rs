@@ -53,6 +53,19 @@ pub(crate) enum PackagePermission {
     ProcessExecution,
 }
 
+impl PackagePermission {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::BrowserControl => "browser_control",
+            Self::ExternalActions => "external_actions",
+            Self::ExternalMutations => "external_mutations",
+            Self::LocalFiles => "local_files",
+            Self::NetworkAccess => "network_access",
+            Self::ProcessExecution => "process_execution",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PersistenceProjection {

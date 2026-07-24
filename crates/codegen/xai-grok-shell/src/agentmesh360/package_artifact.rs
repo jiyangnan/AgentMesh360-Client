@@ -71,7 +71,7 @@ impl TrustedPublisherStore {
     }
 
     #[cfg(test)]
-    fn with_key(key: TrustedPublisherKey) -> Self {
+    pub(super) fn with_key(key: TrustedPublisherKey) -> Self {
         Self {
             keys: HashMap::from([(key.key_id, key)]),
         }
@@ -98,7 +98,10 @@ impl PackageArtifactVerifier {
     }
 
     #[cfg(test)]
-    fn with_trust_store(state_home: impl AsRef<Path>, trust_store: TrustedPublisherStore) -> Self {
+    pub(super) fn with_trust_store(
+        state_home: impl AsRef<Path>,
+        trust_store: TrustedPublisherStore,
+    ) -> Self {
         Self {
             staging_root: state_home.as_ref().join("packages").join(".staging"),
             trust_store,
@@ -119,6 +122,11 @@ impl PackageArtifactVerifier {
         }
         self.verify_signature(&envelope)?;
 
+        let package_root = self
+            .staging_root
+            .parent()
+            .ok_or_else(|| anyhow!("Agent Package staging root has no parent"))?;
+        create_private_dir(package_root)?;
         create_private_dir(&self.staging_root)?;
         let staging_dir = self.staging_root.join(format!("verify-{}", Uuid::now_v7()));
         create_private_new_dir(&staging_dir)?;
@@ -163,9 +171,27 @@ pub(crate) struct VerifiedStagedPackage {
 }
 
 impl VerifiedStagedPackage {
-    #[cfg(test)]
-    fn path(&self) -> &Path {
+    pub(super) fn staging_path(&self) -> &Path {
         self.staging_dir.as_deref().expect("staging path")
+    }
+
+    pub(super) fn disarm_staging_cleanup(&mut self) {
+        self.staging_dir = None;
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(
+        manifest: AgentPackageManifest,
+        artifact_sha256: impl Into<String>,
+        signature_key_id: impl Into<String>,
+        staging_dir: PathBuf,
+    ) -> Self {
+        Self {
+            manifest,
+            artifact_sha256: artifact_sha256.into(),
+            signature_key_id: signature_key_id.into(),
+            staging_dir: Some(staging_dir),
+        }
     }
 }
 
@@ -508,7 +534,12 @@ mod tests {
         assert_eq!(verified.manifest.version, "0.4.7");
         assert_eq!(verified.signature_key_id, TEST_KEY_ID);
         assert_eq!(verified.artifact_sha256.len(), 64);
-        assert!(verified.path().join("docs/agent-onboarding.md").is_file());
+        assert!(
+            verified
+                .staging_path()
+                .join("docs/agent-onboarding.md")
+                .is_file()
+        );
     }
 
     #[test]

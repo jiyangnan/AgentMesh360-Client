@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -143,6 +143,40 @@ CREATE TABLE IF NOT EXISTS provider_probe_results (
 
 CREATE INDEX IF NOT EXISTS idx_provider_probe_results_owner
     ON provider_probe_results(owner_account_id, completed_at DESC, probe_id);
+
+CREATE TABLE IF NOT EXISTS agent_package_registry (
+    package_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL UNIQUE,
+    active_version TEXT NOT NULL,
+    active_artifact_sha256 TEXT NOT NULL,
+    active_relative_path TEXT NOT NULL,
+    active_permissions_json TEXT NOT NULL,
+    active_signature_key_id TEXT NOT NULL,
+    previous_version TEXT,
+    previous_artifact_sha256 TEXT,
+    previous_relative_path TEXT,
+    previous_permissions_json TEXT,
+    previous_signature_key_id TEXT,
+    installed_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (
+        (
+            previous_version IS NULL
+            AND previous_artifact_sha256 IS NULL
+            AND previous_relative_path IS NULL
+            AND previous_permissions_json IS NULL
+            AND previous_signature_key_id IS NULL
+        )
+        OR
+        (
+            previous_version IS NOT NULL
+            AND previous_artifact_sha256 IS NOT NULL
+            AND previous_relative_path IS NOT NULL
+            AND previous_permissions_json IS NOT NULL
+            AND previous_signature_key_id IS NOT NULL
+        )
+    )
+);
 "#;
 
 pub(super) fn default_state_home() -> PathBuf {
@@ -257,7 +291,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v6_schema() {
+    fn initializes_the_shared_v7_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -268,7 +302,7 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
-                     ('model_assignments', 'product_agents', 'provider_profiles', \
+                     ('agent_package_registry', 'model_assignments', 'product_agents', 'provider_profiles', \
                       'provider_probe_results', 'session_provider_bindings', \
                       'turn_route_records') ORDER BY name",
                 )
@@ -279,10 +313,11 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         assert_eq!(
             tables,
             [
+                "agent_package_registry",
                 "model_assignments",
                 "product_agents",
                 "provider_probe_results",
@@ -353,7 +388,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -453,8 +488,54 @@ mod tests {
             )
             .expect("binding tables");
 
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         assert_eq!(owner, 41);
         assert_eq!(binding_tables, 2);
+    }
+
+    #[test]
+    fn upgrades_v6_with_package_registry_without_losing_existing_state() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            conn.execute_batch(
+                "DROP TABLE agent_package_registry;
+                 INSERT INTO product_agents (
+                   owner_account_id, agent_id, display_name, description, version, sort_order,
+                   desired_state, runtime_state, main_session_id, updated_at
+                 ) VALUES (
+                   41, 'job-agent', 'Job Agent', 'Existing', '0.4.7', 10,
+                   'running', 'dormant', '11111111-1111-1111-1111-111111111111',
+                   '2026-07-24T00:00:00Z'
+                 );
+                 PRAGMA user_version = 6;",
+            )
+            .expect("prepare v6 database");
+        }
+
+        let conn = open(temp.path()).expect("upgrade v6 database");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let session_id: String = conn
+            .query_row(
+                "SELECT main_session_id FROM product_agents \
+                 WHERE owner_account_id = 41 AND agent_id = 'job-agent'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("existing Agent session");
+        let registry_table: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'agent_package_registry'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Package Registry table");
+
+        assert_eq!(version, 7);
+        assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
+        assert_eq!(registry_table, 1);
     }
 }
