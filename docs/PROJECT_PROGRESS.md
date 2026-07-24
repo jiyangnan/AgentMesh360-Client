@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1b2：v9 持久防回滚与 last-known-good 缓存 |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1c：只读远端获取、条件请求与脱敏状态 |
 
 ## 开发循环记录
 
@@ -2025,3 +2025,69 @@ H2b1b2 下一切片：
 3. 启动读取缓存时必须用新 bootstrap 的可信时间重新验签；只能返回脱敏
    last-known-good 审计状态，不能返回 URL/query、原始文档、路径或底层错误；
 4. 仍不下载或安装 Package；远端抓取和 mutation 继续作为独立切片。
+
+### 循环 28：动态 Agent Package H2b1b2——持久反回滚缓存
+
+状态：实现、自主测试与本机 Kimi 交叉测试已完成
+
+计划复核：H2b1b1 已把签名有效期绑定到新鲜 Core 时间，但进程重启前后仍没有持久的
+最高 sequence/revision，也没有可重新验签的 last-known-good。H2b1b2 只补这个本地
+信任状态，不读取网络、不下载 Artifact/Envelope、不开放安装 mutation。签名 Registry
+原始文档会写入 SQLite，因此本轮同时收紧 URL 契约：URL 不得带 credentials、query 或
+fragment；未来下载授权必须走内存 Header/短期 lease，不能把 token 签进或写入目录。
+
+H2b1b2 已经实现：
+
+1. `state.db` 从 v8 加法升级到 v9，新增仅允许 `singleton_id = 1` 的
+   `package_trust_cache`；保存 rootKeyId、Trust sequence、Registry revision、两份
+   原始签名文档及 SHA-256、两个有效期和验证/更新时间；
+2. v8→v9 迁移不改动既有 Product Agent、Provider、Session Binding 或本地 Active
+   Package；专项测试证明旧 Main Session 保留且新缓存初始为空；
+3. 接受新文档时先开启 SQLite `IMMEDIATE` 事务，在事务内读取旧最高值、使用当前
+   Granted `ClientAccess` 同时验证 Trust Bundle 和 Registry，再比较并写入；
+4. sequence/revision 低于已接受值会失败；相同 sequence/revision 却对应不同原始文档
+   摘要会作为 equivocation 拒绝；Trust root/sequence 与 Registry 绑定必须完全一致；
+5. 任一校验失败都不会替换 last-known-good。启动读取会重新计算两份文档摘要，以新
+   bootstrap 的可信时间重新验签，并逐项核对持久元数据与签名内容；
+6. 当前可返回对象只有脱敏审计：rootKeyId、sequence、revision、两个有效期、Package
+   数量和验证时间；不含 URL、原始文档、路径、账户标识或底层存储内容；
+7. 生产 `TrustedRootStore` 继续为空；空缓存只返回 `None`，不会制造信任或回退到本机
+   时间。此处的反回滚保护针对“本地状态完整时的远端旧快照/等价冲突”，不把可由本机
+   高权限攻击者整体回滚的 SQLite 冒充为硬件级防回滚存储。
+
+H2b1b2 继续保持的关闭边界：
+
+- 没有远端 HTTP 请求、ETag/Last-Modified、重试或离线刷新状态；
+- 没有 Artifact/Envelope 下载、安装、权限确认、ACP/UI mutation；
+- 不持久化 Core `server_time`、`Instant`、`SystemTime` 或订阅 token；
+- 生产发布 root/bundle 仍为空，真实远端 Package 仍失败关闭。
+
+H2b1b2 自主验证：
+
+- 5 项缓存/迁移专项测试通过，覆盖 v8→v9 保留状态、接受/重启复验、脱敏审计、单行
+  缓存、sequence/revision 回滚、同版本 equivocation、失败不替换 last-known-good、
+  Access invalidate、DB 摘要篡改和空生产 root；
+- Registry 既有不安全 URL 测试扩展 query/token 拒绝；Trust audit 增加签名有效期；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib` 在允许 loopback mock 的环境
+  110 项通过、0 失败；受限沙箱首跑的 15 项失败全部是既有 mock server `bind`
+  `PermissionDenied`，放开本机 loopback 后通过；
+- 首次 Clippy 发现一个冗余 `Ok(...?)`，修复后完整 110 项回归再次通过；
+- 最终 `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 与
+  `git diff --check` 通过。
+- 本机 Kimi 逐行通读 7 个修改文件、新增的 548 行 Trust Cache 模块和三份中文文档，
+  独立记录完整 110 项测试、Clippy、Rustfmt 与 `git diff --check` 全部通过；确认
+  `IMMEDIATE` 事务无读写并发窗口、失败保留 last-known-good、重启重新验签、绑定/整数/
+  篡改/URL/脱敏边界均失败关闭，并认可 SQLite 只能防本地状态完整时远端回滚的诚实
+  边界。Blocker/High/Medium/Low 均为零并明确给出 PASS，H2b1b2 正式关闭。
+
+H2b1b2 代码提交：`1f398f2`（`feat: persist package trust cache`）。
+
+H2b1c 下一切片（须等 H2b1b2 Kimi 交叉测试关闭后启动）：
+
+1. 增加 Host-owned 只读 Registry Fetcher，只允许固定 HTTPS origin、有限响应体、超时
+   和重定向策略；网络层只取得文档，信任缓存继续负责验证与原子接受；
+2. 保存非秘密 ETag/Last-Modified，支持条件请求；304 只能触发已有缓存重新验签，不能
+   延长签名有效期或 Core 时间锚；
+3. 定义脱敏 fetch/cache 状态和 last-known-good 退化原因，不暴露 URL、query、路径、
+   账户、token 或原始响应；
+4. H2b1c 仍不下载 Artifact/Envelope，不开放安装 mutation。

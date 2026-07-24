@@ -2,7 +2,7 @@
 
 状态：基础实现完成，已接入 Host 订阅门禁
 建立日期：2026-07-21
-最近更新：2026-07-23
+最近更新：2026-07-24
 
 相关的产品结构、流程、Package、Provider 与信任边界图见：
 [`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。CC Switch Provider 调研、Host Vault、
@@ -69,6 +69,13 @@ Host 使用 Core 的 `server_time` 与 `period_end` 计算单调时钟截止点�
 仅用于检测超过 2 分钟的墙钟漂移、回退或休眠差异并失败关闭，不能推进可信时间。
 Trust Bundle 与 Registry 验证都在当下重新检查 Access 仍 Granted；进程重启、
 invalidate 或锚 stale 都必须重新 bootstrap。
+
+远端 Package 信任元数据使用 `state.db` v9 的单行缓存：Trust Bundle 与 Registry
+Snapshot 只能在同一个 `IMMEDIATE` 事务内验签、比较旧最高 sequence/revision 并原子
+替换。低版本和同版本不同摘要都失败关闭；进程重启后必须用新的 Core 时间锚重新验签，
+不能把“曾经验证过”当作永久有效。对外状态只包含 root、版本、有效期、Package 数量和
+验证时间，不返回原始文档、URL、路径或账户数据。Registry 中的 Artifact/Envelope URL
+不得携带 credentials、query 或 fragment；未来授权走内存 Header/短期 lease。
 
 ## ACP 接口
 
