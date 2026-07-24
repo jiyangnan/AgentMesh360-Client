@@ -46,7 +46,7 @@ impl PackageArtifactDownloader {
     }
 
     #[cfg(test)]
-    fn for_test(
+    pub(super) fn for_test(
         state_home: impl Into<PathBuf>,
         roots: TrustedRootStore,
         transport_origin_override: Url,
@@ -171,6 +171,22 @@ pub(crate) struct VerifiedPackageDownload {
 impl VerifiedPackageDownload {
     pub(super) fn staged(&self) -> &VerifiedStagedPackage {
         &self.verified
+    }
+
+    pub(super) fn into_staged(self) -> VerifiedStagedPackage {
+        self.verified
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(verified: VerifiedStagedPackage) -> Self {
+        let audit = PackageDownloadAudit {
+            package_id: verified.manifest.package_id.clone(),
+            agent_id: verified.manifest.agent.agent_id.clone(),
+            version: verified.manifest.version.clone(),
+            artifact_bytes: 1,
+            envelope_bytes: 1,
+        };
+        Self { audit, verified }
     }
 }
 

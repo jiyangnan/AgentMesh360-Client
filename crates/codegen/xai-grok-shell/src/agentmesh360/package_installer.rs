@@ -11,17 +11,12 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use super::agent_packages::{AgentPackageManifest, PackagePermission};
-use super::package_artifact::{
-    PackageArtifactVerifier, VerifiedStagedPackage, verify_installed_package_tree,
-};
+use super::package_artifact::{VerifiedStagedPackage, verify_installed_package_tree};
 
 #[cfg(test)]
 use super::agent_packages::AgentPackageCatalog;
 #[cfg(test)]
 use super::package_artifact::FILE_MANIFEST_PATH;
-#[cfg(test)]
-use super::package_trust::TrustedPublisherStore;
-
 #[cfg(test)]
 const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
 
@@ -64,6 +59,28 @@ pub(crate) enum PackageInstallResult {
     Installed {
         package: Box<InstalledPackageRecord>,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct VerifiedPackageInstallPlan {
+    package_id: String,
+    agent_id: String,
+    version: String,
+    artifact_sha256: String,
+    expected_active_artifact_sha256: Option<String>,
+    requested_permissions: Vec<PackagePermission>,
+    added_permissions: Vec<String>,
+    already_installed: bool,
+}
+
+impl VerifiedPackageInstallPlan {
+    pub(super) fn approval_request(&self) -> Option<PackageApprovalRequest> {
+        (!self.added_permissions.is_empty()).then(|| PackageApprovalRequest {
+            package_id: self.package_id.clone(),
+            version: self.version.clone(),
+            added_permissions: self.added_permissions.clone(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -160,7 +177,6 @@ pub(crate) fn classify_package_error(error: &anyhow::Error) -> PackageStatusIssu
 pub(crate) struct PackageInstallService {
     state_home: PathBuf,
     package_root: PathBuf,
-    verifier: PackageArtifactVerifier,
 }
 
 impl PackageInstallService {
@@ -168,31 +184,8 @@ impl PackageInstallService {
         let state_home = state_home.as_ref().to_path_buf();
         Self {
             package_root: state_home.join("packages"),
-            verifier: PackageArtifactVerifier::in_home(&state_home),
             state_home,
         }
-    }
-
-    #[cfg(test)]
-    fn with_trust_store(state_home: impl AsRef<Path>, trust_store: TrustedPublisherStore) -> Self {
-        let state_home = state_home.as_ref().to_path_buf();
-        Self {
-            package_root: state_home.join("packages"),
-            verifier: PackageArtifactVerifier::with_trust_store(&state_home, trust_store),
-            state_home,
-        }
-    }
-
-    pub(crate) fn install(
-        &self,
-        artifact_path: &Path,
-        envelope_document: &str,
-        permissions_approved: bool,
-    ) -> Result<PackageInstallResult> {
-        let verified = self
-            .verifier
-            .verify_to_staging(artifact_path, envelope_document)?;
-        self.install_verified(verified, permissions_approved, false)
     }
 
     pub(crate) fn get(&self, package_id: &str) -> Result<Option<InstalledPackageRecord>> {
@@ -469,19 +462,88 @@ impl PackageInstallService {
 
     fn install_verified(
         &self,
-        mut verified: VerifiedStagedPackage,
+        verified: VerifiedStagedPackage,
         permissions_approved: bool,
         fail_after_rename: bool,
     ) -> Result<PackageInstallResult> {
+        let (plan, current) = self.observe_verified_install(&verified)?;
+        self.install_verified_against_plan(
+            verified,
+            plan,
+            current,
+            permissions_approved,
+            fail_after_rename,
+        )
+    }
+
+    pub(super) fn plan_verified_install(
+        &self,
+        verified: &VerifiedStagedPackage,
+    ) -> Result<VerifiedPackageInstallPlan> {
+        self.observe_verified_install(verified)
+            .map(|(plan, _)| plan)
+    }
+
+    pub(super) fn install_verified_with_plan(
+        &self,
+        verified: VerifiedStagedPackage,
+        expected_plan: &VerifiedPackageInstallPlan,
+        permissions_approved: bool,
+    ) -> Result<PackageInstallResult> {
+        let (observed_plan, current) = self.observe_verified_install(&verified)?;
+        if &observed_plan != expected_plan {
+            bail!("Agent Package install approval is stale");
+        }
+        self.install_verified_against_plan(
+            verified,
+            observed_plan,
+            current,
+            permissions_approved,
+            false,
+        )
+    }
+
+    fn observe_verified_install(
+        &self,
+        verified: &VerifiedStagedPackage,
+    ) -> Result<(VerifiedPackageInstallPlan, Option<InstalledPackageRecord>)> {
+        let staged_manifest =
+            verify_installed_package_tree(verified.staging_path(), &verified.file_manifest_sha256)?;
+        if staged_manifest != verified.manifest {
+            bail!("verified Agent Package staging identity changed");
+        }
         let manifest = verified.manifest.clone();
         let current = self.get(&manifest.package_id)?;
         self.validate_identity_and_version(&manifest, &verified.artifact_sha256, current.as_ref())?;
         self.ensure_agent_id_available(&manifest.package_id, &manifest.agent.agent_id)?;
+        let added_permissions = added_permissions(current.as_ref(), &manifest);
+        let plan = VerifiedPackageInstallPlan {
+            package_id: manifest.package_id,
+            agent_id: manifest.agent.agent_id,
+            version: manifest.version,
+            artifact_sha256: verified.artifact_sha256.clone(),
+            expected_active_artifact_sha256: current
+                .as_ref()
+                .map(|record| record.active.artifact_sha256.clone()),
+            requested_permissions: manifest.requested_permissions,
+            added_permissions,
+            already_installed: current
+                .as_ref()
+                .is_some_and(|record| record.active.artifact_sha256 == verified.artifact_sha256),
+        };
+        Ok((plan, current))
+    }
 
-        if current
-            .as_ref()
-            .is_some_and(|record| record.active.artifact_sha256 == verified.artifact_sha256)
-        {
+    fn install_verified_against_plan(
+        &self,
+        mut verified: VerifiedStagedPackage,
+        plan: VerifiedPackageInstallPlan,
+        current: Option<InstalledPackageRecord>,
+        permissions_approved: bool,
+        fail_after_rename: bool,
+    ) -> Result<PackageInstallResult> {
+        let manifest = verified.manifest.clone();
+        if plan.already_installed {
             let current = current.expect("checked current Package");
             let active_dir = self.resolve_installed_path(&current.active.relative_path)?;
             let active_manifest =
@@ -497,20 +559,28 @@ impl PackageInstallService {
             });
         }
 
-        let added_permissions = added_permissions(current.as_ref(), &manifest);
-        if !added_permissions.is_empty() && !permissions_approved {
+        if !plan.added_permissions.is_empty() && !permissions_approved {
             return Ok(PackageInstallResult::ApprovalRequired {
                 approval: PackageApprovalRequest {
-                    package_id: manifest.package_id,
-                    version: manifest.version,
-                    added_permissions,
+                    package_id: plan.package_id.clone(),
+                    version: plan.version.clone(),
+                    added_permissions: plan.added_permissions.clone(),
                 },
             });
         }
 
-        let expected_active_digest = current
-            .as_ref()
-            .map(|record| record.active.artifact_sha256.clone());
+        debug_assert_eq!(
+            plan.expected_active_artifact_sha256,
+            current
+                .as_ref()
+                .map(|record| record.active.artifact_sha256.clone())
+        );
+        debug_assert_eq!(
+            plan.requested_permissions,
+            verified.manifest.requested_permissions
+        );
+        debug_assert_eq!(plan.agent_id, verified.manifest.agent.agent_id);
+        debug_assert_eq!(plan.artifact_sha256, verified.artifact_sha256);
         let destination = self.new_version_destination(&manifest, &verified.artifact_sha256)?;
         sync_tree(verified.staging_path())?;
         fs::rename(verified.staging_path(), &destination)
@@ -537,7 +607,7 @@ impl PackageInstallService {
             &verified.file_manifest_sha256,
             &verified.signature_key_id,
             &relative_path,
-            expected_active_digest.as_deref(),
+            plan.expected_active_artifact_sha256.as_deref(),
         )?;
         Ok(PackageInstallResult::Installed {
             package: Box::new(package),
@@ -1497,7 +1567,7 @@ mod tests {
     fn service(state_home: &Path) -> PackageInstallService {
         // The transaction tests start after H1a verification, so no production or test signing
         // key is needed here.
-        PackageInstallService::with_trust_store(state_home, TrustedPublisherStore::default())
+        PackageInstallService::in_home(state_home)
     }
 
     fn verified(state_home: &Path, document: &str, digest_byte: char) -> VerifiedStagedPackage {
