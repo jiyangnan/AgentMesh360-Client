@@ -1,7 +1,9 @@
 # ADR：后台 Host 生命周期与桌面重连
 
-状态：已接受，G0 基础已实现  
-日期：2026-07-24  
+状态：已接受，G0/G1 基础已实现
+
+日期：2026-07-24
+
 决策范围：AgentMesh360 桌面客户端、本 Fork 的 Grok Build Host、所有持久产品 Agent
 
 ## 背景
@@ -116,7 +118,7 @@ stateDiagram-v2
 | 再次打开客户端 | 新 Bridge attach | 采用已有 Leader | 重新 bootstrap 后恢复同一身份 |
 | 退出账号 | 保持或可重建 | access 被显式 invalidate | 清除 pin，数据保留但不可访问 |
 | 订阅到期 | 不决定准入 | Host 单调截止时间失败关闭 | 清除 pin，Registry/对话不删除 |
-| Leader 崩溃 | 尝试有界重连 | 当前二进制重建 | 从持久存储恢复 |
+| Leader 崩溃 | 尝试有界重连并发出生命周期事件 | 当前二进制重建 | 身份控制器刷新 Token、重新 bootstrap 后从持久存储恢复 |
 | Host 版本过旧 | Bridge 发起替换 | 旧 Leader 让位，新二进制接管 | 不迁移或删除产品数据 |
 
 客户端重连后必须再次调用账户 bootstrap。Leader 仍在运行不等于绕过订阅；Host 继续
@@ -171,17 +173,38 @@ Provider Key 仍只由 Host Vault 持有；持久 Leader 不改变 Credential Le
 G0 没有注册系统登录项，没有创建 LaunchAgent，没有读取用户真实 Provider Key，也
 没有改变 Provider Vault 或 Session 数据格式。
 
+## G1 实现证据
+
+G1 已补齐“Leader 进程恢复但产品准入丢失”的安全缺口：
+
+- ACP Client 将上游 `x.ai/leader_reconnected` 映射为不携带 Session ID 的
+  `reconnected` 生命周期事件；
+- Identity Controller 合并同一恢复窗口内的重复事件，等待现有身份操作结束后再执行
+  一次 `revalidate('host_reconnected')`；
+- 恢复流程从 `safeStorage` 中读取 Refresh Token，向 Core 轮换出新的 Access Token，
+  再分别校验 Core bootstrap 与新 Host bootstrap；
+- 不缓存、回放或复用 Leader 崩溃前的 Access Token；Core 刷新失败时清除公开 Agent
+  工作区并进入 `unavailable`，新 Host 不继承旧准入；
+- 真实故障注入会对测试 Leader 发送 `SIGKILL`，验证 Bridge 收到重连、新 Leader PID
+  已变化、Identity Controller 完成第二次安全刷新，且 Job Agent Main Session 不变；
+- 重连、测试退出和异常路径都包含 TERM/KILL 清理兜底，不遗留测试 Leader。
+
+G1 仍未注册任何系统登录项，也没有改变 Refresh Token 的 Electron `safeStorage`
+所有权。
+
 ## 未完成与下一阶段
 
-G1 继续完成：
+G2 继续完成：
 
 1. 系统登录时启动/采用同一个 AgentMesh360 Leader；
-2. Electron 不运行时的 Host 健康检查、崩溃重启预算和用户可见故障状态；
-3. Leader 崩溃、版本替换、系统休眠/唤醒的产品级故障注入回归；
-4. 明确受管 `GROK_HOME`、Leader 日志和现有 Grok Session Store 的迁移方案，不能
+2. 后台启动时不创建可见窗口，由 Electron 主进程完成身份刷新、Host bootstrap 与
+   周期订阅重验；
+3. Electron 不运行时的 Host 健康检查、崩溃重启预算和用户可见故障状态；
+4. 版本替换、系统休眠/唤醒的产品级故障注入回归；
+5. 明确受管 `GROK_HOME`、Leader 日志和现有 Grok Session Store 的迁移方案，不能
    直接切目录导致用户已有产品对话“消失”；
-5. 为更新、卸载和诊断提供显式的受控 Host shutdown，而不复用普通 UI 退出；
-6. macOS 签名、公证、登录项权限说明和卸载清理策略。
+6. 为更新、卸载和诊断提供显式的受控 Host shutdown，而不复用普通 UI 退出；
+7. macOS 签名、公证、登录项权限说明和卸载清理策略。
 
 只有上述系统生命周期闭环完成，才把“系统重启后自动恢复并长期在线”标记为已实现。
 

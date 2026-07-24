@@ -1318,7 +1318,9 @@ G0 计划复盘：
 
 ### 循环 20：独立后台 Host G1——崩溃重建与准入恢复
 
-状态：已规划，下一开发切片
+状态：已完成
+
+本地提交：`dcbc81a feat: restore host access after leader reconnect`
 
 启动理由：G0 已证明 UI detach/re-attach，但 Leader 自身被杀死后，新 Leader 不会
 自动继承只存在内存中的 AgentMesh360 准入。上游 Bridge 能重连和回放 ACP
@@ -1340,3 +1342,63 @@ Probe、不迁移 `GROK_HOME`、不实现跨版本数据格式迁移。
 验收条件：Leader 被终止后，Bridge 使用上游有界重连；桌面只用安全存储中的 Refresh
 Token 获取新 Access Token；新 Host 重新执行订阅硬门禁；失败保持 `unavailable`，
 不得沿用旧准入；真实故障测试不遗留进程或临时数据。
+
+已经实现：
+
+- ACP Client 识别上游 `x.ai/leader_reconnected`，只发出无 Session ID 的内部
+  `reconnected` 生命周期事件；
+- Identity Controller 监听生命周期事件，等待正在进行的身份操作结束，并把同一恢复
+  窗口内的重复通知合并成一次 `revalidate('host_reconnected')`；
+- 恢复不缓存旧 Access Token：重新读取安全存储中的 Refresh Token，向 Core 轮换新
+  Token，校验 Core bootstrap，再 bootstrap 替代 Host 并刷新 Agent 列表；
+- Core 刷新或 Host bootstrap 失败时清除公开 Agent 工作区并进入 `unavailable`，
+  不让新 Leader 沿用旧准入；
+- shutdown 会先移除重连监听并等待正在进行的恢复，再 detach Bridge，避免退出过程
+  另起恢复；
+- 真实生命周期测试现在包含 Leader `SIGKILL`：上游 Bridge 重连到新 PID，真实
+  Identity Controller 完成第二次 Token 刷新和 Core/Host 双重验证，Job Agent Main
+  Session 保持不变。
+
+验证证据：
+
+- `npm run check` 通过；
+- 完整桌面测试（带真实 Host）：36 项通过、0 跳过；
+- 单元测试证明三次重连通知只产生一次额外 refresh/bootstrap，并证明 Core 刷新失败
+  后旧 Agent 状态和旧 Access Token 都不出现在公开状态；
+- 真实故障注入验证 detach/re-attach、Leader PID 替换、产品准入恢复与固定 Session；
+- `git diff --check` 通过；
+- 真实测试仍使用临时 HOME/Grok Home/AgentMesh Home 与 localhost Core，清理路径
+  覆盖“尚未读到 PID 就失败”和 TERM 超时后的 KILL 兜底。
+
+G1 计划复盘：
+
+- 没有把 Access Token 存入磁盘或 Host Registry，仍由 Electron 主进程短期持有；
+- 没有因为上游进程恢复成功就默认放行产品 Agent，新 Leader 必须重新通过 Core 和
+  Host 双重订阅验证；
+- 没有建立第二套进程重启器，进程重建仍由 Grok Leader 完成，产品层只恢复身份；
+- 没有提前注册登录项。系统登录启动涉及后台窗口、用户选择、退出语义与安全存储
+  可用性，必须作为独立 G2 模块实现和验收。
+
+### 循环 21：独立后台 Host G2——系统登录启动与隐藏后台主进程
+
+状态：已规划，下一开发切片
+
+启动理由：G0/G1 已覆盖 UI detach 和前台主进程存活时的 Leader 崩溃，但机器重启后
+没有进程读取 Electron `safeStorage` 中的 Refresh Token，也就不能安全恢复订阅准入和
+产品 Agent pin。不能只把 Host 二进制塞进登录项，因为 Rust Host 无权直接读取当前
+Electron 身份存储。
+
+本轮目标：
+
+1. 定义显式的后台启动参数，系统登录启动时不创建可见 BrowserWindow；
+2. 由轻量 Electron 主进程恢复 Refresh Token、执行 Core/Host bootstrap、维持周期
+   订阅重验，并让 Renderer 保持未创建；
+3. 用户正常打开应用时，单实例事件在同一主进程创建并聚焦窗口；
+4. 建立可注入、默认不修改系统设置的 Login Item 控制器与单测，再决定首次启用时机；
+5. 明确退出 UI、停用开机启动、退出账号、更新与卸载的不同语义。
+
+本轮非目标：不把 Refresh Token 复制给 Rust Host、不创建第二份常驻 Harness、不实现
+菜单栏产品、不改 Provider Vault、不在测试中修改真实 macOS Login Items。
+
+验收条件：后台启动无可见窗口和 Renderer；订阅无效时不恢复 Agent；第二实例可打开
+窗口；所有系统设置调用都可注入并在单测中零副作用；文档明确用户如何停用后台启动。

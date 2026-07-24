@@ -112,9 +112,11 @@ Leader、Registry 与固定 Main Session 继续存在；重新打开客户端后
 `LeaderReady`、版本门槛和有界重连直接复用上游机制，不另建平行 Supervisor 协议。
 
 当前仍没有注册系统登录项，也尚未完成 Electron 不运行时的产品级崩溃重启、受控
-shutdown、系统休眠/唤醒与版本替换故障注入。Grok Session Store 根目录也暂未切换，
-避免未迁移就让现有对话不可见。因此 G0 可以描述为“UI 退出后 Host 持续、UI 可重连”，
-还不能描述为“系统重启后已经自动恢复并长期在线”。
+shutdown、系统休眠/唤醒与版本替换故障注入。G1 已在 Bridge 仍运行时完成真实 Leader
+`SIGKILL`、替代进程重建、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main
+Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目录也暂未切换，
+避免未迁移就让现有对话不可见。因此当前可以描述为“UI 退出后 Host 持续、UI 可重连，
+前台主进程可恢复崩溃的 Leader”，还不能描述为“系统重启后已经自动恢复并长期在线”。
 
 ## 上游同步规则
 

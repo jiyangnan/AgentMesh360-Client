@@ -17,6 +17,8 @@
 - 通过真实 ACP 进程列出、激活 Job Agent、Lecturecast Agent 与 Deploy Agent；
 - 默认通过 AgentMesh360 专属 socket 连接持久 Grok Leader；退出桌面 UI 只断开
   ACP Bridge，后台 Host 与固定 Main Session 继续存在，重新打开后采用同一 Leader；
+- Leader 崩溃后复用上游有界重连；桌面身份控制器收到重连事件后从安全存储刷新身份，
+  重新校验 Core 与替代 Host，不沿用旧 Access Token；
 - 退出登录时删除本机 Refresh Token，并立即撤销 Host 的产品 Agent 准入状态。
 - Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
   API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
@@ -110,5 +112,5 @@ npm run build:mac
 ```
 
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
-系统登录自启动、Electron 不运行时的崩溃恢复与受控 Host shutdown 仍属于 G1，
+系统登录自启动、Electron 不运行时的崩溃恢复与受控 Host shutdown 仍属于 G2，
 不能仅凭 G0 宣称已经完成系统重启后的长期在线。
