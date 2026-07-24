@@ -28,9 +28,9 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2 与 E3a 已完成；Renderer 管理桥复用 Host ACP | 保持 Host 单一权威，完成 E3b 显式 Probe 交互 |
-| Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者与 subagent 均保证实际 endpoint、credential、model 与 Turn Route 一致 | 保持真实链路回归，进入设置与 Probe 产品化 |
-| Provider UI | E1 安全桥与 E2 Provider 设置页已完成，可管理 Profile 与 global/agent Assignment | E3b：接入分级 Probe、付费确认与非秘密历史 |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；Renderer 管理桥复用 Host ACP | 切片 F0：Gemini 官方 OpenAI 兼容契约 Spike |
+| Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
+| Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
 | 动态 Agent Package | 仍是目标架构，三个内置 Agent 是契约脚手架 | Provider M1 主线稳定后推进 Package Registry |
 
 ## 开发循环记录
@@ -1095,7 +1095,7 @@ E2 计划复盘：
 
 ### 循环 17：Provider 切片 E3——显式分级 Probe
 
-状态：E3a Host 合同已完成，E3b 桌面交互开发中
+状态：已完成
 
 本轮目标：
 
@@ -1152,3 +1152,62 @@ E3a 计划复盘：
 - Catalog 没有足够证据时选择可审计的“不支持”，没有为了表面成功增加私有 Provider
   特判或隐式 fallback；
 - 下一切片 E3b 只接公开 Probe 契约、用户确认和结果显示，不在前端复制鉴权或采样逻辑。
+
+#### E3b 桌面显式 Probe 检查点
+
+本地提交：`d7daae6 feat: add explicit provider probe controls`
+
+已经实现：
+
+- Desktop Host Client、主进程 IPC 与 preload 窄桥接通 Probe run/list；Provider
+  Controller 在 `ready` 状态下才允许调用，并再次校验 Profile、Model、level 与
+  `confirmPaidInference`；
+- Provider snapshot 加入最多 100 条 Host 非秘密 Probe 记录，沿用递归秘密字段剥离与
+  跨账户/blocked 时 Renderer snapshot 清理；
+- 每个 Profile 可选择已启用模型，并显式触发“本地检查”“元数据”“真实响应”；
+- “真实响应”按钮标记“可能计费”并在 Renderer 二次确认；用户取消时不调用 IPC，
+  Host 仍保留第二道确认闸门；
+- 最新结果独立显示“本地配置有效”“元数据检查不支持”“模型已真实响应”或失败，
+  同时明确“零网络”或“已向 Provider 发出请求”，不把格式有效伪装成模型可用；
+- Probe 完成后不自动切换 Assignment 或 Session Binding，保存 Profile 仍不自动联网。
+
+验证证据：
+
+- 完整 AgentMesh360 Rust 回归：67 项通过；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings` 通过；
+- 桌面单元/契约测试：26 项通过，1 项可选真实 Host 测试按原配置跳过；
+- Electron 交互 smoke 通过：取消付费确认零 IPC、本地检查参数、确认后最小推理参数、
+  Key 清空和 DOM 无秘密；
+- 1180×760 Retina 设置页首屏、底部与原常驻 Agent 首页截图已人工检查：Probe
+  控件/结果无横向溢出，付费和网络语义可见，旧首页无回归；
+- `npm run check`、Rustfmt 与 `git diff --check` 通过。
+
+E3 完成复盘：
+
+- E3 满足原验收条件，并且没有加入自动周期检查、后台付费 Probe、fallback、Session
+  自动迁移或 Usage 汇总；
+- 网络权限、Vault lease、超时、采样与审计仍全部属于 Host；Renderer 只负责显式意图
+  与展示，没有复制 Provider client；
+- 现有通过证据仍是本机协议级 mock，不等于 OpenAI、xAI、Anthropic 或 Gemini
+  外部账号已完成付费 E2E；正式 Provider 预设继续以独立契约证据为准。
+
+### 循环 18：Provider 切片 F0——Gemini 官方 OpenAI 兼容契约 Spike
+
+状态：已规划，下一开发切片
+
+本轮目标：
+
+1. 以 Google 官方文档为准，固化 OpenAI 兼容端点、认证、模型与已知兼容边界；
+2. 建立可复用的 Provider 兼容契约套件，覆盖 Streaming、Tool Call、Reasoning、
+   Structured Output 与 thinking 状态，而不是只检查 `/models`；
+3. 增加显式 opt-in 的真实 Gemini 契约入口，缺少用户提供的 Gemini Key 时明确跳过，
+   不读取现有 Provider Vault 或其他环境秘密；
+4. 只有真实兼容契约通过后才把 Gemini 加入内置官方预设；未通过期间用户仍可通过
+   Compatible Profile 自行配置；
+5. 单独记录哪些需求必须使用 Gemini Native / Interactions，不能把兼容端点能力外推。
+
+验收条件：文档与测试不含 Key；默认测试零外部费用；真实测试必须显式环境开关、逐项
+报告能力和安全脱敏；任何未验证能力保持 `unknown`；失败不修改 Catalog 或现有 Profile。
+
+本轮非目标：不实现 Gemini Native / Interactions、Google Search/Files/Live、Vertex
+ADC、远端 Catalog、自动 fallback，也不在没有真实契约证据时发布 Gemini 官方预设。

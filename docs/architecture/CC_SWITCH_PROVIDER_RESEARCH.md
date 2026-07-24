@@ -1,6 +1,6 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1/E1/E2 已实现，切片 E3 已规划
+状态：调研完成，切片 A/B/C/D0/D1/E1/E2/E3 已实现，切片 F0 已启动
 
 调研日期：2026-07-22
 
@@ -16,7 +16,8 @@
 切片 A 已接受的实现决策见
 [`ADR_PROVIDER_CONTROL_PLANE_VAULT.md`](ADR_PROVIDER_CONTROL_PLANE_VAULT.md)。
 
-实现进度（2026-07-23）：切片 A/B/C/D0 已经落地，包括共享 `state.db v5`、账户隔离的
+实现进度（2026-07-24）：切片 A/B/C/D0 已经落地，当前共享状态库已演进到
+`state.db v6`，包括账户隔离的
 Provider Profile Store、macOS Host Keychain Vault、声明式内置 Catalog、Capability、
 Model Policy、三层 Model Assignment、非秘密 RouteCompiler，以及对应 ACP/桌面 Host
 Client 方法；产品 Agent/Main Session/Workspace 已按账户隔离，不可变 Session Binding、
@@ -45,8 +46,9 @@ Turn Route。离线 `trace_classify` CLI 经来源审计确认不属于产品 Se
 至此收口。E1 已把 Host Provider 管理 ACP 通过订阅门禁、输入校验和输出递归脱敏的
 窄桥暴露给 Renderer，秘密只允许 create/replace 一次性写入。E2 已实现 Profile、
 Catalog 与 global/agent role Assignment 的最小设置页，并固定保存零网络、Key 提交后
-清空和跨账户 snapshot 清理。当前进入 E3 显式分级 Probe；外部真实付费 Provider E2E
-仍是目标能力。
+清空和跨账户 snapshot 清理。E3 已加入 Host-owned 三档显式 Probe、付费二次确认与
+非秘密历史；当前进入 F0 Gemini 官方 OpenAI 兼容契约 Spike，外部真实付费 Provider
+E2E 仍是目标能力。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -943,7 +945,7 @@ Provider 验证 actor/HTTP/Header/审计组合，但没有调用外部 Provider�
 
 ### 切片 E：最小 Provider UI 与分级 Probe
 
-状态：**E1 安全管理桥（`f9a96a1`）与 E2 设置页（`e42a06e`）已实现，E3 Probe 待实现**
+状态：**已实现：E1 `f9a96a1`、E2 `e42a06e`、E3a `b8f7ad0`、E3b `d7daae6`**
 
 - 选择预设或自定义协议；
 - 填写 Key、Base URL 和模型；
@@ -960,7 +962,10 @@ Assignment；主进程在 `ready` 订阅状态下才允许调用，对输入做�
 并在所有输出上移除 credential、Authorization、Token、Header 与 Credential Ref。
 Electron 不缓存秘密，也没有第二份 Provider 数据库。E2 已实现可见设置页、Profile
 管理、global/agent role Assignment 和 Key 提交后清空；保存动作仍不会自动发网络请求。
-E3 再实现用户主动触发、明确区分零网络/元数据/可能计费推理的 Probe 契约。
+E3 已实现用户主动触发、明确区分零网络/元数据/可能计费推理的 Probe 契约。当前内置
+Catalog 没有声明可安全调用的非计费元数据端点，因此 metadata 明确返回
+`unsupported` 而不联网；最小推理只有在 Renderer 与 Host 双重确认后才通过短时 Vault
+lease 复用既有 Grok Sampling，且不改变 Session Binding、Turn Route 或会话历史。
 
 ### 切片 F：Gemini 兼容 Spike 与预设扩展
 
