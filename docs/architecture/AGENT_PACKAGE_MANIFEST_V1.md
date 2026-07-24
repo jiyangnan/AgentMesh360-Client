@@ -213,3 +213,38 @@ H2 负责“动态分发与双投影”：
 H2 完成前，远端 Package 不会被下载、解包或执行；H1 安装服务也不会暴露给客户端
 界面。运行时已经能消费通过复验的本地 Active，但生产 Trust Store 与安装入口仍为空，
 所以当前三个内置 Package 继续是唯一生产可用目录。
+
+## 10. H2b0 Publisher Trust Bundle v1（已通过交叉测试）
+
+H2b0 把 Package 的发布密钥从单个硬编码列表升级为两级信任链：
+
+```text
+客户端内置、经审计的 Ed25519 Root Key
+  -> 验证 Publisher Trust Bundle
+  -> 只装载当前有效的 active Publisher Key
+  -> 验证 H1 的 Package Signature Envelope
+  -> 验证 Artifact 与包内文件清单
+```
+
+Trust Bundle 是最多 64 KiB 的严格 JSON：
+
+| 字段 | 约束 |
+| --- | --- |
+| `schemaVersion` | 当前只接受 `1` |
+| `sequence` | 正整数，不能低于调用方提供的 `minimumSequence` |
+| `rootKeyId` | 必须命中客户端内置 root |
+| `generatedAt` / `expiresAt` | RFC3339；显式可信时间必须位于半开区间内 |
+| `keys` | 最多 64 项，按 `keyId` 严格递增 |
+| `signature` | root 对确定性 v1 文本载荷的 Ed25519 strict signature |
+
+每个 Publisher key 记录包含 `keyId`、`publisher`、固定 `ed25519` algorithm、
+canonical Base64 公钥、`active/retired/revoked` 状态和 key 自身有效期。仅当前有效的
+active key 会进入 `TrustedPublisherStore`；重叠 active key 支持轮换，retired/revoked
+不能验证新的安装。签名载荷有固定 domain separator，key 列表逐行编码，不依赖 JSON
+对象顺序。
+
+H2b0 已完成自主测试和两轮本机 Kimi 交叉测试，但只交付验证与审计契约。生产
+`TrustedRootStore` 和嵌入 Bundle 仍为空；
+`minimumSequence` 尚未持久化，远端可信时间、Registry Snapshot、缓存、防回滚状态、
+下载和安装入口都属于 H2b1 以后。因此当前外部 Package 仍全部拒绝，不能把本节解读为
+生产密钥已经上线。

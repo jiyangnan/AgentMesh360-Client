@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1 与 H2a2 已完成自主测试和两轮 Kimi 交叉测试：可信安装/回滚、启动复验、共享 Catalog 快照、显式 refresh、只读脱敏状态；生产入口仍关闭 | H2b：生产信任根、远端 Registry 与权限确认 |
+| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0 已通过自主测试和 Kimi 交叉测试；生产 root/bundle 仍为空 | H2b1：远端 Registry 快照、可信 server time 与持久防回滚缓存 |
 
 ## 开发循环记录
 
@@ -1805,7 +1805,7 @@ H2a2 自主验证：
 - Kimi 第二轮唯一 low 是把上述固定失败文案和 `status-inventory` 降级补入本文档，
   本条已经关闭；H2a2 正式完成。
 
-H2b 预备方向（须等 H2a2 Kimi 闭环后再启动）：
+H2b 预备方向：
 
 1. 定义生产 Publisher Trust Store 的密钥注入、轮换、吊销和审计流程，不把测试 key
    或私钥带入客户端；
@@ -1813,3 +1813,85 @@ H2b 预备方向（须等 H2a2 Kimi 闭环后再启动）：
    确认、安装、refresh 各自保持独立失败边界；
 3. 设计用户可理解的权限增量确认与只读状态 UI，mutation 仍由 Host 窄接口控制；
 4. 保持同一 Manifest 同时投影持久客户端 Agent 与外部宿主 Agent Skill Adapter。
+
+### 循环 25：动态 Agent Package H2b0——Publisher Trust Bundle
+
+状态：实现、自主测试与两轮本机 Kimi 交叉测试已完成；生产信任根和安装入口保持关闭
+
+启动理由：H1 的 Artifact 签名已经能绑定 publisher、Package 身份、版本和 digest，
+但正式 Trust Store 仍是空集合。若直接把一个发布公钥硬编码进去，就没有可审计的轮换、
+吊销、有效期和防回滚机制；若让服务器直接下发任意公钥，则 TLS/服务端本身会变成
+可静默改写 Package 的唯一信任根。H2b0 先建立“客户端内置不可变 root → root 签名
+Publisher Trust Bundle → Publisher key 验证 Package”的两级信任链。
+
+本切片目标：
+
+1. 定义严格 JSON Publisher Trust Bundle v1，包含 schema、单调 sequence、rootKeyId、
+   bundle 有效期、按 keyId 唯一排序的 Publisher keys 和 root signature；
+2. Publisher key 支持 `active`、`retired`、`revoked`，允许两个 active key 重叠完成
+   无停机轮换；只有当前有效的 active key 进入 Artifact Trust Store；
+3. root 和 Publisher signature 均使用 Ed25519 strict verification；公钥与签名要求
+   canonical Base64，Publisher 公钥还必须能解析成有效 Ed25519 verifying key；
+4. API 接收 `minimumSequence` 和显式可信时间，拒绝旧 sequence、未来/过期 bundle、
+   过期 active key、未知 root、篡改、乱序/重复 key 与未知字段；
+5. 保留 `trustSequence/rootKeyId/activeKeyCount` 审计投影，不记录私钥；
+6. 正式 root 与 bundle 继续为空，绝不把测试 key 伪装为生产 key。
+
+本切片非目标：不访问网络、不缓存远端 Registry、不持久化最高 sequence、不依赖本机
+时间作为未来远端信任时间、不下载 Artifact、不开放权限/安装/回滚/refresh mutation
+ACP、不启用任何真实 Publisher key。
+
+计划复核：
+
+- root 只能随经审计客户端版本进入，不允许远端 Registry 自己引入新 root；
+- Publisher key 可通过 root-signed bundle 动态轮换和吊销；`retired/revoked` 一律不能
+  验证新的安装，已安装内容继续依赖 H1 的文件清单锚点恢复；
+- bundle 先做 Schema、边界、时间、排序和 key 解析，再做 root strict signature；
+- 签名载荷使用固定 domain separator 和逐行字段，不依赖 JSON 对象顺序；
+- `minimumSequence` 当前是验证 API 参数；H2b1 必须把最高接受 sequence 持久化后，
+  才能宣称远端更新具备跨重启防回滚。
+
+H2b0 已经实现：
+
+- 新增 `package_trust.rs`，把 H1 原有 Publisher key/store 从 Artifact 模块分离，
+  Artifact 验签逻辑继续只消费 `TrustedPublisherStore`，没有第二套验签器；
+- Bundle 最大 64 KiB、最多 64 个 Publisher key，严格拒绝未知字段；keyId、publisher
+  采用 128 字节 ASCII 安全标识限制；
+- Bundle 与每个 key 都有 RFC3339 时间窗，active key 必须在显式 `now` 时刻有效；
+- key 记录必须按 keyId 严格递增，既阻止重复，也让签名 payload 唯一；algorithm 目前
+  只接受 `ed25519`；
+- Trust Store 只载入 active key，支持双 key 重叠；retired/revoked key 被保留在签名
+  Bundle 语义中但不进入可验证集合；
+- 正式 `TrustedRootStore::embedded()` 与
+  `EMBEDDED_PUBLISHER_TRUST_BUNDLE` 仍为空，Artifact 外部安装继续失败关闭。
+
+H2b0 自主验证：
+
+- 新增 3 项测试，覆盖双 active 轮换、retired/revoked 排除、审计投影、Bundle 篡改、
+  未知 root、过期、sequence 回滚、乱序 key、非法 Ed25519 公钥，以及生产 root/store
+  仍为空；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：100 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过；
+- 本机 Kimi 第一轮独立执行完整测试，得到 98 项通过、2 项失败，阻止 H2b0 关闭：
+  Bundle 正向夹具把任意 32 字节直接当成压缩 Edwards 公钥，严格公钥解析后无法通过；
+- 已把夹具改为从确定性 `SigningKey` 派生真实 verifying key。随后自主复测又发现原负例
+  `[0xff; 32]` 在当前库中可解析，已替换为经实际解析验证无法解压的 `[2; 32]`，没有
+  为迁就测试削弱生产校验；
+- 修复后自主重跑完整 100 项测试与全部静态检查均通过；等待 Kimi 第二轮独立复测，
+  H2b0 在其明确 PASS 前不关闭；
+- 本机 Kimi 第二轮重新读取全部代码和三份中文文档，独立实跑完整 100 项测试、
+  Clippy、Rustfmt 与 `git diff --check`，全部通过；确认正向 Bundle 与 tamper 路径已抵达
+  预期验证阶段，Blocker/High/Medium/Low 均为零并明确给出 PASS，H2b0 正式关闭。
+
+H2b0 代码提交：`92d67cf`（`feat: verify publisher trust bundles`）。
+
+H2b1 下一切片：
+
+1. 定义 root-signed 远端 Registry Snapshot，将 packageId/agentId/version、Artifact
+   URL、Envelope URL/digest 和 Publisher Trust Bundle sequence 绑定到同一 revision；
+2. 使用 Core bootstrap 的可信 server time 验证有效期，不把可任意修改的本机时钟作为
+   唯一可信时间；
+3. 在本地持久化已接受的 trust/registry 最高 sequence、原始签名文档和校验状态，
+   实现跨重启防回滚与过期失败关闭；
+4. 只提供订阅门禁后的只读远端可用更新状态；仍不开放下载或安装 mutation。
