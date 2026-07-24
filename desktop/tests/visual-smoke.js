@@ -1,15 +1,24 @@
 'use strict';
 
+const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain } = require('electron');
 
 const phase = process.env.AGENTMESH360_VISUAL_STATE || 'signed_out';
 const output = process.env.AGENTMESH360_SCREENSHOT || path.join('/tmp', `agentmesh360-${phase}.png`);
+const backgroundWrites = [];
+let backgroundEnabled = true;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => fixtureState(phase));
   ipcMain.handle('provider:get-snapshot', () => providerFixture());
+  ipcMain.handle('runtime:get-background-snapshot', () => backgroundFixture());
+  ipcMain.handle('runtime:set-background-startup', (_event, enabled) => {
+    backgroundWrites.push(enabled);
+    backgroundEnabled = enabled;
+    return backgroundFixture();
+  });
   for (const channel of [
     'identity:login',
     'identity:logout',
@@ -48,14 +57,24 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript("document.querySelector('.workspace-main').scrollTo(0, document.querySelector('.workspace-main').scrollHeight)");
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
+  } else if (phase === 'background') {
+    await window.webContents.executeJavaScript("document.getElementById('nav-client').click()");
+    await new Promise((resolve) => setTimeout(resolve, 180));
   }
   const image = await window.webContents.capturePage();
   fs.writeFileSync(output, image.toPNG());
+  if (phase === 'background') {
+    await window.webContents.executeJavaScript("document.getElementById('toggle-background-startup').click()");
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.deepEqual(backgroundWrites, [false]);
+    const body = await window.webContents.executeJavaScript('document.body.innerText');
+    assert.equal(body.includes('未开启'), true);
+  }
   await app.quit();
 }).catch(() => app.exit(1));
 
 function fixtureState(selected) {
-  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom') {
+  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'background') {
     return {
       phase: 'ready',
       account: { id: 7, email: 'ferdinand@example.com', displayName: 'Ferdinand' },
@@ -80,6 +99,25 @@ function fixtureState(selected) {
     };
   }
   return { phase: 'signed_out' };
+}
+
+function backgroundFixture() {
+  return {
+    host: {
+      mode: 'persistent_leader',
+      ownership: 'grok_leader',
+      transport: 'leader_stdio_bridge',
+      bridgeState: 'connected',
+      socketName: 'host.sock',
+    },
+    loginItem: {
+      supported: true,
+      openAtLogin: backgroundEnabled,
+      wasOpenedAtLogin: false,
+      status: backgroundEnabled ? 'enabled' : 'not-registered',
+      reason: null,
+    },
+  };
 }
 
 function providerFixture() {

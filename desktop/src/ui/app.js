@@ -13,6 +13,13 @@ let providerUi = {
   busy: false,
   editingProfileId: null,
 };
+let backgroundUi = {
+  phase: 'idle',
+  snapshot: null,
+  error: null,
+  message: null,
+  busy: false,
+};
 
 bridge.onState(render);
 bridge.getState().then(render).catch(() => render({
@@ -34,11 +41,20 @@ function render(state) {
       busy: false,
       editingProfileId: null,
     };
+    backgroundUi = {
+      phase: 'idle',
+      snapshot: null,
+      error: null,
+      message: null,
+      busy: false,
+    };
   } else if (['signed_out', 'blocked', 'unavailable'].includes(currentState.phase)) {
     readyAccountId = null;
     workspaceView = 'agents';
     providerUi.snapshot = null;
     providerUi.phase = 'idle';
+    backgroundUi.snapshot = null;
+    backgroundUi.phase = 'idle';
   }
   switch (currentState.phase) {
     case 'signed_out':
@@ -166,6 +182,7 @@ function renderReady(state) {
         <button class="nav-item ${workspaceView === 'agents' ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>常驻 Agent</button>
         <button class="nav-item" type="button" disabled><i class="nav-dot"></i>会话 <span class="muted">后续</span></button>
         <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>Provider 设置</button>
+        <button class="nav-item ${workspaceView === 'client' ? 'active' : ''}" id="nav-client" type="button"><i class="nav-dot"></i>客户端设置</button>
         <div class="sidebar-spacer"></div>
         <div class="sidebar-account">
           <div class="avatar">${escapeHtml(initials(account))}</div>
@@ -173,7 +190,7 @@ function renderReady(state) {
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
-      <main class="workspace-main">${workspaceView === 'providers' ? providerSettingsView(state) : agentWorkspaceView(state)}</main>
+      <main class="workspace-main">${workspaceView === 'providers' ? providerSettingsView(state) : workspaceView === 'client' ? backgroundSettingsView() : agentWorkspaceView(state)}</main>
     </section>`;
   document.getElementById('logout').addEventListener('click', () => bridge.logout());
   document.getElementById('nav-agents').addEventListener('click', () => {
@@ -185,12 +202,135 @@ function renderReady(state) {
     renderReady(currentState);
     if (providerUi.phase === 'idle') refreshProviderSnapshot();
   });
+  document.getElementById('nav-client').addEventListener('click', () => {
+    workspaceView = 'client';
+    renderReady(currentState);
+    if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
+  });
   if (workspaceView === 'providers') {
     wireProviderSettings();
+  } else if (workspaceView === 'client') {
+    wireBackgroundSettings();
   }
   for (const button of document.querySelectorAll('[data-agent-id]')) {
     button.addEventListener('click', () => bridge.activateAgent(button.dataset.agentId));
   }
+}
+
+function backgroundSettingsView() {
+  const snapshot = backgroundUi.snapshot;
+  const host = snapshot?.host || {};
+  const loginItem = snapshot?.loginItem || {};
+  const enabled = loginItem.openAtLogin === true;
+  const approvalRequired = loginItem.status === 'requires-approval';
+  const loginTitle = approvalRequired
+    ? '等待系统批准'
+    : enabled
+      ? '已开启'
+      : '未开启';
+  return `
+    <header class="workspace-header background-header">
+      <div>
+        <p class="eyebrow">Persistent Runtime</p>
+        <h1>让 Agent 在窗口之外继续工作。</h1>
+        <p>客户端窗口只是入口。共享 Grok Leader 持有固定 Main Session；系统登录启动负责在重启后重新验证订阅并恢复 Agent。</p>
+      </div>
+      <div class="route-health"><i></i><span>Runtime mode</span><strong>${escapeHtml(host.mode || '检测中')}</strong></div>
+    </header>
+    ${backgroundUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(backgroundUi.message)}</div>` : ''}
+    ${backgroundUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(backgroundUi.error)}</div>` : ''}
+    ${backgroundUi.phase === 'loading' ? providerLoadingView() : ''}
+    ${backgroundUi.phase === 'ready' ? `
+      <div class="background-grid">
+        <section class="control-panel runtime-panel">
+          <div class="panel-kicker"><span>01</span><div><strong>后台 Host</strong><small>Grok Leader ownership</small></div></div>
+          <div class="runtime-fact"><span>运行方式</span><strong>${escapeHtml(host.mode === 'persistent_leader' ? '独立 Leader' : '嵌入诊断模式')}</strong></div>
+          <div class="runtime-fact"><span>当前连接</span><strong>${escapeHtml(host.bridgeState === 'connected' ? '桌面已连接' : '桌面已断开')}</strong></div>
+          <div class="runtime-fact"><span>通信边界</span><strong>${escapeHtml(host.socketName || '无独立 socket')}</strong></div>
+          <p>关闭窗口或退出 UI 只会断开 Bridge，不会删除 Agent、Main Session 或本地工作进度。</p>
+        </section>
+        <section class="control-panel runtime-panel login-runtime-panel">
+          <div class="panel-kicker"><span>02</span><div><strong>系统登录启动</strong><small>Restore after device restart</small></div></div>
+          <div class="login-runtime-state ${enabled ? 'enabled' : ''}">
+            <i></i>
+            <div><span>当前状态</span><strong>${escapeHtml(loginTitle)}</strong></div>
+          </div>
+          <p>${escapeHtml(backgroundStatusCopy(loginItem))}</p>
+          <button class="secondary" id="toggle-background-startup" type="button" ${backgroundUi.busy || !loginItem.supported ? 'disabled' : ''}>${enabled ? '关闭系统登录启动' : '开启系统登录启动'}</button>
+          ${approvalRequired ? '<small class="approval-note">请前往“系统设置 → 通用 → 登录项”，允许 AgentMesh360 在后台运行。</small>' : ''}
+        </section>
+      </div>
+      <div class="background-policy">
+        <strong>关闭这项设置会发生什么？</strong>
+        <p>只影响下次登录系统后的自动恢复。当前 Host 不会被强制终止，历史会话不会删除，订阅与 BYOK 配置也不会改变。</p>
+      </div>
+    ` : ''}
+    ${backgroundUi.phase === 'error' ? '<button class="secondary retry-background" type="button">重新读取运行状态</button>' : ''}
+    <div class="security-row">后台恢复仍需 Core 与 Host 双重订阅校验 · 不向 Rust Host 复制 Refresh Token</div>`;
+}
+
+function wireBackgroundSettings() {
+  document.querySelector('.retry-background')?.addEventListener('click', () => refreshBackgroundSnapshot());
+  document.getElementById('toggle-background-startup')?.addEventListener('click', async () => {
+    const enabled = backgroundUi.snapshot?.loginItem?.openAtLogin === true;
+    backgroundUi = { ...backgroundUi, busy: true, error: null, message: null };
+    renderReady(currentState);
+    try {
+      const snapshot = await bridge.setBackgroundStartup(!enabled);
+      backgroundUi = {
+        phase: 'ready',
+        snapshot,
+        busy: false,
+        error: null,
+        message: !enabled ? '系统登录启动已请求开启。' : '系统登录启动已关闭。',
+      };
+    } catch (error) {
+      backgroundUi = {
+        ...backgroundUi,
+        phase: 'ready',
+        busy: false,
+        error: publicError(error, '无法修改系统登录启动'),
+      };
+    }
+    if (workspaceView === 'client' && currentState.phase === 'ready') renderReady(currentState);
+  });
+}
+
+async function refreshBackgroundSnapshot() {
+  backgroundUi = { ...backgroundUi, phase: 'loading', error: null, message: null };
+  if (workspaceView === 'client') renderReady(currentState);
+  try {
+    backgroundUi = {
+      phase: 'ready',
+      snapshot: await bridge.getBackgroundSnapshot(),
+      error: null,
+      message: null,
+      busy: false,
+    };
+  } catch (error) {
+    backgroundUi = {
+      phase: 'error',
+      snapshot: null,
+      error: publicError(error, '无法读取后台运行状态'),
+      message: null,
+      busy: false,
+    };
+  }
+  if (workspaceView === 'client' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+function backgroundStatusCopy(loginItem) {
+  if (!loginItem.supported && loginItem.reason === 'packaged_app_required') {
+    return '开发运行不会修改系统登录项；打包后的正式客户端才会开放这项设置。';
+  }
+  if (!loginItem.supported) return '当前系统不支持由客户端管理登录启动。';
+  if (loginItem.status === 'requires-approval') {
+    return 'AgentMesh360 已提交登录项，但 macOS 仍要求用户在系统设置中批准。';
+  }
+  if (loginItem.openAtLogin) {
+    return '登录系统后，客户端会在无窗口模式恢复身份、验证订阅并连接同一个后台 Host。';
+  }
+  return '设备重启后不会自动恢复 Agent；你仍可手动打开客户端继续原有会话。';
 }
 
 function agentWorkspaceView(state) {

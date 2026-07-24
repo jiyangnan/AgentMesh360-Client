@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     level: String(level || '').slice(0, 40),
     confirmPaidInference: confirmPaidInference === true,
   }),
+  getBackgroundSnapshot: () => ipcRenderer.invoke('runtime:get-background-snapshot'),
+  setBackgroundStartup: (enabled) => ipcRenderer.invoke(
+    'runtime:set-background-startup',
+    enabled === true,
+  ),
   openSubscription: () => ipcRenderer.invoke('external:open-subscription'),
   openRegistration: () => ipcRenderer.invoke('external:open-registration'),
   onState: (listener) => {

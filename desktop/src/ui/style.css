@@ -515,6 +515,29 @@ button { -webkit-app-region: no-drag; }
 .provider-header h1 { max-width: 650px; font-size: 34px; }
 .provider-header p { max-width: 680px; line-height: 1.65; }
 
+.background-header { align-items: center; }
+.background-header h1 { max-width: 710px; font-size: 34px; }
+.background-header p { max-width: 720px; line-height: 1.65; }
+.background-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 22px; }
+.runtime-panel { min-height: 310px; }
+.runtime-panel > p { margin: 20px 0 0; color: #7c889a; font-size: 11px; line-height: 1.75; }
+.runtime-fact { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 0; border-bottom: 1px solid var(--line); }
+.runtime-fact span { color: var(--muted); font-size: 11px; }
+.runtime-fact strong { color: #ddd8ed; font-family: "SFMono-Regular", Menlo, monospace; font-size: 11px; font-weight: 500; }
+.login-runtime-panel { display: flex; flex-direction: column; }
+.login-runtime-state { display: flex; align-items: center; gap: 12px; margin-top: 6px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.02); }
+.login-runtime-state > i { width: 9px; height: 9px; border-radius: 50%; background: #677285; box-shadow: 0 0 0 5px rgba(103,114,133,.08); }
+.login-runtime-state.enabled > i { background: var(--mint); box-shadow: 0 0 0 5px rgba(103,221,176,.08), 0 0 11px rgba(103,221,176,.45); }
+.login-runtime-state span,
+.login-runtime-state strong { display: block; }
+.login-runtime-state span { color: var(--muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.login-runtime-state strong { margin-top: 3px; color: #eeeafd; font-size: 17px; }
+.login-runtime-panel .secondary { width: 100%; margin-top: auto; }
+.approval-note { display: block; margin-top: 12px; color: var(--warning); font-size: 10px; line-height: 1.6; }
+.background-policy { margin-top: 18px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.018); }
+.background-policy strong { color: #d8d3e8; font-size: 12px; }
+.background-policy p { margin: 6px 0 0; color: #788598; font-size: 11px; line-height: 1.7; }
+
 .route-health {
   display: grid;
   grid-template-columns: 8px 1fr;

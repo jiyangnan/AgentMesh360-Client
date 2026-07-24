@@ -15,6 +15,13 @@ const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
 const { IdentityController } = require('./identity-controller');
 const { ProviderController } = require('./provider-controller');
+const {
+  LoginItemController,
+  WindowLifecycle,
+  activateAgentAndEnableBackground,
+  publicBackgroundSnapshot,
+  resolveStartupIntent,
+} = require('./background-startup');
 
 const SUBSCRIPTION_URL = 'https://agentmesh360.com/app/#pricing';
 const REGISTRATION_URL = 'https://agentmesh360.com/app/#register';
@@ -22,15 +29,25 @@ const REGISTRATION_URL = 'https://agentmesh360.com/app/#register';
 let window = null;
 let controller = null;
 let lastFocusCheck = 0;
+const loginItems = new LoginItemController({ app });
+const startupIntent = resolveStartupIntent({
+  argv: process.argv,
+  loginItemSnapshot: loginItems.getSnapshot(),
+});
+const windows = new WindowLifecycle({
+  background: startupIntent.background,
+  createWindow: () => {
+    window = createWindow();
+    return window;
+  },
+  dock: app.dock,
+});
 
-if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock(startupIntent.singleInstanceData)) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (!window) return;
-    if (window.isMinimized()) window.restore();
-    window.show();
-    window.focus();
+  app.on('second-instance', (_event, _commandLine, _workingDirectory, additionalData) => {
+    windows.handleSecondInstance(additionalData);
   });
 
   app.whenReady().then(boot).catch(() => app.quit());
@@ -49,16 +66,24 @@ async function boot() {
   controller = new IdentityController({ core, tokenStore, host });
   const providers = new ProviderController({ identity: controller, host });
 
-  registerIpc(controller, providers);
-  window = createWindow();
+  registerIpc(controller, providers, loginItems, host);
+  windows.onReady();
   controller.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('identity:state', state);
   });
   powerMonitor.on('resume', () => controller.revalidate('resume').catch(() => {}));
-  await controller.start();
+  const initialState = await controller.start();
+  if (
+    startupIntent.background
+    && initialState.phase === 'signed_out'
+    && !windows.hasWindow()
+  ) {
+    app.quit();
+    return;
+  }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) window = createWindow();
+    windows.open();
   });
 }
 
@@ -90,11 +115,14 @@ function createWindow() {
     controller.revalidate('focus').catch(() => {});
   });
   created.once('ready-to-show', () => created.show());
+  created.on('closed', () => {
+    if (window === created) window = null;
+  });
   created.loadFile(path.join(__dirname, 'ui', 'index.html'));
   return created;
 }
 
-function registerIpc(identity, providers) {
+function registerIpc(identity, providers, loginItemController, host) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
     const email = typeof credentials?.email === 'string' ? credentials.email : '';
@@ -103,9 +131,13 @@ function registerIpc(identity, providers) {
   });
   ipcMain.handle('identity:logout', () => identity.logout());
   ipcMain.handle('identity:recheck', () => identity.revalidate('manual'));
-  ipcMain.handle('agent:activate', (_event, agentId) => {
+  ipcMain.handle('agent:activate', async (_event, agentId) => {
     if (!/^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$/.test(agentId)) throw new Error('Agent ID 无效');
-    return identity.activateAgent(agentId);
+    return activateAgentAndEnableBackground({
+      identity,
+      loginItems: loginItemController,
+      agentId,
+    });
   });
   ipcMain.handle('provider:get-snapshot', () => providers.getSnapshot());
   ipcMain.handle('provider:create-profile', (_event, { profile, apiKey } = {}) => {
@@ -129,6 +161,14 @@ function registerIpc(identity, providers) {
   ipcMain.handle('provider:run-probe', (_event, request) => {
     return providers.runProbe(request);
   });
+  ipcMain.handle('runtime:get-background-snapshot', () => {
+    return publicBackgroundSnapshot({ host, loginItems: loginItemController });
+  });
+  ipcMain.handle('runtime:set-background-startup', (_event, enabled) => {
+    if (typeof enabled !== 'boolean') throw new Error('后台启动设置无效');
+    loginItemController.setEnabled(enabled);
+    return publicBackgroundSnapshot({ host, loginItems: loginItemController });
+  });
   ipcMain.handle('external:open-subscription', () => openAllowedExternal(SUBSCRIPTION_URL));
   ipcMain.handle('external:open-registration', () => openAllowedExternal(REGISTRATION_URL));
 }
@@ -149,4 +189,10 @@ app.on('before-quit', () => {
   controller?.shutdown().catch(() => {});
 });
 
-module.exports = { createWindow, openAllowedExternal, SUBSCRIPTION_URL, REGISTRATION_URL };
+module.exports = {
+  createWindow,
+  openAllowedExternal,
+  registerIpc,
+  SUBSCRIPTION_URL,
+  REGISTRATION_URL,
+};
