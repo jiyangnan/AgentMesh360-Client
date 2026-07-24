@@ -78,8 +78,7 @@ impl PackageRegistrySnapshotVerifier {
         })
     }
 
-    #[cfg(test)]
-    fn with_roots(roots: TrustedRootStore) -> Self {
+    pub(super) fn with_roots(roots: TrustedRootStore) -> Self {
         Self { roots }
     }
 }
@@ -245,10 +244,11 @@ fn validate_https_url(field: &str, value: &str) -> Result<()> {
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
+        || url.query().is_some()
         || url.fragment().is_some()
     {
         bail!(
-            "Agent Package registry {field} must be an HTTPS URL without credentials or fragment"
+            "Agent Package registry {field} must be an HTTPS URL without credentials, query, or fragment"
         );
     }
     if url.as_str() != value {
@@ -302,6 +302,43 @@ fn registry_signature_payload(snapshot: &PackageRegistrySnapshot) -> String {
 
 fn encode_text(value: &str) -> String {
     BASE64.encode(value.as_bytes())
+}
+
+#[cfg(test)]
+pub(super) fn signed_registry_document_for_test(
+    root: &ed25519_dalek::SigningKey,
+    root_key_id: &str,
+    revision: u64,
+    trust_bundle_sequence: u64,
+    digest_character: char,
+) -> String {
+    use ed25519_dalek::Signer as _;
+
+    let artifact_url = "https://packages.agentmesh360.com/job-agent/1.2.0.tar.zst";
+    let mut snapshot = PackageRegistrySnapshot {
+        schema_version: REGISTRY_SNAPSHOT_SCHEMA_VERSION,
+        revision,
+        root_key_id: root_key_id.into(),
+        trust_bundle_sequence,
+        generated_at: "2026-07-01T00:00:00Z".into(),
+        expires_at: "2026-08-01T00:00:00Z".into(),
+        packages: vec![RemotePackageRecord {
+            package_id: "job-agent".into(),
+            agent_id: "job-agent".into(),
+            version: "1.2.0".into(),
+            publisher: "agentmesh360".into(),
+            artifact_url: artifact_url.into(),
+            artifact_sha256: digest_character.to_string().repeat(64),
+            envelope_url: format!("{artifact_url}.signature.json"),
+            envelope_sha256: "a".repeat(64),
+        }],
+        signature: String::new(),
+    };
+    snapshot.signature = BASE64.encode(
+        root.sign(registry_signature_payload(&snapshot).as_bytes())
+            .to_bytes(),
+    );
+    serde_json::to_string(&snapshot).expect("serialize signed registry fixture")
 }
 
 #[cfg(test)]
@@ -493,6 +530,23 @@ mod tests {
                 .expect_err("insecure URL")
                 .to_string()
                 .contains("HTTPS")
+        );
+
+        let mut query_url = snapshot_fixture();
+        query_url.packages[0].artifact_url =
+            "https://packages.agentmesh360.com/deploy-agent/1.0.0.tar.zst?token=secret".into();
+        sign_snapshot(&mut query_url, &root);
+        assert!(
+            verifier
+                .verify_document_at(
+                    &serde_json::to_string(&query_url).expect("query URL registry"),
+                    now,
+                    42,
+                    &trust,
+                )
+                .expect_err("query URL")
+                .to_string()
+                .contains("query")
         );
 
         let mut invalid_digest = snapshot_fixture();

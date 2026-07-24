@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 8;
+const SCHEMA_VERSION: u32 = 9;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -181,6 +181,21 @@ CREATE TABLE IF NOT EXISTS agent_package_registry (
         )
     )
 );
+
+CREATE TABLE IF NOT EXISTS package_trust_cache (
+    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+    root_key_id TEXT NOT NULL,
+    trust_sequence INTEGER NOT NULL CHECK(trust_sequence >= 1),
+    trust_document TEXT NOT NULL,
+    trust_document_sha256 TEXT NOT NULL,
+    trust_expires_at TEXT NOT NULL,
+    registry_revision INTEGER NOT NULL CHECK(registry_revision >= 1),
+    registry_document TEXT NOT NULL,
+    registry_document_sha256 TEXT NOT NULL,
+    registry_expires_at TEXT NOT NULL,
+    verified_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 "#;
 
 pub(super) fn default_state_home() -> PathBuf {
@@ -327,7 +342,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v8_schema() {
+    fn initializes_the_shared_v9_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -338,8 +353,8 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
-                     ('agent_package_registry', 'model_assignments', 'product_agents', 'provider_profiles', \
-                      'provider_probe_results', 'session_provider_bindings', \
+                     ('agent_package_registry', 'model_assignments', 'package_trust_cache', \
+                      'product_agents', 'provider_profiles', 'provider_probe_results', 'session_provider_bindings', \
                       'turn_route_records') ORDER BY name",
                 )
                 .expect("prepare table query");
@@ -349,12 +364,13 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         assert_eq!(
             tables,
             [
                 "agent_package_registry",
                 "model_assignments",
+                "package_trust_cache",
                 "product_agents",
                 "provider_probe_results",
                 "provider_profiles",
@@ -424,7 +440,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -524,7 +540,7 @@ mod tests {
             )
             .expect("binding tables");
 
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         assert_eq!(owner, 41);
         assert_eq!(binding_tables, 2);
     }
@@ -551,7 +567,7 @@ mod tests {
                 .expect("collect columns")
         };
 
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         assert!(columns.contains(&"active_file_manifest_sha256".to_owned()));
         assert!(columns.contains(&"previous_file_manifest_sha256".to_owned()));
     }
@@ -621,9 +637,52 @@ mod tests {
             )
             .expect("Package Registry table");
 
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
         assert_eq!(registry_table, 1);
+    }
+
+    #[test]
+    fn upgrades_v8_with_empty_package_trust_cache_without_losing_existing_state() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        {
+            let conn = open(temp.path()).expect("initialize database");
+            conn.execute_batch(
+                "DROP TABLE package_trust_cache;
+                 INSERT INTO product_agents (
+                   owner_account_id, agent_id, display_name, description, version, sort_order,
+                   desired_state, runtime_state, main_session_id, updated_at
+                 ) VALUES (
+                   41, 'job-agent', 'Job Agent', 'Existing', '0.4.7', 10,
+                   'running', 'dormant', '11111111-1111-1111-1111-111111111111',
+                   '2026-07-24T00:00:00Z'
+                 );
+                 PRAGMA user_version = 8;",
+            )
+            .expect("prepare v8 database");
+        }
+
+        let conn = open(temp.path()).expect("upgrade v8 database");
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("schema version");
+        let session_id: String = conn
+            .query_row(
+                "SELECT main_session_id FROM product_agents \
+                 WHERE owner_account_id = 41 AND agent_id = 'job-agent'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("existing Agent session");
+        let cache_rows: u32 = conn
+            .query_row("SELECT COUNT(*) FROM package_trust_cache", [], |row| {
+                row.get(0)
+            })
+            .expect("Package Trust Cache row count");
+
+        assert_eq!(version, 9);
+        assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
+        assert_eq!(cache_rows, 0);
     }
 
     fn prepare_v7_package_registry(conn: &Connection, with_row: bool) {

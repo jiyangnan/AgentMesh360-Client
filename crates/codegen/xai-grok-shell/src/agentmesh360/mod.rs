@@ -16,6 +16,7 @@ mod package_artifact;
 mod package_installer;
 mod package_registry_snapshot;
 mod package_trust;
+mod package_trust_cache;
 mod provider_catalog;
 mod provider_probes;
 mod provider_profiles;

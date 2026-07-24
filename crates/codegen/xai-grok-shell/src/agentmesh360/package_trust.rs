@@ -26,12 +26,14 @@ pub(crate) struct TrustedPublisherStore {
     keys: HashMap<String, TrustedPublisherKey>,
     trust_sequence: u64,
     root_key_id: Option<String>,
+    expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PublisherTrustAudit {
     pub trust_sequence: u64,
     pub root_key_id: Option<String>,
+    pub expires_at: Option<DateTime<Utc>>,
     pub active_key_count: usize,
 }
 
@@ -93,6 +95,10 @@ impl TrustedPublisherStore {
             keys,
             trust_sequence: bundle.sequence,
             root_key_id: Some(bundle.root_key_id),
+            expires_at: Some(
+                parse_timestamp("expiresAt", &bundle.expires_at)
+                    .context("read verified Agent Package publisher trust expiry")?,
+            ),
         })
     }
 
@@ -111,6 +117,7 @@ impl TrustedPublisherStore {
             keys: HashMap::from([(key.key_id.clone(), key)]),
             trust_sequence,
             root_key_id,
+            expires_at: None,
         }
     }
 
@@ -130,6 +137,7 @@ impl TrustedPublisherStore {
         PublisherTrustAudit {
             trust_sequence: self.trust_sequence,
             root_key_id: self.root_key_id.clone(),
+            expires_at: self.expires_at,
             active_key_count: self.keys.len(),
         }
     }
@@ -348,6 +356,41 @@ fn trust_bundle_signature_payload(bundle: &PublisherTrustBundle) -> String {
 }
 
 #[cfg(test)]
+pub(super) fn signed_bundle_document_for_test(
+    root: &ed25519_dalek::SigningKey,
+    root_key_id: &str,
+    sequence: u64,
+    expires_at: &str,
+    publisher_seed: u8,
+) -> String {
+    use ed25519_dalek::Signer as _;
+
+    let publisher = ed25519_dalek::SigningKey::from_bytes(&[publisher_seed; 32]);
+    let mut bundle = PublisherTrustBundle {
+        schema_version: TRUST_BUNDLE_SCHEMA_VERSION,
+        sequence,
+        root_key_id: root_key_id.into(),
+        generated_at: "2026-07-01T00:00:00Z".into(),
+        expires_at: expires_at.into(),
+        keys: vec![PublisherTrustKeyRecord {
+            key_id: "agentmesh360-release-test".into(),
+            publisher: "agentmesh360".into(),
+            algorithm: "ed25519".into(),
+            public_key: BASE64.encode(publisher.verifying_key().to_bytes()),
+            status: PublisherKeyStatus::Active,
+            not_before: "2026-06-01T00:00:00Z".into(),
+            not_after: "2027-06-01T00:00:00Z".into(),
+        }],
+        signature: String::new(),
+    };
+    bundle.signature = BASE64.encode(
+        root.sign(trust_bundle_signature_payload(&bundle).as_bytes())
+            .to_bytes(),
+    );
+    serde_json::to_string(&bundle).expect("serialize signed publisher trust fixture")
+}
+
+#[cfg(test)]
 mod tests {
     use base64::engine::general_purpose::STANDARD as BASE64;
     use chrono::TimeZone as _;
@@ -381,6 +424,11 @@ mod tests {
             PublisherTrustAudit {
                 trust_sequence: 7,
                 root_key_id: Some(ROOT_KEY_ID.into()),
+                expires_at: Some(
+                    Utc.with_ymd_and_hms(2026, 8, 1, 0, 0, 0)
+                        .single()
+                        .expect("expiry"),
+                ),
                 active_key_count: 2,
             }
         );
