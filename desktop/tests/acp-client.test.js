@@ -13,7 +13,9 @@ const embeddedHostEnv = {
 
 test('ACP client initializes the Host and unwraps AgentMesh360 extension responses', async () => {
   const received = [];
-  const spawnImpl = () => fakeChild((request) => {
+  let child;
+  const spawnImpl = () => {
+    child = fakeChild((request) => {
     received.push(request);
     if (request.method === 'initialize') return { capabilities: {} };
     if (request.method === '_x.agentmesh360/account/bootstrap') {
@@ -23,7 +25,9 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
       return { result: { agents: [{ agentId: 'job-agent' }] } };
     }
     return { result: null, error: 'unsupported' };
-  });
+    });
+    return child;
+  };
   const client = new AcpHostClient({
     command: '/fake/host',
     env: embeddedHostEnv,
@@ -42,6 +46,17 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.equal(received[1].method, '_x.agentmesh360/account/bootstrap');
   assert.deepEqual(received[1].params, { accessToken: 'access-token-private' });
   assert.equal(client.getRuntimeStatus().bridgeState, 'connected');
+
+  let reconnectEvents = 0;
+  client.on('reconnected', () => { reconnectEvents += 1; });
+  child.stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'x.ai/leader_reconnected',
+    params: { sessionId: 'private-session-id' },
+  })}\n`);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reconnectEvents, 1);
+
   await client.stop();
   assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
 });

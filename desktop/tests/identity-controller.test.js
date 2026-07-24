@@ -99,6 +99,43 @@ test('an unexpected Host exit immediately closes an already-open Agent workspace
   assert.equal(Object.hasOwn(fixture.controller.getState(), 'agents'), false);
 });
 
+test('Leader reconnect refreshes identity once and bootstraps the replacement Host', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  fixture.core.tokenPair = {
+    access_token: 'reconnected-access-token',
+    refresh_token: 'reconnected-refresh-token',
+  };
+
+  fixture.host.emit('reconnected');
+  fixture.host.emit('reconnected');
+  fixture.host.emit('reconnected');
+  await waitFor(() => fixture.controller.getState().revalidatedBy === 'host_reconnected');
+
+  assert.equal(fixture.controller.getState().phase, 'ready');
+  assert.equal(fixture.core.refreshCalls, 2);
+  assert.equal(fixture.host.calls.bootstrap, 2);
+  assert.deepEqual(fixture.host.bootstrapTokens, [
+    'rotated-access-token',
+    'reconnected-access-token',
+  ]);
+  assert.equal(fixture.tokenStore.saved, 'reconnected-refresh-token');
+});
+
+test('Leader reconnect fails closed when Core cannot refresh identity', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  fixture.core.refreshError = new Error('Core temporarily unavailable');
+
+  fixture.host.emit('reconnected');
+  await waitFor(() => fixture.controller.getState().phase === 'unavailable');
+
+  assert.equal(fixture.host.calls.bootstrap, 1);
+  assert.equal(fixture.host.calls.invalidate, 1);
+  assert.equal(Object.hasOwn(fixture.controller.getState(), 'agents'), false);
+  assert.equal(JSON.stringify(fixture.controller.getState()).includes('rotated-access-token'), false);
+});
+
 function makeFixture({
   storedRefreshToken,
   coreBootstrap = bootstrap({ canEnter: true }),
@@ -115,19 +152,28 @@ function makeFixture({
     clear() { this.value = null; this.cleared += 1; },
   };
   const core = {
+    refreshCalls: 0,
+    refreshError,
+    tokenPair: {
+      access_token: 'rotated-access-token',
+      refresh_token: 'rotated-refresh-token',
+    },
     async login() {
       return { access_token: 'login-access-token', refresh_token: 'login-refresh-token' };
     },
     async refresh() {
-      if (refreshError) throw refreshError;
-      return { access_token: 'rotated-access-token', refresh_token: 'rotated-refresh-token' };
+      this.refreshCalls += 1;
+      if (this.refreshError) throw this.refreshError;
+      return this.tokenPair;
     },
     async bootstrap() { return coreBootstrap; },
   };
   const host = Object.assign(new EventEmitter(), {
     calls: { bootstrap: 0, listAgents: 0, activateAgent: 0, invalidate: 0, stop: 0 },
-    async bootstrap() {
+    bootstrapTokens: [],
+    async bootstrap(accessToken) {
       this.calls.bootstrap += 1;
+      this.bootstrapTokens.push(accessToken);
       if (hostError) throw hostError;
       return hostBootstrapResult;
     },
@@ -166,6 +212,15 @@ function makeFixture({
     return result;
   };
   return { controller, core, host, tokenStore };
+}
+
+async function waitFor(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error('等待异步状态更新超时');
 }
 
 function bootstrap({ canEnter, status = 'active', reason = 'subscription_active' }) {

@@ -23,13 +23,19 @@ class IdentityController {
     this.listeners = new Set();
     this.timer = null;
     this.activeOperation = null;
+    this.hostReconnectPromise = null;
+    this.shuttingDown = false;
     this.state = Object.freeze({ phase: 'starting' });
     this.handleHostExit = (error) => {
       if (!['ready', 'checking'].includes(this.state.phase)) return;
       this.accessToken = null;
       this.#publishUnavailable(error, true, 'host_exited');
     };
+    this.handleHostReconnect = () => {
+      this.#recoverHostAccessAfterReconnect().catch(() => {});
+    };
     this.host.on?.('exit', this.handleHostExit);
+    this.host.on?.('reconnected', this.handleHostReconnect);
   }
 
   getState() {
@@ -139,11 +145,36 @@ class IdentityController {
   }
 
   async shutdown() {
+    this.shuttingDown = true;
     if (this.timer) this.clearIntervalImpl(this.timer);
     this.timer = null;
     this.accessToken = null;
     this.host.off?.('exit', this.handleHostExit);
+    this.host.off?.('reconnected', this.handleHostReconnect);
+    await this.hostReconnectPromise?.catch(() => {});
     await this.host.stop();
+  }
+
+  #recoverHostAccessAfterReconnect() {
+    if (this.shuttingDown || this.hostReconnectPromise) {
+      return this.hostReconnectPromise || Promise.resolve(this.state);
+    }
+    this.hostReconnectPromise = Promise.resolve()
+      .then(async () => {
+        const inFlight = this.activeOperation;
+        if (inFlight) await inFlight.catch(() => {});
+        if (
+          this.shuttingDown
+          || !['ready', 'checking', 'blocked', 'unavailable'].includes(this.state.phase)
+        ) {
+          return this.state;
+        }
+        return this.revalidate('host_reconnected');
+      })
+      .finally(() => {
+        this.hostReconnectPromise = null;
+      });
+    return this.hostReconnectPromise;
   }
 
   #runValidation(refreshToken, reason) {

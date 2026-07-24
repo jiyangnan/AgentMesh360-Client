@@ -266,7 +266,14 @@ class AcpHostClient extends EventEmitter {
       });
       return;
     }
-    if (message.method) this.emit('notification', message);
+    if (message.method) {
+      if (message.method === 'x.ai/leader_reconnected') {
+        // The session identifier in the upstream notification is deliberately
+        // not forwarded. Identity recovery only needs the lifecycle edge.
+        this.emit('reconnected');
+      }
+      this.emit('notification', message);
+    }
   }
 
   async #extension(method, params) {

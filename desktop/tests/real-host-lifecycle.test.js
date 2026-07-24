@@ -7,6 +7,7 @@ const http = require('node:http');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { AcpHostClient } = require('../src/host/acp-client');
+const { IdentityController } = require('../src/identity-controller');
 
 const hostBinary = process.env.AGENTMESH360_REAL_HOST_BIN;
 
@@ -39,6 +40,7 @@ test('persistent Grok Host survives desktop detach and restores the same product
   };
   let firstClient = null;
   let secondClient = null;
+  let identity = null;
   let leaderPid = null;
   const bridgeStderr = [];
   const spawnWithDiagnostics = (command, args, options) => {
@@ -74,13 +76,55 @@ test('persistent Grok Host survives desktop detach and restores the same product
       spawnImpl: spawnWithDiagnostics,
       requestTimeoutMs: 20000,
     });
-    await secondClient.bootstrap('persistent-host-access-token');
+    let refreshCalls = 0;
+    identity = new IdentityController({
+      core: {
+        async refresh() {
+          refreshCalls += 1;
+          return {
+            access_token: `replacement-access-token-${refreshCalls}`,
+            refresh_token: `replacement-refresh-token-${refreshCalls}`,
+          };
+        },
+        async bootstrap() {
+          return bootstrapFixture();
+        },
+      },
+      tokenStore: {
+        loadRefreshToken() { return 'persistent-refresh-token'; },
+        saveRefreshToken() {},
+        clear() {},
+      },
+      host: secondClient,
+      setIntervalImpl: () => ({ unref() {} }),
+      clearIntervalImpl: () => {},
+    });
+    const restoredIdentity = await identity.start();
+    assert.equal(restoredIdentity.phase, 'ready');
     const list = await secondClient.listAgents();
     const jobAgent = list.agents.find((agent) => agent.agentId === 'job-agent');
 
     assert.equal(jobAgent.mainSessionId, sessionId);
     assert.equal(Number(fs.readFileSync(lockPath, 'utf8').trim()), leaderPid);
     assert.equal(secondClient.getRuntimeStatus().bridgeState, 'connected');
+
+    const replacedLeader = waitForEvent(secondClient, 'reconnected', 20000);
+    process.kill(leaderPid, 'SIGKILL');
+    await waitForProcessExit(leaderPid);
+    await replacedLeader;
+
+    const replacementPid = await waitForDifferentLeaderPid(lockPath, leaderPid);
+    assert.equal(isProcessAlive(replacementPid), true);
+    leaderPid = replacementPid;
+    await waitFor(
+      () => identity.getState().revalidatedBy === 'host_reconnected',
+      20000,
+    );
+    assert.equal(identity.getState().phase, 'ready');
+    assert.equal(refreshCalls, 2);
+    const restored = await secondClient.listAgents();
+    const restoredJob = restored.agents.find((agent) => agent.agentId === 'job-agent');
+    assert.equal(restoredJob.mainSessionId, sessionId);
   } catch (error) {
     const leaderLogPath = path.join(home, '.grok', 'leader.log');
     const leaderLog = fs.existsSync(leaderLogPath)
@@ -89,6 +133,7 @@ test('persistent Grok Host survives desktop detach and restores the same product
     error.message = `${error.message}\nbridge stderr:\n${bridgeStderr.join('').slice(-4000)}\nleader log:\n${leaderLog.slice(-4000)}`;
     throw error;
   } finally {
+    await identity?.shutdown().catch(() => {});
     await secondClient?.stop().catch(() => {});
     await firstClient?.stop().catch(() => {});
     const cleanupPid = leaderPid || readLeaderPid(lockPath);
@@ -138,6 +183,30 @@ async function waitForProcessExit(pid) {
   throw new Error(`Leader ${pid} 未在超时前退出`);
 }
 
+async function waitForDifferentLeaderPid(lockPath, previousPid) {
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    const pid = readLeaderPid(lockPath);
+    if (pid && pid !== previousPid) return pid;
+    await delay(50);
+  }
+  throw new Error('等待替代 AgentMesh360 Leader PID 超时');
+}
+
+function waitForEvent(emitter, eventName, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      emitter.off(eventName, onEvent);
+      reject(new Error(`等待 ${eventName} 事件超时`));
+    }, timeoutMs);
+    const onEvent = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    emitter.once(eventName, onEvent);
+  });
+}
+
 function isProcessAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -149,6 +218,15 @@ function isProcessAlive(pid) {
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitFor(predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await delay(50);
+  }
+  throw new Error('等待产品 Host 恢复超时');
 }
 
 function bootstrapFixture() {
