@@ -1381,7 +1381,9 @@ G1 计划复盘：
 
 ### 循环 21：独立后台 Host G2——系统登录启动与隐藏后台主进程
 
-状态：已规划，下一开发切片
+状态：已完成源码与开发验收；签名安装包平台 E2E 保留为发布门槛
+
+本地提交：`9524cca feat: add hidden login startup lifecycle`
 
 启动理由：G0/G1 已覆盖 UI detach 和前台主进程存活时的 Leader 崩溃，但机器重启后
 没有进程读取 Electron `safeStorage` 中的 Refresh Token，也就不能安全恢复订阅准入和
@@ -1402,3 +1404,67 @@ Electron 身份存储。
 
 验收条件：后台启动无可见窗口和 Renderer；订阅无效时不恢复 Agent；第二实例可打开
 窗口；所有系统设置调用都可注入并在单测中零副作用；文档明确用户如何停用后台启动。
+
+已经实现：
+
+- 依据 Electron 43 官方契约，macOS 使用 `wasOpenedAtLogin`，不使用 macOS 13+
+  已失效的 `openAsHidden`；Windows 使用 `--agentmesh360-background`；
+- 单实例锁通过 `additionalData.openWindow` 区分系统后台启动和用户正常打开，避免
+  依赖可能被 Chromium 修改/重排的 commandLine；
+- 后台启动不创建 BrowserWindow/Renderer，并隐藏 Dock；正常第二实例或 Dock activate
+  会在同一个主进程创建、恢复并聚焦窗口；
+- 后台主进程继续通过 Electron `safeStorage` 恢复 Refresh Token，执行现有 Core/Host
+  双重 bootstrap 和周期订阅重验；没有本机身份时自行退出；
+- 正式打包版在 Agent 第一次从停止态激活为 `running` 时请求启用 Login Item；只是
+  打开已经常驻的 Agent 不会反复覆盖用户的系统选择；
+- 开发版拒绝 Login Item 写入；操作系统拒绝注册不会回滚已经成功的 Agent 激活；
+- 新增只读 Host/Login Item IPC 与“客户端设置”页，展示 Leader/Bridge/socket 文件名、
+  登录项启用/批准状态，并允许用户关闭；关闭不会删除 Session 或停止当前 Host；
+- `requires-approval` 明确提示 macOS“系统设置 → 通用 → 登录项”批准。
+
+验证证据：
+
+- `npm run check` 通过；
+- 完整桌面测试（带真实 Host）：46 项通过、0 跳过；
+- Login Item/启动单测覆盖 macOS/Windows、开发版零写入、首次激活只写一次、OS 拒绝
+  不回滚、后台零窗口和第二实例开窗；
+- 实际 Electron 后台 smoke 使用隔离 `userData`，输出
+  `background startup: no Renderer created` 后自行退出并清理；
+- 1180×760 Retina 客户端设置页截图已人工检查：双栏层级、状态、关闭语义和安全说明
+  清晰，无横向溢出；fixture 开关交互已断言从“已开启”切到“未开启”；
+- 真实系统 Login Item 没有被测试修改；签名/公证安装包 E2E 未执行，因此不把平台
+  注册、批准和升级行为标记为生产已验证。
+
+G2 计划复盘：
+
+- 没有把 Refresh Token 复制给 Rust Host，也没有为了开机恢复增加第二套 Harness；
+- 没有用过时的 `openAsHidden` 假装实现后台启动；
+- 用户可以在客户端和系统设置中关闭登录启动，激活失败与 Login Item 失败保持两个
+  独立结果；
+- Provider F0b 仍受外部 Gemini 凭据与 thought signature 缺口阻断；完成共同 Host
+  生命周期后，应回到最初要求的动态 Agent 集成主线，而不是继续无限扩张桌面壳。
+
+### 循环 22：动态 Agent Package H0——统一 Manifest 与内置目录迁移
+
+状态：已规划，下一开发切片
+
+启动理由：共享 Host 生命周期和 Provider Control Plane 已有可验证基础。当前
+Job/LectureCast/Deploy 仍硬编码在 Registry，无法满足“未来新增 Agent 同时可作为宿主
+Skill 安装、又可无客户端发版进入持久 Agent 客户端”的原始要求。
+
+本轮目标：
+
+1. 对照现有三个 Agent Skill 安装方式与产品蓝图，定义版本化 Agent Package Manifest；
+2. 让同一 Package 描述产品身份、Main Session、AgentDefinition、Workspace、Skill
+   Adapter、权限和 Provider Policy，禁止桌面/Skill 两套元数据漂移；
+3. 先把三个内置 Agent 改由内置 Manifest 载入，保持现有 agent_id、确定性 Session
+   和账户隔离不变；
+4. 建立只读 Package Catalog/Registry 与迁移测试，不在 H0 下载或执行远端代码；
+5. 明确后续签名、安装事务、升级/回滚和宿主 Skill Adapter 的 H1/H2 边界。
+
+本轮非目标：不接远端 Marketplace、不执行未签名脚本、不改变现有 Session UUID、
+不自动更新 Agent、不实现 Package 付费、不把 Skill 运行时塞进 Renderer。
+
+验收条件：三个内置 Agent 完全来自同一 Manifest Schema；旧 `state.db` 无数据丢失；
+未知字段/版本/权限失败关闭；Package 元数据不含 Provider Key、Token 或用户业务数据；
+文档明确客户端持久 Agent 与宿主 Skill 是同一 Package 的两个受控投影。

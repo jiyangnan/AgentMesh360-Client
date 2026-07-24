@@ -1,6 +1,6 @@
 # ADR：后台 Host 生命周期与桌面重连
 
-状态：已接受，G0/G1 基础已实现
+状态：已接受，G0/G1/G2 基础已实现
 
 日期：2026-07-24
 
@@ -192,19 +192,40 @@ G1 已补齐“Leader 进程恢复但产品准入丢失”的安全缺口：
 G1 仍未注册任何系统登录项，也没有改变 Refresh Token 的 Electron `safeStorage`
 所有权。
 
-## 未完成与下一阶段
+## G2 实现证据
 
-G2 继续完成：
+G2 已加入系统登录启动和用户控制的产品路径：
 
-1. 系统登录时启动/采用同一个 AgentMesh360 Leader；
-2. 后台启动时不创建可见窗口，由 Electron 主进程完成身份刷新、Host bootstrap 与
-   周期订阅重验；
-3. Electron 不运行时的 Host 健康检查、崩溃重启预算和用户可见故障状态；
-4. 版本替换、系统休眠/唤醒的产品级故障注入回归；
-5. 明确受管 `GROK_HOME`、Leader 日志和现有 Grok Session Store 的迁移方案，不能
+- 正式打包客户端在产品 Agent 第一次从停止态激活为 `running` 时，请求启用主应用
+  Login Item；已经常驻的 Agent 只是“打开对话”时不会重复覆盖用户后来在系统中做的
+ 关闭选择；
+- macOS 不使用已经弃用且在 macOS 13+ 无效的 `openAsHidden`，而使用
+  `getLoginItemSettings().wasOpenedAtLogin` 判断本次是否由系统登录启动；
+- Windows 登录项使用显式 `--agentmesh360-background` 参数；
+- 单实例锁通过 `additionalData.openWindow` 传递可靠的唤醒意图；后台主进程收到用户
+  正常启动的第二实例后，才创建并聚焦 BrowserWindow；
+- 后台启动不创建 Renderer，并隐藏 macOS Dock；它仍由 Electron 主进程读取
+  `safeStorage`、刷新身份、双重 bootstrap 和定时重验；
+- 后台启动发现本机没有 Refresh Token 时自行退出，不保留无身份的空后台进程；
+- 新增“客户端设置”页，展示脱敏 Host 生命周期和 Login Item 状态，允许用户开关
+  系统登录启动；macOS 返回 `requires-approval` 时提示到系统设置批准；
+- 开发版 `app.isPackaged = false` 时拒绝 Login Item 写入，单元测试和视觉 smoke
+  均不触碰真实系统设置。
+
+G2 已通过实际 Electron 无窗口 smoke 和设置页视觉/交互 smoke，但尚未用签名、公证的
+生产安装包修改真实 macOS Login Item。该平台级验证保留为正式分发门槛。
+
+## 未完成与后续发布门槛
+
+后续发布硬化继续完成：
+
+1. 使用签名、公证的安装包验证 macOS 13+ Login Item 注册、批准、禁用与升级；
+2. Electron 主进程自身异常退出时的守护策略和用户可见故障状态；
+3. 版本替换、系统休眠/唤醒的产品级故障注入回归；
+4. 明确受管 `GROK_HOME`、Leader 日志和现有 Grok Session Store 的迁移方案，不能
    直接切目录导致用户已有产品对话“消失”；
-6. 为更新、卸载和诊断提供显式的受控 Host shutdown，而不复用普通 UI 退出；
-7. macOS 签名、公证、登录项权限说明和卸载清理策略。
+5. 为更新、卸载和诊断提供显式的受控 Host shutdown，而不复用普通 UI 退出；
+6. 自动更新、卸载时的 Login Item 与后台 Host 清理策略。
 
 只有上述系统生命周期闭环完成，才把“系统重启后自动恢复并长期在线”标记为已实现。
 

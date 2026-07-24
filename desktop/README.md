@@ -19,6 +19,9 @@
   ACP Bridge，后台 Host 与固定 Main Session 继续存在，重新打开后采用同一 Leader；
 - Leader 崩溃后复用上游有界重连；桌面身份控制器收到重连事件后从安全存储刷新身份，
   重新校验 Core 与替代 Host，不沿用旧 Access Token；
+- 正式打包版在首次激活常驻 Agent 时请求开启系统登录启动；系统登录启动不创建
+  BrowserWindow/Renderer，由轻量主进程恢复身份、订阅和 Host；
+- “客户端设置”可查看脱敏 Host 状态、macOS Login Item 状态并随时关闭开机恢复；
 - 退出登录时删除本机 Refresh Token，并立即撤销 Host 的产品 Agent 准入状态。
 - Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
   API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
@@ -76,6 +79,11 @@ Host 默认以 `persistent_leader` 运行，socket 为
 隔离测试和诊断；它不是正式产品运行方式。详细生命周期与信任边界见
 [`ADR_BACKGROUND_HOST_LIFECYCLE.md`](../docs/architecture/ADR_BACKGROUND_HOST_LIFECYCLE.md)。
 
+macOS 13+ 不再依赖已经失效的 `openAsHidden`，而使用 Electron 提供的
+`wasOpenedAtLogin` 判断后台启动。后台实例收到用户正常打开应用的第二实例后，才创建
+窗口。若系统设置返回 `requires-approval`，客户端设置页会提示用户在“系统设置 →
+通用 → 登录项”中批准。开发模式不会写入真实 Login Item。
+
 ## 验证
 
 基础验证：
@@ -104,6 +112,23 @@ AGENTMESH360_SCREENSHOT=/tmp/agentmesh360-ready.png \
   ./node_modules/.bin/electron tests/visual-smoke.js
 ```
 
+验证后台启动不创建 Renderer（使用隔离的临时 `userData`）：
+
+```bash
+mkdir -p /tmp/am360-background-smoke/userData
+AGENTMESH360_BACKGROUND_SMOKE_HOME=/tmp/am360-background-smoke/userData \
+  ./node_modules/.bin/electron tests/background-main-smoke.js \
+  --agentmesh360-background
+```
+
+验证客户端设置页视觉和开关 IPC：
+
+```bash
+AGENTMESH360_VISUAL_STATE=background \
+AGENTMESH360_SCREENSHOT=/tmp/agentmesh360-background.png \
+  ./node_modules/.bin/electron tests/visual-smoke.js
+```
+
 macOS 打包命令会先构建 release Host，再将它以
 `Resources/bin/agentmesh360-host` 打入应用：
 
@@ -112,5 +137,5 @@ npm run build:mac
 ```
 
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
-系统登录自启动、Electron 不运行时的崩溃恢复与受控 Host shutdown 仍属于 G2，
-不能仅凭 G0 宣称已经完成系统重启后的长期在线。
+签名安装包中的 macOS Login Item 注册/批准/升级、Electron 主进程自身守护以及受控
+Host shutdown 仍是发布门槛；源码和开发 smoke 通过不等于生产安装链已验收。
