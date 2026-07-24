@@ -31,7 +31,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0 已实现 Manifest v1 与运行时投影；H1a 已实现 Ed25519 签名产物、双层摘要和安全 staging | H1b：Active/Previous 原子安装、权限差异与回滚 |
+| 动态 Agent Package | H0/H1 已实现 Manifest、签名验证、安全 staging、Active/Previous 原子安装、权限批准、显式回滚与 state.db v7 Registry；生产入口仍关闭 | H2a：把 Active Package 合并进运行时 Catalog，并先开放只读管理状态 |
 
 ## 开发循环记录
 
@@ -1516,9 +1516,11 @@ H0 计划复盘：
 
 ### 循环 23：动态 Agent Package H1——签名产物与原子安装事务
 
-状态：H1a 已完成，H1b 继续开发
+状态：已完成源码与开发验收；生产发布密钥和安装入口保持关闭
 
 H1a 本地提交：`8d0a865 feat: verify signed agent package artifacts`
+
+H1b 本地提交：`cde8195 feat: add atomic agent package registry`
 
 启动理由：H0 已消除 Agent 定义的双重硬编码，但 Package 仍是编译期资源。若现在直接
 接远端 Registry，损坏、路径穿越、签名伪造或半完成升级都可能污染 Active Agent。
@@ -1584,3 +1586,72 @@ H1b 紧接着实现：
 3. `agentId` 不变与权限增量 `approval_required`；
 4. 数据库提交失败留下的只能是未引用版本，旧 Active 指针保持不变；
 5. 显式 rollback 交换 Active/Previous，保持产品 Main Session 身份。
+
+H1b 已经实现：
+
+- `state.db` 升级为 v7，增加全客户端级 `agent_package_registry`；Package 安装状态
+  不复制到每个订阅账户，产品 Agent 实例和 Main Session 仍按账户隔离；
+- Registry 对每个 `packageId` 保存 Active/Previous 的版本、Artifact digest、相对
+  不可变目录、批准权限和签名 key ID，并用 CHECK 约束 Previous 必须全有或全无；
+- 首次安装和升级都计算权限增量；缺少显式批准时返回 `approval_required`，不创建
+  Active 记录；
+- staging 文件先同步，再以同文件系统 rename 进入版本目录；SQLite transaction
+  使用 expected Active digest 防并发覆盖，数据库失败只留下未引用目录；
+- 一个 `agentId` 不能被两个 Package 占用，升级不能改变稳定 `agentId`，同版本不能
+  换 digest，低版本不能走普通升级；
+- 显式 rollback 在一个事务中交换 Active/Previous，Manifest 身份必须仍与
+  `packageId`、`agentId` 和 Previous 版本一致；
+- v6→v7 迁移回归保留既有产品 Agent Main Session，H0 的旧 v2/v3/v4 数据回归继续
+  通过；
+- Package 根目录在 Unix 为 `0700`；重复安装同一 digest 只有在 Active 目录仍存在时
+  才按幂等成功处理。
+
+H1b 验证证据：
+
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：83 项通过；
+- Package Artifact + Installer 专项：10 项通过；
+- state v7 与 v2/v3/v4/v6 迁移专项：6 项通过；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt edition 2024 与
+  `git diff --check` 通过；
+- 中断注入证明 rename 后 Registry 提交失败时，旧 Active/Previous 不变，新目录只
+  是未引用 orphan；
+- 所有安装/升级/回滚测试均使用临时目录和伪造 digest；生产 Trust Store、真实安装
+  目录、网络、Provider Key 和用户数据均未触及。
+
+H1 完整复盘：
+
+- H0 Manifest → H1a 信任验证 → H1b 原子提交的顺序与产品蓝图一致，没有先开放远端
+  下载或 Renderer mutation；
+- 权限批准、签名信任、订阅准入是三个独立门槛，任一成功都不会代替另外两个；
+- H1 只建立“可信 Package 可成为本地 Active”的内部能力；Agent Registry 当前仍以
+  三个内置 Package 为生产目录，不能宣称动态 Agent 已经上线；
+- 生产发布公钥不能用测试 key 代替；在公钥轮换、权限 UI 和发布流程验收前，正式
+  Trust Store 保持空；
+- 下一轮必须先解决本地 Active Catalog 合并、启动时失败关闭和运行中刷新，再接远端
+  Package Registry。
+
+### 循环 24：动态 Agent Package H2a——本地 Active Catalog 与只读管理
+
+状态：已规划，下一开发切片
+
+启动理由：H1 已能安全产生本地 Active 指针，但 Agent Registry 尚未消费它。直接接
+远端目录只会得到“下载和安装成功、客户端仍看不见 Agent”的半集成。H2a 必须先让本地
+Active Package 成为可恢复、可诊断的运行时目录。
+
+本轮目标：
+
+1. 启动时读取本地 Active Registry，重新校验相对路径、Manifest 身份和文件清单；
+2. 把 Active Package 与内置 Catalog 确定性合并：同 `packageId/agentId` 只能有一个
+   Active，已安装升级可覆盖同一内置身份，新 Agent 可追加；
+3. Agent Registry、Profile、Session/Workspace 和 Model Policy 使用合并后的 Catalog；
+4. 安装/回滚成功后通过显式 refresh 生效，不重置稳定 Main Session；
+5. 提供订阅门禁后的只读 ACP 状态，区分 built-in、installed-active、Previous、
+   orphan/invalid，不暴露绝对路径；
+6. 模块完成后更新本文档与蓝图，再进入 H2b 生产信任根、远端 Registry 和权限 UI。
+
+本轮非目标：不下载远端 Package、不开放安装/回滚 mutation ACP、不嵌入未经审计的
+生产公钥、不自动清理 orphan、不执行迁移脚本、不自动安装宿主 Skill。
+
+验收条件：重启后本地 Active Agent 可见且使用同一 `agentId`/Main Session；损坏或
+身份冲突的 Active 失败关闭且不污染内置 Catalog；只读状态不含绝对路径/用户数据；
+内置三个 Agent 在没有安装记录时行为不变。

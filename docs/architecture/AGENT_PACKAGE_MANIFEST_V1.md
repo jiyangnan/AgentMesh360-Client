@@ -1,6 +1,6 @@
 # AgentMesh360 Agent Package Manifest v1
 
-状态：H0 与 H1a 已实现；Active 安装事务和动态分发待 H1b/H2
+状态：H0 与 H1 已实现；动态运行时载入和 Registry 分发待 H2
 
 本文档固定 AgentMesh360 产品 Agent 的第一个版本化 Package 契约。它解决的核心问题
 不是“把 Prompt 搬进 TOML”，而是让客户端里的持久 Agent 与用户自行安装到 Codex、
@@ -151,21 +151,42 @@ staging 失败关闭边界包括：
 外部 Package 全部拒绝；测试只使用临时目录和固定测试密钥。H1a 没有 ACP 安装入口，
 不会读取网络、真实 Package 目录或用户凭据。
 
-## 8. H1b/H2 边界
+## 8. H1b 已实现的原子安装与回滚
 
-H1b 继续负责“可信安装”：
+H1b 在共享 `state.db v7` 中增加 `agent_package_registry`，每个 `packageId` 只保存一个
+Active 和一个 Previous 指针。安装顺序固定为：
 
-- 通过原子目录切换提交安装，失败时不改变 Active Package；
-- 在本地 Registry 记录 Active/Previous 版本和安装审计；
-- 在提交前计算权限差异，新增权限必须显式批准；
-- 升级不得改变 `agentId`，降级/回滚必须是显式事务。
+1. H1a 完成签名、Artifact、文件清单、Schema、引用和身份验证；
+2. 比较 Active 与新 Manifest 的权限集合；首次安装按“从零权限增加”处理；
+3. 没有显式批准时返回 `approval_required`，staging 自动清理；
+4. 对 staging 文件执行同步，再在同一 Package 文件系统中原子 rename 到不可变版本目录；
+5. 通过 SQLite `IMMEDIATE` transaction 比较并提交 Active/Previous 指针；
+6. 数据库提交失败时，旧 Active 不变；已 rename 的新目录只会成为未引用 orphan；
+7. 显式 rollback 在单个 SQLite transaction 中交换 Active/Previous。
+
+安装/升级还固定以下不变量：
+
+- 一个 `agentId` 只能属于一个已安装 `packageId`；
+- 同一 `packageId` 的升级不能改变 `agentId`；
+- 同一版本不能换成另一个 Artifact digest；
+- 低于 Active 的版本不能伪装成普通升级，只能回到已验证的 Previous；
+- Active/Previous 记录保存版本、Artifact digest、相对路径、已批准权限和签名 key ID；
+- v6→v7 迁移不改变既有 Agent Main Session、Provider Profile、Binding 或其他状态。
+
+当前安装服务仍是 Host 私有模块，没有 ACP/Renderer mutation 入口；生产 Trust Store
+仍为空，因此不会对真实用户目录产生动态安装。正式发布密钥、权限确认 UI 和管理入口
+必须作为独立发布门槛。未引用 orphan 的安全清理也留到 H2，不影响 Active 一致性。
+
+## 9. H2 边界
 
 H2 负责“动态分发与双投影”：
 
+- 让本地 Registry 的 Active Package 在启动/安装后合并进运行时 Catalog；
 - 从 AgentMesh360 Package Registry 获取签名元数据和产物；
 - 用户确认新增权限后安装/升级；
 - 生成或安装 Manifest 声明的宿主 Skill Adapter；
 - 执行受版本控制的状态迁移并支持回滚；
 - 让新增 Agent 在未超出已支持 Schema/Capability 时无需客户端发版。
 
-H1/H2 完成前，远端 Package 不会被下载、解包、执行或写入 Active Registry。
+H2 完成前，远端 Package 不会被下载、解包或执行；H1 安装服务也不会暴露给客户端
+界面。当前三个内置 Package 继续是唯一生产可用目录。
