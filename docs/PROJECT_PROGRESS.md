@@ -26,7 +26,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；旧状态可认领 | 独立后台 Host、自启动与 UI 重连 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0 已让专属 Grok Leader 在 UI 退出后继续运行并可恢复同一 Main Session | G1：Leader 崩溃重建、产品准入恢复与系统登录启动 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -1251,7 +1251,9 @@ F0a 计划复盘：
 
 ### 循环 19：独立后台 Host G0——生命周期现状审计与协议设计
 
-状态：已规划，下一开发切片
+状态：已完成
+
+本地提交：`fa92433 feat: keep agent host alive across desktop sessions`
 
 启动理由：F0b 需要用户明确提供外部 Gemini 测试凭据，而且 thought signature 的真实
 wire shape 不能靠猜测；该外部门槛不应阻塞所有持久 Agent 共同需要的后台 Host。
@@ -1260,7 +1262,7 @@ wire shape 不能靠猜测；该外部门槛不应阻塞所有持久 Agent 共�
 
 1. 画清 Electron、Host 子进程、Session Store、Vault 与订阅重验的实际生命周期；
 2. 定义单实例 Host ownership、socket/lock、版本握手、UI attach/detach 和优雅退出协议；
-3. 增加只读诊断，证明当前 UI 退出会终止 Host，并固定目标态验收脚本；
+3. 增加只读诊断，并固定 UI detach 后 Host 存活、第二个 UI 重连的真实验收脚本；
 4. 先形成 ADR 与最小 Supervisor seam，再决定 macOS LaunchAgent/登录项实现范围；
 5. 模块完成后再次更新本文档、复核蓝图并进入 G1。
 
@@ -1269,3 +1271,72 @@ Probe、不加入 Gemini 预设、不迁移动态 Agent Package。
 
 验收条件：现状与目标态不混写；单实例/版本不匹配/孤儿 Host/订阅失效/桌面重连都有
 明确状态机；诊断不含 access token、Provider Key 或用户对话；默认测试不改系统登录项。
+
+已经实现：
+
+- 源码审计确认 Grok Build 已有 `connect_or_spawn`、UDS/Named Pipe、文件锁、PID、
+  `LeaderReady`、多客户端、版本门槛、旧 Leader 让位和有界重连；因此取消“另造
+  Supervisor 协议”的假设，直接采用上游成熟 Leader；
+- 桌面默认命令从 `agent --no-leader stdio` 改为 `agent --leader stdio`；Electron
+  只拥有可丢弃 Bridge，`AcpHostClient.stop()` 不再终止独立 Leader；
+- 默认把 `GROK_LEADER_SOCKET` 固定为
+  `$AGENTMESH360_HOME/run/host.sock`，隔离用户日常 Grok Leader；保留显式
+  `embedded` 诊断模式；
+- 新增只读运行状态，只返回 mode、ownership、transport、Bridge 状态和 socket
+  文件名，不返回环境、完整路径、Token、Key 或对话；
+- 运行目录以 `0700` 创建；macOS/Linux 在 spawn 前拒绝超过 100 bytes 的 socket
+  路径。真实测试最初确实触发了 macOS `SUN_LEN`，修复后不再等待 IPC 超时；
+- 新增真实持久生命周期契约：第一个 Bridge bootstrap 并激活 Job Agent，记录
+  Leader PID 与 Main Session；detach 后确认 PID 仍存活；第二个 Bridge 采用相同
+  PID 并恢复相同 Main Session；结束后 TERM/KILL 兜底清理测试 Leader；
+- 形成
+  [`architecture/ADR_BACKGROUND_HOST_LIFECYCLE.md`](architecture/ADR_BACKGROUND_HOST_LIFECYCLE.md)，
+  明确退出 UI、退出账号、订阅到期、Leader 崩溃、版本替换和系统启动的不同语义。
+
+验证证据：
+
+- `npm run check` 通过；
+- 完整桌面测试（带真实 Host）：34 项通过、0 跳过；
+- 其中 embedded 真实 Host 继续验证订阅准入/到期拒绝，持久 Leader 真实测试验证
+  detach/re-attach 与固定 Main Session；
+- `git diff --check` 通过；
+- 测试使用专属临时 HOME、`GROK_HOME`、`AGENTMESH360_HOME`、socket 与 localhost
+  Core，没有读取真实身份或 Provider 凭据；
+- 测试结束后只读进程检查未发现残留的临时 Leader。
+
+G0 计划复盘：
+
+- 没有为 Job/LectureCast/Deploy 分别复制完整 Harness，仍是一份 Leader 承载多个
+  产品 Agent；
+- 没有重复实现 socket/lock/PID/版本协议，减少 Fork 长期同步面；
+- 没有把“UI 可重连”夸大为“系统重启后已自动恢复”：登录项、后台身份刷新和
+  Electron 不运行时的崩溃重启仍未完成；
+- 没有顺手切换 `GROK_HOME`，避免 Registry 已引用的既有 Session 因缺少迁移而
+  突然不可见；
+- 普通测试显式使用 embedded 模式，不创建用户目录或后台进程；真实 Leader 测试
+  才显式 opt-in。
+
+### 循环 20：独立后台 Host G1——崩溃重建与准入恢复
+
+状态：已规划，下一开发切片
+
+启动理由：G0 已证明 UI detach/re-attach，但 Leader 自身被杀死后，新 Leader 不会
+自动继承只存在内存中的 AgentMesh360 准入。上游 Bridge 能重连和回放 ACP
+initialize/session load，产品层还必须监听重连并通过现有 Refresh Token 再次向 Core
+和新 Host bootstrap，否则会出现“进程恢复、产品 Agent 仍被门禁”的假恢复。
+
+本轮目标：
+
+1. 将上游 `x.ai/leader_reconnected` 提升为桌面 Host 生命周期事件；
+2. Identity Controller 收到事件后复用现有串行 revalidate，重新刷新身份并 bootstrap
+   新 Leader，不缓存或回放旧 Access Token；
+3. 合并重连风暴，防止并发刷新 Token 或重复 bootstrap；
+4. 增加 Leader SIGKILL 故障注入，验证新 PID、同一 Main Session 和有效订阅恢复；
+5. 更新 ADR 与进展，再把系统登录启动/隐藏后台主进程拆为 G2。
+
+本轮非目标：不注册系统登录项、不把 Refresh Token 移交 Rust Host、不新增后台付费
+Probe、不迁移 `GROK_HOME`、不实现跨版本数据格式迁移。
+
+验收条件：Leader 被终止后，Bridge 使用上游有界重连；桌面只用安全存储中的 Refresh
+Token 获取新 Access Token；新 Host 重新执行订阅硬门禁；失败保持 `unavailable`，
+不得沿用旧准入；真实故障测试不遗留进程或临时数据。

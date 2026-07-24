@@ -10,6 +10,8 @@ Session Binding 和实施顺序见：
 [`CC_SWITCH_PROVIDER_RESEARCH.md`](CC_SWITCH_PROVIDER_RESEARCH.md)。
 账户隔离与 Binding 迁移决策见：
 [`ADR_ACCOUNT_SCOPED_SESSIONS_AND_BINDINGS.md`](ADR_ACCOUNT_SCOPED_SESSIONS_AND_BINDINGS.md)。
+后台 Host 的 ownership、socket/lock、attach/detach 和版本策略见：
+[`ADR_BACKGROUND_HOST_LIFECYCLE.md`](ADR_BACKGROUND_HOST_LIFECYCLE.md)。
 
 ## 核心决策
 
@@ -103,10 +105,16 @@ Assignment fallback、实际 assignment role 审计和 Host role-aware Authority
 自动权限分类已接入 `permission_classifier` Binding 且失败只回退本地策略，当前正在接入
 必要压缩。Provider UI 和真实 Provider E2E 仍未实现。
 
-当前 Grok Host 仍由 Electron 通过 ACP stdio 作为子进程启动，应用退出时会停止。
-因此“窗口关闭后后台 Agent 继续在线、系统登录自启、UI 重连同一 Host、崩溃恢复”和
-Host 独立访问 Provider Vault 仍属于目标能力。独立 Host/Supervisor 完成前，不能把
-产品状态描述为已经达到最终的“激活即长期在线”。
+G0 已把默认运行方式从 `--no-leader` 改为 AgentMesh360 专属 socket 上的 Grok
+Leader。Electron 只持有可丢弃的 ACP stdio Bridge：应用退出时 Bridge detach，
+Leader、Registry 与固定 Main Session 继续存在；重新打开客户端后可采用同一 Leader，
+真实 Host 测试已经验证 Job Agent 的 Main Session ID 不变。Leader 单实例、lock/PID、
+`LeaderReady`、版本门槛和有界重连直接复用上游机制，不另建平行 Supervisor 协议。
+
+当前仍没有注册系统登录项，也尚未完成 Electron 不运行时的产品级崩溃重启、受控
+shutdown、系统休眠/唤醒与版本替换故障注入。Grok Session Store 根目录也暂未切换，
+避免未迁移就让现有对话不可见。因此 G0 可以描述为“UI 退出后 Host 持续、UI 可重连”，
+还不能描述为“系统重启后已经自动恢复并长期在线”。
 
 ## 上游同步规则
 

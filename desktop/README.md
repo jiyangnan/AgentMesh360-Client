@@ -15,6 +15,8 @@
 - 订阅无效、过期或暂停时，只显示订阅拦截页和官网续费入口；
 - 订阅有效时，必须由 Core 和本地 Host 双重确认，才显示 Agent 首页；
 - 通过真实 ACP 进程列出、激活 Job Agent、Lecturecast Agent 与 Deploy Agent；
+- 默认通过 AgentMesh360 专属 socket 连接持久 Grok Leader；退出桌面 UI 只断开
+  ACP Bridge，后台 Host 与固定 Main Session 继续存在，重新打开后采用同一 Leader；
 - 退出登录时删除本机 Refresh Token，并立即撤销 Host 的产品 Agent 准入状态。
 - Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
   API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
@@ -31,7 +33,8 @@
 flowchart LR
     UI["受限渲染进程"] -->|"脱敏 IPC"| MAIN["Electron 主进程"]
     MAIN -->|"HTTPS 登录、刷新与 bootstrap"| CORE["AgentMesh360 Core"]
-    MAIN -->|"带下划线前缀的 ACP 扩展方法"| HOST["Grok Build Host"]
+    MAIN -->|"ACP stdio\n可丢弃 Bridge"| BRIDGE["Grok Client Bridge"]
+    BRIDGE -->|"专属 UDS / Named Pipe"| HOST["持久 Grok Leader\nAgentMesh360 Host"]
     HOST -->|"再次 bootstrap"| CORE
     MAIN --> IDENTITY_STORE["safeStorage\n身份 Refresh Token"]
     HOST --> PROVIDER_VAULT["macOS Keychain\nProvider API Key"]
@@ -64,6 +67,13 @@ npm start
 Core 默认地址是 `https://api.agentmesh360.com`。本地集成测试可设置
 `AGENTMESH360_CORE_URL`，该变量也会传递给 Host，确保两端校验同一个 Core。
 
+Host 默认以 `persistent_leader` 运行，socket 为
+`$AGENTMESH360_HOME/run/host.sock`（未设置 Home 时是
+`~/.agentmesh360/run/host.sock`）。可以用 `AGENTMESH360_HOST_SOCKET` 指定更短的
+产品专属路径。`AGENTMESH360_HOST_MODE=embedded` 会退回 `--no-leader`，只用于
+隔离测试和诊断；它不是正式产品运行方式。详细生命周期与信任边界见
+[`ADR_BACKGROUND_HOST_LIFECYCLE.md`](../docs/architecture/ADR_BACKGROUND_HOST_LIFECYCLE.md)。
+
 ## 验证
 
 基础验证：
@@ -75,7 +85,9 @@ npm audit
 ```
 
 真实 Host 契约测试会启动本地临时 Core 和实际 Rust Host，验证有效订阅放行、
-三个 Agent 可见，以及订阅到期后的立即拒绝：
+三个 Agent 可见，以及订阅到期后的立即拒绝。相同命令还会验证持久 Leader 在第一个
+Bridge detach 后仍存活，第二个 Bridge 恢复同一个产品 Agent Main Session；测试
+Leader 会在结束时主动清理：
 
 ```bash
 AGENTMESH360_REAL_HOST_BIN=../target/debug/xai-grok-pager \
@@ -98,3 +110,5 @@ npm run build:mac
 ```
 
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
+系统登录自启动、Electron 不运行时的崩溃恢复与受控 Host shutdown 仍属于 G1，
+不能仅凭 G0 宣称已经完成系统重启后的长期在线。
