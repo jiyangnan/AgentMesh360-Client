@@ -406,7 +406,7 @@ impl PackageInstallService {
         statuses
     }
 
-    pub(crate) fn rollback(&self, package_id: &str) -> Result<InstalledPackageRecord> {
+    pub(super) fn rollback(&self, package_id: &str) -> Result<InstalledPackageRecord> {
         let mut conn = super::state::open(&self.state_home)?;
         let transaction = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = read_record(&transaction, package_id)?

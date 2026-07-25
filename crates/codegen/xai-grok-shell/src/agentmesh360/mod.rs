@@ -88,10 +88,8 @@ impl AgentMesh360Runtime {
             &state_home,
             registry.clone(),
         );
-        let package_delivery = package_delivery::PackageDeliveryService::in_home_with_registry(
-            &state_home,
-            registry.clone(),
-        );
+        let package_delivery =
+            package_delivery::PackageDeliveryService::with_registry(registry.clone());
         Self {
             registry,
             providers: providers::ProviderService::new(

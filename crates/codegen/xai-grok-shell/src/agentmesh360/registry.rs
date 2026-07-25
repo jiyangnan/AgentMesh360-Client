@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
@@ -67,6 +67,11 @@ pub(crate) struct PackageCatalogHealth {
     pub last_issue: Option<PackageStatusIssue>,
 }
 
+pub(crate) struct PackageCatalogRefreshOutcome {
+    pub catalog: Result<Arc<AgentPackageCatalog>>,
+    pub health: PackageCatalogHealth,
+}
+
 impl std::fmt::Debug for AgentRegistry {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -116,19 +121,30 @@ impl AgentRegistry {
         ))
     }
 
+    pub(crate) fn state_home(&self) -> &Path {
+        &self.state_home
+    }
+
     pub(crate) fn refresh_package_catalog(&self) -> Result<Arc<AgentPackageCatalog>> {
+        self.refresh_package_catalog_outcome().catalog
+    }
+
+    pub(crate) fn refresh_package_catalog_outcome(&self) -> PackageCatalogRefreshOutcome {
         let _refresh_guard = self.package_catalog.refresh_gate.lock();
-        self.refresh_package_catalog_locked()
+        let catalog = self.refresh_package_catalog_locked();
+        let health = self.package_catalog_health();
+        PackageCatalogRefreshOutcome { catalog, health }
     }
 
     pub(crate) fn mutate_and_refresh_package_catalog<T>(
         &self,
         mutation: impl FnOnce() -> Result<T>,
-    ) -> Result<(T, Result<Arc<AgentPackageCatalog>>)> {
+    ) -> Result<(T, PackageCatalogRefreshOutcome)> {
         let _refresh_guard = self.package_catalog.refresh_gate.lock();
         let value = mutation()?;
-        let refresh = self.refresh_package_catalog_locked();
-        Ok((value, refresh))
+        let catalog = self.refresh_package_catalog_locked();
+        let health = self.package_catalog_health();
+        Ok((value, PackageCatalogRefreshOutcome { catalog, health }))
     }
 
     fn refresh_package_catalog_locked(&self) -> Result<Arc<AgentPackageCatalog>> {
@@ -562,13 +578,17 @@ mod tests {
     }
 
     #[test]
-    fn package_mutation_and_refresh_share_one_ordering_gate_across_clones() {
+    fn package_mutations_and_explicit_refresh_share_one_ordering_gate_across_clones() {
         let temp = tempfile::tempdir().expect("tempdir");
         let first = AgentRegistry::in_home(temp.path());
         let second = first.clone();
+        let explicit_refresh = first.clone();
         let (first_entered_tx, first_entered_rx) = mpsc::channel();
         let (release_first_tx, release_first_rx) = mpsc::channel();
+        let (second_started_tx, second_started_rx) = mpsc::channel();
         let (second_entered_tx, second_entered_rx) = mpsc::channel();
+        let (refresh_started_tx, refresh_started_rx) = mpsc::channel();
+        let (refresh_done_tx, refresh_done_rx) = mpsc::channel();
 
         let first_thread = std::thread::spawn(move || {
             let (_, refresh) = first
@@ -578,29 +598,73 @@ mod tests {
                     Ok(())
                 })
                 .expect("first mutation and refresh");
-            refresh.expect("first refresh");
+            refresh.catalog.expect("first refresh");
         });
         first_entered_rx.recv().expect("first gate acquired");
         let second_thread = std::thread::spawn(move || {
+            second_started_tx.send(()).expect("second started");
             let (_, refresh) = second
                 .mutate_and_refresh_package_catalog(|| {
                     second_entered_tx.send(()).expect("second entered");
                     Ok(())
                 })
                 .expect("second mutation and refresh");
-            refresh.expect("second refresh");
+            refresh.catalog.expect("second refresh");
+        });
+        let refresh_thread = std::thread::spawn(move || {
+            refresh_started_tx.send(()).expect("refresh started");
+            explicit_refresh
+                .refresh_package_catalog()
+                .expect("explicit refresh");
+            refresh_done_tx.send(()).expect("refresh complete");
         });
 
+        second_started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("second mutation started");
+        refresh_started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("explicit refresh started");
         assert!(
             second_entered_rx
-                .recv_timeout(Duration::from_millis(50))
+                .recv_timeout(Duration::from_millis(100))
+                .is_err()
+        );
+        assert!(
+            refresh_done_rx
+                .recv_timeout(Duration::from_millis(100))
                 .is_err()
         );
         release_first_tx.send(()).expect("release first");
         second_entered_rx
-            .recv_timeout(Duration::from_secs(1))
+            .recv_timeout(Duration::from_secs(5))
             .expect("second entered after first refresh");
+        refresh_done_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("explicit refresh after first mutation");
         first_thread.join().expect("first thread");
         second_thread.join().expect("second thread");
+        refresh_thread.join().expect("refresh thread");
+    }
+
+    #[test]
+    fn refresh_outcome_keeps_the_catalog_and_health_from_one_gate_snapshot() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let registry = AgentRegistry::in_home(temp.path());
+        let (_, first_outcome) = registry
+            .mutate_and_refresh_package_catalog(|| Ok(()))
+            .expect("first refresh outcome");
+        let first_revision = first_outcome
+            .catalog
+            .expect("first Catalog")
+            .catalog_revision;
+
+        registry
+            .refresh_package_catalog()
+            .expect("later explicit refresh");
+        let later_health = registry.package_catalog_health();
+
+        assert_eq!(first_outcome.health.catalog_revision, Some(first_revision));
+        assert_eq!(later_health.generation, first_outcome.health.generation + 1);
     }
 }

@@ -14,7 +14,7 @@ use super::package_installer::{
     InstalledPackageRecord, PackageInstallResult, PackageInstallService, PackageStatusIssue,
     VerifiedPackageInstallPlan,
 };
-use super::registry::AgentRegistry;
+use super::registry::{AgentRegistry, PackageCatalogRefreshOutcome};
 
 const APPROVAL_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_PENDING_APPROVALS: usize = 32;
@@ -31,14 +31,11 @@ impl PackageDeliveryService {
     pub(crate) fn in_home(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
         let registry = AgentRegistry::in_home(&state_home);
-        Self::in_home_with_registry(state_home, registry)
+        Self::with_registry(registry)
     }
 
-    pub(crate) fn in_home_with_registry(
-        state_home: impl Into<PathBuf>,
-        registry: AgentRegistry,
-    ) -> Self {
-        let state_home = state_home.into();
+    pub(crate) fn with_registry(registry: AgentRegistry) -> Self {
+        let state_home = registry.state_home().to_path_buf();
         Self {
             downloader: PackageArtifactDownloader::in_home(&state_home),
             installer: PackageInstallService::in_home(&state_home),
@@ -69,7 +66,7 @@ impl PackageDeliveryService {
         &self,
         approval_id: &str,
         access: &ClientAccess,
-    ) -> Result<PackageInstallReceipt> {
+    ) -> Result<PackageMutationReceipt> {
         let owner_account_id = require_account(access)?;
         let approval_id = Uuid::parse_str(approval_id)
             .map_err(|_| anyhow!("Agent Package approval is unavailable"))?;
@@ -91,6 +88,38 @@ impl PackageDeliveryService {
         let verified = pending.download.into_staged();
         let plan = pending.plan;
         self.install_with_plan_and_refresh(verified, plan, true)
+    }
+
+    pub(crate) fn rollback(
+        &self,
+        package_id: &str,
+        access: &ClientAccess,
+    ) -> Result<PackageMutationReceipt> {
+        let owner_account_id = require_account(access)?;
+        let (rolled_back, refresh) = self.registry.mutate_and_refresh_package_catalog(|| {
+            if require_account(access)? != owner_account_id {
+                bail!("Agent Package rollback access changed before commit");
+            }
+            self.installer.rollback(package_id)
+        })?;
+        Ok(self.package_receipt(rolled_back, refresh))
+    }
+
+    pub(crate) fn reconcile_runtime_catalog(
+        &self,
+        package_id: &str,
+        access: &ClientAccess,
+    ) -> Result<PackageMutationReceipt> {
+        let owner_account_id = require_account(access)?;
+        let (installed, refresh) = self.registry.mutate_and_refresh_package_catalog(|| {
+            if require_account(access)? != owner_account_id {
+                bail!("Agent Package reconciliation access changed before refresh");
+            }
+            self.installer
+                .get(package_id)?
+                .ok_or_else(|| anyhow!("Agent Package is not installed"))
+        })?;
+        Ok(self.package_receipt(installed, refresh))
     }
 
     fn prepare_downloaded(
@@ -185,7 +214,7 @@ impl PackageDeliveryService {
         verified: super::package_artifact::VerifiedStagedPackage,
         plan: VerifiedPackageInstallPlan,
         permissions_approved: bool,
-    ) -> Result<PackageInstallReceipt> {
+    ) -> Result<PackageMutationReceipt> {
         let (installed, refresh) = self.registry.mutate_and_refresh_package_catalog(|| {
             let observed_plan = self.installer.plan_verified_install(&verified)?;
             if observed_plan != plan {
@@ -195,22 +224,22 @@ impl PackageDeliveryService {
                 .install_verified_with_plan(verified, &plan, permissions_approved)
                 .and_then(installed_only)
         })?;
-        Ok(self.install_receipt(installed, refresh))
+        Ok(self.package_receipt(installed, refresh))
     }
 
     #[cfg(test)]
-    fn finalize_installed(&self, installed: InstalledPackageRecord) -> PackageInstallReceipt {
-        let refresh = self.registry.refresh_package_catalog();
-        self.install_receipt(installed, refresh)
+    fn finalize_installed(&self, installed: InstalledPackageRecord) -> PackageMutationReceipt {
+        let refresh = self.registry.refresh_package_catalog_outcome();
+        self.package_receipt(installed, refresh)
     }
 
-    fn install_receipt(
+    fn package_receipt(
         &self,
         installed: InstalledPackageRecord,
-        refresh: Result<Arc<super::agent_packages::AgentPackageCatalog>>,
-    ) -> PackageInstallReceipt {
-        let health = self.registry.package_catalog_health();
-        let visibility = match refresh {
+        refresh: PackageCatalogRefreshOutcome,
+    ) -> PackageMutationReceipt {
+        let health = refresh.health;
+        let visibility = match refresh.catalog {
             Ok(catalog) => match catalog
                 .packages
                 .iter()
@@ -244,7 +273,7 @@ impl PackageDeliveryService {
                 issue: health.last_issue.unwrap_or_else(runtime_refresh_issue),
             },
         };
-        PackageInstallReceipt {
+        PackageMutationReceipt {
             package_id: installed.package_id,
             agent_id: installed.agent_id,
             version: installed.active.version,
@@ -267,12 +296,12 @@ pub(crate) struct PackageApprovalChallenge {
 #[serde(rename_all = "snake_case", tag = "status")]
 pub(crate) enum PackageDeliveryResult {
     ApprovalRequired { approval: PackageApprovalChallenge },
-    Installed { receipt: PackageInstallReceipt },
+    Installed { receipt: PackageMutationReceipt },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PackageInstallReceipt {
+pub(crate) struct PackageMutationReceipt {
     pub package_id: String,
     pub agent_id: String,
     pub version: String,
@@ -330,7 +359,7 @@ fn installed_only(result: PackageInstallResult) -> Result<InstalledPackageRecord
 fn runtime_refresh_issue() -> PackageStatusIssue {
     PackageStatusIssue {
         code: "runtime_catalog_refresh_pending".into(),
-        summary: "The Package is installed but is not yet visible to the runtime catalog.".into(),
+        summary: "The local Package state is not yet visible to the runtime catalog.".into(),
     }
 }
 
@@ -338,6 +367,7 @@ fn runtime_refresh_issue() -> PackageStatusIssue {
 mod tests {
     use std::collections::VecDeque;
     use std::fs;
+    use std::sync::mpsc;
 
     use chrono::{TimeZone as _, Utc};
     use ed25519_dalek::SigningKey;
@@ -598,10 +628,16 @@ mod tests {
             .staging_path()
             .to_path_buf();
 
-        tokio::time::sleep(Duration::from_millis(30)).await;
-
-        assert!(service.pending.lock().is_empty());
-        assert!(!staging.exists());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if service.pending.lock().is_empty() && !staging.exists() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("approval reaper completed");
     }
 
     #[test]
@@ -749,6 +785,267 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rollback_refreshes_catalog_and_preserves_the_stable_main_session() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'f');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'g');
+        let before_session = service
+            .registry
+            .prepare_activation(1, "job-agent")
+            .expect("activate upgraded Agent")
+            .main_session_id
+            .expect("main session");
+        let before_health = service.registry.package_catalog_health();
+
+        let receipt = service
+            .rollback(PACKAGE_ID, &access())
+            .expect("rollback Package");
+
+        assert_eq!(receipt.version, "0.4.8");
+        assert!(matches!(
+            receipt.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
+        assert_eq!(
+            service
+                .registry
+                .package_catalog()
+                .expect("Catalog")
+                .package_for_agent("job-agent")
+                .expect("Job Agent")
+                .version,
+            "0.4.8"
+        );
+        assert_eq!(
+            service
+                .registry
+                .prepare_activation(1, "job-agent")
+                .expect("reactivate rolled-back Agent")
+                .main_session_id
+                .as_deref(),
+            Some(before_session.as_str())
+        );
+        assert_eq!(
+            service.registry.package_catalog_health().generation,
+            before_health.generation + 1
+        );
+        let serialized = serde_json::to_string(&receipt).expect("serialize rollback receipt");
+        for secret in ["sha256", "relativePath", temp.path().to_str().unwrap()] {
+            assert!(!serialized.contains(secret));
+        }
+    }
+
+    #[test]
+    fn rollback_rejects_invalid_access_and_damaged_previous_without_mutation() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'h');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'i');
+        let before = service
+            .installer
+            .get(PACKAGE_ID)
+            .expect("registry")
+            .expect("installed Package");
+        let before_health = service.registry.package_catalog_health();
+        let invalid = access();
+        invalid.invalidate();
+
+        service
+            .rollback(PACKAGE_ID, &invalid)
+            .expect_err("invalid rollback access");
+        service
+            .reconcile_runtime_catalog(PACKAGE_ID, &invalid)
+            .expect_err("invalid reconciliation access");
+        assert_eq!(
+            service
+                .installer
+                .get(PACKAGE_ID)
+                .expect("registry")
+                .expect("installed Package"),
+            before
+        );
+
+        let previous = before.previous.as_ref().expect("previous Package");
+        let previous_path = temp.path().join("packages").join(&previous.relative_path);
+        fs::write(previous_path.join("docs/agent-onboarding.md"), b"tampered")
+            .expect("tamper previous");
+        let error = service
+            .rollback(PACKAGE_ID, &access())
+            .expect_err("damaged previous");
+
+        assert_eq!(
+            super::super::package_installer::classify_package_error(&error).code,
+            "package_integrity_failed"
+        );
+        assert_eq!(
+            service
+                .installer
+                .get(PACKAGE_ID)
+                .expect("registry")
+                .expect("installed Package"),
+            before
+        );
+        assert_eq!(service.registry.package_catalog_health(), before_health);
+        assert_eq!(
+            service
+                .registry
+                .package_catalog()
+                .expect("last-good Catalog")
+                .package_for_agent("job-agent")
+                .expect("Job Agent")
+                .version,
+            "0.4.9"
+        );
+    }
+
+    #[test]
+    fn committed_rollback_reports_pending_until_catalog_reconciliation_recovers() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'j');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'k');
+        deliver_manifest(&service, &new_agent_manifest(), 'l');
+        let last_good_health = service.registry.package_catalog_health();
+        let research = service
+            .installer
+            .get("com.agentmesh360.research-agent")
+            .expect("registry")
+            .expect("Research Agent");
+        let research_path = temp
+            .path()
+            .join("packages")
+            .join(&research.active.relative_path);
+        fs::write(research_path.join("docs/agent-onboarding.md"), b"tampered")
+            .expect("tamper other active Package");
+
+        let pending = service
+            .rollback(PACKAGE_ID, &access())
+            .expect("rollback commits before refresh failure");
+
+        assert_eq!(pending.version, "0.4.8");
+        assert!(matches!(
+            pending.runtime_visibility,
+            PackageRuntimeVisibility::RefreshPending { .. }
+        ));
+        assert_eq!(
+            service
+                .installer
+                .get(PACKAGE_ID)
+                .expect("registry")
+                .expect("rolled-back Package")
+                .active
+                .version,
+            "0.4.8"
+        );
+        assert_eq!(
+            service
+                .registry
+                .package_catalog()
+                .expect("last-good Catalog")
+                .package_for_agent("job-agent")
+                .expect("last-good Job Agent")
+                .version,
+            "0.4.9"
+        );
+        let degraded = service.registry.package_catalog_health();
+        assert_eq!(degraded.generation, last_good_health.generation);
+        assert_eq!(degraded.catalog_revision, last_good_health.catalog_revision);
+        assert!(degraded.last_issue.is_some());
+        fs::write(
+            research_path.join("docs/agent-onboarding.md"),
+            b"# Job Agent workflow\n",
+        )
+        .expect("restore other active Package");
+
+        let recovered = service
+            .reconcile_runtime_catalog(PACKAGE_ID, &access())
+            .expect("reconcile Catalog");
+
+        assert_eq!(recovered.version, "0.4.8");
+        assert!(matches!(
+            recovered.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
+        assert_eq!(
+            service
+                .registry
+                .package_catalog()
+                .expect("recovered Catalog")
+                .package_for_agent("job-agent")
+                .expect("recovered Job Agent")
+                .version,
+            "0.4.8"
+        );
+        let recovered_health = service.registry.package_catalog_health();
+        assert_eq!(recovered_health.generation, last_good_health.generation + 1);
+        assert!(recovered_health.last_issue.is_none());
+    }
+
+    #[test]
+    fn rollback_waits_for_the_shared_package_mutation_gate() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'm');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'n');
+        let gate_holder = service.registry.clone();
+        let rollback_registry = service.registry.clone();
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (rollback_started_tx, rollback_started_rx) = mpsc::channel();
+        let (rolled_back_tx, rolled_back_rx) = mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let (_, refresh) = gate_holder
+                .mutate_and_refresh_package_catalog(|| {
+                    entered_tx.send(()).expect("gate entered");
+                    release_rx.recv().expect("release gate");
+                    Ok(())
+                })
+                .expect("held mutation");
+            refresh.catalog.expect("held refresh");
+        });
+        entered_rx.recv().expect("gate acquired");
+        let rollback_thread = std::thread::spawn(move || {
+            let service = PackageDeliveryService::with_registry(rollback_registry);
+            rollback_started_tx.send(()).expect("rollback started");
+            let receipt = service
+                .rollback(PACKAGE_ID, &access())
+                .expect("queued rollback");
+            rolled_back_tx.send(receipt).expect("rollback complete");
+        });
+
+        rollback_started_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("rollback thread started");
+        assert!(
+            rolled_back_rx
+                .recv_timeout(Duration::from_millis(100))
+                .is_err()
+        );
+        assert_eq!(
+            service
+                .installer
+                .get(PACKAGE_ID)
+                .expect("registry")
+                .expect("installed Package")
+                .active
+                .version,
+            "0.4.9"
+        );
+        release_tx.send(()).expect("release gate");
+        let receipt = rolled_back_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("rollback after gate");
+        assert_eq!(receipt.version, "0.4.8");
+        assert!(matches!(
+            receipt.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
+        holder.join().expect("holder thread");
+        rollback_thread.join().expect("rollback thread");
+    }
+
     fn verified_download(state_home: &std::path::Path) -> VerifiedPackageDownload {
         let fixture = download_artifact_fixture_for_test();
         let artifact_path = state_home.join(format!("fixture-{}.tar.zst", Uuid::now_v7()));
@@ -800,6 +1097,29 @@ mod tests {
             .install_verified_with_plan(downloaded.into_staged(), &plan, true)
             .expect("install Package");
         installed_only(result).expect("installed Package")
+    }
+
+    fn deliver_manifest(
+        service: &PackageDeliveryService,
+        document: &str,
+        digest_byte: char,
+    ) -> PackageMutationReceipt {
+        match service
+            .prepare_downloaded(
+                verified_download_from_manifest(
+                    service.registry.state_home(),
+                    document,
+                    digest_byte,
+                ),
+                1,
+            )
+            .expect("prepare Package delivery")
+        {
+            PackageDeliveryResult::ApprovalRequired { approval } => service
+                .approve_and_install(&approval.approval_id, &access())
+                .expect("approve Package install"),
+            PackageDeliveryResult::Installed { receipt } => receipt,
+        }
     }
 
     fn write_test_package_tree(staging_dir: &std::path::Path, document: &str) {
