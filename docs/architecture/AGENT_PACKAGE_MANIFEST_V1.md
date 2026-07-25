@@ -374,13 +374,35 @@ agent、Artifact digest、完整请求权限集合、当时 Active digest 与幂
 零。它只提交本地 Active/Previous，不刷新 Shared Runtime Catalog，不开放 ACP/UI，
 也不启用生产 endpoint/root/bundle。
 
-## 16. H2b2c 计划：安装后的运行时原子可见性
+## 16. H2b2c 安装后的运行时原子可见性（已通过交叉测试）
 
-下一切片把成功安装结果与同一 Host 的 Shared Runtime Catalog 刷新组合起来。刷新成功
-后，新 Agent 或内置升级才可在后续账户列表/激活中按 Manifest 投影；刷新失败必须保留
-last-known-good Catalog，并明确报告“安装已提交但尚未运行时可见”，不能伪装为安装
-回滚。并发安装/刷新还需保证旧快照不能覆盖新 Active。本切片仍不开放 ACP、桌面 UI
-或生产 Trust 配置。
+`AgentMesh360Runtime` 让 Delivery、产品 Agent 列表/激活和模型路由共享同一个
+`AgentRegistry`。`mutate_and_refresh_package_catalog` 在共享 refresh gate 内完成
+当前 install plan 复核、不可变 version + SQLite CAS 提交和立即 Catalog refresh；
+显式 refresh 与所有 Registry clone 也复用同一顺序门，因此旧刷新不能在更新的
+Active 之后反向发布旧结果。远端下载和等待用户批准不占用该本地短临界区。
 
-H2b2c 已进入设计与既有 `SharedPackageCatalog` refresh gate、generation 和
-last-known-good 失败语义审计。
+安装结果不再公开包含路径与 digest 的内部记录，而返回 package/agent/version 和以下
+运行时可见性之一：
+
+- `visible`：本次版本已经进入共享 Catalog；
+- `superseded`：安装记录已被更新 Active 取代，同时报告当前活动版本；
+- `refresh_pending`：磁盘安装已经提交，但 Catalog 仍使用 last-known-good，并附固定
+  脱敏健康问题。
+
+刷新失败不会撤销或谎报撤销已提交安装，不改变最后良好 generation/revision，也不会
+重建既有 Session。刷新恢复后，新 Agent 会在所有既有账户的下一次 list/activation
+中按 Manifest 投影，并获得账户级稳定 Main Session。
+
+自主测试与本机 Kimi 独立交叉测试均通过 Delivery 10 项、Registry 6 项、Installer
+10 项和 AgentMesh360 全量 132 项，Clippy `-D warnings`、Rustfmt 与 diff-check
+全部通过；Kimi 四级问题均为零并明确给出 PASS。本切片仍不开放 ACP、桌面 UI 或
+生产 Trust 配置。
+
+## 17. H2b2d 计划：回滚与恢复的运行时一致性
+
+下一切片把 rollback 和显式恢复纳入同一 mutation/refresh 顺序门，并复用脱敏 Receipt
+与 last-known-good 语义。回滚在磁盘已经提交但 refresh 失败时，必须准确报告 Runtime
+仍使用最后良好快照；损坏 Previous 必须在 mutation 前失败关闭。验收还需覆盖
+install/rollback/explicit refresh 并发。H2b2d 仍是 Host 私有能力，不开放 ACP/UI、
+不自动回滚或清理 orphan，也不启用生产 endpoint/root/bundle。

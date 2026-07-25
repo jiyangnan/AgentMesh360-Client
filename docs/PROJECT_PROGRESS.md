@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-24
+最近更新：2026-07-26
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1、H2a1、H2a2、H2b0、H2b1a、H2b1b1、H2b1b2、H2b1c、H2b2a、H2b2b 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2c：安装提交后的 Shared Runtime Catalog 原子刷新与产品 Agent 投影 |
+| 动态 Agent Package | H0/H1 至 H2b2c 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2d：回滚/恢复与 Shared Runtime Catalog 的同序一致性 |
 
 ## 开发循环记录
 
@@ -2294,4 +2294,72 @@ H2b2c 下一切片（须等 H2b2b Kimi 交叉测试关闭后启动）：
 4. 仍不开放 ACP/UI/生产 Trust 配置；验收覆盖新 Agent、内置升级、刷新失败恢复、
    跨账户投影与双方测试门槛。
 
-H2b2c 状态：已进入设计与现有 Shared Runtime Catalog 并发边界审计。
+### 循环 32：动态 Agent Package H2b2c——安装后的运行时原子可见性
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2b2b 已能安全提交本地 Active/Previous，但同一 Host 的
+`SharedPackageCatalog` 仍保持安装前快照。若安装 API 直接返回普通成功，用户会看到
+“磁盘上已安装、当前对话运行时却找不到”的假成功；若刷新失败时把安装说成已回滚，
+又会掩盖真实 Active 状态。H2b2c 因此把安装 mutation 和紧随其后的 Catalog refresh
+放进同一顺序门，明确区分磁盘提交与运行时可见性。
+
+H2b2c 已经实现：
+
+1. `AgentMesh360Runtime` 现在让 `PackageDeliveryService` 与产品列表、激活和模型路由
+   共享同一个 `AgentRegistry`/`SharedPackageCatalog`，不再让安装器拥有与 Host
+   运行时分离的目录副本；
+2. `AgentRegistry::mutate_and_refresh_package_catalog` 在共享 `refresh_gate` 内依次
+   执行当前计划复核、Installer CAS 提交和立即 refresh；所有 Registry clone 的显式
+   refresh 也使用同一把门，旧操作不能在新 Active 提交后反向覆盖运行时快照；
+3. 安装返回脱敏 `PackageInstallReceipt`，只包含 package/agent/version 与运行时状态。
+   状态明确区分 `visible`、已被更新版本取代的 `superseded`，以及磁盘提交成功但
+   Catalog 尚未接受的 `refresh_pending`；不返回 digest、安装路径、staging 路径或
+   文件库存；
+4. refresh 成功后，新 Agent 会在现有账户下一次 list/activation 时按 Manifest
+   确定性投影，并获得账户级稳定 Main Session；内置 Agent 升级也从同一共享快照读取；
+5. refresh 失败不会清空最后良好 Catalog，也不会伪造安装回滚。健康状态保留原
+   generation/revision 并记录固定脱敏问题，Receipt 返回
+   `refresh_pending`；修复本地内容后可用既有显式 refresh 恢复可见性；
+6. `PackageDeliveryService` 仍是 Host 私有能力，未接 ACP/Renderer/UI；生产
+   endpoint、root 和 Trust Bundle 继续为空。
+
+H2b2c 自主验证：
+
+- Delivery 专项 10 项通过，新增覆盖安装新 Agent 后两个既有账户的列表/激活投影、
+  Receipt 序列化脱敏、安装已提交但 refresh 失败时保留 last-known-good、修复后恢复，
+  以及旧安装结果不能把新版 Active 报告成当前可见；
+- Registry 专项 6 项通过，新增跨 Registry clone 的顺序门并发测试，证明第二个
+  mutation/refresh 必须等待第一个完整退出；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：132 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过；
+- 首次在受限沙箱运行 Delivery 时，唯一失败是测试服务器无法绑定本机回环端口；
+  使用允许回环绑定的相同命令重跑后 10/10 通过，不属于产品逻辑失败。
+
+计划复盘：
+
+- 没有把“安装提交成功”和“当前 Runtime 已可见”合并成一个含糊布尔值；
+- last-known-good 与 generation 语义保持 H2a2 约束，失败不会重建 Session、删除
+  Active 或清空运行时 Catalog；
+- 顺序门只包围短生命周期本地验证、CAS 和 refresh，不跨越远端下载或用户审批等待；
+- 没有开放 ACP/UI，也没有用测试 root/endpoints 冒充生产发布配置；
+- 本机 Kimi 已逐行通读全部代码 diff、`SharedPackageCatalog`、Installer/Catalog
+  依赖与三份中文文档，并独立实跑 Delivery 10 项、Registry 6 项、Installer 10 项、
+  AgentMesh360 全量 132 项、Clippy、Rustfmt 和 `git diff --check`，全部通过；
+  它确认 Runtime 共享同一 Registry、顺序门无重入死锁或旧快照覆盖路径、Receipt
+  脱敏和失败保真、跨账户投影与 H2b2d 计划边界。Blocker/High/Medium/Low 均为零，
+  明确给出 PASS，H2b2c 正式关闭。
+
+H2b2c 代码提交：`cb84ee1`（`feat: refresh runtime catalog after install`）。
+
+H2b2d 下一切片（须等 H2b2c Kimi 交叉测试关闭后启动）：
+
+1. 把本地 rollback 和显式恢复也纳入同一 mutation/refresh 顺序门，保证所有改变
+   Active 的 Host 私有路径都遵守与安装相同的 last-known-good 与 Receipt 语义；
+2. rollback 已提交但 refresh 失败时，必须明确报告“磁盘已回滚、运行时仍使用最后
+   良好快照”，不得伪造事务失败或再次切换 Active；
+3. 验收覆盖回滚成功、回滚内容损坏、refresh 失败后恢复，以及 install/rollback/
+   explicit refresh 并发顺序；
+4. 仍不开放 ACP/UI、不自动回滚、不清理 orphan、不启用生产 Trust 配置。完成全部
+   本地 mutation 一致性后，再进入订阅门禁的管理 ACP 与桌面权限 UI。
