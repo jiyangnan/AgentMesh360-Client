@@ -16,6 +16,7 @@ mod package_artifact;
 mod package_delivery;
 mod package_downloader;
 mod package_installer;
+mod package_management;
 mod package_registry_fetcher;
 mod package_registry_snapshot;
 mod package_trust;
@@ -48,6 +49,13 @@ pub const AGENTS_LIST_METHOD: &str = "x.agentmesh360/agents/list";
 pub const AGENTS_ACTIVATE_METHOD: &str = "x.agentmesh360/agents/activate";
 pub const AGENT_PACKAGES_CATALOG_METHOD: &str = "x.agentmesh360/agent-packages/catalog";
 pub const AGENT_PACKAGES_STATUS_METHOD: &str = "x.agentmesh360/agent-packages/status";
+pub use package_management::{
+    APPROVE_METHOD as AGENT_PACKAGES_APPROVE_METHOD,
+    DOWNLOAD_METHOD as AGENT_PACKAGES_DOWNLOAD_METHOD,
+    RECONCILE_METHOD as AGENT_PACKAGES_RECONCILE_METHOD,
+    REMOTE_REFRESH_METHOD as AGENT_PACKAGES_REMOTE_REFRESH_METHOD,
+    ROLLBACK_METHOD as AGENT_PACKAGES_ROLLBACK_METHOD,
+};
 
 pub(crate) struct AgentMesh360Runtime {
     registry: AgentRegistry,
@@ -422,6 +430,15 @@ pub(crate) async fn handle(
             activate(agent, &request.agent_id)
                 .await
                 .and_then(|response| serde_json::to_value(response).map_err(Into::into))
+        }
+        method if package_management::handles(method) => {
+            return package_management::handle(
+                &agent.agentmesh360.package_delivery,
+                &agent.agentmesh360.package_registry_fetcher,
+                &agent.agentmesh360.access,
+                args,
+            )
+            .await;
         }
         method if model_routing::handles(method) => {
             let owner_account_id = agent
@@ -854,9 +871,12 @@ mod tests {
     use axum::http::HeaderMap;
     use axum::response::sse::{Event, Sse};
     use axum::routing::post;
+    use chrono::TimeZone as _;
+    use ed25519_dalek::SigningKey;
     use futures_util::stream;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use uuid::Uuid;
     use xai_acp_lib::AcpAgentGatewaySender as GatewaySender;
 
     use super::*;
@@ -880,12 +900,15 @@ mod tests {
     }
 
     fn ext_result(response: acp::ExtResponse) -> serde_json::Value {
-        let envelope: serde_json::Value =
-            serde_json::from_str(response.0.get()).expect("extension response");
+        let envelope = ext_envelope(response);
         match envelope.get("result") {
             Some(result) if !result.is_null() => result.clone(),
             _ => panic!("extension response has no successful result: {envelope}"),
         }
+    }
+
+    fn ext_envelope(response: acp::ExtResponse) -> serde_json::Value {
+        serde_json::from_str(response.0.get()).expect("extension response")
     }
 
     fn summarize_provider_requests(requests: &[(String, String)]) -> String {
@@ -1214,6 +1237,118 @@ mod tests {
         (agent, gateway_rx)
     }
 
+    fn build_host_test_agent_with_package_delivery(
+        state_home: &std::path::Path,
+        core_base_url: String,
+        roots: package_trust::TrustedRootStore,
+        transport_origin: url::Url,
+    ) -> (
+        MvpAgent,
+        tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
+    ) {
+        let (mut agent, gateway_rx) = build_host_test_agent(state_home, core_base_url);
+        agent.agentmesh360.package_delivery =
+            package_delivery::PackageDeliveryService::for_test_with_registry(
+                agent.agentmesh360.registry.clone(),
+                roots,
+                transport_origin,
+            );
+        (agent, gateway_rx)
+    }
+
+    async fn serve_package_artifacts(
+        fixture: &package_artifact::DownloadArtifactFixture,
+    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind Package artifact mock");
+        let address = listener
+            .local_addr()
+            .expect("Package artifact mock address");
+        let responses = [
+            ("application/json", fixture.envelope.as_bytes().to_vec()),
+            ("application/octet-stream", fixture.artifact.clone()),
+        ];
+        let task = tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(responses.len());
+            for (content_type, body) in responses {
+                let (mut stream, _) = listener.accept().await.expect("accept Package request");
+                let mut request = vec![0; 8192];
+                let read = stream
+                    .read(&mut request)
+                    .await
+                    .expect("read Package request");
+                requests.push(String::from_utf8_lossy(&request[..read]).to_string());
+                let headers = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                stream
+                    .write_all(headers.as_bytes())
+                    .await
+                    .expect("write Package headers");
+                stream.write_all(&body).await.expect("write Package body");
+            }
+            requests
+        });
+        (format!("http://{address}"), task)
+    }
+
+    fn package_roots(root: &SigningKey) -> package_trust::TrustedRootStore {
+        package_trust::TrustedRootStore::with_key(package_trust::TrustedRootKey {
+            key_id: "agentmesh360-root-host-test-2026".into(),
+            public_key: root.verifying_key().to_bytes(),
+        })
+    }
+
+    fn seed_host_remote_package(
+        state_home: &std::path::Path,
+        root: &SigningKey,
+        fixture: &package_artifact::DownloadArtifactFixture,
+    ) {
+        let root_key_id = "agentmesh360-root-host-test-2026";
+        let artifact_url = format!(
+            "{}/job-agent.tar.zst",
+            package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
+        );
+        let envelope_url = format!(
+            "{}/job-agent.signature.json",
+            package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
+        );
+        let trust = package_trust::signed_bundle_document_for_test(
+            root,
+            root_key_id,
+            7,
+            "2026-08-01T00:00:00Z",
+            7,
+        );
+        let registry = package_registry_snapshot::signed_registry_record_document_for_test(
+            root,
+            root_key_id,
+            42,
+            7,
+            "com.agentmesh360.job-agent",
+            "job-agent",
+            "0.4.7",
+            &artifact_url,
+            &fixture.artifact_sha256,
+            &envelope_url,
+            &fixture.envelope_sha256,
+        );
+        let access = access::ClientAccess::with_trusted_time_for_test(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 7, 22, 0, 0, 0)
+                .single()
+                .expect("trusted Package time"),
+        );
+        package_trust_cache::PackageTrustCacheStore::in_home_with_roots(
+            state_home,
+            package_roots(root),
+        )
+        .accept_documents(&trust, &registry, &access)
+        .expect("seed Host Package registry");
+    }
+
     #[tokio::test(flavor = "current_thread")]
     #[serial_test::serial]
     async fn package_status_is_subscription_gated_read_only_and_path_redacted() {
@@ -1303,6 +1438,394 @@ mod tests {
                 assert!(!degraded_json.contains("not a directory"));
                 std::fs::remove_file(state_home.path()).expect("remove blocking state file");
                 std::fs::create_dir(state_home.path()).expect("restore temp directory");
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn package_management_acp_is_subscription_gated_strict_and_production_disabled() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (agent, _gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                let management_requests = [
+                    (AGENT_PACKAGES_REMOTE_REFRESH_METHOD, serde_json::json!({})),
+                    (
+                        AGENT_PACKAGES_DOWNLOAD_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                    (
+                        AGENT_PACKAGES_APPROVE_METHOD,
+                        serde_json::json!({"approvalId": Uuid::now_v7().to_string()}),
+                    ),
+                    (
+                        AGENT_PACKAGES_ROLLBACK_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                    (
+                        AGENT_PACKAGES_RECONCILE_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                ];
+                for (method, params) in &management_requests {
+                    let error = handle(&agent, &ext_request(method, params.clone()))
+                        .await
+                        .expect_err("Package management requires subscription");
+                    assert_eq!(error.code, acp::Error::auth_required().code);
+                }
+
+                handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "sentinel-bootstrap-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap response");
+                let _ = core.await.expect("Core request task");
+
+                let remote = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_REMOTE_REFRESH_METHOD, serde_json::json!({})),
+                )
+                .await
+                .map(ext_result)
+                .expect("production-disabled remote refresh");
+                assert_eq!(remote["outcome"], "disabled");
+                assert_eq!(remote["reason"], "not_configured");
+
+                let forbidden_requests = [
+                    (
+                        AGENT_PACKAGES_REMOTE_REFRESH_METHOD,
+                        serde_json::json!({"url": "https://attacker.invalid/registry"}),
+                    ),
+                    (
+                        AGENT_PACKAGES_DOWNLOAD_METHOD,
+                        serde_json::json!({
+                            "packageId": "com.agentmesh360.job-agent",
+                            "url": "https://attacker.invalid/package"
+                        }),
+                    ),
+                    (
+                        AGENT_PACKAGES_APPROVE_METHOD,
+                        serde_json::json!({
+                            "approvalId": Uuid::now_v7().to_string(),
+                            "permissionsApproved": true
+                        }),
+                    ),
+                    (
+                        AGENT_PACKAGES_ROLLBACK_METHOD,
+                        serde_json::json!({
+                            "packageId": "com.agentmesh360.job-agent",
+                            "path": state_home.path()
+                        }),
+                    ),
+                    (
+                        AGENT_PACKAGES_RECONCILE_METHOD,
+                        serde_json::json!({
+                            "packageId": "com.agentmesh360.job-agent",
+                            "digest": "a".repeat(64)
+                        }),
+                    ),
+                ];
+                for (method, params) in forbidden_requests {
+                    let error = handle(&agent, &ext_request(method, params))
+                        .await
+                        .expect_err("Package management rejects caller-supplied authority");
+                    assert_eq!(error.code, acp::Error::invalid_params().code);
+                }
+                let invalid_id = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_DOWNLOAD_METHOD,
+                        serde_json::json!({"packageId": "../../outside"}),
+                    ),
+                )
+                .await
+                .expect_err("invalid Package identifier");
+                assert_eq!(invalid_id.code, acp::Error::invalid_params().code);
+                let oversized_id = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_DOWNLOAD_METHOD,
+                        serde_json::json!({"packageId": "a".repeat(129)}),
+                    ),
+                )
+                .await
+                .expect_err("oversized Package identifier");
+                assert_eq!(oversized_id.code, acp::Error::invalid_params().code);
+
+                let download_error = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_DOWNLOAD_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("redacted disabled delivery error");
+                assert!(download_error["result"].is_null());
+                assert_eq!(download_error["error"]["code"], "package_delivery_failed");
+                let approve_error = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_APPROVE_METHOD,
+                        serde_json::json!({"approvalId": Uuid::now_v7().to_string()}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("redacted approval error");
+                assert_eq!(
+                    approve_error["error"]["code"],
+                    "package_approval_unavailable"
+                );
+                let rollback_error = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_ROLLBACK_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("redacted rollback error");
+                assert_eq!(
+                    rollback_error["error"]["code"],
+                    "package_rollback_unavailable"
+                );
+                let reconcile_error = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_RECONCILE_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("redacted reconciliation error");
+                assert_eq!(
+                    reconcile_error["error"]["code"],
+                    "package_reconciliation_unavailable"
+                );
+                let serialized = serde_json::to_string(&serde_json::json!([
+                    download_error,
+                    approve_error,
+                    rollback_error,
+                    reconcile_error
+                ]))
+                .expect("serialize Package errors");
+                for sensitive in [
+                    state_home.path().display().to_string(),
+                    "packages.agentmesh360.com".into(),
+                    "relativePath".into(),
+                    "sha256".into(),
+                    "accountId".into(),
+                    "accessToken".into(),
+                ] {
+                    assert!(!serialized.contains(&sensitive));
+                }
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn package_management_acp_preserves_cross_account_approval_and_refreshes_runtime() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let fixture = package_artifact::download_artifact_fixture_for_test();
+                let root = SigningKey::from_bytes(&[91_u8; 32]);
+                seed_host_remote_package(state_home.path(), &root, &fixture);
+                let (transport_origin, packages) = serve_package_artifacts(&fixture).await;
+                let account_42 = ACTIVE_BOOTSTRAP
+                    .replace("\"id\":1", "\"id\":2")
+                    .replace("u@example.com", "other@example.com")
+                    .replace("\"account_id\":41", "\"account_id\":42");
+                let (core_base_url, core) = serve_bootstrap_sequence(vec![
+                    ACTIVE_BOOTSTRAP.to_owned(),
+                    account_42,
+                    ACTIVE_BOOTSTRAP.to_owned(),
+                ])
+                .await;
+                let (agent, _gateway_rx) = build_host_test_agent_with_package_delivery(
+                    state_home.path(),
+                    core_base_url,
+                    package_roots(&root),
+                    url::Url::parse(&transport_origin).expect("Package transport origin"),
+                );
+
+                let first_bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "account-41-token"}),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("account 41 bootstrap");
+                assert_eq!(first_bootstrap["account"]["accountId"], 41);
+                let challenge = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_DOWNLOAD_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("download Package through Host ACP");
+                assert_eq!(challenge["status"], "approval_required");
+                let approval_id = challenge["approval"]["approvalId"]
+                    .as_str()
+                    .expect("approval ID")
+                    .to_owned();
+                let challenge_json =
+                    serde_json::to_string(&challenge).expect("serialize approval challenge");
+                for sensitive in [
+                    "packages.agentmesh360.com",
+                    "relativePath",
+                    "sha256",
+                    state_home.path().to_str().expect("state path"),
+                    "accountId",
+                ] {
+                    assert!(!challenge_json.contains(sensitive));
+                }
+
+                let second_bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "account-42-token"}),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("account 42 bootstrap");
+                assert_eq!(second_bootstrap["account"]["accountId"], 42);
+                let wrong_account = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_APPROVE_METHOD,
+                        serde_json::json!({"approvalId": approval_id}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("wrong account approval response");
+                assert!(wrong_account["result"].is_null());
+                assert_eq!(
+                    wrong_account["error"]["code"],
+                    "package_approval_unavailable"
+                );
+
+                let restored_bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "account-41-token-restored"}),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("restore account 41");
+                assert_eq!(restored_bootstrap["account"]["accountId"], 41);
+                let installed = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_APPROVE_METHOD,
+                        serde_json::json!({"approvalId": approval_id}),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("owner account installs Package");
+                assert_eq!(installed["packageId"], "com.agentmesh360.job-agent");
+                assert_eq!(installed["version"], "0.4.7");
+                assert_eq!(installed["runtimeVisibility"]["status"], "visible");
+                assert_eq!(
+                    agent
+                        .agentmesh360
+                        .registry()
+                        .package_catalog_health()
+                        .generation,
+                    2
+                );
+
+                let replay = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_APPROVE_METHOD,
+                        serde_json::json!({"approvalId": approval_id}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("approval replay response");
+                assert_eq!(replay["error"]["code"], "package_approval_unavailable");
+                let reconciled = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_RECONCILE_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("reconcile Package through Host ACP");
+                assert_eq!(reconciled["runtimeVisibility"]["status"], "visible");
+                let rollback = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_PACKAGES_ROLLBACK_METHOD,
+                        serde_json::json!({"packageId": "com.agentmesh360.job-agent"}),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("rollback without Previous response");
+                assert_eq!(rollback["error"]["code"], "package_rollback_unavailable");
+                let status = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_STATUS_METHOD, serde_json::json!({})),
+                )
+                .await
+                .map(ext_result)
+                .expect("Package status after ACP install");
+                assert!(status["packages"].as_array().is_some_and(|packages| {
+                    packages.iter().any(|package| {
+                        package["kind"] == "installed_active"
+                            && package["packageId"] == "com.agentmesh360.job-agent"
+                            && package["version"] == "0.4.7"
+                    })
+                }));
+                let response_json = serde_json::to_string(&serde_json::json!([
+                    wrong_account,
+                    installed,
+                    replay,
+                    reconciled,
+                    rollback,
+                    status
+                ]))
+                .expect("serialize Package management responses");
+                for sensitive in [
+                    state_home.path().to_str().expect("state path"),
+                    "relativePath",
+                    "artifactSha256",
+                    "signatureKeyId",
+                    "account-41-token",
+                    "account-42-token",
+                ] {
+                    assert!(!response_json.contains(sensitive));
+                }
+                assert_eq!(packages.await.expect("Package artifact server").len(), 2);
+                assert_eq!(core.await.expect("Core server").len(), 3);
             })
             .await;
     }

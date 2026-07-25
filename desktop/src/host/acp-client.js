@@ -89,6 +89,34 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/agents/activate', { agentId });
   }
 
+  async getAgentPackageCatalog() {
+    return this.#extension('x.agentmesh360/agent-packages/catalog', {});
+  }
+
+  async getAgentPackageStatus() {
+    return this.#extension('x.agentmesh360/agent-packages/status', {});
+  }
+
+  async refreshAgentPackageRegistry() {
+    return this.#extension('x.agentmesh360/agent-packages/remote-refresh', {});
+  }
+
+  async downloadAgentPackage(packageId) {
+    return this.#extension('x.agentmesh360/agent-packages/download', { packageId });
+  }
+
+  async approveAgentPackage(approvalId) {
+    return this.#extension('x.agentmesh360/agent-packages/approve', { approvalId });
+  }
+
+  async rollbackAgentPackage(packageId) {
+    return this.#extension('x.agentmesh360/agent-packages/rollback', { packageId });
+  }
+
+  async reconcileAgentPackage(packageId) {
+    return this.#extension('x.agentmesh360/agent-packages/reconcile', { packageId });
+  }
+
   async listProviderProfiles() {
     return this.#extension('x.agentmesh360/providers/list', {});
   }
@@ -286,7 +314,7 @@ class AcpHostClient extends EventEmitter {
       throw new HostRequestError('invalid_host_response', 'Agent Host 返回了无效响应');
     }
     if (envelope.error) {
-      throw new HostRequestError('host_extension_failed', hostErrorMessage(envelope.error));
+      throw new HostRequestError(hostExtensionErrorCode(envelope.error), hostErrorMessage(envelope.error));
     }
     return envelope.result;
   }
@@ -330,6 +358,12 @@ function hostErrorMessage(error) {
   if (typeof error?.message === 'string') return error.message;
   if (typeof error?.data?.message === 'string') return error.data.message;
   return 'Agent Host 请求失败';
+}
+
+function hostExtensionErrorCode(error) {
+  return typeof error?.code === 'string' && error.code
+    ? error.code
+    : 'host_extension_failed';
 }
 
 function resolveHostCommand({

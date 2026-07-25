@@ -255,7 +255,7 @@ fn validate_manifest(manifest: &AgentPackageManifest) -> Result<()> {
             manifest.schema_version
         );
     }
-    validate_identifier("packageId", &manifest.package_id, true)?;
+    validate_package_id_input(&manifest.package_id)?;
     validate_identifier("publisher", &manifest.publisher, true)?;
     validate_identifier("agent.agentId", &manifest.agent.agent_id, false)?;
     Version::parse(&manifest.version)
@@ -342,6 +342,7 @@ fn calculate_catalog_revision(packages: &[AgentPackageManifest]) -> u64 {
 
 fn validate_identifier(field: &str, value: &str, allow_period: bool) -> Result<()> {
     let valid = !value.is_empty()
+        && value.len() <= 128
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase()
                 || byte.is_ascii_digit()
@@ -354,6 +355,10 @@ fn validate_identifier(field: &str, value: &str, allow_period: bool) -> Result<(
         bail!("Agent Package {field} is invalid");
     }
     Ok(())
+}
+
+pub(crate) fn validate_package_id_input(value: &str) -> Result<()> {
+    validate_identifier("packageId", value, true)
 }
 
 fn validate_source_repository(value: &str) -> Result<()> {
@@ -444,6 +449,30 @@ mod tests {
 
         let unknown = format!("{JOB_DOCUMENT}\nunknownField = true\n");
         assert!(AgentPackageCatalog::from_documents(&[&unknown]).is_err());
+    }
+
+    #[test]
+    fn overlong_package_publisher_and_agent_identifiers_fail_closed() {
+        for (field, replacement) in [
+            (
+                "packageId = \"com.agentmesh360.job-agent\"",
+                format!("packageId = \"{}\"", "a".repeat(129)),
+            ),
+            (
+                "publisher = \"agentmesh360\"",
+                format!("publisher = \"{}\"", "a".repeat(129)),
+            ),
+            (
+                "agentId = \"job-agent\"",
+                format!("agentId = \"{}\"", "a".repeat(129)),
+            ),
+        ] {
+            let document = JOB_DOCUMENT.replacen(field, &replacement, 1);
+            assert!(
+                AgentPackageCatalog::from_documents(&[&document]).is_err(),
+                "{field} must reject overlong values"
+            );
+        }
     }
 
     #[test]

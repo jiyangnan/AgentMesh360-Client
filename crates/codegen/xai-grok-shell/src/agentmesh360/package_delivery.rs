@@ -188,11 +188,21 @@ impl PackageDeliveryService {
         roots: super::package_trust::TrustedRootStore,
         transport_origin: url::Url,
     ) -> Self {
-        let state_home = state_home.into();
+        let registry = AgentRegistry::in_home(state_home);
+        Self::for_test_with_registry(registry, roots, transport_origin)
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test_with_registry(
+        registry: AgentRegistry,
+        roots: super::package_trust::TrustedRootStore,
+        transport_origin: url::Url,
+    ) -> Self {
+        let state_home = registry.state_home().to_path_buf();
         Self {
             downloader: PackageArtifactDownloader::for_test(&state_home, roots, transport_origin),
             installer: PackageInstallService::in_home(&state_home),
-            registry: AgentRegistry::in_home(&state_home),
+            registry,
             pending: Arc::new(Mutex::new(BTreeMap::new())),
             approval_ttl: APPROVAL_TTL,
         }

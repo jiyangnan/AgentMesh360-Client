@@ -120,6 +120,102 @@ test('Provider management uses write-only AgentMesh360 Host extensions', async (
   await client.stop();
 });
 
+test('Agent Package management exposes only Host-owned package and approval identifiers', async () => {
+  const received = [];
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/agent-packages/catalog') {
+      return { result: { catalog: { schemaVersion: 1, packages: [] } } };
+    }
+    if (request.method === '_x.agentmesh360/agent-packages/status') {
+      return { result: { packages: [] } };
+    }
+    if (request.method === '_x.agentmesh360/agent-packages/remote-refresh') {
+      return { result: { outcome: 'disabled', reason: 'not_configured' } };
+    }
+    if (request.method === '_x.agentmesh360/agent-packages/download') {
+      return {
+        result: {
+          status: 'approval_required',
+          approval: { approvalId: 'approval-1234' },
+        },
+      };
+    }
+    if (request.method === '_x.agentmesh360/agent-packages/approve') {
+      return {
+        result: {
+          packageId: 'com.agentmesh360.job-agent',
+          runtimeVisibility: { status: 'visible' },
+        },
+      };
+    }
+    if (request.method === '_x.agentmesh360/agent-packages/rollback') {
+      return {
+        result: null,
+        error: {
+          code: 'package_rollback_unavailable',
+          message: 'The Agent Package could not be rolled back.',
+        },
+      };
+    }
+    return {
+      result: {
+        packageId: 'com.agentmesh360.job-agent',
+        runtimeVisibility: { status: 'visible' },
+      },
+    };
+  });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+
+  await client.getAgentPackageCatalog();
+  await client.getAgentPackageStatus();
+  await client.refreshAgentPackageRegistry();
+  const challenge = await client.downloadAgentPackage('com.agentmesh360.job-agent');
+  const installed = await client.approveAgentPackage('approval-1234');
+  await assert.rejects(
+    client.rollbackAgentPackage('com.agentmesh360.job-agent'),
+    (error) => error.code === 'package_rollback_unavailable',
+  );
+  const reconciled = await client.reconcileAgentPackage('com.agentmesh360.job-agent');
+
+  assert.equal(challenge.approval.approvalId, 'approval-1234');
+  assert.equal(installed.runtimeVisibility.status, 'visible');
+  assert.equal(reconciled.runtimeVisibility.status, 'visible');
+  assert.deepEqual(
+    received.slice(1).map((request) => request.method),
+    [
+      '_x.agentmesh360/agent-packages/catalog',
+      '_x.agentmesh360/agent-packages/status',
+      '_x.agentmesh360/agent-packages/remote-refresh',
+      '_x.agentmesh360/agent-packages/download',
+      '_x.agentmesh360/agent-packages/approve',
+      '_x.agentmesh360/agent-packages/rollback',
+      '_x.agentmesh360/agent-packages/reconcile',
+    ],
+  );
+  assert.deepEqual(received[4].params, {
+    packageId: 'com.agentmesh360.job-agent',
+  });
+  assert.deepEqual(received[5].params, { approvalId: 'approval-1234' });
+  assert.deepEqual(received[6].params, {
+    packageId: 'com.agentmesh360.job-agent',
+  });
+  assert.deepEqual(received[7].params, {
+    packageId: 'com.agentmesh360.job-agent',
+  });
+  const serialized = JSON.stringify(received.slice(1));
+  for (const forbidden of ['url', 'path', 'digest', 'publisher', 'permissionsApproved']) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+  await client.stop();
+});
+
 test('Provider catalog and model assignments use Host-owned routing extensions', async () => {
   const received = [];
   const assignment = {
