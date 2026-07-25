@@ -55,6 +55,7 @@ pub(crate) struct AgentMesh360Runtime {
     provider_probes:
         provider_probes::ProviderProbeService<credential_vault::RuntimeCredentialVault>,
     model_routing: model_routing::ModelRoutingService,
+    package_delivery: package_delivery::PackageDeliveryService,
     package_registry_fetcher: package_registry_fetcher::PackageRegistryFetcher,
     access: access::ClientAccess,
     state_home: PathBuf,
@@ -87,6 +88,10 @@ impl AgentMesh360Runtime {
             &state_home,
             registry.clone(),
         );
+        let package_delivery = package_delivery::PackageDeliveryService::in_home_with_registry(
+            &state_home,
+            registry.clone(),
+        );
         Self {
             registry,
             providers: providers::ProviderService::new(
@@ -98,6 +103,7 @@ impl AgentMesh360Runtime {
                 credential_vault.clone(),
             ),
             model_routing,
+            package_delivery,
             package_registry_fetcher: package_registry_fetcher::PackageRegistryFetcher::embedded(
                 &state_home,
             ),
@@ -257,6 +263,10 @@ impl AgentMesh360Runtime {
 
     pub(crate) fn refresh_package_catalog(&self) -> Result<()> {
         self.registry.refresh_package_catalog().map(|_| ())
+    }
+
+    pub(crate) fn package_delivery(&self) -> &package_delivery::PackageDeliveryService {
+        &self.package_delivery
     }
 
     pub(crate) fn pin(&self, session_id: acp::SessionId) {

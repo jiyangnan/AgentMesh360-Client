@@ -11,8 +11,10 @@ use uuid::Uuid;
 use super::access::ClientAccess;
 use super::package_downloader::{PackageArtifactDownloader, VerifiedPackageDownload};
 use super::package_installer::{
-    InstalledPackageRecord, PackageInstallResult, PackageInstallService, VerifiedPackageInstallPlan,
+    InstalledPackageRecord, PackageInstallResult, PackageInstallService, PackageStatusIssue,
+    VerifiedPackageInstallPlan,
 };
+use super::registry::AgentRegistry;
 
 const APPROVAL_TTL: Duration = Duration::from_secs(10 * 60);
 const MAX_PENDING_APPROVALS: usize = 32;
@@ -20,6 +22,7 @@ const MAX_PENDING_APPROVALS: usize = 32;
 pub(crate) struct PackageDeliveryService {
     downloader: PackageArtifactDownloader,
     installer: PackageInstallService,
+    registry: AgentRegistry,
     pending: Arc<Mutex<BTreeMap<Uuid, PendingPackageApproval>>>,
     approval_ttl: Duration,
 }
@@ -27,9 +30,19 @@ pub(crate) struct PackageDeliveryService {
 impl PackageDeliveryService {
     pub(crate) fn in_home(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
+        let registry = AgentRegistry::in_home(&state_home);
+        Self::in_home_with_registry(state_home, registry)
+    }
+
+    pub(crate) fn in_home_with_registry(
+        state_home: impl Into<PathBuf>,
+        registry: AgentRegistry,
+    ) -> Self {
+        let state_home = state_home.into();
         Self {
             downloader: PackageArtifactDownloader::in_home(&state_home),
             installer: PackageInstallService::in_home(&state_home),
+            registry,
             pending: Arc::new(Mutex::new(BTreeMap::new())),
             approval_ttl: APPROVAL_TTL,
         }
@@ -56,7 +69,7 @@ impl PackageDeliveryService {
         &self,
         approval_id: &str,
         access: &ClientAccess,
-    ) -> Result<InstalledPackageRecord> {
+    ) -> Result<PackageInstallReceipt> {
         let owner_account_id = require_account(access)?;
         let approval_id = Uuid::parse_str(approval_id)
             .map_err(|_| anyhow!("Agent Package approval is unavailable"))?;
@@ -75,18 +88,9 @@ impl PackageDeliveryService {
         };
         require_account(access)?;
 
-        let observed_plan = self
-            .installer
-            .plan_verified_install(pending.download.staged())?;
-        if observed_plan != pending.plan {
-            bail!("Agent Package approval no longer matches install state");
-        }
-        let result = self.installer.install_verified_with_plan(
-            pending.download.into_staged(),
-            &pending.plan,
-            true,
-        )?;
-        installed_only(result)
+        let verified = pending.download.into_staged();
+        let plan = pending.plan;
+        self.install_with_plan_and_refresh(verified, plan, true)
     }
 
     fn prepare_downloaded(
@@ -96,14 +100,9 @@ impl PackageDeliveryService {
     ) -> Result<PackageDeliveryResult> {
         let plan = self.installer.plan_verified_install(downloaded.staged())?;
         let Some(approval) = plan.approval_request() else {
-            let result = self.installer.install_verified_with_plan(
-                downloaded.into_staged(),
-                &plan,
-                false,
-            )?;
-            return installed_only(result).map(|package| PackageDeliveryResult::Installed {
-                package: Box::new(package),
-            });
+            return self
+                .install_with_plan_and_refresh(downloaded.into_staged(), plan, false)
+                .map(|receipt| PackageDeliveryResult::Installed { receipt });
         };
 
         let approval_id = Uuid::now_v7();
@@ -164,6 +163,7 @@ impl PackageDeliveryService {
         Self {
             downloader: PackageArtifactDownloader::for_test(&state_home, roots, transport_origin),
             installer: PackageInstallService::in_home(&state_home),
+            registry: AgentRegistry::in_home(&state_home),
             pending: Arc::new(Mutex::new(BTreeMap::new())),
             approval_ttl: APPROVAL_TTL,
         }
@@ -178,6 +178,78 @@ impl PackageDeliveryService {
             tokio::time::sleep_until(tokio::time::Instant::from_std(expires_at)).await;
             pending.lock().remove(&approval_id);
         });
+    }
+
+    fn install_with_plan_and_refresh(
+        &self,
+        verified: super::package_artifact::VerifiedStagedPackage,
+        plan: VerifiedPackageInstallPlan,
+        permissions_approved: bool,
+    ) -> Result<PackageInstallReceipt> {
+        let (installed, refresh) = self.registry.mutate_and_refresh_package_catalog(|| {
+            let observed_plan = self.installer.plan_verified_install(&verified)?;
+            if observed_plan != plan {
+                bail!("Agent Package approval no longer matches install state");
+            }
+            self.installer
+                .install_verified_with_plan(verified, &plan, permissions_approved)
+                .and_then(installed_only)
+        })?;
+        Ok(self.install_receipt(installed, refresh))
+    }
+
+    #[cfg(test)]
+    fn finalize_installed(&self, installed: InstalledPackageRecord) -> PackageInstallReceipt {
+        let refresh = self.registry.refresh_package_catalog();
+        self.install_receipt(installed, refresh)
+    }
+
+    fn install_receipt(
+        &self,
+        installed: InstalledPackageRecord,
+        refresh: Result<Arc<super::agent_packages::AgentPackageCatalog>>,
+    ) -> PackageInstallReceipt {
+        let health = self.registry.package_catalog_health();
+        let visibility = match refresh {
+            Ok(catalog) => match catalog
+                .packages
+                .iter()
+                .find(|package| package.package_id == installed.package_id)
+            {
+                Some(package)
+                    if package.agent.agent_id == installed.agent_id
+                        && package.version == installed.active.version =>
+                {
+                    PackageRuntimeVisibility::Visible {
+                        catalog_generation: health.generation,
+                        catalog_revision: catalog.catalog_revision,
+                    }
+                }
+                Some(package) if package.agent.agent_id == installed.agent_id => {
+                    PackageRuntimeVisibility::Superseded {
+                        catalog_generation: health.generation,
+                        catalog_revision: catalog.catalog_revision,
+                        active_version: package.version.clone(),
+                    }
+                }
+                _ => PackageRuntimeVisibility::RefreshPending {
+                    catalog_generation: health.generation,
+                    catalog_revision: health.catalog_revision,
+                    issue: runtime_refresh_issue(),
+                },
+            },
+            Err(_) => PackageRuntimeVisibility::RefreshPending {
+                catalog_generation: health.generation,
+                catalog_revision: health.catalog_revision,
+                issue: health.last_issue.unwrap_or_else(runtime_refresh_issue),
+            },
+        };
+        PackageInstallReceipt {
+            package_id: installed.package_id,
+            agent_id: installed.agent_id,
+            version: installed.active.version,
+            runtime_visibility: visibility,
+        }
     }
 }
 
@@ -194,11 +266,35 @@ pub(crate) struct PackageApprovalChallenge {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "status")]
 pub(crate) enum PackageDeliveryResult {
-    ApprovalRequired {
-        approval: PackageApprovalChallenge,
+    ApprovalRequired { approval: PackageApprovalChallenge },
+    Installed { receipt: PackageInstallReceipt },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PackageInstallReceipt {
+    pub package_id: String,
+    pub agent_id: String,
+    pub version: String,
+    pub runtime_visibility: PackageRuntimeVisibility,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub(crate) enum PackageRuntimeVisibility {
+    Visible {
+        catalog_generation: u64,
+        catalog_revision: u64,
     },
-    Installed {
-        package: Box<InstalledPackageRecord>,
+    Superseded {
+        catalog_generation: u64,
+        catalog_revision: u64,
+        active_version: String,
+    },
+    RefreshPending {
+        catalog_generation: u64,
+        catalog_revision: Option<u64>,
+        issue: PackageStatusIssue,
     },
 }
 
@@ -231,6 +327,13 @@ fn installed_only(result: PackageInstallResult) -> Result<InstalledPackageRecord
     }
 }
 
+fn runtime_refresh_issue() -> PackageStatusIssue {
+    PackageStatusIssue {
+        code: "runtime_catalog_refresh_pending".into(),
+        summary: "The Package is installed but is not yet visible to the runtime catalog.".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
@@ -238,11 +341,14 @@ mod tests {
 
     use chrono::{TimeZone as _, Utc};
     use ed25519_dalek::SigningKey;
+    use sha2::{Digest as _, Sha256};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    use super::super::agent_packages::AgentPackageCatalog;
     use super::super::package_artifact::{
-        DownloadArtifactFixture, PackageArtifactVerifier, download_artifact_fixture_for_test,
+        DownloadArtifactFixture, FILE_MANIFEST_PATH, PackageArtifactVerifier,
+        VerifiedStagedPackage, download_artifact_fixture_for_test,
     };
     use super::super::package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN;
     use super::super::package_registry_snapshot::signed_registry_record_document_for_test;
@@ -255,6 +361,7 @@ mod tests {
 
     const ROOT_KEY_ID: &str = "agentmesh360-root-test-2026";
     const PACKAGE_ID: &str = "com.agentmesh360.job-agent";
+    const JOB_MANIFEST: &str = include_str!("packages/job-agent/agentmesh-agent.toml");
 
     #[tokio::test]
     async fn signed_registry_download_flows_into_approval_and_install() {
@@ -286,6 +393,10 @@ mod tests {
             .expect("approved install");
 
         assert_eq!(installed.package_id, PACKAGE_ID);
+        assert!(matches!(
+            installed.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
         assert_eq!(server.await.expect("server requests").len(), 2);
         assert!(
             temp.path()
@@ -331,6 +442,10 @@ mod tests {
             .approve_and_install(&approval.approval_id, &access)
             .expect("approved install");
         assert_eq!(installed.package_id, "com.agentmesh360.job-agent");
+        let receipt = serde_json::to_string(&installed).expect("serialize install receipt");
+        for secret in ["sha256", "relativePath", temp.path().to_str().unwrap()] {
+            assert!(!receipt.contains(secret));
+        }
         assert!(
             service
                 .approve_and_install(&approval.approval_id, &access)
@@ -489,6 +604,151 @@ mod tests {
         assert!(!staging.exists());
     }
 
+    #[test]
+    fn new_agent_becomes_visible_and_projects_for_existing_accounts() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        assert_eq!(service.registry.list(1).expect("account one").len(), 3);
+        assert_eq!(service.registry.list(2).expect("account two").len(), 3);
+        let result = service
+            .prepare_downloaded(
+                verified_download_from_manifest(temp.path(), &new_agent_manifest(), 'b'),
+                1,
+            )
+            .expect("prepare new Agent");
+        let PackageDeliveryResult::ApprovalRequired { approval } = result else {
+            panic!("expected approval");
+        };
+
+        let receipt = service
+            .approve_and_install(&approval.approval_id, &access())
+            .expect("install new Agent");
+
+        assert_eq!(receipt.agent_id, "research-agent");
+        assert!(matches!(
+            receipt.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
+        for owner_account_id in [1, 2] {
+            let agents = service
+                .registry
+                .list(owner_account_id)
+                .expect("project account Agent");
+            assert!(
+                agents.iter().any(|agent| {
+                    agent.agent_id == "research-agent" && agent.version == "0.1.0"
+                })
+            );
+        }
+        let activated = service
+            .registry
+            .prepare_activation(1, "research-agent")
+            .expect("activate projected Agent");
+        let expected_session_id =
+            super::super::registry::stable_main_session_id(1, "research-agent").to_string();
+        assert_eq!(
+            activated.main_session_id.as_deref(),
+            Some(expected_session_id.as_str())
+        );
+    }
+
+    #[test]
+    fn refresh_failure_keeps_last_good_and_reports_installed_pending_then_recovers() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        let initial_health = service.registry.package_catalog_health();
+        let installed = install_direct(
+            &service,
+            verified_download_from_manifest(temp.path(), &new_agent_manifest(), 'c'),
+        );
+        let active_path = temp
+            .path()
+            .join("packages")
+            .join(&installed.active.relative_path);
+        fs::write(active_path.join("docs/agent-onboarding.md"), b"tampered")
+            .expect("tamper installed Package");
+
+        let pending = service.finalize_installed(installed.clone());
+
+        assert!(matches!(
+            pending.runtime_visibility,
+            PackageRuntimeVisibility::RefreshPending { .. }
+        ));
+        let degraded = service.registry.package_catalog_health();
+        assert_eq!(degraded.generation, initial_health.generation);
+        assert_eq!(degraded.catalog_revision, initial_health.catalog_revision);
+        assert!(degraded.last_issue.is_some());
+        assert!(
+            service
+                .registry
+                .package_catalog()
+                .expect("last-known-good")
+                .package_for_agent("research-agent")
+                .is_err()
+        );
+        assert!(
+            service
+                .installer
+                .get("com.agentmesh360.research-agent")
+                .expect("installed record")
+                .is_some()
+        );
+        fs::write(
+            active_path.join("docs/agent-onboarding.md"),
+            b"# Job Agent workflow\n",
+        )
+        .expect("restore installed Package");
+
+        let recovered = service.finalize_installed(installed);
+
+        assert!(matches!(
+            recovered.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
+        let health = service.registry.package_catalog_health();
+        assert_eq!(health.generation, initial_health.generation + 1);
+        assert!(health.last_issue.is_none());
+    }
+
+    #[test]
+    fn older_install_refresh_cannot_overwrite_a_newer_active_version() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = PackageDeliveryService::in_home(temp.path());
+        let older = install_direct(
+            &service,
+            verified_download_from_manifest(temp.path(), &runtime_upgrade_manifest("0.4.8"), 'd'),
+        );
+        let newer = install_direct(
+            &service,
+            verified_download_from_manifest(temp.path(), &runtime_upgrade_manifest("0.4.9"), 'e'),
+        );
+
+        let superseded = service.finalize_installed(older);
+        let visible = service.finalize_installed(newer);
+
+        assert!(matches!(
+            superseded.runtime_visibility,
+            PackageRuntimeVisibility::Superseded {
+                active_version,
+                ..
+            } if active_version == "0.4.9"
+        ));
+        assert!(matches!(
+            visible.runtime_visibility,
+            PackageRuntimeVisibility::Visible { .. }
+        ));
+        assert_eq!(
+            service
+                .registry
+                .package_catalog()
+                .expect("Catalog")
+                .package_for_agent("job-agent")
+                .expect("Job Agent")
+                .version,
+            "0.4.9"
+        );
+    }
+
     fn verified_download(state_home: &std::path::Path) -> VerifiedPackageDownload {
         let fixture = download_artifact_fixture_for_test();
         let artifact_path = state_home.join(format!("fixture-{}.tar.zst", Uuid::now_v7()));
@@ -504,6 +764,112 @@ mod tests {
             .expect("verify fixture");
         fs::remove_file(artifact_path).expect("remove fixture artifact");
         VerifiedPackageDownload::for_test(verified)
+    }
+
+    fn verified_download_from_manifest(
+        state_home: &std::path::Path,
+        document: &str,
+        digest_byte: char,
+    ) -> VerifiedPackageDownload {
+        let manifest = AgentPackageCatalog::parse_document(document).expect("manifest");
+        let staging_dir = state_home.join("test-delivery-staging").join(format!(
+            "{}-{}",
+            digest_byte,
+            Uuid::now_v7()
+        ));
+        fs::create_dir_all(&staging_dir).expect("staging");
+        write_test_package_tree(&staging_dir, document);
+        VerifiedPackageDownload::for_test(VerifiedStagedPackage::for_test(
+            manifest,
+            digest_byte.to_string().repeat(64),
+            "agentmesh360-release-test",
+            staging_dir,
+        ))
+    }
+
+    fn install_direct(
+        service: &PackageDeliveryService,
+        downloaded: VerifiedPackageDownload,
+    ) -> InstalledPackageRecord {
+        let plan = service
+            .installer
+            .plan_verified_install(downloaded.staged())
+            .expect("install plan");
+        let result = service
+            .installer
+            .install_verified_with_plan(downloaded.into_staged(), &plan, true)
+            .expect("install Package");
+        installed_only(result).expect("installed Package")
+    }
+
+    fn write_test_package_tree(staging_dir: &std::path::Path, document: &str) {
+        let files = [
+            ("agentmesh-agent.toml", document.as_bytes()),
+            ("docs/agent-onboarding.md", b"# Job Agent workflow\n"),
+            ("skills/claude-code/SKILL.md", b"# Claude Code adapter\n"),
+            (
+                "skills/openclaw-job-agent/SKILL.md",
+                b"# OpenClaw adapter\n",
+            ),
+        ];
+        let mut records = Vec::new();
+        for (relative_path, contents) in files {
+            let destination = staging_dir.join(relative_path);
+            fs::create_dir_all(destination.parent().expect("file parent")).expect("file parent");
+            fs::write(&destination, contents).expect("write test Package file");
+            records.push(serde_json::json!({
+                "path": relative_path,
+                "size": contents.len(),
+                "sha256": lower_hex(&Sha256::digest(contents)),
+            }));
+        }
+        records.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
+        fs::write(
+            staging_dir.join(FILE_MANIFEST_PATH),
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "files": records,
+            }))
+            .expect("serialize file manifest"),
+        )
+        .expect("write file manifest");
+    }
+
+    fn lower_hex(bytes: &[u8]) -> String {
+        use std::fmt::Write as _;
+
+        let mut output = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            write!(&mut output, "{byte:02x}").expect("hex");
+        }
+        output
+    }
+
+    fn new_agent_manifest() -> String {
+        JOB_MANIFEST
+            .replacen(
+                "packageId = \"com.agentmesh360.job-agent\"",
+                "packageId = \"com.agentmesh360.research-agent\"",
+                1,
+            )
+            .replacen("version = \"0.4.7\"", "version = \"0.1.0\"", 1)
+            .replacen("agentId = \"job-agent\"", "agentId = \"research-agent\"", 1)
+            .replacen(
+                "displayName = \"Job Agent\"",
+                "displayName = \"Research Agent\"",
+                1,
+            )
+            .replacen("sortOrder = 10", "sortOrder = 40", 1)
+    }
+
+    fn runtime_upgrade_manifest(version: &str) -> String {
+        JOB_MANIFEST
+            .replacen(
+                "version = \"0.4.7\"",
+                &format!("version = \"{version}\""),
+                1,
+            )
+            .replacen("You are Job Agent", "You are Runtime Upgraded Job Agent", 1)
     }
 
     fn seed_remote_package(

@@ -118,6 +118,20 @@ impl AgentRegistry {
 
     pub(crate) fn refresh_package_catalog(&self) -> Result<Arc<AgentPackageCatalog>> {
         let _refresh_guard = self.package_catalog.refresh_gate.lock();
+        self.refresh_package_catalog_locked()
+    }
+
+    pub(crate) fn mutate_and_refresh_package_catalog<T>(
+        &self,
+        mutation: impl FnOnce() -> Result<T>,
+    ) -> Result<(T, Result<Arc<AgentPackageCatalog>>)> {
+        let _refresh_guard = self.package_catalog.refresh_gate.lock();
+        let value = mutation()?;
+        let refresh = self.refresh_package_catalog_locked();
+        Ok((value, refresh))
+    }
+
+    fn refresh_package_catalog_locked(&self) -> Result<Arc<AgentPackageCatalog>> {
         match load_runtime_package_catalog(&self.state_home) {
             Ok(catalog) => {
                 let catalog = Arc::new(catalog);
@@ -403,6 +417,9 @@ fn now() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
     use super::*;
 
     #[test]
@@ -542,5 +559,48 @@ mod tests {
         let second = registry.get(42, "job-agent").expect("second account agent");
         assert_eq!(second.desired_state, "inactive");
         assert!(second.main_session_id.is_none());
+    }
+
+    #[test]
+    fn package_mutation_and_refresh_share_one_ordering_gate_across_clones() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let first = AgentRegistry::in_home(temp.path());
+        let second = first.clone();
+        let (first_entered_tx, first_entered_rx) = mpsc::channel();
+        let (release_first_tx, release_first_rx) = mpsc::channel();
+        let (second_entered_tx, second_entered_rx) = mpsc::channel();
+
+        let first_thread = std::thread::spawn(move || {
+            let (_, refresh) = first
+                .mutate_and_refresh_package_catalog(|| {
+                    first_entered_tx.send(()).expect("first entered");
+                    release_first_rx.recv().expect("release first");
+                    Ok(())
+                })
+                .expect("first mutation and refresh");
+            refresh.expect("first refresh");
+        });
+        first_entered_rx.recv().expect("first gate acquired");
+        let second_thread = std::thread::spawn(move || {
+            let (_, refresh) = second
+                .mutate_and_refresh_package_catalog(|| {
+                    second_entered_tx.send(()).expect("second entered");
+                    Ok(())
+                })
+                .expect("second mutation and refresh");
+            refresh.expect("second refresh");
+        });
+
+        assert!(
+            second_entered_rx
+                .recv_timeout(Duration::from_millis(50))
+                .is_err()
+        );
+        release_first_tx.send(()).expect("release first");
+        second_entered_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second entered after first refresh");
+        first_thread.join().expect("first thread");
+        second_thread.join().expect("second thread");
     }
 }
