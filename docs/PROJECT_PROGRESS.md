@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2c2 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2c3：已验证远端 Package 的只读可发现摘要 |
+| 动态 Agent Package | H0/H1 至 H2c3 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2d0：非秘密发布输入、同源宿主 Skill 投影与可复现 Package 构建门 |
 
 ## 开发循环记录
 
@@ -2612,3 +2612,102 @@ H2c3 下一切片（须等 H2c2 Kimi 交叉测试关闭后启动）：
    cache 时失败关闭并保留当前 Runtime Catalog；
 4. H2c3 仍不填充生产 root/endpoint/bundle，不实现自动更新、搜索服务、推荐排序或
    后台下载；可发现协议和 UI 通过双方测试后，再单独进入生产供应链发布门。
+
+### 循环 36：动态 Agent Package H2c3——已验证远端目录与更新分类
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2c2 已有安全 Package Center，但用户只能手工输入 packageId 或从当前
+Runtime Catalog 检查更新，尚不能看见 Host 已验证 Registry 中的新 Agent。H2c3 只
+增加安全的只读发现面，不改变 H2b/H2c 已建立的下载、权限批准、安装或 rollback
+authority，也不提前填充生产发布配置。
+
+H2c3 已经实现：
+
+1. `PackageTrustCacheStore::load_verified_catalog` 复用完整的可信时间、root、
+   Publisher Bundle、Registry 签名、digest、有效期和持久反回滚复验，只从通过复验
+   的记录投影 packageId、agentId、version 与 publisher；artifact/envelope URL、
+   SHA-256、签名、root、原始文档和缓存路径不会进入返回类型；
+2. `PackageRegistryFetcher::discover` 增加三态只读结果：有效缓存为 `ready`，没有
+   缓存且生产 endpoint 未配置为 `disabled/not_configured`，无可信缓存或缓存被拒绝
+   为脱敏 `unavailable`。仍在有效期内且重新验签通过的 Last Known Good 即使刷新
+   endpoint 暂不可用也可以被发现，但刷新/下载是否开放继续由现有 Registry 状态门
+   单独控制；
+3. 新增订阅门禁的
+   `x.agentmesh360/agent-packages/remote-catalog` ACP。请求必须是严格空对象；Host
+   只返回 Registry revision/expiry 和最多 256 条安全摘要，拒绝调用方提供 URL 或
+   其他 authority；
+4. 桌面 `AcpHostClient` 和 `PackageController` 把远端摘要纳入同一次账户绑定
+   snapshot。Controller 对 outcome/reason、revision、时间、数组、标识和 SemVer
+   逐字段失败关闭，并继续丢弃 Host 返回的额外 URL、digest、root 或账户材料；
+5. Controller 用完整 SemVer precedence 将远端记录与 Runtime Catalog 分类为
+   `new_agent`、`update_available`、`current`、`local_newer`。核心版本和任意长度的
+  数字预发布标识使用字符串数值序，避免 JavaScript `Number` 精度造成更新误判；
+6. Package Center 新增“已验证远端目录”，只展示新 Agent 和可用更新；用户点击后
+   仍只提交 packageId，后续继续使用 H2c2 的一次性权限 Challenge。当前版本和本地
+   更新版本保留在 Controller 分类中，不制造可执行更新按钮；
+7. 生产关闭态仍禁用手工下载和全部发现条目按钮，允许显式刷新与本地恢复；没有加入
+   自动更新、后台下载、搜索、推荐排序或任何生产 root/endpoint/bundle。
+
+H2c3 自主验证：
+
+- Trust Cache 5 项、Registry Fetcher 4 项、Host Package 管理 ACP 2 项通过；正向
+  ACP 断言返回的唯一 Package 只有四个公开字段，生产空配置为
+  `disabled/not_configured`，额外 URL 参数严格拒绝；
+- Package Controller 12 项、ACP Client 7 项通过；覆盖四种版本分类、超出 JavaScript
+  安全整数范围的 SemVer、257 条上限、非法版本/时间、非空关闭态、账户门禁和额外
+  authority 白名单丢弃；
+- 桌面 `npm test` 为 57 项通过、0 失败，另有 2 个真实 Host 环境测试按预期 skip；
+  `npm run check` 通过；
+- Electron Package UI smoke 验证发现条目只提交 packageId、approvalId 不进入 DOM，
+  以及既有 approve/reconcile/rollback/unknown 零自动重试路径；Provider UI smoke
+  同时通过；
+- 生产关闭态和签名缓存 ready 态两张 1180×760 Retina visual smoke 均通过并人工
+  检查。关闭态全部下载入口禁用、刷新可用；ready 态正确显示“新 Agent”“可用更新”
+  与版本差，不出现下载 URL、digest、签名或 root；
+- AgentMesh360 Rust 全量 140 项通过；Clippy `-D warnings`、Rustfmt、JS check 和
+  `git diff --check` 全部通过；
+- 受限沙箱首次禁止 Rust loopback mock server 和 Electron GUI 启动；同一测试在获准
+  的本机非沙箱环境通过。另一次 Host 正向测试揭示发现接口先于安全缓存检查就因
+  endpoint 为空返回 disabled；已改为先重新验签缓存、无缓存时再关闭，并重跑全部
+  门禁通过。
+
+Kimi 独立交叉测试：
+
+- Kimi 在基线 `07d842c` 上逐行审查当前 15 个代码、测试和文档文件的完整 diff，
+  独立核对可信时间/签名/expiry/反回滚/256 上限、LKG 与生产关闭态、严格 ACP、
+  41→42 账户切换、Renderer 白名单、SemVer、packageId-only UI 和三份文档；
+- Kimi 实际执行 Trust Cache 5 项、Registry Fetcher 4 项、Host ACP 2 项、
+  AgentMesh360 140 项、桌面 57 项（另 2 项真实 Host 按预期 skip）、Package 与
+  Provider Electron UI、生产关闭态与 ready 态 visual smoke、Clippy、Rustfmt、
+  JS check 和 diff-check，全部通过；两张截图也独立人工核对；
+- Kimi 确认 Blocker/High/Medium/Low 均为零并给出“无条件 PASS”。H2c3 正式关闭。
+
+H2c3 代码提交：`760a380`（`feat: discover verified agent package updates`）。
+
+计划复盘：
+
+- H2c3 没有新增下载 authority；Host 仍独占 Registry 原文、网络位置、digest、签名
+  与本地文件，Renderer 只能提交 packageId；
+- 订阅硬门禁、可信 Core 时间、签名链、expiry、持久反回滚和账户切换仍位于发现
+  摘要之前；Runtime Catalog 在远端不可用时保持不变；
+- 实现分类名称按真实状态收敛为 `local_newer`，替代原计划含混的“未知本地状态”；
+- 生产 root、Publisher Bundle、metadata/artifact endpoint 继续为空，不能把测试
+  fixture 或本地签名材料当成生产发布能力；
+- 下一轮 H2d0 先建立非秘密、可审计、可复现的发布输入和 Package 构建门：由同一
+  Manifest 产出客户端 Package 与宿主 Skill 投影，签名动作只接外部提供的 key
+  handle/签名结果，不在仓库生成或保存生产私钥。真实 root、endpoint 和发布启用
+  仍需单独的安全审计与发布授权。
+
+H2d0 下一切片（须等 H2c3 Kimi 交叉测试关闭后启动）：
+
+1. 定义版本化、严格校验的 Package Authoring 输入与构建输出清单，让新 Agent 只维护
+   一份 Manifest/Skill 来源即可生成客户端 Artifact、Envelope 输入和宿主 Agent
+   安装投影，避免两条产品路径漂移；
+2. 构建必须可复现并在签名前完成 archive inventory、digest、Manifest 引用和
+   publisher/package/agent/version 一致性校验；不接受 URL、账户、Token 或用户数据；
+3. 私钥不进入仓库、环境快照、日志或 Package。H2d0 只输出待签 payload/digest 并
+   接受外部签名结果；生产 key ceremony、root/bundle、endpoint 与上传发布是后续
+   独立门禁；
+4. 验收包括正向可复现构建、客户端/宿主 Skill 同源断言、篡改/多余文件/路径穿越/
+   未声明权限失败关闭，以及自主测试和 Kimi 独立交叉测试。

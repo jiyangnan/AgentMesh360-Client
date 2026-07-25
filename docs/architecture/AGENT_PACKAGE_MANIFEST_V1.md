@@ -476,11 +476,42 @@ Kimi 第一轮独立实跑相同范围后发现 1 项 Low：rollback 的默认�
 Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2c2 代码提交为 `73950fd`。
 本切片仍不启用自动更新、自动批准、自动 rollback 或生产 endpoint/root/bundle。
 
-## 20. H2c3 计划：已验证远端 Package 的可发现摘要
+## 20. H2c3：已验证远端 Package 的可发现摘要（已通过交叉测试）
 
-H2c3 从 Host 已验证且未过期的 Registry 只读投影 packageId、agentId、version、
-publisher 与 revision/expiry，让 Package Center 能区分新 Agent 与已安装更新。
-artifact/envelope URL、digest、签名、原始 Registry 和缓存路径继续不可见；下载仍只
-提交 packageId，新增权限仍经过 H2c2 Challenge。摘要受订阅、可信时间、签名、
-反回滚、账户切换和 256 条上限约束。该切片仍不填充生产 root/endpoint/bundle，
-不做自动更新、推荐排序或后台下载。
+Host 已新增只读 `remote-catalog` ACP。它复用 Trust Cache 的可信 Core 时间、
+root/Publisher/Registry 签名、digest、expiry 与持久反回滚复验，只返回
+packageId、agentId、version、publisher、Registry revision/expiry。最多 256 条；
+artifact/envelope URL、digest、签名、原始 Registry、缓存路径和账户 authority
+不在返回类型中。
+
+桌面 Controller 在调用前后绑定订阅 ready 和 account ID，对全部字段设置白名单与
+上限，并按 SemVer precedence 分类 `new_agent`、`update_available`、`current`、
+`local_newer`。Package Center 只显示新 Agent 和可用更新；点击仍只提交 packageId，
+新增权限继续经过 H2c2 Challenge。超大数字 SemVer 使用精确字符串数值比较，不依赖
+JavaScript `Number`。
+
+自主验证已覆盖安全缓存摘要、生产空配置、Last Known Good、严格空 ACP、额外 URL
+拒绝、四种版本分类、257 条/非法时间/非法 SemVer 失败关闭、账户门禁、Renderer
+脱敏、Package/Provider Electron UI 以及生产关闭态与 ready 态视觉回归。Host 全量
+140 项、桌面 57 项（另 2 项真实 Host 按预期 skip）与全部静态检查通过。
+
+Kimi 随后独立逐行审查全部 15 个变更文件，并实跑 Trust Cache 5 项、Registry
+Fetcher 4 项、Host ACP 2 项、AgentMesh360 140 项、桌面 57 项（另 2 项真实 Host
+按预期 skip）、Package/Provider Electron UI、生产关闭态与 ready 态 visual smoke
+以及全部静态检查；Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2c3 已关闭。
+代码提交为 `760a380`。
+
+本切片没有填充生产 root/endpoint/bundle，也没有自动更新、搜索、推荐排序或后台
+下载。有效 Last Known Good 可以继续被安全发现；远端刷新和下载入口仍由独立状态门
+控制，不能因有缓存而绕过生产关闭态。
+
+## 21. H2d0 计划：同源 Authoring 输入与可复现构建门
+
+下一切片让一个新 Agent 的 Manifest/Skill 来源同时生成客户端 Package 构建输入和
+宿主 Agent 安装投影，减少两条分发路径的手工复制。构建器先确定性生成 archive
+inventory、Artifact digest 和待签 Envelope payload，再接受外部签名结果；生产
+私钥、账户、Token 和用户数据不得进入仓库、日志、环境快照或 Package。
+
+H2d0 不启用生产 root、Publisher Bundle、endpoint 或上传发布。真实 key ceremony、
+签名服务和生产开关必须另经安全审计与发布授权。验收包括可复现构建、双投影同源、
+篡改/多余文件/路径穿越/未声明权限失败关闭，以及自主测试与 Kimi 交叉测试。
