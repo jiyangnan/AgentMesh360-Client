@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2b2c 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2b2d：回滚/恢复与 Shared Runtime Catalog 的同序一致性 |
+| 动态 Agent Package | H0/H1 至 H2b2d 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2c1：订阅门禁的 Host Package 管理 ACP 契约 |
 
 ## 开发循环记录
 
@@ -2363,3 +2363,86 @@ H2b2d 下一切片（须等 H2b2c Kimi 交叉测试关闭后启动）：
    explicit refresh 并发顺序；
 4. 仍不开放 ACP/UI、不自动回滚、不清理 orphan、不启用生产 Trust 配置。完成全部
    本地 mutation 一致性后，再进入订阅门禁的管理 ACP 与桌面权限 UI。
+
+### 循环 33：动态 Agent Package H2b2d——回滚与恢复的运行时一致性
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：Installer 既有 rollback 已经在 Previous 整树完整性和身份复验后，用
+SQLite Immediate 事务交换 Active/Previous；但它没有进入 H2b2c 的共享 refresh
+顺序门。这样磁盘回滚后 Runtime 仍可能长期使用旧版本，而且调用者无法区分“rollback
+事务失败”和“磁盘已回滚、Catalog refresh 失败”。H2b2d 只补齐本地 mutation
+一致性，不提前开放管理协议或 UI。
+
+H2b2d 已经实现：
+
+1. `PackageDeliveryService::rollback` 先后两次验证当前 `ClientAccess`，然后在共享
+   `refresh_gate` 内执行 Installer rollback 和立即 Catalog refresh；损坏 Previous
+   在 SQLite mutation 前失败关闭，成功回滚复用 H2b2c 的脱敏 Receipt；
+2. 新增 Host 私有 `reconcile_runtime_catalog`。它不再次改变 Active，只在订阅有效且
+   package 已安装时，将当前 Registry 记录与全量 Catalog refresh 放入同一顺序门，
+   用于修复内容后的显式恢复；
+3. Receipt 类型泛化为 `PackageMutationReceipt`，安装、回滚和 reconcile 共用
+   `visible/superseded/refresh_pending`。回滚已经提交但其他 Active Package 令
+   refresh 失败时，Receipt 明确返回目标回滚版本 + `refresh_pending`；磁盘保持回滚
+   后版本，Runtime 保持 last-known-good；
+4. `PackageCatalogRefreshOutcome` 在释放顺序门之前同时捕获本次 Catalog 结果与对应
+   health/generation，避免另一个并发 mutation 在 Receipt 生成前造成“旧 Catalog +
+   新 generation”的混合快照；
+5. Delivery 的共享构造器不再同时接受可错配的 `state_home` 和 Registry，而是只从
+   Registry 推导唯一状态根；Runtime、Delivery、Installer、Downloader 因此不能被
+   接到不同的本地 Package 目录；
+6. Installer 原始 rollback 从 crate 可见性收窄到 AgentMesh360 父模块范围，生产
+   mutation 继续由 Delivery 编排；本切片仍未增加 ACP/Renderer/UI。
+
+H2b2d 自主验证：
+
+- Delivery 专项 14 项通过；新增覆盖 rollback 后 Catalog 和稳定 Main Session、
+  无效订阅零 mutation、损坏 Previous 失败关闭、磁盘回滚已提交但全量 refresh 失败、
+  修复后 reconcile 恢复，以及 rollback 等待共享 mutation gate；
+- Registry 专项 7 项通过；跨 clone 测试同时证明 mutation 与显式 refresh 串行，
+  另有测试证明 Outcome 保留同一顺序门时刻的 Catalog/revision/generation；
+- Installer 既有 10 项全部通过，包括回滚完整性、CAS、Previous、orphan 与
+  last-known-good 回归；
+- 完整 `cargo test -p xai-grok-shell agentmesh360 --lib`：137 项通过、0 失败；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 和
+  `git diff --check` 通过；
+- 首轮 Delivery 13/14 时，唯一失败来自测试错误地要求诊断字符串必须包含
+  `digest`；实际稳定分类为 `package_integrity_failed`。改为断言脱敏错误分类后，
+  聚焦与全量测试全部通过，产品 mutation 在失败前后保持不变。
+- Kimi 第一轮交叉测试的首次全量运行曾出现一次未捕获用例名的 136/137，随后连续
+  4 次全量和 10 次 Delivery/Registry 定向运行均通过；Kimi 将其列为 1 项测试健壮性
+  Low。为彻底关闭该项，TTL 清理测试已改为最多 5 秒的条件等待，不再在两个同时唤醒
+  的 task 间用固定 30 ms 抢锁；顺序门测试已加入“线程开始尝试”握手，并把释放后的
+  完成余量从 1 秒提高到 5 秒。加固后自主重跑 Delivery 14 项、Registry 7 项与全量
+  137 项均通过；Kimi 第二轮复测确认 Low 清零。
+
+计划复盘：
+
+- rollback、reconcile 与 install 共用同一 Registry、状态根、顺序门和 Receipt，
+  不再存在已知的 Host 私有 Active mutation 绕过路径；
+- 显式恢复不会自动修文件、自动回滚、删除 orphan 或二次切换 Active；
+- 订阅门禁在等待顺序门之前和进入 mutation 闭包后都检查，过期访问不能排队后提交；
+- Receipt 仍不含账户、digest、路径、文件库存或凭据，失败问题继续使用固定脱敏分类；
+- 生产 endpoint/root/bundle、ACP 和 UI 均保持关闭；
+- Kimi 第二轮逐行复核三处测试加固，确认条件等待有明确成功判据和 5 秒上限，
+  started 握手让负向窗口具备真实含义，且生产代码未被测试修复改变。它独立实跑
+  Delivery 14 项 × 5、Registry 7 项 × 5、AgentMesh360 全量 137 项 × 3、Installer
+  10 项、Clippy、Rustfmt 和 `git diff --check`，13 次套件级运行全部通过；
+  Blocker/High/Medium/Low 均为零并给出无条件 PASS，H2b2d 正式关闭。
+
+H2b2d 代码提交：`9371eeb`（`feat: reconcile package rollbacks with runtime`）。
+
+H2c1 下一切片（须等 H2b2d Kimi 交叉测试关闭后启动）：
+
+1. 定义订阅门禁的 Host Package 管理 ACP 契约，先接只读远端 refresh、按
+   `package_id` 下载/请求批准、按随机 `approval_id` 批准安装，以及显式 rollback/
+   reconcile；调用方不得提交 URL、路径、digest、publisher、权限布尔值或本地
+   Registry 内容；
+2. ACP 只返回现有脱敏 Registry Audit、审批 Challenge 和
+   `PackageMutationReceipt`，统一沿用无效订阅、跨账户、重放、过期与
+   `refresh_pending` 失败关闭语义；
+3. 生产 root/endpoints/bundle 继续为空，因此正式构建中的远端 mutation 仍不可用；
+   测试只用临时目录、固定测试密钥和 loopback transport；
+4. H2c1 只建立 Host 协议和桌面主进程窄调用面，不做 Renderer 权限 UI、不启用自动
+   更新或自动 rollback。协议通过双方测试后，再单独进入 H2c2 桌面交互。

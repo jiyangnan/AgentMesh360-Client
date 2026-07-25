@@ -399,10 +399,34 @@ Active 之后反向发布旧结果。远端下载和等待用户批准不占用�
 全部通过；Kimi 四级问题均为零并明确给出 PASS。本切片仍不开放 ACP、桌面 UI 或
 生产 Trust 配置。
 
-## 17. H2b2d 计划：回滚与恢复的运行时一致性
+## 17. H2b2d 回滚与恢复的运行时一致性（已通过交叉测试）
 
-下一切片把 rollback 和显式恢复纳入同一 mutation/refresh 顺序门，并复用脱敏 Receipt
-与 last-known-good 语义。回滚在磁盘已经提交但 refresh 失败时，必须准确报告 Runtime
-仍使用最后良好快照；损坏 Previous 必须在 mutation 前失败关闭。验收还需覆盖
-install/rollback/explicit refresh 并发。H2b2d 仍是 Host 私有能力，不开放 ACP/UI、
-不自动回滚或清理 orphan，也不启用生产 endpoint/root/bundle。
+`PackageDeliveryService::rollback` 在有效订阅门禁内复用 H2b2c 的共享顺序门：先由
+Installer 复验 Previous 整树、Manifest 身份和版本，再用 SQLite Immediate 事务交换
+Active/Previous，最后立即刷新 Shared Runtime Catalog。原始 rollback 可见性已经
+收窄，生产 mutation 继续由 Delivery 编排。
+
+若 rollback 已经提交、但另一个损坏 Active Package 使全量 Catalog refresh 失败，
+返回目标回滚版本的 `refresh_pending`；磁盘保持回滚结果，Runtime 保持
+last-known-good，不伪造事务失败或再次切换 Active。修复本地内容后，
+`reconcile_runtime_catalog` 只读取当前安装记录并显式 refresh，不修改 Active。
+
+安装、回滚和 reconcile 共用 `PackageMutationReceipt`。Registry 在释放 refresh gate
+前一次性捕获 `PackageCatalogRefreshOutcome` 的 Catalog 与 health/generation，Receipt
+不会把并发操作的不同时刻拼在一起。Delivery 共享构造器也只从 Registry 推导
+`state_home`，避免 Runtime Catalog 与 Installer/Downloader 目录错配。
+
+当前自主测试为 Delivery 14 项、Registry 7 项、Installer 10 项和 AgentMesh360 全量
+137 项，Clippy `-D warnings`、Rustfmt 与 diff-check 通过；本机 Kimi 独立交叉测试
+第一轮发现的单次未复现测试健壮性 Low 已通过 TTL 条件等待、并发线程握手和更宽的
+完成时限加固；第二轮独立实跑 Delivery × 5、Registry × 5、全量 × 3、Installer 和
+全部静态检查，Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2b2d 不开放
+ACP/UI、不自动回滚或清理 orphan，也不启用生产 endpoint/root/bundle。
+
+## 18. H2c1 计划：订阅门禁的 Host Package 管理契约
+
+下一切片把现有只读远端 refresh、受限下载/审批/安装、rollback 与 reconcile 接入
+Host ACP 窄协议。调用方只能提交 packageId 或随机 approvalId，不能注入 URL、路径、
+digest、publisher、权限布尔值或 Registry 内容；响应只使用脱敏 Audit、Challenge 和
+Mutation Receipt。生产 Trust 配置继续为空，H2c1 不做 Renderer 权限 UI、自动更新
+或自动 rollback；Host 契约通过双方测试后再进入 H2c2 桌面交互。
