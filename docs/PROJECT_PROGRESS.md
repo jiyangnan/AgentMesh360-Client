@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2c1 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2c2：桌面 Package Center 与显式权限批准交互 |
+| 动态 Agent Package | H0/H1 至 H2c2 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2c3：已验证远端 Package 的只读可发现摘要 |
 
 ## 开发循环记录
 
@@ -2521,3 +2521,94 @@ H2c2 下一切片（须等 H2c1 Kimi 交叉测试关闭后启动）：
    错误状态；关闭窗口或 Host 重连不能把未知结果伪装成失败后自动重试；
 4. H2c2 仍不启用自动更新、自动批准、自动 rollback 或生产 Trust 配置；先完成桌面
    controller/preload/Renderer 的窄桥、输入校验、输出脱敏与双方测试。
+
+### 循环 35：动态 Agent Package H2c2——Package Center 与显式权限批准
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2c1 已提供 Host 管理 ACP，但完整 Runtime Manifest 含 Prompt、Skill
+adapter 路径和源码地址，不能从桌面主进程原样转交 Renderer。H2c2 因此先建立独立
+Package Controller 做白名单投影，再接 preload/Renderer；不把 Host 协议直接暴露给
+页面，也不提前配置生产发布根。
+
+H2c2 已经实现：
+
+1. 新增订阅 ready-gated、账户绑定的 `PackageController`。每个读写操作都在调用前
+   捕获 account ID，异步返回前再次核对；中途退出、订阅失效或切换账户时，旧账户
+   payload 被丢弃，只返回脱敏的 `unknown`，不会让旧 Challenge 回到新账户页面；
+2. Controller 对 Runtime Catalog 做严格白名单投影：Renderer 只获得 packageId、
+   version、publisher、公开 Agent 身份/说明和声明权限；Prompt、Model Policy、
+   Skill workflow/adapter、本地路径、源码地址、Registry 原文、root key、artifact/
+   envelope URL、digest、账户和 Token 全部留在 Host/主进程；
+3. 安装状态、远端 Registry 状态、Challenge 和 Mutation Receipt 也逐字段验证，
+   对数组、字符串、时间、枚举、计数、Package ID 与 UUID 设上限并失败关闭。Host
+   已知错误映射为固定中文文案，未知错误不透传原始链；
+4. preload 只开放 get snapshot、refresh Registry、按 packageId download/rollback/
+   reconcile 和按 approvalId approve。主进程 IPC 再调用 Controller 校验，Renderer
+   不能提交 URL、路径、digest、publisher、权限布尔值或 Registry 内容；
+5. 新增 Package Center：显示 Runtime Catalog、安装/Previous/invalid/orphan 审计、
+   远端 Registry 摘要、权限标签与 runtime visibility；支持手动 packageId 和当前
+   Catalog 卡片下载/检查更新、本地 reconcile、显式确认 rollback；
+6. 下载只有在 Host 返回 `approval_required` 时展示独立权限面板；页面不显示
+   approvalId，用户点击“确认权限并安装”后只回传该一次性 ID。取消只丢弃页面状态，
+   不触发安装；
+7. Host timeout、退出、Bridge 中断、响应损坏或账户切换均被保守归类为
+   `outcome=unknown`。页面清除可重试的批准按钮，明确要求先重新读取状态；代码没有
+   mutation 自动重试；
+8. 正式远端配置为 `disabled/unavailable` 时，Package Center 使用黄色关闭态并禁用
+   下载/检查更新；本地 reconcile/rollback 和显式刷新 Registry 仍可用。没有伪装
+   生产能力，也没有启用自动更新、自动批准或自动 rollback。
+
+H2c2 自主验证：
+
+- Package Controller 9 项通过：覆盖 ready 门禁先于输入解析、完整 Manifest 白名单、
+  Registry 摘要、严格 ID、Challenge identity、Receipt 脱敏、已知错误固定映射、
+  Host timeout 单次调用与未知结果、41→42 账户切换丢弃旧 Challenge；
+- 桌面 `npm test`：54 项通过、0 失败，另有 2 个真实 Host 环境测试按预期 skip；
+  `npm run check` 通过；
+- Electron Package UI smoke 通过：验证 packageId-only 下载、权限 Challenge、
+  approvalId-only 批准、reconcile、rollback 未知结果不自动查询/重试，以及显式刷新
+  后恢复；既有 Provider UI smoke 同时通过；
+- 生产关闭态 visual smoke 断言下载表单与全部远端更新按钮禁用、Registry 刷新仍可用；
+  1180×760 Retina 截图已人工检查导航、状态栏、表单、双列卡片和纵向滚动布局；
+- AgentMesh360 Rust 全量 140 项通过；Clippy `-D warnings`、Rustfmt 与
+  `git diff --check` 通过；
+- Electron smoke 首次在 reconcile 返回后的异步刷新尚未完成时查找 rollback 按钮，
+  测试失败；加入明确的 DOM ready 握手后连续通过。该修复只增强测试同步，不改变
+  产品 mutation 语义。
+
+计划复盘：
+
+- Renderer 权限面严格小于 H2c1 Host ACP：只能读取公开白名单并提交两个不透明 ID；
+- Controller、Host 两层都执行订阅和账户边界；页面在身份离开 ready 或账户变化时
+  清空 snapshot、Challenge 和 unknown outcome；
+- `refresh_pending`、`superseded` 与 `visible` 有独立用户文案，未知 mutation 不会
+  被伪装成失败后重试；
+- 生产发布根、endpoint、Publisher Bundle 继续为空，关闭态下载按钮不可用；
+- Kimi 第一轮独立逐行审查 9 个代码/测试文件和 3 份文档，实跑 Controller 9 项、
+  桌面 54 项、两条 Electron UI smoke、生产关闭态 visual smoke、Rust 140 项以及
+  Clippy/Rustfmt/JS/diff-check；功能、安全、账户、脱敏和关闭态均通过，但发现 1 项
+  Low：rollback 默认成功前缀声称“已刷新运行时目录”，与 `refresh_pending` 或
+  `superseded` Receipt 后缀矛盾，因此没有给无条件 PASS；
+- rollback 文案已改为只陈述可确认事实“磁盘回滚已提交”。Package UI smoke 新增
+  completed + `refresh_pending` 路径，硬断言 DOM 包含磁盘已提交和 last-known-good，
+  且不含旧矛盾文案；随后第二次 rollback 返回 unknown，继续断言不自动 snapshot、
+  query 或 retry，手动刷新后才恢复；
+- 修复后自主重跑 Package UI、Controller 9 项、JS check 和 diff-check 全部通过；
+  Kimi 第二轮再实跑 Package UI、Controller 9 项、桌面 54 项、JS check 与
+  diff-check，确认原有 unknown 断言没有弱化，Blocker/High/Medium/Low 全部为零并
+  给出无条件 PASS，H2c2 正式关闭。
+
+H2c2 代码提交：`73950fd`（`feat: add safe agent package center`）。
+
+H2c3 下一切片（须等 H2c2 Kimi 交叉测试关闭后启动）：
+
+1. 从 Host 已验证的远端 Registry 增加只读可发现摘要，只投影 packageId、agentId、
+   version、publisher 与 Registry revision/expiry；绝不暴露 artifact/envelope URL、
+   digest、签名、原始文档或本地缓存路径；
+2. Package Center 区分“新 Agent”“已安装更新”“当前版本”和“未知本地状态”，用户
+   从可发现条目发起的下载仍只提交 packageId，权限仍必须经过现有 Challenge；
+3. 摘要受订阅、可信时间、签名、反回滚、过期、账户切换和 256 条上限约束；无可信
+   cache 时失败关闭并保留当前 Runtime Catalog；
+4. H2c3 仍不填充生产 root/endpoint/bundle，不实现自动更新、搜索服务、推荐排序或
+   后台下载；可发现协议和 UI 通过双方测试后，再单独进入生产供应链发布门。

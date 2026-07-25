@@ -447,11 +447,40 @@ packageId，approve 只接受 Host 生成的随机 approvalId。未知字段严�
 Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2c1 已正式关闭，代码提交为
 `34df3a5`。
 
-## 19. H2c2 计划：桌面 Package Center 与显式权限批准
+## 19. H2c2：桌面 Package Center 与显式权限批准（已通过交叉测试）
 
-H2c2 只把 Host 已有的脱敏 catalog/status、远端 refresh、Challenge 与 Mutation
-Receipt 通过订阅 ready-gated 的 desktop controller/preload 窄桥交给 Renderer。
-权限新增或变更必须由用户显式确认，Renderer 只回传 approvalId；URL、路径、digest、
-签名材料、Registry 原文和账户 authority 始终留在 Host。交互必须区分进行中、成功、
-`refresh_pending` 与固定失败码，未知结果不得自动重试 mutation。该切片仍不启用自动
-更新、自动批准、自动 rollback 或生产 endpoint/root/bundle。
+桌面已新增订阅 ready-gated、账户绑定的 Package Controller 和 preload 窄桥。完整
+Runtime Manifest 不会原样进入 Renderer；Controller 只投影 Package/Agent 身份、
+版本、publisher、声明权限、安装审计、远端 Registry 审计摘要、Challenge 与 Mutation
+Receipt。Prompt、Model Policy、Skill workflow/adapter、源码/下载 URL、本地路径、
+digest、签名、Registry 原文、root key、账户和 Token 全部被白名单挡在主进程之外。
+
+每个异步调用都绑定调用前后的 account ID。账户切换、订阅离开 ready、Host timeout/
+退出/断连或响应损坏时，页面只获得 `outcome=unknown`，清除可重试的批准状态并要求
+先重新读取；不会自动重试 download/install/rollback/reconcile。新增权限必须先展示
+Host Challenge，用户显式确认后 Renderer 只回传 approvalId。
+
+Package Center 已显示 Runtime Catalog、安装/Previous/invalid/orphan 状态、远端
+Registry 摘要、权限与 runtime visibility，并支持按 packageId 下载、本地 reconcile
+和显式 rollback。生产 Registry 为 disabled/unavailable 时，远端下载和更新按钮
+禁用，刷新审计与本地恢复仍可用。
+
+自主验证包括 Controller 9 项、桌面 54 项、Package UI 与既有 Provider UI 两条
+Electron smoke、生产关闭态 visual smoke、AgentMesh360 Rust 全量 140 项以及全部
+静态检查，均通过。
+
+Kimi 第一轮独立实跑相同范围后发现 1 项 Low：rollback 的默认文案声称运行时目录
+已经刷新，但 `refresh_pending/superseded` Receipt 可能紧接着否定该事实。文案已
+收窄为“磁盘回滚已提交”，Electron smoke 同时新增 refresh-pending 正向文案断言和
+第二次 unknown rollback 零自动查询/重试断言。自主复测通过后，Kimi 第二轮确认
+Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2c2 代码提交为 `73950fd`。
+本切片仍不启用自动更新、自动批准、自动 rollback 或生产 endpoint/root/bundle。
+
+## 20. H2c3 计划：已验证远端 Package 的可发现摘要
+
+H2c3 从 Host 已验证且未过期的 Registry 只读投影 packageId、agentId、version、
+publisher 与 revision/expiry，让 Package Center 能区分新 Agent 与已安装更新。
+artifact/envelope URL、digest、签名、原始 Registry 和缓存路径继续不可见；下载仍只
+提交 packageId，新增权限仍经过 H2c2 Challenge。摘要受订阅、可信时间、签名、
+反回滚、账户切换和 256 条上限约束。该切片仍不填充生产 root/endpoint/bundle，
+不做自动更新、推荐排序或后台下载。
