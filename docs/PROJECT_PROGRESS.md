@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2b2d 已通过自主测试和 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2c1：订阅门禁的 Host Package 管理 ACP 契约 |
+| 动态 Agent Package | H0/H1 至 H2c1 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2c2：桌面 Package Center 与显式权限批准交互 |
 
 ## 开发循环记录
 
@@ -2446,3 +2446,78 @@ H2c1 下一切片（须等 H2b2d Kimi 交叉测试关闭后启动）：
    测试只用临时目录、固定测试密钥和 loopback transport；
 4. H2c1 只建立 Host 协议和桌面主进程窄调用面，不做 Renderer 权限 UI、不启用自动
    更新或自动 rollback。协议通过双方测试后，再单独进入 H2c2 桌面交互。
+
+### 循环 34：动态 Agent Package H2c1——订阅门禁的 Host 管理 ACP
+
+状态：实现、自主测试与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2b2d 已经关闭本地 install/rollback/reconcile 的运行时一致性，但桌面
+主进程还不能通过受控协议调用这些能力。H2c1 只建立 Host ACP 和桌面主进程窄
+Client，不做 Renderer 页面，不启用自动更新、自动批准或自动回滚，也不填充生产
+endpoint、root 或 publisher bundle。
+
+H2c1 已经实现：
+
+1. 新增五个订阅门禁的 Host 扩展：
+   `agent-packages/remote-refresh`、`download`、`approve`、`rollback` 和
+   `reconcile`；它们复用现有只读 `catalog`/`status`，形成完整但仍由 Host 持有
+   authority 的管理面；
+2. 请求 Schema 使用 `deny_unknown_fields`。refresh 只接受空对象，download、
+   rollback、reconcile 只接受最长 128 字节的合法 `packageId`，approve 只接受
+   Host 生成的随机 `approvalId`；URL、路径、digest、publisher、权限布尔值和
+   Registry 内容都不能由调用方注入；
+3. 统一 Host 分发层在解析或执行管理请求前先检查订阅，管理模块再次防御性调用
+   `ClientAccess::require`。跨账户批准不能消费另一个账户的 Challenge，切回原账户
+   后仍可继续；成功批准只能使用一次，重放返回固定脱敏错误；
+4. 操作失败通过结构化 `{code, message}` 返回。下载统一为
+   `package_delivery_failed`，批准、回滚和恢复使用稳定 fallback；已知的完整性、
+   身份和 Registry 问题只复用既有安全分类。响应和日志均不透传原始错误、路径、
+   digest、账户或 Token；
+5. 桌面 `AcpHostClient` 新增 catalog/status/refresh/download/approve/rollback/
+   reconcile 七个窄方法，参数只含 `packageId` 或 `approvalId`，并保留 Host 的
+   结构化安全错误码；本切片没有把任何方法暴露给 preload/Renderer；
+6. Host 集成测试让 ACP、Delivery 与 Runtime Registry 共享同一实例和状态根，并用
+   临时目录、固定测试签名密钥和 loopback transport 完成真实 envelope/artifact
+   下载、跨账户批准、一次性安装、运行时 generation 刷新、reconcile 和状态查询；
+7. 所有 Package、publisher 和 agent 标识统一增加 128 字节上限，避免管理输入和
+   Manifest 校验形成长度边界差异。
+
+H2c1 自主验证：
+
+- Host ACP 专项 2 项通过：覆盖五个方法均先订阅门禁、严格拒绝额外 authority 字段、
+  非法/超长 Package ID、正式配置关闭、固定脱敏失败码、跨账户 Challenge、账户恢复、
+  一次性批准、防重放、Runtime generation 和响应脱敏；
+- Delivery 专项 14 项通过；AgentMesh360 全量 140 项通过、0 失败；
+- 桌面端 45 项通过、0 失败，另有 2 个真实 Host 可选测试按环境约束跳过；
+  `npm run check` 通过；
+- `cargo clippy -p xai-grok-shell --lib -- -D warnings`、Rustfmt 与
+  `git diff --check` 通过。
+
+计划复盘：
+
+- Host 仍是 Registry、远端地址、签名、路径、digest、批准绑定和磁盘 mutation 的
+  唯一 authority；桌面主进程只是按 ID 调用，Renderer 尚不可达；
+- 订阅无效时五个管理方法在网络、暂存或 mutation 之前失败；生产远端 refresh
+  明确返回 `disabled/not_configured`，正式下载不能绕过空 Trust 配置；
+- 本轮没有更改自动更新策略、自动 rollback、orphan 清理、发布根或 Publisher
+  Bundle，符合 H2c1 原计划；
+- 本机 Kimi 独立逐行审查全部 6 个代码文件和 3 份计划文档，确认订阅门禁在解析、
+  网络与 mutation 之前，输入 authority、跨账户 Challenge、一次性批准、共享
+  Registry、脱敏错误、生产 fail-closed、desktop 主进程窄面和 H2c2 边界均符合计划；
+- Kimi 独立实跑 Host ACP 2 项、Delivery 14 项、Agent Package 9 项、AgentMesh360
+  全量 140 项、桌面专项 7 项和桌面全量 45 项（另 2 项真实 Host 环境测试按预期
+  skip），并执行 Clippy、Rustfmt、JS check 与 diff-check；全部通过；
+- Kimi 报告 Blocker/High/Medium/Low 均为零并给出无条件 PASS，H2c1 正式关闭。
+
+H2c1 代码提交：`34df3a5`（`feat: expose gated package management over acp`）。
+
+H2c2 下一切片（须等 H2c1 Kimi 交叉测试关闭后启动）：
+
+1. 建立订阅 ready-gated 的桌面 Package Center，只展示 Host 返回的脱敏 catalog、
+   installed status、远端 refresh 状态和 runtime visibility；
+2. 权限新增/变更必须先显示 Host Challenge，用户显式确认后只回传 `approvalId`；
+   Renderer 不接收 URL、文件路径、digest、签名材料、Registry 原文或账户 authority；
+3. 安装、rollback、reconcile 采用明确的进行中、成功、`refresh_pending` 与固定
+   错误状态；关闭窗口或 Host 重连不能把未知结果伪装成失败后自动重试；
+4. H2c2 仍不启用自动更新、自动批准、自动 rollback 或生产 Trust 配置；先完成桌面
+   controller/preload/Renderer 的窄桥、输入校验、输出脱敏与双方测试。

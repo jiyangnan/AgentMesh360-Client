@@ -423,10 +423,35 @@ last-known-good，不伪造事务失败或再次切换 Active。修复本地内�
 全部静态检查，Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2b2d 不开放
 ACP/UI、不自动回滚或清理 orphan，也不启用生产 endpoint/root/bundle。
 
-## 18. H2c1 计划：订阅门禁的 Host Package 管理契约
+## 18. H2c1：订阅门禁的 Host Package 管理契约（已通过交叉测试）
 
-下一切片把现有只读远端 refresh、受限下载/审批/安装、rollback 与 reconcile 接入
-Host ACP 窄协议。调用方只能提交 packageId 或随机 approvalId，不能注入 URL、路径、
-digest、publisher、权限布尔值或 Registry 内容；响应只使用脱敏 Audit、Challenge 和
-Mutation Receipt。生产 Trust 配置继续为空，H2c1 不做 Renderer 权限 UI、自动更新
-或自动 rollback；Host 契约通过双方测试后再进入 H2c2 桌面交互。
+现有只读 catalog/status、远端 refresh、受限下载/审批/安装、rollback 与 reconcile
+已经接入 Host ACP 窄协议。统一 Host 分发层先执行订阅门禁，管理模块再防御性复验；
+refresh 只接受空对象，download/rollback/reconcile 只接受合法且不超过 128 字节的
+packageId，approve 只接受 Host 生成的随机 approvalId。未知字段严格拒绝，因此调用方
+不能注入 URL、路径、digest、publisher、权限布尔值或 Registry 内容。
+
+响应只使用现有脱敏 Catalog/Audit、Challenge 和 Mutation Receipt。操作失败被映射为
+稳定的结构化安全码，原始错误、路径、digest、账户和 Token 不进入协议或失败日志。
+跨账户不能消费 Challenge，切回所有者账户后仍可使用；成功批准后立即失效，重放失败。
+桌面主进程已有七个仅按 ID 调用的窄方法，但没有暴露给 preload/Renderer。
+
+自主验证包括 Host ACP 2 项、Delivery 14 项、AgentMesh360 全量 140 项、桌面 45 项
+以及 Clippy `-D warnings`、Rustfmt、JS check 和 diff-check，全部通过。生产 Trust
+配置继续为空，远端 refresh 返回 `disabled/not_configured`；H2c1 不做 Renderer
+权限 UI、自动更新或自动 rollback。
+
+本机 Kimi 随后独立逐行审查代码和三份计划文档，并实跑 Host ACP 2 项、Delivery
+14 项、Agent Package 9 项、AgentMesh360 全量 140 项、桌面专项 7 项、桌面全量
+45 项（另 2 项真实 Host 环境测试按预期 skip）以及全部静态检查。所有命令通过，
+Blocker/High/Medium/Low 均为零并给出无条件 PASS。H2c1 已正式关闭，代码提交为
+`34df3a5`。
+
+## 19. H2c2 计划：桌面 Package Center 与显式权限批准
+
+H2c2 只把 Host 已有的脱敏 catalog/status、远端 refresh、Challenge 与 Mutation
+Receipt 通过订阅 ready-gated 的 desktop controller/preload 窄桥交给 Renderer。
+权限新增或变更必须由用户显式确认，Renderer 只回传 approvalId；URL、路径、digest、
+签名材料、Registry 原文和账户 authority 始终留在 Host。交互必须区分进行中、成功、
+`refresh_pending` 与固定失败码，未知结果不得自动重试 mutation。该切片仍不启用自动
+更新、自动批准、自动 rollback 或生产 endpoint/root/bundle。
