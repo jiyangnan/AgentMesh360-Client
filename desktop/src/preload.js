@@ -47,6 +47,24 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     level: String(level || '').slice(0, 40),
     confirmPaidInference: confirmPaidInference === true,
   }),
+  getPackageSnapshot: () => ipcRenderer.invoke('package:get-snapshot'),
+  refreshPackageRegistry: () => ipcRenderer.invoke('package:refresh-registry'),
+  downloadAgentPackage: (packageId) => ipcRenderer.invoke(
+    'package:download',
+    String(packageId || '').slice(0, 128),
+  ),
+  approveAgentPackage: (approvalId) => ipcRenderer.invoke(
+    'package:approve',
+    String(approvalId || '').slice(0, 36),
+  ),
+  rollbackAgentPackage: (packageId) => ipcRenderer.invoke(
+    'package:rollback',
+    String(packageId || '').slice(0, 128),
+  ),
+  reconcileAgentPackage: (packageId) => ipcRenderer.invoke(
+    'package:reconcile',
+    String(packageId || '').slice(0, 128),
+  ),
   getBackgroundSnapshot: () => ipcRenderer.invoke('runtime:get-background-snapshot'),
   setBackgroundStartup: (enabled) => ipcRenderer.invoke(
     'runtime:set-background-startup',

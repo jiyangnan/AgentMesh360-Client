@@ -12,6 +12,11 @@ let backgroundEnabled = true;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => fixtureState(phase));
+  ipcMain.handle('package:get-snapshot', () => packageFixture());
+  ipcMain.handle('package:refresh-registry', () => ({
+    registry: packageFixture().status.remoteRegistry,
+    snapshot: packageFixture(),
+  }));
   ipcMain.handle('provider:get-snapshot', () => providerFixture());
   ipcMain.handle('runtime:get-background-snapshot', () => backgroundFixture());
   ipcMain.handle('runtime:set-background-startup', (_event, enabled) => {
@@ -33,6 +38,10 @@ app.whenReady().then(async () => {
     'provider:upsert-assignment',
     'provider:delete-assignment',
     'provider:run-probe',
+    'package:download',
+    'package:approve',
+    'package:rollback',
+    'package:reconcile',
   ]) {
     ipcMain.handle(channel, () => providerFixture());
   }
@@ -57,13 +66,28 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript("document.querySelector('.workspace-main').scrollTo(0, document.querySelector('.workspace-main').scrollHeight)");
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
+  } else if (phase === 'package') {
+    await window.webContents.executeJavaScript("document.getElementById('nav-packages').click()");
+    await new Promise((resolve) => setTimeout(resolve, 180));
   } else if (phase === 'background') {
     await window.webContents.executeJavaScript("document.getElementById('nav-client').click()");
     await new Promise((resolve) => setTimeout(resolve, 180));
   }
   const image = await window.webContents.capturePage();
   fs.writeFileSync(output, image.toPNG());
-  if (phase === 'background') {
+  if (phase === 'package') {
+    const closedControls = await window.webContents.executeJavaScript(`({
+      installDisabled: document.querySelector('#package-install-form button[type="submit"]').disabled,
+      downloadButtonsDisabled: [...document.querySelectorAll('[data-download-package]')]
+        .every((button) => button.disabled),
+      refreshDisabled: document.getElementById('refresh-package-registry').disabled,
+    })`);
+    assert.deepEqual(closedControls, {
+      installDisabled: true,
+      downloadButtonsDisabled: true,
+      refreshDisabled: false,
+    });
+  } else if (phase === 'background') {
     await window.webContents.executeJavaScript("document.getElementById('toggle-background-startup').click()");
     await new Promise((resolve) => setTimeout(resolve, 120));
     assert.deepEqual(backgroundWrites, [false]);
@@ -74,7 +98,7 @@ app.whenReady().then(async () => {
 }).catch(() => app.exit(1));
 
 function fixtureState(selected) {
-  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'background') {
+  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'background') {
     return {
       phase: 'ready',
       account: { id: 7, email: 'ferdinand@example.com', displayName: 'Ferdinand' },
@@ -99,6 +123,87 @@ function fixtureState(selected) {
     };
   }
   return { phase: 'signed_out' };
+}
+
+function packageFixture() {
+  return {
+    catalog: {
+      schemaVersion: 1,
+      catalogRevision: 7,
+      packages: [
+        {
+          packageId: 'com.agentmesh360.job-agent',
+          version: '0.4.7',
+          publisher: 'agentmesh360',
+          requestedPermissions: ['local_files', 'network_access', 'process_execution'],
+          agent: {
+            agentId: 'job-agent',
+            displayName: 'Job Agent',
+            description: '持续理解岗位目标、求职材料和当前进度。',
+          },
+        },
+        {
+          packageId: 'com.agentmesh360.lecturecast-agent',
+          version: '0.3.2',
+          publisher: 'agentmesh360',
+          requestedPermissions: ['local_files', 'network_access'],
+          agent: {
+            agentId: 'lecturecast-agent',
+            displayName: 'Lecturecast Agent',
+            description: '把课程资料转化为可发布、可校验的音视频内容。',
+          },
+        },
+        {
+          packageId: 'com.agentmesh360.deploy-agent',
+          version: '0.2.5',
+          publisher: 'agentmesh360',
+          requestedPermissions: ['network_access', 'external_mutations'],
+          agent: {
+            agentId: 'deploy-agent',
+            displayName: 'Deploy Agent',
+            description: '负责发布前检查、部署执行以及上线后的证据验证。',
+          },
+        },
+      ],
+    },
+    status: {
+      catalogGeneration: 3,
+      catalogRevision: 7,
+      remoteRegistry: {
+        outcome: 'disabled',
+        reason: 'not_configured',
+        conditionalRequest: false,
+      },
+      packages: [
+        {
+          kind: 'installed_active',
+          packageId: 'com.agentmesh360.job-agent',
+          agentId: 'job-agent',
+          version: '0.4.7',
+          slot: 'active',
+        },
+        {
+          kind: 'installed_previous',
+          packageId: 'com.agentmesh360.job-agent',
+          agentId: 'job-agent',
+          version: '0.4.6',
+          slot: 'previous',
+        },
+        {
+          kind: 'built_in',
+          packageId: 'com.agentmesh360.lecturecast-agent',
+          agentId: 'lecturecast-agent',
+          version: '0.3.2',
+        },
+        {
+          kind: 'built_in',
+          packageId: 'com.agentmesh360.deploy-agent',
+          agentId: 'deploy-agent',
+          version: '0.2.5',
+        },
+      ],
+    },
+  };
 }
 
 function backgroundFixture() {

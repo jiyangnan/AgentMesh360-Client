@@ -13,6 +13,15 @@ let providerUi = {
   busy: false,
   editingProfileId: null,
 };
+let packageUi = {
+  phase: 'idle',
+  snapshot: null,
+  error: null,
+  message: null,
+  busy: false,
+  pendingApproval: null,
+  unknownOutcome: null,
+};
 let backgroundUi = {
   phase: 'idle',
   snapshot: null,
@@ -41,6 +50,15 @@ function render(state) {
       busy: false,
       editingProfileId: null,
     };
+    packageUi = {
+      phase: 'idle',
+      snapshot: null,
+      error: null,
+      message: null,
+      busy: false,
+      pendingApproval: null,
+      unknownOutcome: null,
+    };
     backgroundUi = {
       phase: 'idle',
       snapshot: null,
@@ -53,6 +71,10 @@ function render(state) {
     workspaceView = 'agents';
     providerUi.snapshot = null;
     providerUi.phase = 'idle';
+    packageUi.snapshot = null;
+    packageUi.phase = 'idle';
+    packageUi.pendingApproval = null;
+    packageUi.unknownOutcome = null;
     backgroundUi.snapshot = null;
     backgroundUi.phase = 'idle';
   }
@@ -181,6 +203,7 @@ function renderReady(state) {
         <p class="nav-label">Workspace</p>
         <button class="nav-item ${workspaceView === 'agents' ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>常驻 Agent</button>
         <button class="nav-item" type="button" disabled><i class="nav-dot"></i>会话 <span class="muted">后续</span></button>
+        <button class="nav-item ${workspaceView === 'packages' ? 'active' : ''}" id="nav-packages" type="button"><i class="nav-dot"></i>Agent Package</button>
         <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>Provider 设置</button>
         <button class="nav-item ${workspaceView === 'client' ? 'active' : ''}" id="nav-client" type="button"><i class="nav-dot"></i>客户端设置</button>
         <div class="sidebar-spacer"></div>
@@ -190,12 +213,17 @@ function renderReady(state) {
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
-      <main class="workspace-main">${workspaceView === 'providers' ? providerSettingsView(state) : workspaceView === 'client' ? backgroundSettingsView() : agentWorkspaceView(state)}</main>
+      <main class="workspace-main">${workspaceView === 'packages' ? packageCenterView() : workspaceView === 'providers' ? providerSettingsView(state) : workspaceView === 'client' ? backgroundSettingsView() : agentWorkspaceView(state)}</main>
     </section>`;
   document.getElementById('logout').addEventListener('click', () => bridge.logout());
   document.getElementById('nav-agents').addEventListener('click', () => {
     workspaceView = 'agents';
     renderReady(currentState);
+  });
+  document.getElementById('nav-packages').addEventListener('click', () => {
+    workspaceView = 'packages';
+    renderReady(currentState);
+    if (packageUi.phase === 'idle') refreshPackageSnapshot();
   });
   document.getElementById('nav-providers').addEventListener('click', () => {
     workspaceView = 'providers';
@@ -207,7 +235,9 @@ function renderReady(state) {
     renderReady(currentState);
     if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
   });
-  if (workspaceView === 'providers') {
+  if (workspaceView === 'packages') {
+    wirePackageCenter();
+  } else if (workspaceView === 'providers') {
     wireProviderSettings();
   } else if (workspaceView === 'client') {
     wireBackgroundSettings();
@@ -215,6 +245,355 @@ function renderReady(state) {
   for (const button of document.querySelectorAll('[data-agent-id]')) {
     button.addEventListener('click', () => bridge.activateAgent(button.dataset.agentId));
   }
+}
+
+function packageCenterView() {
+  const snapshot = packageUi.snapshot;
+  const catalog = snapshot?.catalog || { packages: [] };
+  const status = snapshot?.status || { packages: [], remoteRegistry: {} };
+  const packages = Array.isArray(catalog.packages) ? catalog.packages : [];
+  const installed = Array.isArray(status.packages) ? status.packages : [];
+  const registry = status.remoteRegistry || {};
+  const remoteAvailable = ['ready', 'updated', 'not_modified', 'last_known_good']
+    .includes(registry.outcome);
+  const activeCount = installed.filter((item) => item.kind === 'installed_active').length;
+  const issueCount = installed.filter((item) => item.issue).length
+    + (status.lastRefreshIssue ? 1 : 0);
+  return `
+    <header class="workspace-header package-header">
+      <div>
+        <p class="eyebrow">Signed Package Center</p>
+        <h1>让新的 Agent 安全进入长期工作区。</h1>
+        <p>Host 独占签名、Registry、下载地址和本地路径；这里仅显示公开身份、权限变化与运行时结果。</p>
+      </div>
+      <div class="route-health ${['disabled', 'unavailable'].includes(registry.outcome) ? 'warning-health' : ''}">
+        <i></i><span>Remote Registry</span><strong>${escapeHtml(registryStatusLabel(registry))}</strong>
+      </div>
+    </header>
+    ${packageUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(packageUi.message)}</div>` : ''}
+    ${packageUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(packageUi.error)}</div>` : ''}
+    ${packageUi.unknownOutcome ? `
+      <div class="provider-notice warning package-unknown" role="alert">
+        <strong>操作结果未知</strong>
+        <span>${escapeHtml(packageUi.unknownOutcome.message)}</span>
+        <button class="ghost refresh-package-state" type="button">重新读取状态</button>
+      </div>` : ''}
+    ${packageUi.phase === 'loading' ? packageLoadingView() : ''}
+    ${packageUi.phase === 'error' ? '<button class="secondary retry-packages" type="button">重新读取 Package 状态</button>' : ''}
+    ${packageUi.phase === 'ready' ? `
+      <section class="package-overview" aria-label="Agent Package 状态">
+        <div><span>Runtime packages</span><strong>${packages.length}</strong></div>
+        <div><span>Installed active</span><strong>${activeCount}</strong></div>
+        <div><span>Catalog generation</span><strong>${escapeHtml(status.catalogGeneration ?? '—')}</strong></div>
+        <div><span>Issues</span><strong>${issueCount}</strong></div>
+        <p>${escapeHtml(registryStatusCopy(registry))}</p>
+      </section>
+      <div class="package-toolbar">
+        <form class="package-install-form" id="package-install-form">
+          <label class="field">
+            <span>Agent Package ID <em>只提交身份，不提交 URL 或文件</em></span>
+            <input name="packageId" maxlength="128" autocomplete="off" required placeholder="com.agentmesh360.example-agent" ${remoteAvailable ? '' : 'disabled'}>
+          </label>
+          <button class="secondary" type="submit" ${packageUi.busy || !remoteAvailable ? 'disabled' : ''}>下载并验证</button>
+        </form>
+        <button class="ghost package-refresh-action" id="refresh-package-registry" type="button" ${packageUi.busy ? 'disabled' : ''}>刷新签名目录</button>
+      </div>
+      ${packageUi.pendingApproval ? packageApprovalView(packageUi.pendingApproval) : ''}
+      <div class="section-head package-section-head"><h2>Runtime Catalog</h2><span>${packages.length} 个 Agent Package</span></div>
+      <div class="package-grid">
+        ${packages.length
+    ? packages.map((packageRecord) => packageCard(packageRecord, installed, remoteAvailable)).join('')
+    : '<div class="empty-agents">Host 当前没有公开的 Agent Package。</div>'}
+      </div>
+      ${packageStatusAudit(installed)}
+    ` : ''}
+    <div class="security-row">Renderer 不接收 Registry 原文、下载地址、digest、签名材料、Prompt、Skill 路径或账户 authority</div>`;
+}
+
+function packageLoadingView() {
+  return `
+    <div class="provider-loading" role="status">
+      <div class="spinner" aria-hidden="true"></div>
+      <div><strong>正在读取 Host Package 状态</strong><span>Catalog 与安装审计会在主进程完成白名单投影。</span></div>
+    </div>`;
+}
+
+function packageApprovalView(approval) {
+  const permissions = Array.isArray(approval.addedPermissions)
+    ? approval.addedPermissions
+    : [];
+  return `
+    <section class="package-approval" aria-label="Agent Package 权限批准">
+      <div class="approval-heading">
+        <div>
+          <p class="eyebrow">Explicit Approval Required</p>
+          <h2>${escapeHtml(approval.packageId)} <span>v${escapeHtml(approval.version)}</span></h2>
+        </div>
+        <span class="approval-expiry">${escapeHtml(formatApprovalExpiry(approval.expiresInSeconds))}</span>
+      </div>
+      <p>签名和内容已经由 Host 验证。安装会新增以下权限；只有点击确认后，Renderer 才会把一次性 approvalId 交回 Host。</p>
+      <div class="permission-list">
+        ${permissions.map((permission) => `<span>${escapeHtml(permissionLabel(permission))}</span>`).join('')}
+      </div>
+      <div class="approval-actions">
+        <button class="ghost cancel-package-approval" type="button" ${packageUi.busy ? 'disabled' : ''}>暂不安装</button>
+        <button class="secondary approve-package" type="button" ${packageUi.busy ? 'disabled' : ''}>确认权限并安装</button>
+      </div>
+    </section>`;
+}
+
+function packageCard(packageRecord, installed, remoteAvailable) {
+  const statuses = installed.filter((item) => item.packageId === packageRecord.packageId);
+  const active = statuses.find((item) => item.kind === 'installed_active');
+  const previous = statuses.find((item) => item.kind === 'installed_previous');
+  const builtIn = statuses.find((item) => item.kind === 'built_in');
+  const current = active || builtIn || statuses[0] || null;
+  const permissions = Array.isArray(packageRecord.requestedPermissions)
+    ? packageRecord.requestedPermissions
+    : [];
+  return `
+    <article class="package-card">
+      <div class="package-card-head">
+        <div class="package-sigil">${escapeHtml((packageRecord.agent?.displayName || 'A').slice(0, 1).toUpperCase())}</div>
+        <div>
+          <h3>${escapeHtml(packageRecord.agent?.displayName || packageRecord.packageId)}</h3>
+          <span>${escapeHtml(packageRecord.packageId)} · v${escapeHtml(packageRecord.version)}</span>
+        </div>
+        <b class="${active ? 'active' : ''}">${escapeHtml(packageStatusLabel(current))}</b>
+      </div>
+      <p>${escapeHtml(packageRecord.agent?.description || '')}</p>
+      <div class="package-permissions">
+        ${permissions.map((permission) => `<span>${escapeHtml(permissionLabel(permission))}</span>`).join('')}
+      </div>
+      ${current?.issue ? `<div class="package-issue">${escapeHtml(current.issue.summary)}</div>` : ''}
+      <div class="package-actions">
+        <button class="ghost" type="button" data-download-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy || !remoteAvailable ? 'disabled' : ''}>下载 / 检查更新</button>
+        ${active ? `<button class="ghost" type="button" data-reconcile-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy ? 'disabled' : ''}>恢复可见性</button>` : ''}
+        ${previous ? `<button class="ghost danger-text" type="button" data-rollback-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy ? 'disabled' : ''}>回滚</button>` : ''}
+      </div>
+    </article>`;
+}
+
+function packageStatusAudit(installed) {
+  const audit = installed.filter((item) => !['built_in', 'installed_active'].includes(item.kind));
+  if (!audit.length) return '';
+  return `
+    <section class="package-audit">
+      <div class="section-head compact"><h2>本地安装审计</h2><span>${audit.length} 条</span></div>
+      ${audit.map((item) => `
+        <div class="package-audit-row">
+          <div><strong>${escapeHtml(item.packageId)}</strong><span>${escapeHtml(item.version || '版本未知')}</span></div>
+          <b>${escapeHtml(packageStatusLabel(item))}</b>
+          <p>${escapeHtml(item.issue?.summary || 'Host 保留该版本用于受控恢复。')}</p>
+        </div>`).join('')}
+    </section>`;
+}
+
+function wirePackageCenter() {
+  document.querySelector('.retry-packages')?.addEventListener('click', () => refreshPackageSnapshot());
+  document.querySelector('.refresh-package-state')?.addEventListener('click', () => refreshPackageSnapshot());
+  document.getElementById('refresh-package-registry')?.addEventListener('click', refreshPackageRegistry);
+  document.getElementById('package-install-form')?.addEventListener('submit', submitPackageDownload);
+  document.querySelector('.cancel-package-approval')?.addEventListener('click', () => {
+    packageUi = { ...packageUi, pendingApproval: null, message: '本次安装未批准。' };
+    renderReady(currentState);
+  });
+  document.querySelector('.approve-package')?.addEventListener('click', approvePendingPackage);
+  for (const button of document.querySelectorAll('[data-download-package]')) {
+    button.addEventListener('click', () => downloadPackage(button.dataset.downloadPackage));
+  }
+  for (const button of document.querySelectorAll('[data-reconcile-package]')) {
+    button.addEventListener('click', () => mutatePackage(
+      'reconcile',
+      button.dataset.reconcilePackage,
+      'Agent Package 运行时状态已重新核对。',
+    ));
+  }
+  for (const button of document.querySelectorAll('[data-rollback-package]')) {
+    button.addEventListener('click', () => {
+      const packageId = button.dataset.rollbackPackage;
+      if (!window.confirm(`回滚 ${packageId} 会切换到 Host 已验证的 Previous 版本。继续吗？`)) return;
+      mutatePackage('rollback', packageId, 'Agent Package 磁盘回滚已提交。');
+    });
+  }
+}
+
+async function refreshPackageSnapshot(message = null) {
+  packageUi = {
+    ...packageUi,
+    phase: 'loading',
+    error: null,
+    message,
+    busy: false,
+    unknownOutcome: null,
+  };
+  if (workspaceView === 'packages') renderReady(currentState);
+  try {
+    packageUi = {
+      ...packageUi,
+      phase: 'ready',
+      snapshot: await bridge.getPackageSnapshot(),
+      error: null,
+      message,
+      busy: false,
+      unknownOutcome: null,
+    };
+  } catch (error) {
+    packageUi = {
+      ...packageUi,
+      phase: 'error',
+      snapshot: null,
+      error: publicError(error, '无法读取 Agent Package 状态'),
+      message: null,
+      busy: false,
+    };
+  }
+  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+async function refreshPackageRegistry() {
+  packageUi = {
+    ...packageUi,
+    busy: true,
+    error: null,
+    message: null,
+    unknownOutcome: null,
+  };
+  renderReady(currentState);
+  try {
+    const response = await bridge.refreshPackageRegistry();
+    packageUi = {
+      ...packageUi,
+      phase: 'ready',
+      snapshot: response.snapshot,
+      busy: false,
+      error: null,
+      message: registryRefreshNotice(response.registry),
+      unknownOutcome: null,
+    };
+  } catch (error) {
+    packageUi = {
+      ...packageUi,
+      phase: 'ready',
+      busy: false,
+      error: publicError(error, '无法刷新 Agent Package Registry'),
+      message: null,
+    };
+  }
+  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+async function submitPackageDownload(event) {
+  event.preventDefault();
+  const data = new FormData(event.currentTarget);
+  await downloadPackage(data.get('packageId'));
+}
+
+async function downloadPackage(packageId) {
+  packageUi = {
+    ...packageUi,
+    busy: true,
+    error: null,
+    message: null,
+    unknownOutcome: null,
+  };
+  renderReady(currentState);
+  try {
+    const result = await bridge.downloadAgentPackage(packageId);
+    if (handleUnknownPackageOutcome(result)) return;
+    if (result.value?.status === 'approval_required') {
+      packageUi = {
+        ...packageUi,
+        phase: 'ready',
+        busy: false,
+        pendingApproval: result.value.approval,
+        message: null,
+      };
+    } else if (result.value?.status === 'installed') {
+      await refreshPackageSnapshot(packageReceiptNotice(result.value.receipt, '安装'));
+      return;
+    } else {
+      throw new Error('Agent Package 下载结果无效');
+    }
+  } catch (error) {
+    setPackageOperationError(error, 'Agent Package 下载失败');
+  }
+  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+async function approvePendingPackage() {
+  const approval = packageUi.pendingApproval;
+  if (!approval) return;
+  packageUi = {
+    ...packageUi,
+    busy: true,
+    error: null,
+    message: null,
+    unknownOutcome: null,
+  };
+  renderReady(currentState);
+  try {
+    const result = await bridge.approveAgentPackage(approval.approvalId);
+    packageUi.pendingApproval = null;
+    if (handleUnknownPackageOutcome(result)) return;
+    await refreshPackageSnapshot(packageReceiptNotice(result.value, '安装'));
+    return;
+  } catch (error) {
+    packageUi.pendingApproval = null;
+    setPackageOperationError(error, 'Agent Package 安装失败');
+  }
+  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+async function mutatePackage(operation, packageId, successMessage) {
+  packageUi = {
+    ...packageUi,
+    busy: true,
+    error: null,
+    message: null,
+    unknownOutcome: null,
+  };
+  renderReady(currentState);
+  try {
+    const result = operation === 'rollback'
+      ? await bridge.rollbackAgentPackage(packageId)
+      : await bridge.reconcileAgentPackage(packageId);
+    if (handleUnknownPackageOutcome(result)) return;
+    await refreshPackageSnapshot(packageReceiptNotice(result.value, successMessage));
+    return;
+  } catch (error) {
+    setPackageOperationError(error, `Agent Package ${operation === 'rollback' ? '回滚' : '恢复'}失败`);
+  }
+  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+function handleUnknownPackageOutcome(result) {
+  if (result?.outcome !== 'unknown') return false;
+  packageUi = {
+    ...packageUi,
+    phase: 'ready',
+    busy: false,
+    error: null,
+    message: null,
+    pendingApproval: null,
+    unknownOutcome: {
+      operation: result.operation,
+      message: result.message || '操作结果未知，请先重新读取状态。',
+    },
+  };
+  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  return true;
+}
+
+function setPackageOperationError(error, fallback) {
+  packageUi = {
+    ...packageUi,
+    phase: 'ready',
+    busy: false,
+    error: publicError(error, fallback),
+    message: null,
+    unknownOutcome: null,
+  };
 }
 
 function backgroundSettingsView() {
@@ -740,6 +1119,95 @@ function parseModels(value) {
 
 function option(value, label, selected) {
   return `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`;
+}
+
+function registryStatusLabel(registry) {
+  return ({
+    disabled: '生产源未配置',
+    ready: '可信缓存可用',
+    updated: '签名目录已更新',
+    not_modified: '目录已是最新',
+    last_known_good: '使用最后良好版本',
+    unavailable: '可信目录不可用',
+  })[registry?.outcome] || '正在检测';
+}
+
+function registryStatusCopy(registry) {
+  if (registry?.outcome === 'disabled') {
+    return '当前正式构建没有内置发布根与 endpoint；远端安装保持关闭。';
+  }
+  if (registry?.outcome === 'last_known_good') {
+    return `远端检查失败，Host 继续使用最近一次验证通过的目录${registry.cache?.packageCount != null ? `（${registry.cache.packageCount} 个 Package）` : ''}。`;
+  }
+  if (registry?.outcome === 'unavailable') {
+    return '没有可安全使用的签名目录；下载会失败关闭。';
+  }
+  if (registry?.cache) {
+    return `Registry revision ${registry.cache.registryRevision} · ${registry.cache.packageCount} 个已签名 Package · ${formatPackageTime(registry.cache.verifiedAt)}`;
+  }
+  return '远端目录状态由 Host 校验；界面不会接触 Registry 原文或下载地址。';
+}
+
+function registryRefreshNotice(registry) {
+  if (registry?.outcome === 'disabled') return '生产 Agent Package 发布源尚未配置，远端更新保持关闭。';
+  if (registry?.outcome === 'updated') return '签名 Agent Package Registry 已更新。';
+  if (registry?.outcome === 'not_modified') return '签名 Agent Package Registry 已是最新版本。';
+  if (registry?.outcome === 'last_known_good') return '远端刷新失败，Host 正继续使用最后良好目录。';
+  if (registry?.outcome === 'unavailable') return '当前没有可安全使用的远端 Agent Package 目录。';
+  return 'Agent Package Registry 状态已重新核对。';
+}
+
+function permissionLabel(permission) {
+  return ({
+    browser_control: '浏览器控制',
+    external_actions: '外部操作',
+    external_mutations: '外部写操作',
+    local_files: '本地文件',
+    network_access: '网络访问',
+    process_execution: '进程执行',
+  })[permission] || permission || '未知权限';
+}
+
+function packageStatusLabel(status) {
+  if (!status) return '未安装';
+  return ({
+    built_in: '内置版本',
+    installed_active: 'Active',
+    installed_previous: 'Previous',
+    invalid: '需要检查',
+    orphan: '孤立记录',
+  })[status.kind] || status.kind || '状态未知';
+}
+
+function packageReceiptNotice(receipt, action) {
+  const base = String(action || '').startsWith('Agent Package')
+    ? String(action)
+    : `Agent Package ${action || '操作'}已提交。`;
+  const visibility = receipt?.runtimeVisibility || {};
+  if (visibility.status === 'refresh_pending') {
+    return `${base} 磁盘状态已提交，但运行时仍使用最后良好目录；请执行“恢复可见性”。`;
+  }
+  if (visibility.status === 'superseded') {
+    return `${base} 当前运行时已有更新版本 ${visibility.activeVersion || ''}。`;
+  }
+  return `${base} Runtime Catalog 已可见。`;
+}
+
+function formatApprovalExpiry(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return '即将过期';
+  return `${Math.ceil(value / 60)} 分钟内有效`;
+}
+
+function formatPackageTime(value) {
+  const date = new Date(value || '');
+  if (Number.isNaN(date.valueOf())) return '验证时间未知';
+  return `验证于 ${new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)}`;
 }
 
 function protocolLabel(protocol) {

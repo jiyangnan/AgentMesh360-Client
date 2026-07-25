@@ -14,6 +14,7 @@ const { AgentMeshCoreClient } = require('./auth/core-client');
 const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
 const { IdentityController } = require('./identity-controller');
+const { PackageController } = require('./package-controller');
 const { ProviderController } = require('./provider-controller');
 const {
   LoginItemController,
@@ -64,9 +65,10 @@ async function boot() {
   });
   const host = new AcpHostClient();
   controller = new IdentityController({ core, tokenStore, host });
+  const packages = new PackageController({ identity: controller, host });
   const providers = new ProviderController({ identity: controller, host });
 
-  registerIpc(controller, providers, loginItems, host);
+  registerIpc(controller, providers, packages, loginItems, host);
   windows.onReady();
   controller.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('identity:state', state);
@@ -122,7 +124,7 @@ function createWindow() {
   return created;
 }
 
-function registerIpc(identity, providers, loginItemController, host) {
+function registerIpc(identity, providers, packages, loginItemController, host) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
     const email = typeof credentials?.email === 'string' ? credentials.email : '';
@@ -160,6 +162,20 @@ function registerIpc(identity, providers, loginItemController, host) {
   });
   ipcMain.handle('provider:run-probe', (_event, request) => {
     return providers.runProbe(request);
+  });
+  ipcMain.handle('package:get-snapshot', () => packages.getSnapshot());
+  ipcMain.handle('package:refresh-registry', () => packages.refreshRegistry());
+  ipcMain.handle('package:download', (_event, packageId) => {
+    return packages.download(packageId);
+  });
+  ipcMain.handle('package:approve', (_event, approvalId) => {
+    return packages.approve(approvalId);
+  });
+  ipcMain.handle('package:rollback', (_event, packageId) => {
+    return packages.rollback(packageId);
+  });
+  ipcMain.handle('package:reconcile', (_event, packageId) => {
+    return packages.reconcile(packageId);
   });
   ipcMain.handle('runtime:get-background-snapshot', () => {
     return publicBackgroundSnapshot({ host, loginItems: loginItemController });
