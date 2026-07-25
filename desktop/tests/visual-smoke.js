@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
       await window.webContents.executeJavaScript("document.querySelector('.workspace-main').scrollTo(0, document.querySelector('.workspace-main').scrollHeight)");
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
-  } else if (phase === 'package') {
+  } else if (phase === 'package' || phase === 'package-ready') {
     await window.webContents.executeJavaScript("document.getElementById('nav-packages').click()");
     await new Promise((resolve) => setTimeout(resolve, 180));
   } else if (phase === 'background') {
@@ -98,7 +98,7 @@ app.whenReady().then(async () => {
 }).catch(() => app.exit(1));
 
 function fixtureState(selected) {
-  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'background') {
+  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'package-ready' || selected === 'background') {
     return {
       phase: 'ready',
       account: { id: 7, email: 'ferdinand@example.com', displayName: 'Ferdinand' },
@@ -126,6 +126,7 @@ function fixtureState(selected) {
 }
 
 function packageFixture() {
+  const remoteReady = phase === 'package-ready';
   return {
     catalog: {
       schemaVersion: 1,
@@ -170,8 +171,17 @@ function packageFixture() {
       catalogGeneration: 3,
       catalogRevision: 7,
       remoteRegistry: {
-        outcome: 'disabled',
-        reason: 'not_configured',
+        outcome: remoteReady ? 'ready' : 'disabled',
+        ...(remoteReady ? {
+          cache: {
+            trustSequence: 4,
+            trustExpiresAt: '2026-08-01T00:00:00Z',
+            registryRevision: 9,
+            registryExpiresAt: '2026-08-01T00:00:00Z',
+            packageCount: 4,
+            verifiedAt: '2026-07-26T00:00:00Z',
+          },
+        } : { reason: 'not_configured' }),
         conditionalRequest: false,
       },
       packages: [
@@ -202,6 +212,32 @@ function packageFixture() {
           version: '0.2.5',
         },
       ],
+    },
+    discovery: remoteReady ? {
+      outcome: 'ready',
+      registryRevision: 9,
+      registryExpiresAt: '2026-08-01T00:00:00Z',
+      packages: [
+        {
+          packageId: 'com.agentmesh360.job-agent',
+          agentId: 'job-agent',
+          version: '0.4.8',
+          publisher: 'agentmesh360',
+          availability: 'update_available',
+          currentVersion: '0.4.7',
+        },
+        {
+          packageId: 'com.agentmesh360.research-agent',
+          agentId: 'research-agent',
+          version: '1.0.0',
+          publisher: 'agentmesh360',
+          availability: 'new_agent',
+        },
+      ],
+    } : {
+      outcome: 'disabled',
+      reason: 'not_configured',
+      packages: [],
     },
   };
 }

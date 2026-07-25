@@ -9,6 +9,7 @@ use super::package_installer::{PackageStatusIssue, classify_package_error};
 use super::package_registry_fetcher::PackageRegistryFetcher;
 
 pub const REMOTE_REFRESH_METHOD: &str = "x.agentmesh360/agent-packages/remote-refresh";
+pub const REMOTE_CATALOG_METHOD: &str = "x.agentmesh360/agent-packages/remote-catalog";
 pub const DOWNLOAD_METHOD: &str = "x.agentmesh360/agent-packages/download";
 pub const APPROVE_METHOD: &str = "x.agentmesh360/agent-packages/approve";
 pub const ROLLBACK_METHOD: &str = "x.agentmesh360/agent-packages/rollback";
@@ -48,7 +49,8 @@ struct PackageOperationError {
 pub(super) fn handles(method: &str) -> bool {
     matches!(
         method,
-        REMOTE_REFRESH_METHOD
+        REMOTE_CATALOG_METHOD
+            | REMOTE_REFRESH_METHOD
             | DOWNLOAD_METHOD
             | APPROVE_METHOD
             | ROLLBACK_METHOD
@@ -64,6 +66,12 @@ pub(super) async fn handle(
 ) -> crate::extensions::ExtResult {
     access.require()?;
     match args.method.as_ref() {
+        REMOTE_CATALOG_METHOD => {
+            let _: EmptyRequest = crate::extensions::parse_params(args)?;
+            crate::extensions::to_ext_response(Ok::<_, anyhow::Error>(
+                registry_fetcher.discover(access),
+            ))
+        }
         REMOTE_REFRESH_METHOD => {
             let _: EmptyRequest = crate::extensions::parse_params(args)?;
             let status = registry_fetcher.refresh(access).await;

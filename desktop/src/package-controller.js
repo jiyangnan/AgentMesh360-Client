@@ -29,6 +29,7 @@ const REGISTRY_OUTCOMES = new Set([
   'last_known_good',
   'unavailable',
 ]);
+const DISCOVERY_OUTCOMES = new Set(['disabled', 'ready', 'unavailable']);
 const REGISTRY_REASONS = new Set([
   'not_configured',
   'access_required',
@@ -81,12 +82,13 @@ class PackageController {
   async getSnapshot() {
     const accountKey = this.#requireReady();
     try {
-      const [catalog, status] = await Promise.all([
+      const [catalog, status, discovery] = await Promise.all([
         this.host.getAgentPackageCatalog(),
         this.host.getAgentPackageStatus(),
+        this.host.getRemoteAgentPackageCatalog(),
       ]);
       this.#requireSameAccount(accountKey);
-      return publicPackageSnapshot({ catalog, status });
+      return publicPackageSnapshot({ catalog, status, discovery });
     } catch (error) {
       throw publicControllerError(error, 'package_snapshot_unavailable');
     }
@@ -213,7 +215,7 @@ function unknownAccountOutcome(operation) {
   });
 }
 
-function publicPackageSnapshot({ catalog, status }) {
+function publicPackageSnapshot({ catalog, status, discovery }) {
   const sourceCatalog = requireObject(catalog?.catalog, 'Agent Package Catalog');
   const sourceStatus = requireObject(status, 'Agent Package Status');
   const packages = boundedArray(
@@ -228,6 +230,7 @@ function publicPackageSnapshot({ catalog, status }) {
     1024,
   )
     .map(normalizeInstalledStatus);
+  const remoteDiscovery = normalizeRemoteDiscovery(discovery, packages);
   return deepFreeze({
     catalog: {
       schemaVersion: boundedInteger(sourceCatalog.schemaVersion, 1, Number.MAX_SAFE_INTEGER),
@@ -249,7 +252,70 @@ function publicPackageSnapshot({ catalog, status }) {
       lastRefreshIssue: optionalIssue(sourceStatus.lastRefreshIssue),
       packages: installed,
     },
+    discovery: remoteDiscovery,
   });
+}
+
+function normalizeRemoteDiscovery(value, runtimePackages) {
+  const source = requireObject(value, 'remote Agent Package Catalog');
+  const outcome = String(source.outcome || '');
+  if (!DISCOVERY_OUTCOMES.has(outcome)) {
+    throw invalidResponse('remote Agent Package Catalog outcome');
+  }
+  const reason = source.reason == null ? null : String(source.reason);
+  if (reason != null && !REGISTRY_REASONS.has(reason)) {
+    throw invalidResponse('remote Agent Package Catalog reason');
+  }
+  const packages = boundedArray(
+    source.packages,
+    'remote Agent Package Catalog packages',
+    256,
+  ).map(normalizeRemotePackageSummary);
+  if (outcome !== 'ready') {
+    if (packages.length || source.registryRevision != null || source.registryExpiresAt != null) {
+      throw invalidResponse('closed remote Agent Package Catalog');
+    }
+    return compactObject({ outcome, reason, packages: [] });
+  }
+  const registryRevision = boundedInteger(
+    source.registryRevision,
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const registryExpiresAt = normalizeTimestamp(source.registryExpiresAt);
+  const runtimeByPackage = new Map(
+    runtimePackages.map((packageRecord) => [packageRecord.packageId, packageRecord]),
+  );
+  return compactObject({
+    outcome,
+    reason,
+    registryRevision,
+    registryExpiresAt,
+    packages: packages.map((packageRecord) => {
+      const current = runtimeByPackage.get(packageRecord.packageId);
+      if (!current) return { ...packageRecord, availability: 'new_agent' };
+      const comparison = compareSemver(packageRecord.version, current.version);
+      return compactObject({
+        ...packageRecord,
+        availability: comparison > 0
+          ? 'update_available'
+          : comparison === 0
+            ? 'current'
+            : 'local_newer',
+        currentVersion: current.version,
+      });
+    }),
+  });
+}
+
+function normalizeRemotePackageSummary(value) {
+  const source = requireObject(value, 'remote Agent Package summary');
+  return {
+    packageId: normalizePackageId(source.packageId),
+    agentId: normalizePublicIdentifier(source.agentId, 'Agent ID'),
+    version: normalizeVersion(source.version),
+    publisher: normalizePublicIdentifier(source.publisher, 'Agent Package publisher'),
+  };
 }
 
 function normalizeCatalogPackage(value) {
@@ -428,12 +494,64 @@ function optionalPublicIdentifier(value, label) {
 
 function normalizeVersion(value) {
   const normalized = String(value || '');
-  if (!PUBLIC_VERSION.test(normalized)) throw invalidResponse('Agent Package version');
+  if (!PUBLIC_VERSION.test(normalized) || !parseSemver(normalized)) {
+    throw invalidResponse('Agent Package version');
+  }
   return normalized;
 }
 
 function optionalVersion(value) {
   return value == null ? null : normalizeVersion(value);
+}
+
+function compareSemver(left, right) {
+  const a = parseSemver(left);
+  const b = parseSemver(right);
+  if (!a || !b) throw invalidResponse('Agent Package version');
+  for (const field of ['major', 'minor', 'patch']) {
+    const comparison = compareNumericIdentifier(a[field], b[field]);
+    if (comparison !== 0) return comparison;
+  }
+  if (!a.prerelease.length && !b.prerelease.length) return 0;
+  if (!a.prerelease.length) return 1;
+  if (!b.prerelease.length) return -1;
+  const length = Math.max(a.prerelease.length, b.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = a.prerelease[index];
+    const rightPart = b.prerelease[index];
+    if (leftPart == null) return -1;
+    if (rightPart == null) return 1;
+    if (leftPart === rightPart) continue;
+    const leftNumeric = /^\d+$/.test(leftPart);
+    const rightNumeric = /^\d+$/.test(rightPart);
+    if (leftNumeric && rightNumeric) {
+      return compareNumericIdentifier(leftPart, rightPart);
+    }
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    return leftPart > rightPart ? 1 : -1;
+  }
+  return 0;
+}
+
+function compareNumericIdentifier(left, right) {
+  if (left.length !== right.length) return left.length > right.length ? 1 : -1;
+  if (left === right) return 0;
+  return left > right ? 1 : -1;
+}
+
+function parseSemver(value) {
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value);
+  if (!match) return null;
+  const prerelease = match[4] ? match[4].split('.') : [];
+  if (prerelease.some((part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith('0'))) {
+    return null;
+  }
+  return {
+    major: match[1],
+    minor: match[2],
+    patch: match[3],
+    prerelease,
+  };
 }
 
 function normalizeText(value, label, maxLength) {
@@ -524,6 +642,7 @@ function deepFreeze(value) {
 module.exports = {
   PackageController,
   PackageControllerError,
+  compareSemver,
   normalizeApprovalId,
   normalizePackageId,
   publicPackageSnapshot,

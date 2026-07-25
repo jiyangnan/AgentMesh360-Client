@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   PackageController,
+  compareSemver,
   normalizeApprovalId,
   normalizePackageId,
 } = require('../src/package-controller');
@@ -78,11 +79,37 @@ test('snapshot is ready-gated and projects only Renderer-safe Package metadata',
         accessToken: 'private-token',
       };
     },
+    async getRemoteAgentPackageCatalog() {
+      calls += 1;
+      return {
+        outcome: 'ready',
+        registryRevision: 9,
+        registryExpiresAt: '2026-08-01T00:00:00Z',
+        rootKeyId: 'private-discovery-root',
+        packages: [
+          {
+            packageId: PACKAGE_ID,
+            agentId: 'job-agent',
+            version: '0.4.8',
+            publisher: 'agentmesh360',
+            artifactUrl: 'https://packages.example/private',
+            artifactSha256: 'c'.repeat(64),
+          },
+          {
+            packageId: 'com.agentmesh360.lecturecast-agent',
+            agentId: 'lecturecast-agent',
+            version: '1.0.0',
+            publisher: 'agentmesh360',
+            envelopeUrl: 'https://packages.example/private-envelope',
+          },
+        ],
+      };
+    },
   };
   const controller = new PackageController({ identity, host });
 
   const snapshot = await controller.getSnapshot();
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   assert.deepEqual(snapshot.catalog.packages[0], {
     packageId: PACKAGE_ID,
     version: '0.4.7',
@@ -102,6 +129,28 @@ test('snapshot is ready-gated and projects only Renderer-safe Package metadata',
     packageCount: 6,
     verifiedAt: '2026-07-26T00:00:00Z',
   });
+  assert.deepEqual(snapshot.discovery, {
+    outcome: 'ready',
+    registryRevision: 9,
+    registryExpiresAt: '2026-08-01T00:00:00Z',
+    packages: [
+      {
+        packageId: PACKAGE_ID,
+        agentId: 'job-agent',
+        version: '0.4.8',
+        publisher: 'agentmesh360',
+        availability: 'update_available',
+        currentVersion: '0.4.7',
+      },
+      {
+        packageId: 'com.agentmesh360.lecturecast-agent',
+        agentId: 'lecturecast-agent',
+        version: '1.0.0',
+        publisher: 'agentmesh360',
+        availability: 'new_agent',
+      },
+    ],
+  });
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.catalog.packages[0]), true);
   const serialized = JSON.stringify(snapshot);
@@ -111,6 +160,8 @@ test('snapshot is ready-gated and projects only Renderer-safe Package metadata',
     '/private/skill/path',
     'private.example',
     'private-root-id',
+    'private-discovery-root',
+    'packages.example',
     '/private/packages/active',
     'artifactSha256',
     'private-token',
@@ -120,7 +171,7 @@ test('snapshot is ready-gated and projects only Renderer-safe Package metadata',
 
   identity.getState = () => ({ phase: 'blocked' });
   await assert.rejects(() => controller.getSnapshot(), /订阅验证/);
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
 });
 
 test('download returns an allowlisted approval Challenge bound to the requested Package', async () => {
@@ -209,6 +260,13 @@ test('remote refresh returns a projected Registry status and a fresh safe snapsh
           packages: [],
         };
       },
+      async getRemoteAgentPackageCatalog() {
+        return {
+          outcome: 'disabled',
+          reason: 'not_configured',
+          packages: [],
+        };
+      },
     },
   });
 
@@ -220,8 +278,125 @@ test('remote refresh returns a projected Registry status and a fresh safe snapsh
     conditionalRequest: false,
   });
   assert.equal(result.snapshot.catalog.packages[0].packageId, PACKAGE_ID);
+  assert.deepEqual(result.snapshot.discovery, {
+    outcome: 'disabled',
+    reason: 'not_configured',
+    packages: [],
+  });
   assert.equal(JSON.stringify(result).includes('private-root'), false);
   assert.equal(Object.isFrozen(result), true);
+});
+
+test('remote discovery uses SemVer precedence for update classification', async () => {
+  assert.equal(compareSemver('1.0.0', '1.0.0'), 0);
+  assert.equal(compareSemver('1.0.1', '1.0.0'), 1);
+  assert.equal(compareSemver('1.0.0-rc.1', '1.0.0'), -1);
+  assert.equal(compareSemver('1.0.0-beta.11', '1.0.0-beta.2'), 1);
+  assert.equal(compareSemver('1.0.0+build.2', '1.0.0+build.1'), 0);
+  assert.equal(
+    compareSemver('9007199254740993.0.0', '9007199254740992.0.0'),
+    1,
+  );
+  assert.equal(
+    compareSemver(
+      '1.0.0-beta.9007199254740993',
+      '1.0.0-beta.9007199254740992',
+    ),
+    1,
+  );
+});
+
+test('remote discovery classifies current and local-newer packages without exposing authority', async () => {
+  const controller = new PackageController({
+    identity: { getState: () => ({ phase: 'ready', account: { id: 41 } }) },
+    host: snapshotHost({
+      outcome: 'ready',
+      registryRevision: 9,
+      registryExpiresAt: '2026-08-01T00:00:00Z',
+      packages: [
+        remoteSummary(PACKAGE_ID, 'job-agent', '0.4.7'),
+        remoteSummary(
+          'com.agentmesh360.lecturecast-agent',
+          'lecturecast-agent',
+          '0.9.9',
+        ),
+      ],
+    }),
+  });
+
+  const snapshot = await controller.getSnapshot();
+  assert.deepEqual(
+    snapshot.discovery.packages.map((item) => ({
+      packageId: item.packageId,
+      availability: item.availability,
+      currentVersion: item.currentVersion,
+    })),
+    [
+      {
+        packageId: PACKAGE_ID,
+        availability: 'current',
+        currentVersion: '0.4.7',
+      },
+      {
+        packageId: 'com.agentmesh360.lecturecast-agent',
+        availability: 'local_newer',
+        currentVersion: '1.0.0',
+      },
+    ],
+  );
+  assert.equal(JSON.stringify(snapshot).includes('packages.example'), false);
+});
+
+test('remote discovery fails closed on malformed, oversized, or nonempty closed catalogs', async () => {
+  const invalidCatalogs = [
+    {
+      outcome: 'disabled',
+      reason: 'not_configured',
+      registryRevision: 9,
+      packages: [],
+    },
+    {
+      outcome: 'unavailable',
+      reason: 'cache_rejected',
+      packages: [remoteSummary(PACKAGE_ID, 'job-agent', '0.4.8')],
+    },
+    {
+      outcome: 'ready',
+      registryRevision: 9,
+      registryExpiresAt: 'not-a-time',
+      packages: [],
+    },
+    {
+      outcome: 'ready',
+      registryRevision: 9,
+      registryExpiresAt: '2026-08-01T00:00:00Z',
+      packages: [remoteSummary(PACKAGE_ID, 'job-agent', '01.0.0')],
+    },
+    {
+      outcome: 'ready',
+      registryRevision: 9,
+      registryExpiresAt: '2026-08-01T00:00:00Z',
+      packages: Array.from(
+        { length: 257 },
+        (_value, index) => remoteSummary(
+          `com.agentmesh360.agent-${index}`,
+          `agent-${index}`,
+          '1.0.0',
+        ),
+      ),
+    },
+  ];
+
+  for (const discovery of invalidCatalogs) {
+    const controller = new PackageController({
+      identity: { getState: () => ({ phase: 'ready', account: { id: 41 } }) },
+      host: snapshotHost(discovery),
+    });
+    await assert.rejects(
+      () => controller.getSnapshot(),
+      (error) => error.code === 'invalid_package_response',
+    );
+  }
 });
 
 test('approval and local mutations pass only normalized Host-owned identifiers', async () => {
@@ -416,3 +591,76 @@ test('every mutation is subscription-gated before input validation or Host acces
   }
   assert.equal(calls, 0);
 });
+
+function snapshotHost(discovery) {
+  return {
+    async getAgentPackageCatalog() {
+      return {
+        catalog: {
+          schemaVersion: 1,
+          catalogRevision: 7,
+          packages: [
+            runtimePackage(PACKAGE_ID, 'job-agent', '0.4.7', 'Job Agent'),
+            runtimePackage(
+              'com.agentmesh360.lecturecast-agent',
+              'lecturecast-agent',
+              '1.0.0',
+              'Lecturecast Agent',
+            ),
+          ],
+        },
+      };
+    },
+    async getAgentPackageStatus() {
+      return {
+        catalogGeneration: 1,
+        catalogRevision: 7,
+        remoteRegistry: {
+          outcome: 'ready',
+          cache: {
+            trustSequence: 4,
+            trustExpiresAt: '2026-08-01T00:00:00Z',
+            registryRevision: 9,
+            registryExpiresAt: '2026-08-01T00:00:00Z',
+            packageCount: 2,
+            verifiedAt: '2026-07-26T00:00:00Z',
+          },
+          conditionalRequest: false,
+        },
+        packages: [],
+      };
+    },
+    async getRemoteAgentPackageCatalog() {
+      return {
+        rootKeyId: 'private-root',
+        artifactUrl: 'https://packages.example/private',
+        ...discovery,
+      };
+    },
+  };
+}
+
+function runtimePackage(packageId, agentId, version, displayName) {
+  return {
+    packageId,
+    version,
+    publisher: 'agentmesh360',
+    requestedPermissions: [],
+    agent: {
+      agentId,
+      displayName,
+      description: `${displayName} description`,
+    },
+  };
+}
+
+function remoteSummary(packageId, agentId, version) {
+  return {
+    packageId,
+    agentId,
+    version,
+    publisher: 'agentmesh360',
+    artifactUrl: 'https://packages.example/private',
+    artifactSha256: 'a'.repeat(64),
+  };
+}

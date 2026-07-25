@@ -53,6 +53,7 @@ pub use package_management::{
     APPROVE_METHOD as AGENT_PACKAGES_APPROVE_METHOD,
     DOWNLOAD_METHOD as AGENT_PACKAGES_DOWNLOAD_METHOD,
     RECONCILE_METHOD as AGENT_PACKAGES_RECONCILE_METHOD,
+    REMOTE_CATALOG_METHOD as AGENT_PACKAGES_REMOTE_CATALOG_METHOD,
     REMOTE_REFRESH_METHOD as AGENT_PACKAGES_REMOTE_REFRESH_METHOD,
     ROLLBACK_METHOD as AGENT_PACKAGES_ROLLBACK_METHOD,
 };
@@ -1247,6 +1248,11 @@ mod tests {
         tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
     ) {
         let (mut agent, gateway_rx) = build_host_test_agent(state_home, core_base_url);
+        agent.agentmesh360.package_registry_fetcher =
+            package_registry_fetcher::PackageRegistryFetcher::for_test_with_cached_roots(
+                state_home,
+                roots.clone(),
+            );
         agent.agentmesh360.package_delivery =
             package_delivery::PackageDeliveryService::for_test_with_registry(
                 agent.agentmesh360.registry.clone(),
@@ -1451,6 +1457,7 @@ mod tests {
                 let (core_base_url, core) = serve_bootstrap_once().await;
                 let (agent, _gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
                 let management_requests = [
+                    (AGENT_PACKAGES_REMOTE_CATALOG_METHOD, serde_json::json!({})),
                     (AGENT_PACKAGES_REMOTE_REFRESH_METHOD, serde_json::json!({})),
                     (
                         AGENT_PACKAGES_DOWNLOAD_METHOD,
@@ -1497,7 +1504,22 @@ mod tests {
                 assert_eq!(remote["outcome"], "disabled");
                 assert_eq!(remote["reason"], "not_configured");
 
+                let remote_catalog = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_REMOTE_CATALOG_METHOD, serde_json::json!({})),
+                )
+                .await
+                .map(ext_result)
+                .expect("production-disabled remote catalog");
+                assert_eq!(remote_catalog["outcome"], "disabled");
+                assert_eq!(remote_catalog["reason"], "not_configured");
+                assert_eq!(remote_catalog["packages"], serde_json::json!([]));
+
                 let forbidden_requests = [
+                    (
+                        AGENT_PACKAGES_REMOTE_CATALOG_METHOD,
+                        serde_json::json!({"url": "https://attacker.invalid/catalog"}),
+                    ),
                     (
                         AGENT_PACKAGES_REMOTE_REFRESH_METHOD,
                         serde_json::json!({"url": "https://attacker.invalid/registry"}),
@@ -1671,6 +1693,39 @@ mod tests {
                 .map(ext_result)
                 .expect("account 41 bootstrap");
                 assert_eq!(first_bootstrap["account"]["accountId"], 41);
+                let remote_catalog = handle(
+                    &agent,
+                    &ext_request(AGENT_PACKAGES_REMOTE_CATALOG_METHOD, serde_json::json!({})),
+                )
+                .await
+                .map(ext_result)
+                .expect("discover signed Package through Host ACP");
+                assert_eq!(remote_catalog["outcome"], "ready");
+                assert_eq!(remote_catalog["registryRevision"], 42);
+                assert_eq!(remote_catalog["registryExpiresAt"], "2026-08-01T00:00:00Z");
+                assert_eq!(
+                    remote_catalog["packages"],
+                    serde_json::json!([{
+                        "packageId": "com.agentmesh360.job-agent",
+                        "agentId": "job-agent",
+                        "version": "0.4.7",
+                        "publisher": "agentmesh360"
+                    }])
+                );
+                let remote_catalog_json = serde_json::to_string(&remote_catalog)
+                    .expect("serialize remote Package catalog");
+                for sensitive in [
+                    "packages.agentmesh360.com",
+                    "artifactUrl",
+                    "artifactSha256",
+                    "envelopeUrl",
+                    "envelopeSha256",
+                    "signature",
+                    "rootKeyId",
+                    state_home.path().to_str().expect("state path"),
+                ] {
+                    assert!(!remote_catalog_json.contains(sensitive));
+                }
                 let challenge = handle(
                     &agent,
                     &ext_request(

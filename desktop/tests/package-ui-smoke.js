@@ -136,6 +136,27 @@ app.whenReady().then(async () => {
   }
   assert.equal(initialDom.includes('Job Agent'), true);
   assert.equal(initialDom.includes('可信缓存可用'), true);
+  assert.equal(initialDom.includes('可用更新'), true);
+  assert.equal(initialDom.includes('新 Agent'), true);
+
+  smokeStep = 'download discovered package by safe package id';
+  await window.webContents.executeJavaScript(`
+    document.querySelector(
+      '[data-download-package="com.agentmesh360.lecturecast-agent"]'
+    ).click()
+  `);
+  await waitFor(() => writes.some(
+    (write) => write.operation === 'download'
+      && write.packageId === 'com.agentmesh360.lecturecast-agent',
+  ));
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('.approve-package') !== null",
+  ));
+  const discoveryApprovalDom = await window.webContents.executeJavaScript('document.body.innerText');
+  assert.equal(discoveryApprovalDom.includes(APPROVAL_ID), false);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.cancel-package-approval').click()",
+  );
 
   smokeStep = 'submit package download';
   await window.webContents.executeJavaScript(`
@@ -147,7 +168,7 @@ app.whenReady().then(async () => {
   `);
   await waitFor(() => writes.some((write) => write.operation === 'download'));
   assert.deepEqual(
-    writes.find((write) => write.operation === 'download'),
+    writes.find((write) => write.operation === 'download' && write.packageId === PACKAGE_ID),
     { operation: 'download', packageId: PACKAGE_ID },
   );
   await waitFor(async () => window.webContents.executeJavaScript(
@@ -323,6 +344,28 @@ function packageSnapshot() {
           agentId: 'job-agent',
           version: '0.4.6',
           slot: 'previous',
+        },
+      ],
+    },
+    discovery: {
+      outcome: 'ready',
+      registryRevision: 9,
+      registryExpiresAt: '2026-08-01T00:00:00Z',
+      packages: [
+        {
+          packageId: PACKAGE_ID,
+          agentId: 'job-agent',
+          version: '0.4.8',
+          publisher: 'agentmesh360',
+          availability: 'update_available',
+          currentVersion: '0.4.7',
+        },
+        {
+          packageId: 'com.agentmesh360.lecturecast-agent',
+          agentId: 'lecturecast-agent',
+          version: '1.0.0',
+          publisher: 'agentmesh360',
+          availability: 'new_agent',
         },
       ],
     },

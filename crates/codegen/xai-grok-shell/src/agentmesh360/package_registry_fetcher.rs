@@ -13,7 +13,9 @@ use serde::Serialize;
 use url::Url;
 
 use super::access::ClientAccess;
-use super::package_trust_cache::{PackageTrustCacheAudit, PackageTrustCacheStore};
+use super::package_trust_cache::{
+    PackageTrustCacheAudit, PackageTrustCacheStore, RemotePackageSummary,
+};
 use super::state;
 
 #[cfg(test)]
@@ -75,6 +77,20 @@ impl PackageRegistryFetcher {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn for_test_with_cached_roots(
+        state_home: impl Into<PathBuf>,
+        roots: TrustedRootStore,
+    ) -> Self {
+        let state_home = state_home.into();
+        Self {
+            cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
+            state_home,
+            client: http_client(),
+            endpoints: None,
+        }
+    }
+
     pub(crate) fn status(&self, access: &ClientAccess) -> PackageRegistryFetchStatus {
         if self.endpoints.is_none() {
             return PackageRegistryFetchStatus::disabled();
@@ -95,6 +111,26 @@ impl PackageRegistryFetcher {
                 PackageRegistryFetchReason::CacheRejected,
                 None,
             ),
+        }
+    }
+
+    pub(crate) fn discover(&self, access: &ClientAccess) -> RemotePackageCatalog {
+        if access.require().is_err() {
+            return RemotePackageCatalog::unavailable(PackageRegistryFetchReason::AccessRequired);
+        }
+        match self.cache.load_verified_catalog(access) {
+            Ok(Some(catalog)) => RemotePackageCatalog {
+                outcome: PackageRegistryFetchOutcome::Ready,
+                reason: None,
+                registry_revision: Some(catalog.registry_revision),
+                registry_expires_at: Some(catalog.registry_expires_at),
+                packages: catalog.packages,
+            },
+            Ok(None) if self.endpoints.is_none() => RemotePackageCatalog::disabled(),
+            Ok(None) => {
+                RemotePackageCatalog::unavailable(PackageRegistryFetchReason::NoVerifiedCache)
+            }
+            Err(_) => RemotePackageCatalog::unavailable(PackageRegistryFetchReason::CacheRejected),
         }
     }
 
@@ -315,6 +351,41 @@ pub(crate) struct PackageRegistryFetchStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checked_at: Option<DateTime<Utc>>,
     pub conditional_request: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemotePackageCatalog {
+    pub outcome: PackageRegistryFetchOutcome,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<PackageRegistryFetchReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registry_expires_at: Option<DateTime<Utc>>,
+    pub packages: Vec<RemotePackageSummary>,
+}
+
+impl RemotePackageCatalog {
+    fn disabled() -> Self {
+        Self {
+            outcome: PackageRegistryFetchOutcome::Disabled,
+            reason: Some(PackageRegistryFetchReason::NotConfigured),
+            registry_revision: None,
+            registry_expires_at: None,
+            packages: Vec::new(),
+        }
+    }
+
+    fn unavailable(reason: PackageRegistryFetchReason) -> Self {
+        Self {
+            outcome: PackageRegistryFetchOutcome::Unavailable,
+            reason: Some(reason),
+            registry_revision: None,
+            registry_expires_at: None,
+            packages: Vec::new(),
+        }
+    }
 }
 
 impl PackageRegistryFetchStatus {
@@ -650,6 +721,31 @@ mod tests {
             Some(42)
         );
         assert!(!updated.conditional_request);
+        let discovered = fetcher.discover(&access);
+        assert_eq!(discovered.outcome, PackageRegistryFetchOutcome::Ready);
+        assert_eq!(discovered.registry_revision, Some(42));
+        assert_eq!(
+            discovered.packages,
+            vec![RemotePackageSummary {
+                package_id: "job-agent".into(),
+                agent_id: "job-agent".into(),
+                version: "1.2.0".into(),
+                publisher: "agentmesh360".into(),
+            }]
+        );
+        let discovery_json = serde_json::to_string(&discovered).expect("serialize safe discovery");
+        for private_field in [
+            "artifactUrl",
+            "artifactSha256",
+            "envelopeUrl",
+            "envelopeSha256",
+            "rootKeyId",
+            "signature",
+            "http://",
+            "https://",
+        ] {
+            assert!(!discovery_json.contains(private_field));
+        }
 
         let not_modified = fetcher.refresh(&access).await;
         assert_eq!(
@@ -762,6 +858,13 @@ mod tests {
             status.reason,
             Some(PackageRegistryFetchReason::NotConfigured)
         );
+        let catalog = fetcher.discover(&access());
+        assert_eq!(catalog.outcome, PackageRegistryFetchOutcome::Disabled);
+        assert_eq!(
+            catalog.reason,
+            Some(PackageRegistryFetchReason::NotConfigured)
+        );
+        assert!(catalog.packages.is_empty());
     }
 
     fn fetcher(state_home: &Path, root: &SigningKey, origin: &str) -> PackageRegistryFetcher {

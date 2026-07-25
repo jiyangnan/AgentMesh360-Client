@@ -251,11 +251,12 @@ function packageCenterView() {
   const snapshot = packageUi.snapshot;
   const catalog = snapshot?.catalog || { packages: [] };
   const status = snapshot?.status || { packages: [], remoteRegistry: {} };
+  const discovery = snapshot?.discovery || { outcome: 'unavailable', packages: [] };
   const packages = Array.isArray(catalog.packages) ? catalog.packages : [];
   const installed = Array.isArray(status.packages) ? status.packages : [];
   const registry = status.remoteRegistry || {};
   const remoteAvailable = ['ready', 'updated', 'not_modified', 'last_known_good']
-    .includes(registry.outcome);
+    .includes(registry.outcome) && discovery.outcome === 'ready';
   const activeCount = installed.filter((item) => item.kind === 'installed_active').length;
   const issueCount = installed.filter((item) => item.issue).length
     + (status.lastRefreshIssue ? 1 : 0);
@@ -299,6 +300,7 @@ function packageCenterView() {
         <button class="ghost package-refresh-action" id="refresh-package-registry" type="button" ${packageUi.busy ? 'disabled' : ''}>刷新签名目录</button>
       </div>
       ${packageUi.pendingApproval ? packageApprovalView(packageUi.pendingApproval) : ''}
+      ${remoteDiscoveryView(discovery, remoteAvailable)}
       <div class="section-head package-section-head"><h2>Runtime Catalog</h2><span>${packages.length} 个 Agent Package</span></div>
       <div class="package-grid">
         ${packages.length
@@ -308,6 +310,37 @@ function packageCenterView() {
       ${packageStatusAudit(installed)}
     ` : ''}
     <div class="security-row">Renderer 不接收 Registry 原文、下载地址、digest、签名材料、Prompt、Skill 路径或账户 authority</div>`;
+}
+
+function remoteDiscoveryView(discovery, remoteAvailable) {
+  const packages = Array.isArray(discovery.packages) ? discovery.packages : [];
+  if (discovery.outcome !== 'ready') return '';
+  const changes = packages.filter((item) => ['new_agent', 'update_available'].includes(item.availability));
+  return `
+    <section class="remote-discovery" aria-label="可发现 Agent Package">
+      <div class="section-head compact">
+        <h2>已验证远端目录</h2>
+        <span>revision ${escapeHtml(discovery.registryRevision || '—')} · ${escapeHtml(formatPackageTime(discovery.registryExpiresAt, '有效期'))}</span>
+      </div>
+      ${changes.length ? `
+        <div class="remote-package-grid">
+          ${changes.map((item) => `
+            <article class="remote-package-row">
+              <div>
+                <b>${escapeHtml(discoveryAvailabilityLabel(item.availability))}</b>
+                <strong>${escapeHtml(item.agentId)}</strong>
+                <span>${escapeHtml(item.packageId)}</span>
+              </div>
+              <div class="remote-version">
+                <small>${item.currentVersion ? `v${escapeHtml(item.currentVersion)} → ` : ''}</small>
+                <strong>v${escapeHtml(item.version)}</strong>
+                <span>${escapeHtml(item.publisher)}</span>
+              </div>
+              <button class="secondary" type="button" data-download-package="${escapeHtml(item.packageId)}" ${packageUi.busy || !remoteAvailable ? 'disabled' : ''}>${item.availability === 'new_agent' ? '下载并验证' : '检查权限并更新'}</button>
+            </article>`).join('')}
+        </div>
+      ` : '<div class="empty-provider">签名目录中没有比当前 Runtime Catalog 更新的 Agent Package。</div>'}
+    </section>`;
 }
 
 function packageLoadingView() {
@@ -1179,6 +1212,15 @@ function packageStatusLabel(status) {
   })[status.kind] || status.kind || '状态未知';
 }
 
+function discoveryAvailabilityLabel(availability) {
+  return ({
+    new_agent: '新 Agent',
+    update_available: '可用更新',
+    current: '当前版本',
+    local_newer: '本地版本更新',
+  })[availability] || '版本状态未知';
+}
+
 function packageReceiptNotice(receipt, action) {
   const base = String(action || '').startsWith('Agent Package')
     ? String(action)
@@ -1199,10 +1241,10 @@ function formatApprovalExpiry(seconds) {
   return `${Math.ceil(value / 60)} 分钟内有效`;
 }
 
-function formatPackageTime(value) {
+function formatPackageTime(value, prefix = '验证于') {
   const date = new Date(value || '');
   if (Number.isNaN(date.valueOf())) return '验证时间未知';
-  return `验证于 ${new Intl.DateTimeFormat('zh-CN', {
+  return `${prefix} ${new Intl.DateTimeFormat('zh-CN', {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',

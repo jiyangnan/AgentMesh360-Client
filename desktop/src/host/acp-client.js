@@ -97,6 +97,10 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/agent-packages/status', {});
   }
 
+  async getRemoteAgentPackageCatalog() {
+    return this.#extension('x.agentmesh360/agent-packages/remote-catalog', {});
+  }
+
   async refreshAgentPackageRegistry() {
     return this.#extension('x.agentmesh360/agent-packages/remote-refresh', {});
   }

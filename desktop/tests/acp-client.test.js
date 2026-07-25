@@ -131,6 +131,16 @@ test('Agent Package management exposes only Host-owned package and approval iden
     if (request.method === '_x.agentmesh360/agent-packages/status') {
       return { result: { packages: [] } };
     }
+    if (request.method === '_x.agentmesh360/agent-packages/remote-catalog') {
+      return {
+        result: {
+          outcome: 'ready',
+          registryRevision: 7,
+          registryExpiresAt: '2026-08-01T00:00:00Z',
+          packages: [],
+        },
+      };
+    }
     if (request.method === '_x.agentmesh360/agent-packages/remote-refresh') {
       return { result: { outcome: 'disabled', reason: 'not_configured' } };
     }
@@ -175,6 +185,7 @@ test('Agent Package management exposes only Host-owned package and approval iden
 
   await client.getAgentPackageCatalog();
   await client.getAgentPackageStatus();
+  await client.getRemoteAgentPackageCatalog();
   await client.refreshAgentPackageRegistry();
   const challenge = await client.downloadAgentPackage('com.agentmesh360.job-agent');
   const installed = await client.approveAgentPackage('approval-1234');
@@ -192,6 +203,7 @@ test('Agent Package management exposes only Host-owned package and approval iden
     [
       '_x.agentmesh360/agent-packages/catalog',
       '_x.agentmesh360/agent-packages/status',
+      '_x.agentmesh360/agent-packages/remote-catalog',
       '_x.agentmesh360/agent-packages/remote-refresh',
       '_x.agentmesh360/agent-packages/download',
       '_x.agentmesh360/agent-packages/approve',
@@ -199,14 +211,14 @@ test('Agent Package management exposes only Host-owned package and approval iden
       '_x.agentmesh360/agent-packages/reconcile',
     ],
   );
-  assert.deepEqual(received[4].params, {
+  assert.deepEqual(received[5].params, {
     packageId: 'com.agentmesh360.job-agent',
   });
-  assert.deepEqual(received[5].params, { approvalId: 'approval-1234' });
-  assert.deepEqual(received[6].params, {
-    packageId: 'com.agentmesh360.job-agent',
-  });
+  assert.deepEqual(received[6].params, { approvalId: 'approval-1234' });
   assert.deepEqual(received[7].params, {
+    packageId: 'com.agentmesh360.job-agent',
+  });
+  assert.deepEqual(received[8].params, {
     packageId: 'com.agentmesh360.job-agent',
   });
   const serialized = JSON.stringify(received.slice(1));

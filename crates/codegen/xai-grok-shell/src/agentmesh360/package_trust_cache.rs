@@ -25,6 +25,23 @@ pub(crate) struct PackageTrustCacheAudit {
     pub verified_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VerifiedRemotePackageCatalog {
+    pub registry_revision: u64,
+    pub registry_expires_at: DateTime<Utc>,
+    pub packages: Vec<RemotePackageSummary>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemotePackageSummary {
+    pub package_id: String,
+    pub agent_id: String,
+    pub version: String,
+    pub publisher: String,
+}
+
 #[derive(Clone)]
 pub(crate) struct PackageTrustCacheStore {
     state_home: PathBuf,
@@ -205,6 +222,29 @@ impl PackageTrustCacheStore {
             record,
             trusted_publishers: verified.trusted_publishers,
         }))
+    }
+
+    pub(crate) fn load_verified_catalog(
+        &self,
+        access: &ClientAccess,
+    ) -> Result<Option<VerifiedRemotePackageCatalog>> {
+        self.load_verified(access).map(|verified| {
+            verified.map(|verified| VerifiedRemotePackageCatalog {
+                registry_revision: verified.registry.revision,
+                registry_expires_at: verified.registry.expires_at,
+                packages: verified
+                    .registry
+                    .packages
+                    .into_iter()
+                    .map(|record| RemotePackageSummary {
+                        package_id: record.package_id,
+                        agent_id: record.agent_id,
+                        version: record.version,
+                        publisher: record.publisher,
+                    })
+                    .collect(),
+            })
+        })
     }
 
     fn load_verified(&self, access: &ClientAccess) -> Result<Option<VerifiedPackageTrustCache>> {
@@ -445,6 +485,35 @@ mod tests {
                 .expect("load cache after restart"),
             Some(accepted)
         );
+        let catalog = restarted
+            .load_verified_catalog(&current_access)
+            .expect("load verified remote catalog")
+            .expect("verified remote catalog");
+        assert_eq!(
+            catalog,
+            VerifiedRemotePackageCatalog {
+                registry_revision: 42,
+                registry_expires_at: timestamp(2026, 8, 1, 0, 0, 0),
+                packages: vec![RemotePackageSummary {
+                    package_id: "job-agent".into(),
+                    agent_id: "job-agent".into(),
+                    version: "1.2.0".into(),
+                    publisher: "agentmesh360".into(),
+                }],
+            }
+        );
+        let catalog_json = serde_json::to_string(&catalog).expect("serialize remote catalog");
+        for private_field in [
+            "artifactUrl",
+            "artifactSha256",
+            "envelopeUrl",
+            "envelopeSha256",
+            "rootKeyId",
+            "signature",
+            "https://",
+        ] {
+            assert!(!catalog_json.contains(private_field));
+        }
         let connection = state::open(temp.path()).expect("open cache database");
         let rows: u32 = connection
             .query_row("SELECT COUNT(*) FROM package_trust_cache", [], |row| {
