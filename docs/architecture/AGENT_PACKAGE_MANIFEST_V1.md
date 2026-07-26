@@ -572,3 +572,20 @@ H2d2 已完成自主验证与两轮 Kimi 独立交叉测试。Kimi 首轮实跑�
 并补齐等数量未知 Host receipt 的纵深防御测试。Kimi 第二轮确认三条 Low 全部关闭，
 最终 Blocker/High/Medium/Low 均为零并给出无条件 PASS。生产
 Root/Bundle/endpoint、受签名发布索引、上传、网站发布和用户安装继续保持关闭。
+
+## 24. H2d3：受签名 Release Registry v2
+
+H2d3 将 Registry Schema 升级为 v2，在既有 Root → Publisher Bundle → Registry、
+可信 Core 时间、expiry、revision 反回滚和 Last Known Good 链中绑定 Release
+Manifest URL/SHA-256、客户端 Artifact/Envelope 通道和完整 Host Skill 通道。
+
+发布 binder 只接受 H2d2 `AgentReleaseBuild`，调用方只能提供 canonical HTTPS URL；
+身份、入口、文件名和所有 digest 均从 Release build 提取。同一已签名 record 生成
+共享 Release reference 的客户端与官网/Host 两个只读投影，Renderer 仍不接收 URL、
+digest 或签名 authority。完整契约见
+[`AGENT_RELEASE_REGISTRY_V2.md`](AGENT_RELEASE_REGISTRY_V2.md)。
+
+H2d3 已完成自主验证与两轮 Kimi 独立交叉测试。Kimi 首轮唯一 Low 是 Binder 的
+unknown-Host 拒绝分支缺少直接用例；补入等数量、无重复但 Host 集合不匹配的精确
+错误断言后，第二轮确认 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。生产
+Root/Bundle/endpoint、上传、网站发布、Release fetch 和真实安装继续关闭。

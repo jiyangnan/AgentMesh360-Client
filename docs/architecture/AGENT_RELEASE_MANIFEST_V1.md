@@ -148,17 +148,23 @@ Host export 7/7 + 1 ignored、AgentMesh360 158 + 1 ignored、CLI 1/1、桌面
 这些仍是当前源码和非生产测试 key 的开发证据，不是生产 Release、Git tag、CI
 provenance、Registry 上线或网站发布证明。
 
-## 6. 非目标与 H2d3
+## 6. H2d3 发布索引
 
 Release Manifest 当前是受验证输入的确定性摘要，不自行建立新的信任根。H2d2 不修改
 现有生产空 Root/Publisher Bundle/endpoint，不上传文件，不写真实宿主目录，也不改变
 订阅硬门禁、BYOK、Provider Vault、credits 或稳定 Main Session。
 
-H2d3 应让同一 Release Manifest 进入受签名发布索引：
+H2d3 已让同一 Release Manifest 进入受签名 Release Registry v2，完整契约见
+[`AGENT_RELEASE_REGISTRY_V2.md`](AGENT_RELEASE_REGISTRY_V2.md)：
 
-1. 在新的 Registry Schema 中绑定 Release Manifest URL/SHA-256，并保留现有 Root →
-   Publisher Bundle → Registry 签名、可信 Core 时间、expiry 与反回滚；
-2. 从同一已验证 Release 生成客户端 Artifact 下载投影和官网/Host Skill 只读投影；
-3. 任一渠道缺项、摘要漂移、跨版本、重复 Host 或 release digest 不一致都失败关闭；
-4. 生产 endpoint/root/bundle 继续为空，只做离线 fixture、缓存和投影测试，真实上传与
-   发布仍需单独授权。
+1. Registry v2 绑定 Release Manifest URL/SHA-256、Artifact/Envelope 与全部 Host
+   projection/bundle URL/SHA-256，并进入既有 Root 签名、可信时间、expiry 和反回滚；
+2. Binder 只接受 H2d2 `AgentReleaseBuild`，发布方只能提供 canonical HTTPS URL；
+3. 同一 record 生成客户端 Artifact 与官网/Host Skill 两种共享 Release reference
+   的只读投影，缺项、重复 Host 和跨版本文件名失败关闭；
+4. H2d3 尚不下载 Release Manifest；下载时的 digest/strict parse/渠道 cross-check
+   属于 H2d4。生产 endpoint/root/bundle、上传和发布继续关闭。
+
+H2d3 已通过自主验证和两轮 Kimi 独立交叉测试。Kimi 首轮发现的 1 项 unknown-Host
+测试覆盖 Low 已补入等数量、无重复但 Host 集合不匹配的精确断言；第二轮最终四档
+问题全零并给出无条件 PASS。

@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2d2 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2d3：受签名 Release 发布索引与客户端/官网双投影 |
+| 动态 Agent Package | H0/H1 至 H2d3 已通过自主验证与 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2d4：下载 Release Manifest 并在渠道消费前交叉核对 |
 
 ## 开发循环记录
 
@@ -3002,3 +3002,84 @@ H2d3 下一切片（须等 H2d2 Kimi 交叉测试关闭后启动）：
    Last Known Good；
 4. 生产 endpoint/root/bundle 继续为空，只做离线 fixture、缓存与投影测试，不上传、
    不发布、不写用户真实宿主目录。
+
+### 循环 40：动态 Agent Package H2d3——受签名 Release Registry v2 与双渠道投影
+
+状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+
+计划复核：H2d2 已产生绑定客户端 Artifact 与全部宿主 bundles 的确定性 Release
+Manifest，但它还未进入 Root 签名、可信时间、expiry、revision 反回滚和 Last Known
+Good 链。H2d3 因此升级现有 Registry，而不是另造旁路信任根或提前启用生产发布。
+
+H2d3 已实现：
+
+1. Registry Snapshot Schema 从 v1 升级为 v2，签名 domain 同步升级；每条记录新增
+   Release Manifest URL/SHA-256、Host projection URL/SHA-256 和排序后的全部 Host
+   bundle Host/入口/URL/SHA-256，Root 签名 payload 覆盖所有新增字段和 bundle 数量；
+2. 新增 Release Registry binder，只接受字段私有、由 H1 Verified staging +
+   H2d1 receipt 产生的 H2d2 `AgentReleaseBuild`；调用方只能提交 HTTPS URL，全部
+   digest、身份、入口和文件名都从 build 提取，不能重新填写；
+3. Binder 复验 build 内 canonical Release 文档与 metadata，要求 URL 无
+   credentials/query/fragment 且最后一个 path segment 精确等于 Release 文件名；
+   Host URL 对 Release Host 一一覆盖，缺失、重复、未知 Host 和跨版本文件名均失败；
+4. 同一已签名 record 生成共享 Release reference 的 Client Artifact 投影和官网 /
+   Host Skill 只读投影；客户端下载器已改为只读 Client projection，Renderer 继续只
+   收 package/agent/version/publisher 与更新分类；
+5. Registry verifier 拒绝 v1、未知字段、非法 URL/digest、重复/非排序 Host、非法
+   入口、Root/Publisher trust split、过期、回滚、同 revision equivocation 和签名
+   篡改；Trust Cache/Fetcher 继续提供重新验签的 Last Known Good；
+6. 零 Adapter Release 合法输出空 Host bundles；动态 `future-agent` 从一份 H2d2
+   build 生成双投影，无需内置 Catalog 或 Agent 专属发布代码。
+
+H2d3 定向自主验证：
+
+- Release Registry v2 / binder / 双投影专项 7/7；
+- H2d2 Release 5/5、Host export 7/7 + 1 ignored；
+- Trust Cache 5/5、Downloader 6/6、Delivery 14/14、Registry Fetcher 4/4；
+- AgentMesh360 全量 161 项通过、1 个显式首方源码测试默认 ignore；
+- CLI 1/1、桌面 57 + 2 skip、Clippy `--lib --bins -D warnings`、Rustfmt、
+  JS check 与 diff-check 通过；
+- 显式首方测试已重新实跑 Job、LectureCast、Deploy；三者 H2d3
+  `registryRelease` SHA-256 均逐项等于 H2d2 Release Manifest SHA-256，Host bundle
+  数量分别为 2、3、0，三个 Release 摘要未变化；
+- 当前证据仍使用测试 key 与离线 URL，不代表生产 Registry、CI provenance、真实
+  上传、网站发布或用户可下载状态。
+
+H2d3 本机 Kimi 独立交叉测试：
+
+- Kimi session `session_eebb7963-7cff-4505-8edd-715bf46f18d4` 首轮读取基线
+  `a7626c1` 后的完整 diff、全部未跟踪文档与本仓库路径，并独立实跑专项、全量、
+  CLI、桌面和静态检查；
+- 首轮 Blocker/High/Medium 为零，发现 1 项 Low：Binder 虽已拒绝等数量但集合不匹配
+  的未知 Host，测试却只覆盖了缺失与重复 Host，未直接命中该分支；
+- 已新增 `{Codex, ClaudeCode}` location 对 `{Codex, Openclaw}` Release 的等数量、
+  无重复 unknown-Host 精确错误断言，自主复跑 Registry 7/7、AgentMesh360
+  161 + 1 ignored、Rustfmt 与 diff-check 均通过；
+- Kimi 第二轮确认新增断言确实越过数量和重复检查并命中
+  `location Host is unknown`，复跑 Registry 7/7、Release 5/5、Host export
+  7/7 + 1 ignored、Clippy、Rustfmt 与 diff-check 后，最终
+  Blocker/High/Medium/Low 全部为零并给出无条件 PASS；
+- Kimi 额外验证的 `--all-targets -D warnings` 只暴露本轮未修改的旧
+  `provider_contract_harness.rs` dead-code 基线遗留；本轮实际门
+  `--lib --bins -D warnings` 通过，不将其误记为 H2d3 回归。
+
+完整 Schema、信任结构、双投影和关闭边界见
+`docs/architecture/AGENT_RELEASE_REGISTRY_V2.md`。
+
+计划复盘：
+
+- H2d3 复用 Root → Publisher Bundle → Registry、可信 Core 时间、expiry、反回滚与
+  LKG，不改变订阅硬门禁、BYOK、Provider Vault、credits 或稳定 Main Session；
+- Binder 不签名、不接触生产私钥；生产 Root、Publisher Bundle、endpoint、上传和
+  网站发布继续为空/关闭；
+- 当前下载器消费受签名 Client projection，但尚未下载 Release Manifest 本身；这项
+  bounded fetch 与逐字段 cross-check 不应被假装为 H2d3 已完成。
+
+H2d4 下一切片（须等 H2d3 Kimi 交叉测试关闭后启动）：
+
+1. Artifact 下载前 bounded fetch Release Manifest，拒绝 redirect，核对 Registry
+   `releaseManifestSha256` 并 strict 解析；
+2. Client 消费前逐项比对 Artifact/Envelope；Host 发布消费者逐项比对 projection 与
+   bundles，任一渠道不得绕过共享 Release；
+3. 覆盖 Release 缺失、摘要替换、跨版本、渠道漂移、过期 Registry 和 LKG；
+4. 生产 endpoint/root/bundle、上传、网站发布和真实宿主安装继续关闭。
