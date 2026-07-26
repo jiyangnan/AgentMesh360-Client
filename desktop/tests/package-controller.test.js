@@ -92,8 +92,16 @@ test('snapshot is ready-gated and projects only Renderer-safe Package metadata',
             agentId: 'job-agent',
             version: '0.4.8',
             publisher: 'agentmesh360',
+            releaseManifestUrl: 'https://packages.example/private-release',
+            releaseManifestSha256: 'b'.repeat(64),
             artifactUrl: 'https://packages.example/private',
             artifactSha256: 'c'.repeat(64),
+            hostProjectionUrl: 'https://packages.example/private-host-projection',
+            hostBundles: [{
+              host: 'codex',
+              bundleUrl: 'https://packages.example/private-host-bundle',
+              bundleSha256: 'd'.repeat(64),
+            }],
           },
           {
             packageId: 'com.agentmesh360.lecturecast-agent',
@@ -163,7 +171,9 @@ test('snapshot is ready-gated and projects only Renderer-safe Package metadata',
     'private-discovery-root',
     'packages.example',
     '/private/packages/active',
+    'releaseManifestSha256',
     'artifactSha256',
+    'hostBundles',
     'private-token',
   ]) {
     assert.equal(serialized.includes(forbidden), false);
@@ -660,7 +670,15 @@ function remoteSummary(packageId, agentId, version) {
     agentId,
     version,
     publisher: 'agentmesh360',
+    releaseManifestUrl: 'https://packages.example/private-release',
+    releaseManifestSha256: 'b'.repeat(64),
     artifactUrl: 'https://packages.example/private',
     artifactSha256: 'a'.repeat(64),
+    hostProjectionUrl: 'https://packages.example/private-host-projection',
+    hostBundles: [{
+      host: 'openclaw',
+      bundleUrl: 'https://packages.example/private-host-bundle',
+      bundleSha256: 'c'.repeat(64),
+    }],
   };
 }

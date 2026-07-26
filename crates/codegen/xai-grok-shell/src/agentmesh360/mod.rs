@@ -1719,10 +1719,17 @@ mod tests {
                     .expect("serialize remote Package catalog");
                 for sensitive in [
                     "packages.agentmesh360.com",
+                    "releaseManifestUrl",
+                    "releaseManifestSha256",
                     "artifactUrl",
                     "artifactSha256",
                     "envelopeUrl",
                     "envelopeSha256",
+                    "hostProjectionUrl",
+                    "hostProjectionSha256",
+                    "hostBundles",
+                    "bundleUrl",
+                    "bundleSha256",
                     "signature",
                     "rootKeyId",
                     state_home.path().to_str().expect("state path"),

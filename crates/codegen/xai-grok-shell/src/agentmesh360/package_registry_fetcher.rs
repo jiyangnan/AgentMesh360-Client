@@ -735,10 +735,17 @@ mod tests {
         );
         let discovery_json = serde_json::to_string(&discovered).expect("serialize safe discovery");
         for private_field in [
+            "releaseManifestUrl",
+            "releaseManifestSha256",
             "artifactUrl",
             "artifactSha256",
             "envelopeUrl",
             "envelopeSha256",
+            "hostProjectionUrl",
+            "hostProjectionSha256",
+            "hostBundles",
+            "bundleUrl",
+            "bundleSha256",
             "rootKeyId",
             "signature",
             "http://",

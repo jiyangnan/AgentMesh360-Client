@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail};
 use base64::Engine as _;
@@ -9,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::access::ClientAccess;
+use super::agent_packages::{SkillHost, validate_relative_package_path};
+use super::package_release::AgentReleaseBuild;
 use super::package_trust::{PublisherTrustAudit, TrustedPublisherStore, TrustedRootStore};
 
-const REGISTRY_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+const REGISTRY_SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 const MAX_REGISTRY_SNAPSHOT_BYTES: usize = 1024 * 1024;
 const MAX_REGISTRY_PACKAGES: usize = 256;
 const MAX_REMOTE_URL_BYTES: usize = 4096;
@@ -132,10 +134,186 @@ pub(crate) struct RemotePackageRecord {
     pub agent_id: String,
     pub version: String,
     pub publisher: String,
+    pub release_manifest_url: String,
+    pub release_manifest_sha256: String,
     pub artifact_url: String,
     pub artifact_sha256: String,
     pub envelope_url: String,
     pub envelope_sha256: String,
+    pub host_projection_url: String,
+    pub host_projection_sha256: String,
+    pub host_bundles: Vec<RemoteHostBundleRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct RemoteHostBundleRecord {
+    pub host: SkillHost,
+    pub entrypoint: String,
+    pub bundle_url: String,
+    pub bundle_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReleaseChannelLocations {
+    pub release_manifest_url: String,
+    pub artifact_url: String,
+    pub envelope_url: String,
+    pub host_projection_url: String,
+    pub host_bundles: Vec<HostBundleLocation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct HostBundleLocation {
+    pub host: SkillHost,
+    pub bundle_url: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteReleaseReference {
+    pub url: String,
+    pub sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteClientReleaseProjection {
+    pub package_id: String,
+    pub agent_id: String,
+    pub version: String,
+    pub publisher: String,
+    pub release_manifest: RemoteReleaseReference,
+    pub artifact_url: String,
+    pub artifact_sha256: String,
+    pub envelope_url: String,
+    pub envelope_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteHostReleaseProjection {
+    pub package_id: String,
+    pub agent_id: String,
+    pub version: String,
+    pub publisher: String,
+    pub release_manifest: RemoteReleaseReference,
+    pub host_projection_url: String,
+    pub host_projection_sha256: String,
+    pub bundles: Vec<RemoteHostBundleRecord>,
+}
+
+impl RemotePackageRecord {
+    pub(crate) fn client_projection(&self) -> RemoteClientReleaseProjection {
+        RemoteClientReleaseProjection {
+            package_id: self.package_id.clone(),
+            agent_id: self.agent_id.clone(),
+            version: self.version.clone(),
+            publisher: self.publisher.clone(),
+            release_manifest: self.release_reference(),
+            artifact_url: self.artifact_url.clone(),
+            artifact_sha256: self.artifact_sha256.clone(),
+            envelope_url: self.envelope_url.clone(),
+            envelope_sha256: self.envelope_sha256.clone(),
+        }
+    }
+
+    pub(crate) fn host_projection(&self) -> RemoteHostReleaseProjection {
+        RemoteHostReleaseProjection {
+            package_id: self.package_id.clone(),
+            agent_id: self.agent_id.clone(),
+            version: self.version.clone(),
+            publisher: self.publisher.clone(),
+            release_manifest: self.release_reference(),
+            host_projection_url: self.host_projection_url.clone(),
+            host_projection_sha256: self.host_projection_sha256.clone(),
+            bundles: self.host_bundles.clone(),
+        }
+    }
+
+    fn release_reference(&self) -> RemoteReleaseReference {
+        RemoteReleaseReference {
+            url: self.release_manifest_url.clone(),
+            sha256: self.release_manifest_sha256.clone(),
+        }
+    }
+}
+
+pub(crate) fn bind_verified_release_record(
+    release_build: &AgentReleaseBuild,
+    locations: ReleaseChannelLocations,
+) -> Result<RemotePackageRecord> {
+    let release = release_build
+        .verified_descriptor()
+        .context("verify H2d2 Agent Release build before Registry binding")?;
+    validate_release_location(
+        "releaseManifestUrl",
+        &locations.release_manifest_url,
+        &release.release_file_name,
+    )?;
+    validate_release_location(
+        "artifactUrl",
+        &locations.artifact_url,
+        &release.artifact_file_name,
+    )?;
+    validate_release_location(
+        "envelopeUrl",
+        &locations.envelope_url,
+        &release.envelope_file_name,
+    )?;
+    validate_release_location(
+        "hostProjectionUrl",
+        &locations.host_projection_url,
+        &release.host_projection_file_name,
+    )?;
+
+    let mut bundle_urls = HashMap::new();
+    for location in locations.host_bundles {
+        if bundle_urls
+            .insert(location.host, location.bundle_url)
+            .is_some()
+        {
+            bail!("Agent Release Registry locations contain a duplicate Host");
+        }
+    }
+    if bundle_urls.len() != release.host_bundles.len() {
+        bail!("Agent Release Registry locations do not cover every Host bundle");
+    }
+    let mut host_bundles = Vec::with_capacity(release.host_bundles.len());
+    for bundle in release.host_bundles {
+        let bundle_url = bundle_urls
+            .remove(&bundle.host)
+            .ok_or_else(|| anyhow::anyhow!("Agent Release Registry location Host is unknown"))?;
+        validate_release_location("hostBundles.bundleUrl", &bundle_url, &bundle.file_name)?;
+        host_bundles.push(RemoteHostBundleRecord {
+            host: bundle.host,
+            entrypoint: bundle.entrypoint,
+            bundle_url,
+            bundle_sha256: bundle.sha256,
+        });
+    }
+    if !bundle_urls.is_empty() {
+        bail!("Agent Release Registry locations contain an unknown Host");
+    }
+    host_bundles.sort_by_key(|bundle| bundle.host.as_str());
+
+    let record = RemotePackageRecord {
+        package_id: release.package_id,
+        agent_id: release.agent_id,
+        version: release.version,
+        publisher: release.publisher,
+        release_manifest_url: locations.release_manifest_url,
+        release_manifest_sha256: release.release_sha256,
+        artifact_url: locations.artifact_url,
+        artifact_sha256: release.artifact_sha256,
+        envelope_url: locations.envelope_url,
+        envelope_sha256: release.envelope_sha256,
+        host_projection_url: locations.host_projection_url,
+        host_projection_sha256: release.host_projection_sha256,
+        host_bundles,
+    };
+    validate_remote_record_shape(&record)?;
+    Ok(record)
 }
 
 fn validate_snapshot(
@@ -175,9 +353,7 @@ fn validate_snapshot(
     let mut previous_package_id: Option<&str> = None;
     let mut agent_ids = HashSet::new();
     for package in &snapshot.packages {
-        validate_identifier("packageId", &package.package_id, true, false)?;
-        validate_identifier("agentId", &package.agent_id, false, false)?;
-        validate_identifier("publisher", &package.publisher, true, false)?;
+        validate_remote_record_shape(package)?;
         if !trusted_publishers.trusts_publisher(&package.publisher) {
             bail!("Agent Package registry publisher is not trusted");
         }
@@ -188,16 +364,55 @@ fn validate_snapshot(
         if !agent_ids.insert(package.agent_id.as_str()) {
             bail!("Agent Package registry agentId must be unique");
         }
-        validate_version(&package.version)?;
-        validate_https_url("artifactUrl", &package.artifact_url)?;
-        validate_sha256("artifactSha256", &package.artifact_sha256)?;
-        validate_https_url("envelopeUrl", &package.envelope_url)?;
-        validate_sha256("envelopeSha256", &package.envelope_sha256)?;
     }
     if snapshot.signature.is_empty() {
         bail!("Agent Package registry snapshot signature must not be empty");
     }
     Ok((generated_at, expires_at))
+}
+
+fn validate_remote_record_shape(package: &RemotePackageRecord) -> Result<()> {
+    validate_identifier("packageId", &package.package_id, true, false)?;
+    validate_identifier("agentId", &package.agent_id, false, false)?;
+    validate_identifier("publisher", &package.publisher, true, false)?;
+    validate_version(&package.version)?;
+    validate_https_url("releaseManifestUrl", &package.release_manifest_url)?;
+    validate_sha256("releaseManifestSha256", &package.release_manifest_sha256)?;
+    validate_https_url("artifactUrl", &package.artifact_url)?;
+    validate_sha256("artifactSha256", &package.artifact_sha256)?;
+    validate_https_url("envelopeUrl", &package.envelope_url)?;
+    validate_sha256("envelopeSha256", &package.envelope_sha256)?;
+    validate_https_url("hostProjectionUrl", &package.host_projection_url)?;
+    validate_sha256("hostProjectionSha256", &package.host_projection_sha256)?;
+    let mut previous_host = None;
+    let mut hosts = HashSet::new();
+    for bundle in &package.host_bundles {
+        if !hosts.insert(bundle.host) {
+            bail!("Agent Package registry Host bundles must be unique");
+        }
+        if previous_host.is_some_and(|previous| previous >= bundle.host.as_str()) {
+            bail!("Agent Package registry Host bundles must be sorted");
+        }
+        previous_host = Some(bundle.host.as_str());
+        validate_relative_package_path("registry.hostBundles.entrypoint", &bundle.entrypoint)?;
+        validate_https_url("hostBundles.bundleUrl", &bundle.bundle_url)?;
+        validate_sha256("hostBundles.bundleSha256", &bundle.bundle_sha256)?;
+    }
+    Ok(())
+}
+
+fn validate_release_location(field: &str, value: &str, expected_file_name: &str) -> Result<()> {
+    validate_https_url(field, value)?;
+    let url = Url::parse(value).with_context(|| format!("parse Agent Release {field}"))?;
+    let file_name = url
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .filter(|segment| !segment.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("Agent Release {field} has no file name"))?;
+    if file_name != expected_file_name {
+        bail!("Agent Release {field} file name differs from the verified Release Manifest");
+    }
+    Ok(())
 }
 
 fn validate_identifier(
@@ -276,7 +491,7 @@ fn parse_timestamp(field: &str, value: &str) -> Result<DateTime<Utc>> {
 
 fn registry_signature_payload(snapshot: &PackageRegistrySnapshot) -> String {
     let mut payload = format!(
-        "agentmesh360-package-registry-v1\nschemaVersion={}\nrevision={}\nrootKeyId={}\ntrustBundleSequence={}\ngeneratedAt={}\nexpiresAt={}\n",
+        "agentmesh360-package-registry-v2\nschemaVersion={}\nrevision={}\nrootKeyId={}\ntrustBundleSequence={}\ngeneratedAt={}\nexpiresAt={}\n",
         snapshot.schema_version,
         snapshot.revision,
         snapshot.root_key_id,
@@ -286,16 +501,31 @@ fn registry_signature_payload(snapshot: &PackageRegistrySnapshot) -> String {
     );
     for package in &snapshot.packages {
         payload.push_str(&format!(
-            "package={}|{}|{}|{}|{}|{}|{}|{}\n",
+            "package={}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n",
             encode_text(&package.package_id),
             encode_text(&package.agent_id),
             encode_text(&package.version),
             encode_text(&package.publisher),
+            encode_text(&package.release_manifest_url),
+            package.release_manifest_sha256,
             encode_text(&package.artifact_url),
             package.artifact_sha256,
             encode_text(&package.envelope_url),
-            package.envelope_sha256
+            package.envelope_sha256,
+            encode_text(&package.host_projection_url),
+            package.host_projection_sha256,
+            package.host_bundles.len()
         ));
+        for bundle in &package.host_bundles {
+            payload.push_str(&format!(
+                "host={}|{}|{}|{}|{}\n",
+                encode_text(&package.package_id),
+                bundle.host.as_str(),
+                encode_text(&bundle.entrypoint),
+                encode_text(&bundle.bundle_url),
+                bundle.bundle_sha256
+            ));
+        }
     }
     payload
 }
@@ -357,10 +587,15 @@ pub(super) fn signed_registry_record_document_for_test(
             agent_id: agent_id.into(),
             version: version.into(),
             publisher: "agentmesh360".into(),
+            release_manifest_url: format!("{artifact_url}.agent-release.v1.json"),
+            release_manifest_sha256: "c".repeat(64),
             artifact_url: artifact_url.into(),
             artifact_sha256: artifact_sha256.into(),
             envelope_url: envelope_url.into(),
             envelope_sha256: envelope_sha256.into(),
+            host_projection_url: format!("{artifact_url}.host-skills.v1.json"),
+            host_projection_sha256: "d".repeat(64),
+            host_bundles: Vec::new(),
         }],
         signature: String::new(),
     };
@@ -378,10 +613,141 @@ mod tests {
     use ed25519_dalek::{Signer as _, SigningKey};
     use serde_json::Value;
 
+    use super::super::package_release::release_build_for_registry_test;
     use super::super::package_trust::{TrustedPublisherKey, TrustedRootKey};
     use super::*;
 
     const ROOT_KEY_ID: &str = "agentmesh360-root-test-2026";
+
+    #[test]
+    fn one_verified_release_builds_client_and_host_read_only_projections() {
+        let package_id = "com.agentmesh360.future-agent";
+        let agent_id = "future-agent";
+        let version = "1.0.0";
+        let release = release_build_for_registry_test(
+            package_id,
+            agent_id,
+            version,
+            &[
+                (SkillHost::Openclaw, "skills/openclaw/SKILL.md"),
+                (SkillHost::Codex, "skills/codex/SKILL.md"),
+            ],
+        );
+        let record = bind_verified_release_record(
+            &release,
+            release_locations(
+                package_id,
+                version,
+                &[SkillHost::Openclaw, SkillHost::Codex],
+            ),
+        )
+        .expect("bind verified Agent Release");
+
+        assert_eq!(record.package_id, package_id);
+        assert_eq!(
+            record
+                .host_bundles
+                .iter()
+                .map(|bundle| bundle.host)
+                .collect::<Vec<_>>(),
+            vec![SkillHost::Codex, SkillHost::Openclaw]
+        );
+        let client = record.client_projection();
+        let host = record.host_projection();
+        assert_eq!(client.release_manifest, host.release_manifest);
+        assert_eq!(
+            client.release_manifest.sha256,
+            release
+                .verified_descriptor()
+                .expect("verified Release descriptor")
+                .release_sha256
+        );
+        let client_json = serde_json::to_string(&client).expect("client projection");
+        assert!(!client_json.contains("hostProjection"));
+        assert!(!client_json.contains("bundles"));
+        let host_json = serde_json::to_string(&host).expect("Host projection");
+        assert!(!host_json.contains("artifactUrl"));
+        assert!(!host_json.contains("envelopeUrl"));
+        assert_eq!(host.bundles.len(), 2);
+    }
+
+    #[test]
+    fn release_binding_rejects_missing_duplicate_cross_version_and_tamper() {
+        let package_id = "com.agentmesh360.future-agent";
+        let version = "1.0.0";
+        let release = release_build_for_registry_test(
+            package_id,
+            "future-agent",
+            version,
+            &[
+                (SkillHost::Codex, "skills/codex/SKILL.md"),
+                (SkillHost::Openclaw, "skills/openclaw/SKILL.md"),
+            ],
+        );
+        let mut missing = release_locations(
+            package_id,
+            version,
+            &[SkillHost::Codex, SkillHost::Openclaw],
+        );
+        missing.host_bundles.pop();
+        assert!(bind_verified_release_record(&release, missing).is_err());
+
+        let mut duplicate = release_locations(
+            package_id,
+            version,
+            &[SkillHost::Codex, SkillHost::Openclaw],
+        );
+        duplicate.host_bundles[1].host = SkillHost::Codex;
+        assert!(bind_verified_release_record(&release, duplicate).is_err());
+
+        let mut unknown = release_locations(
+            package_id,
+            version,
+            &[SkillHost::Codex, SkillHost::Openclaw],
+        );
+        unknown.host_bundles[1].host = SkillHost::ClaudeCode;
+        assert!(
+            bind_verified_release_record(&release, unknown)
+                .expect_err("unknown Host")
+                .to_string()
+                .contains("location Host is unknown")
+        );
+
+        let mut cross_version = release_locations(
+            package_id,
+            version,
+            &[SkillHost::Codex, SkillHost::Openclaw],
+        );
+        cross_version.artifact_url = cross_version.artifact_url.replace("1.0.0", "2.0.0");
+        assert!(bind_verified_release_record(&release, cross_version).is_err());
+
+        let mut tampered = release.clone();
+        tampered.tamper_document_for_test();
+        assert!(
+            bind_verified_release_record(
+                &tampered,
+                release_locations(
+                    package_id,
+                    version,
+                    &[SkillHost::Codex, SkillHost::Openclaw],
+                ),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn zero_adapter_release_builds_an_empty_host_channel() {
+        let package_id = "com.agentmesh360.client-only-agent";
+        let version = "1.0.0";
+        let release =
+            release_build_for_registry_test(package_id, "client-only-agent", version, &[]);
+        let record =
+            bind_verified_release_record(&release, release_locations(package_id, version, &[]))
+                .expect("bind zero-Adapter Release");
+        assert!(record.host_bundles.is_empty());
+        assert!(record.host_projection().bundles.is_empty());
+    }
 
     #[test]
     fn signed_registry_binds_remote_artifacts_and_trust_sequence() {
@@ -450,6 +816,39 @@ mod tests {
                     &trust,
                 )
                 .expect_err("tampered registry")
+                .to_string()
+                .contains("signature")
+        );
+
+        let mut release_tamper = snapshot_fixture();
+        sign_snapshot(&mut release_tamper, &root);
+        release_tamper.packages[0].release_manifest_sha256 = "0".repeat(64);
+        assert!(
+            verifier
+                .verify_document_at(
+                    &serde_json::to_string(&release_tamper).expect("release digest tamper"),
+                    now,
+                    42,
+                    &trust,
+                )
+                .expect_err("release digest tamper")
+                .to_string()
+                .contains("signature")
+        );
+
+        let mut host_tamper = snapshot_fixture();
+        host_tamper.packages[0].host_bundles = vec![remote_host_bundle(SkillHost::Codex, '8')];
+        sign_snapshot(&mut host_tamper, &root);
+        host_tamper.packages[0].host_bundles[0].bundle_sha256 = "9".repeat(64);
+        assert!(
+            verifier
+                .verify_document_at(
+                    &serde_json::to_string(&host_tamper).expect("Host digest tamper"),
+                    now,
+                    42,
+                    &trust,
+                )
+                .expect_err("Host digest tamper")
                 .to_string()
                 .contains("signature")
         );
@@ -527,6 +926,44 @@ mod tests {
                 .expect_err("unsorted registry")
                 .to_string()
                 .contains("uniquely sorted")
+        );
+
+        let mut unsorted_hosts = snapshot_fixture();
+        unsorted_hosts.packages[0].host_bundles = vec![
+            remote_host_bundle(SkillHost::Openclaw, '8'),
+            remote_host_bundle(SkillHost::Codex, '9'),
+        ];
+        sign_snapshot(&mut unsorted_hosts, &root);
+        assert!(
+            verifier
+                .verify_document_at(
+                    &serde_json::to_string(&unsorted_hosts).expect("unsorted Host registry"),
+                    now,
+                    42,
+                    &trust,
+                )
+                .expect_err("unsorted Host bundles")
+                .to_string()
+                .contains("sorted")
+        );
+
+        let mut duplicate_hosts = snapshot_fixture();
+        duplicate_hosts.packages[0].host_bundles = vec![
+            remote_host_bundle(SkillHost::Codex, '8'),
+            remote_host_bundle(SkillHost::Codex, '9'),
+        ];
+        sign_snapshot(&mut duplicate_hosts, &root);
+        assert!(
+            verifier
+                .verify_document_at(
+                    &serde_json::to_string(&duplicate_hosts).expect("duplicate Host registry"),
+                    now,
+                    42,
+                    &trust,
+                )
+                .expect_err("duplicate Host bundles")
+                .to_string()
+                .contains("unique")
         );
 
         let mut duplicate_agent = snapshot_fixture();
@@ -668,6 +1105,22 @@ mod tests {
                 .to_string()
                 .contains("not trusted")
         );
+
+        let mut legacy = snapshot_fixture();
+        legacy.schema_version = 1;
+        sign_snapshot(&mut legacy, &root);
+        assert!(
+            verifier
+                .verify_document_at(
+                    &serde_json::to_string(&legacy).expect("legacy registry"),
+                    now,
+                    42,
+                    &trust,
+                )
+                .expect_err("legacy Registry v1")
+                .to_string()
+                .contains("unsupported")
+        );
     }
 
     fn verifier(root: &SigningKey) -> PackageRegistrySnapshotVerifier {
@@ -692,7 +1145,7 @@ mod tests {
 
     fn snapshot_fixture() -> PackageRegistrySnapshot {
         PackageRegistrySnapshot {
-            schema_version: 1,
+            schema_version: REGISTRY_SNAPSHOT_SCHEMA_VERSION,
             revision: 42,
             root_key_id: ROOT_KEY_ID.into(),
             trust_bundle_sequence: 7,
@@ -731,6 +1184,12 @@ mod tests {
                 "1.0.0".into()
             },
             publisher: "agentmesh360".into(),
+            release_manifest_url: format!("{artifact_url}.agent-release.v1.json"),
+            release_manifest_sha256: if digest_character == '1' {
+                "c".repeat(64)
+            } else {
+                "d".repeat(64)
+            },
             artifact_url: artifact_url.into(),
             artifact_sha256: digest_character.to_string().repeat(64),
             envelope_url: format!("{artifact_url}.signature.json"),
@@ -739,6 +1198,49 @@ mod tests {
             } else {
                 "b".repeat(64)
             },
+            host_projection_url: format!("{artifact_url}.host-skills.v1.json"),
+            host_projection_sha256: if digest_character == '1' {
+                "e".repeat(64)
+            } else {
+                "f".repeat(64)
+            },
+            host_bundles: Vec::new(),
+        }
+    }
+
+    fn release_locations(
+        package_id: &str,
+        version: &str,
+        hosts: &[SkillHost],
+    ) -> ReleaseChannelLocations {
+        let base = format!("https://packages.agentmesh360.com/{package_id}/{version}");
+        ReleaseChannelLocations {
+            release_manifest_url: format!("{base}/{package_id}-{version}.agent-release.v1.json"),
+            artifact_url: format!("{base}/{package_id}-{version}.ampkg.tar.zst"),
+            envelope_url: format!("{base}/{package_id}-{version}.signature.v1.json"),
+            host_projection_url: format!("{base}/{package_id}-{version}.host-skills.v1.json"),
+            host_bundles: hosts
+                .iter()
+                .map(|host| HostBundleLocation {
+                    host: *host,
+                    bundle_url: format!(
+                        "{base}/{package_id}-{version}-{}.amskill.tar.zst",
+                        host.as_str()
+                    ),
+                })
+                .collect(),
+        }
+    }
+
+    fn remote_host_bundle(host: SkillHost, digest_character: char) -> RemoteHostBundleRecord {
+        RemoteHostBundleRecord {
+            host,
+            entrypoint: format!("skills/{}/SKILL.md", host.as_str()),
+            bundle_url: format!(
+                "https://packages.agentmesh360.com/host/{}.amskill.tar.zst",
+                host.as_str()
+            ),
+            bundle_sha256: digest_character.to_string().repeat(64),
         }
     }
 

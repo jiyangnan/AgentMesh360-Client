@@ -492,6 +492,9 @@ mod tests {
         signature_payload,
     };
     use super::super::package_authoring::build_package;
+    use super::super::package_registry_snapshot::{
+        HostBundleLocation, ReleaseChannelLocations, bind_verified_release_record,
+    };
     use super::super::package_release::assemble_agent_release;
     use super::super::package_trust::{TrustedPublisherKey, TrustedPublisherStore};
     use super::*;
@@ -961,20 +964,66 @@ skillBundles = []
                 .write_to_new_directory(&root.path().join("host-exports"))
                 .expect("write real Host Skills");
             assert_eq!(exported.bundles.len(), expected_bundles);
-            let release = assemble_agent_release(
+            let release_build = assemble_agent_release(
                 &verified,
                 envelope_document.as_bytes(),
                 &projection,
                 &exported,
             )
-            .expect("assemble real Agent Release")
-            .write_to_new_directory(&root.path().join("release-output"))
-            .expect("write real Agent Release");
+            .expect("assemble real Agent Release");
+            let release_base = format!(
+                "https://packages.agentmesh360.com/{}/{}",
+                receipt.package_id, receipt.version
+            );
+            let registry_record = bind_verified_release_record(
+                &release_build,
+                ReleaseChannelLocations {
+                    release_manifest_url: format!(
+                        "{release_base}/{}-{}.agent-release.v1.json",
+                        receipt.package_id, receipt.version
+                    ),
+                    artifact_url: format!(
+                        "{release_base}/{}-{}.ampkg.tar.zst",
+                        receipt.package_id, receipt.version
+                    ),
+                    envelope_url: format!(
+                        "{release_base}/{}-{}.signature.v1.json",
+                        receipt.package_id, receipt.version
+                    ),
+                    host_projection_url: format!(
+                        "{release_base}/{}-{}.host-skills.v1.json",
+                        receipt.package_id, receipt.version
+                    ),
+                    host_bundles: exported
+                        .bundles
+                        .iter()
+                        .map(|bundle| HostBundleLocation {
+                            host: bundle.host,
+                            bundle_url: format!(
+                                "{release_base}/{}-{}-{}.amskill.tar.zst",
+                                receipt.package_id,
+                                receipt.version,
+                                bundle.host.as_str()
+                            ),
+                        })
+                        .collect(),
+                },
+            )
+            .expect("bind real Agent Release to Registry projections");
+            assert_eq!(
+                registry_record.client_projection().release_manifest,
+                registry_record.host_projection().release_manifest
+            );
+            assert_eq!(registry_record.host_bundles.len(), expected_bundles);
+            let release = release_build
+                .write_to_new_directory(&root.path().join("release-output"))
+                .expect("write real Agent Release");
             println!(
-                "{} artifact={} release={} bundles={}",
+                "{} artifact={} release={} registryRelease={} bundles={}",
                 agent,
                 receipt.artifact_sha256,
                 release.manifest_sha256,
+                registry_record.release_manifest_sha256,
                 exported
                     .bundles
                     .iter()

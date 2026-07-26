@@ -504,10 +504,17 @@ mod tests {
         );
         let catalog_json = serde_json::to_string(&catalog).expect("serialize remote catalog");
         for private_field in [
+            "releaseManifestUrl",
+            "releaseManifestSha256",
             "artifactUrl",
             "artifactSha256",
             "envelopeUrl",
             "envelopeSha256",
+            "hostProjectionUrl",
+            "hostProjectionSha256",
+            "hostBundles",
+            "bundleUrl",
+            "bundleSha256",
             "rootKeyId",
             "signature",
             "https://",

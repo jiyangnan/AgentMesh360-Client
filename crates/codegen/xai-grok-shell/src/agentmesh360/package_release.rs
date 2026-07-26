@@ -69,6 +69,31 @@ struct HostBundleRelease {
     sha256: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct VerifiedAgentReleaseDescriptor {
+    pub package_id: String,
+    pub agent_id: String,
+    pub version: String,
+    pub publisher: String,
+    pub release_file_name: String,
+    pub release_sha256: String,
+    pub artifact_file_name: String,
+    pub artifact_sha256: String,
+    pub envelope_file_name: String,
+    pub envelope_sha256: String,
+    pub host_projection_file_name: String,
+    pub host_projection_sha256: String,
+    pub host_bundles: Vec<VerifiedHostBundleDescriptor>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct VerifiedHostBundleDescriptor {
+    pub host: SkillHost,
+    pub entrypoint: String,
+    pub file_name: String,
+    pub sha256: String,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentReleaseReceipt {
@@ -79,7 +104,7 @@ pub(crate) struct AgentReleaseReceipt {
     pub manifest_sha256: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct AgentReleaseBuild {
     package_id: String,
     agent_id: String,
@@ -90,6 +115,19 @@ pub(crate) struct AgentReleaseBuild {
 }
 
 impl AgentReleaseBuild {
+    pub(super) fn verified_descriptor(&self) -> Result<VerifiedAgentReleaseDescriptor> {
+        let descriptor = describe_verified_agent_release(&self.document)?;
+        if descriptor.package_id != self.package_id
+            || descriptor.agent_id != self.agent_id
+            || descriptor.version != self.version
+            || descriptor.release_file_name != self.file_name
+            || descriptor.release_sha256 != self.sha256
+        {
+            bail!("Agent Release build metadata differs from its verified document");
+        }
+        Ok(descriptor)
+    }
+
     pub(crate) fn write_to_new_directory(self, output_dir: &Path) -> Result<AgentReleaseReceipt> {
         create_new_private_directory(output_dir)?;
         let result = (|| {
@@ -107,6 +145,11 @@ impl AgentReleaseBuild {
             let _ = fs::remove_dir_all(output_dir);
         }
         result
+    }
+
+    #[cfg(test)]
+    pub(super) fn tamper_document_for_test(&mut self) {
+        self.document.push(b' ');
     }
 }
 
@@ -367,10 +410,93 @@ fn verify_agent_release_document(document: &[u8]) -> Result<AgentReleaseManifest
     Ok(manifest)
 }
 
+fn describe_verified_agent_release(document: &[u8]) -> Result<VerifiedAgentReleaseDescriptor> {
+    let manifest = verify_agent_release_document(document)?;
+    Ok(VerifiedAgentReleaseDescriptor {
+        release_file_name: format!(
+            "{}-{}.agent-release.v1.json",
+            manifest.package_id, manifest.version
+        ),
+        release_sha256: sha256_hex(document),
+        package_id: manifest.package_id,
+        agent_id: manifest.agent_id,
+        version: manifest.version,
+        publisher: manifest.publisher,
+        artifact_file_name: manifest.client_artifact.file_name,
+        artifact_sha256: manifest.client_artifact.sha256,
+        envelope_file_name: manifest.client_artifact.signature_envelope_file_name,
+        envelope_sha256: manifest.client_artifact.signature_envelope_sha256,
+        host_projection_file_name: manifest.host_skill_plan.projection_file_name,
+        host_projection_sha256: manifest.host_skill_plan.projection_sha256,
+        host_bundles: manifest
+            .host_bundles
+            .into_iter()
+            .map(|bundle| VerifiedHostBundleDescriptor {
+                host: bundle.host,
+                entrypoint: bundle.entrypoint,
+                file_name: bundle.file_name,
+                sha256: bundle.sha256,
+            })
+            .collect(),
+    })
+}
+
 fn host_bundle_file_name(package_id: &str, version: &str, host: SkillHost) -> Result<String> {
     let file_name = format!("{package_id}-{version}-{}.amskill.tar.zst", host.as_str());
     validate_output_file_name(&file_name)?;
     Ok(file_name)
+}
+
+#[cfg(test)]
+pub(super) fn release_build_for_registry_test(
+    package_id: &str,
+    agent_id: &str,
+    version: &str,
+    hosts: &[(SkillHost, &str)],
+) -> AgentReleaseBuild {
+    let mut host_bundles = hosts
+        .iter()
+        .enumerate()
+        .map(|(index, (host, entrypoint))| HostBundleRelease {
+            host: *host,
+            entrypoint: (*entrypoint).into(),
+            file_name: host_bundle_file_name(package_id, version, *host)
+                .expect("test Host bundle file name"),
+            sha256: ((b'a' + index as u8) as char).to_string().repeat(64),
+        })
+        .collect::<Vec<_>>();
+    host_bundles.sort_by_key(|bundle| bundle.host.as_str());
+    let manifest = AgentReleaseManifest {
+        schema_version: AGENT_RELEASE_SCHEMA_VERSION,
+        package_id: package_id.into(),
+        agent_id: agent_id.into(),
+        version: version.into(),
+        publisher: "agentmesh360".into(),
+        client_artifact: ClientArtifactRelease {
+            file_name: format!("{package_id}-{version}.ampkg.tar.zst"),
+            sha256: "1".repeat(64),
+            file_manifest_sha256: "2".repeat(64),
+            signature_envelope_file_name: format!("{package_id}-{version}.signature.v1.json"),
+            signature_envelope_sha256: "3".repeat(64),
+            signature_key_id: "agentmesh360-release-test".into(),
+        },
+        host_skill_plan: HostSkillPlanRelease {
+            projection_file_name: format!("{package_id}-{version}.host-skills.v1.json"),
+            projection_sha256: "4".repeat(64),
+            signed_plan_sha256: "5".repeat(64),
+        },
+        host_bundles,
+    };
+    let document = serde_json::to_vec(&manifest).expect("serialize registry Release fixture");
+    verify_agent_release_document(&document).expect("verify registry Release fixture");
+    AgentReleaseBuild {
+        package_id: package_id.into(),
+        agent_id: agent_id.into(),
+        version: version.into(),
+        file_name: format!("{package_id}-{version}.agent-release.v1.json"),
+        sha256: sha256_hex(&document),
+        document,
+    }
 }
 
 #[cfg(test)]

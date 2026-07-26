@@ -70,8 +70,9 @@ impl PackageArtifactDownloader {
             .cache
             .load_verified_package(package_id, access)?
             .ok_or_else(|| anyhow!("verified remote Agent Package is unavailable"))?;
-        let artifact_url = self.validate_download_url(&remote.record.artifact_url)?;
-        let envelope_url = self.validate_download_url(&remote.record.envelope_url)?;
+        let client_release = remote.record.client_projection();
+        let artifact_url = self.validate_download_url(&client_release.artifact_url)?;
+        let envelope_url = self.validate_download_url(&client_release.envelope_url)?;
         let operation = DownloadOperation::create(&self.state_home)?;
         let envelope_path = operation.path().join("envelope.json");
         let artifact_path = operation.path().join("artifact.tar.zst");
@@ -84,7 +85,7 @@ impl PackageArtifactDownloader {
             DownloadContentKind::Envelope,
         )
         .await?;
-        if envelope.sha256 != remote.record.envelope_sha256 {
+        if envelope.sha256 != client_release.envelope_sha256 {
             bail!("Agent Package envelope digest does not match verified registry");
         }
         let envelope_document =
@@ -98,24 +99,24 @@ impl PackageArtifactDownloader {
             DownloadContentKind::Artifact,
         )
         .await?;
-        if artifact.sha256 != remote.record.artifact_sha256 {
+        if artifact.sha256 != client_release.artifact_sha256 {
             bail!("Agent Package artifact digest does not match verified registry");
         }
 
         let verified =
             PackageArtifactVerifier::with_trust_store(&self.state_home, remote.trusted_publishers)
                 .verify_to_staging(&artifact_path, &envelope_document)?;
-        if verified.manifest.package_id != remote.record.package_id
-            || verified.manifest.agent.agent_id != remote.record.agent_id
-            || verified.manifest.version != remote.record.version
-            || verified.manifest.publisher != remote.record.publisher
+        if verified.manifest.package_id != client_release.package_id
+            || verified.manifest.agent.agent_id != client_release.agent_id
+            || verified.manifest.version != client_release.version
+            || verified.manifest.publisher != client_release.publisher
         {
             bail!("downloaded Agent Package identity does not match verified registry");
         }
         let audit = PackageDownloadAudit {
-            package_id: remote.record.package_id,
-            agent_id: remote.record.agent_id,
-            version: remote.record.version,
+            package_id: client_release.package_id,
+            agent_id: client_release.agent_id,
+            version: client_release.version,
             artifact_bytes: artifact.size,
             envelope_bytes: envelope.size,
         };
