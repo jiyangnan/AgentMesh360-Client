@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2d1 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2d2：离线组装跨客户端/宿主的 Agent Release Manifest v1 |
+| 动态 Agent Package | H0/H1 至 H2d2 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2d3：受签名 Release 发布索引与客户端/官网双投影 |
 
 ## 开发循环记录
 
@@ -2908,3 +2908,97 @@ H2d2 下一切片（须等 H2d1 Kimi 交叉测试关闭后启动）：
    非确定性输出和无 Adapter Agent 的失败关闭/正向测试；
 4. 仍只做离线 assembly 与验证，不填生产 endpoint/root/bundle，不上传、不发布，
    不写入用户真实 Codex/Claude Code/OpenClaw 目录。
+
+### 循环 39：动态 Agent Package H2d2——跨渠道 Agent Release Manifest
+
+状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+
+计划复核：H2d1 已证明客户端 Artifact 和每个 Host bundle 来自同一 Publisher 授权
+plan，但 Registry 与官网仍缺少一个共同的 release 内容单元。如果后续分别拿 Artifact
+和 bundle 发布，两条路径仍可能出现版本或摘要漂移。H2d2 因此只建立离线 Release
+Manifest，不提前接生产 Registry、URL、上传或用户安装。
+
+H2d2 已实现：
+
+1. `VerifiedStagedPackage` 新增 H1 实际解析并验签的 Envelope 原文字节 SHA-256；
+   release assembly 必须收到逐字节相同的 Envelope，字段语义相同但空白/排序不同的
+   JSON 也不能冒充 H1 输入；
+2. H2d1 receipt 字段改为模块私有，只能由成功写出 Host bundles 的 H2d1 路径创建；
+   receipt 新增 projection SHA-256，并继续绑定 plan、Artifact、Publisher keyId 和
+   每个 bundle 的实际路径/摘要；
+3. 新增严格 `Agent Release Manifest v1`，绑定 package/agent/version/publisher、
+   Artifact/file inventory、Envelope 原文、projection/签名 plan，以及排序后的全部
+   Host bundle 文件名、入口和 SHA-256；
+4. Assembly 前再次复验 staging tree；Envelope、projection、receipt identity 和
+   Manifest Adapter 一一覆盖必须全等。每个 bundle 重新以 H2d1 的
+   `O_NOFOLLOW + device/inode` 门读取，核对 canonical 文件名、32 MiB 上限和摘要；
+5. Manifest verifier 拒绝未知字段/Schema、非 canonical JSON、非 canonical SemVer、
+   非法或超长身份/入口、错误文件名/摘要、重复或非排序 Host；
+6. 输出为
+   `<packageId>-<version>.agent-release.v1.json`，不含 URL、时间戳、账户、Token、
+   Provider Key、生产私钥或本机路径；Unix 输出为 `0700/0600`，拒绝覆盖并在失败时
+   清理本次新目录；
+7. 零 Adapter Agent 合法输出 `hostBundles = []`，因此 Deploy 仍可作为客户端持久
+   Agent，而不会虚构宿主 Skill。新 Agent 沿 H1 → H2d1 → H2d2 无需专属 release
+   代码或内置 Catalog 修改。
+
+H2d2 自主验证：
+
+- Release assembly 专项 5/5，覆盖逐字节确定性、strict verifier、H1 Envelope 与
+  projection 漂移、bundle/staging 篡改、缺失/重复 Host、跨版本 receipt、未知
+  Schema/字段、Host 顺序、版本文件名漂移、拒绝覆盖、`0700/0600` 和零 Adapter；
+- AgentMesh360 本机全量 158 项通过、1 个显式首方源码测试默认 ignore；
+- 显式首方测试已单独实跑：Job、LectureCast、Deploy 均双构建逐字节一致，经测试
+  Publisher 签名、H1 verify、H2d1 export 后完成 H2d2 assembly；
+- 首方 Release Manifest SHA-256：Job
+  `70b0ca7d60959fcad6fbf81f8fd69fb9edd9d0a9dd938d98ae238458be26f4c0`，
+  LectureCast `abdeefac441d4f98e87bc1bc1c8a5e8c4b35c420c77d635399c7ae1e327a5173`，
+  Deploy `381101227368f93518629cbc75f7acd0c20b747dcd35121e9088e1af156c5b02`；
+- Authoring 6/6、Host export 7/7、CLI 1/1、桌面 57+2 skip、Clippy
+  `-D warnings`、Rustfmt、JS check 和 diff-check 通过；
+- 所有 key 均为测试材料，以上摘要不是生产 Release、Git tag、CI provenance、
+  Registry 上线或网站发布证明。
+
+Kimi 独立交叉测试与修复：
+
+- Kimi 会话 `session_e2208b8a-d53b-4b06-a2cf-57894f4d05df` 从基线
+  `e7d0b74` 独立读取本仓库完整 diff 和两个未跟踪文件，实跑 Artifact 8/8、
+  Authoring 6/6、Host export 7/7 + 1 ignored、Release 5/5、AgentMesh360
+  158 + 1 ignored、CLI 1/1、桌面 57 + 2 skip、Clippy、Rustfmt、JS check 与
+  diff-check，全部通过；遵守授权边界，没有读取三个外部首方源码仓库；
+- 首轮 Blocker/High/Medium 为零，但严格门槛下报告 3 条 Low：H1 Adapter path
+  尚无 512 字节上限而 H2d2 有、Release 身份校验允许 H1 禁止的内部下划线、等数量
+  未知 Host receipt 分支缺直接测试，因此首轮结论为 FAIL；
+- 已让 H1 Manifest 与 H2d2 Release 共用 128 字节身份上限、H1 字符集校验器和
+  512 字节相对路径上限；新增 H1 超长 Adapter path、Release 内部下划线身份和
+  等数量未知 Host receipt 的失败关闭覆盖。自主复测 Agent Package 9/9、
+  Release 5/5、Host export 7/7 + 1 ignored、AgentMesh360 158 + 1 ignored、
+  CLI 1/1、桌面 57 + 2 skip 与全部静态检查已通过；
+- Kimi 第二轮重新审查修复 diff 并独立实跑同一全套验证，确认首轮 3 条 Low 全部
+  实质关闭、没有引入新问题；最终 Blocker/High/Medium/Low 均为零并给出“无条件
+  PASS”。H2d2 正式关闭。
+
+完整 Schema、功能流程、信任边界和首方摘要见
+`docs/architecture/AGENT_RELEASE_MANIFEST_V1.md`。
+
+计划复盘：
+
+- H2d2 已把“一份 Agent Release、客户端持久 Agent 与宿主 Skill 两个产品投影”固化为
+  一个 deterministic content unit，但 Manifest 自身还没有进入 Root/Publisher/
+  Registry 签名与反回滚链；
+- Release Manifest 不含 URL，避免可复现内容被环境 endpoint 污染；URL、rollout、
+  expiry 和渠道投影应由受签名发布索引承载；
+- BYOK、订阅硬门禁、Provider Vault、credits、稳定 Main Session、共享 Grok Harness
+  和旧原型迁移边界均未改变；
+- 生产 root/bundle/endpoint、上传、网站发布和真实宿主安装继续为空/关闭。
+
+H2d3 下一切片（须等 H2d2 Kimi 交叉测试关闭后启动）：
+
+1. 设计新的受签名 Release Registry Schema，绑定 Release Manifest URL/SHA-256，
+   复用可信 Core 时间、Root → Publisher Bundle、expiry 与持久反回滚；
+2. 从同一已验证 Release 生成客户端 Artifact 下载投影和官网/Host Skill 只读投影，
+   任何渠道不得自己重组 package/version/digest；
+3. 覆盖缺渠道、摘要漂移、跨版本、重复 Host、release digest 不一致、过期/回滚和
+   Last Known Good；
+4. 生产 endpoint/root/bundle 继续为空，只做离线 fixture、缓存与投影测试，不上传、
+   不发布、不写用户真实宿主目录。

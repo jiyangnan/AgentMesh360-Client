@@ -553,3 +553,22 @@ Schema/Capability 内的新 Agent 不需要修改 Client Catalog。完整流程�
 
 H2d1 已通过自主验证和 Kimi 两轮独立交叉测试；Kimi 首轮 Low 全部修复后，第二轮
 Blocker/High/Medium/Low 均为零并给出无条件 PASS。
+
+## 23. H2d2：跨渠道 Agent Release Manifest
+
+H2d2 让 `VerifiedStagedPackage` 记录 H1 实际验签 Envelope 的原文字节 SHA-256，并
+把 H2d1 receipt 收紧为模块内不可伪造能力。Release assembler 同时核对
+Artifact/inventory、精确 Envelope、projection/plan 和每个 Host bundle 的实际字节，
+再输出 strict canonical `agent-release.v1.json`。
+
+Release Manifest 只含 package/agent/version/publisher、客户端 Artifact/Envelope
+摘要、Host plan/projection 摘要和排序 Host bundle 文件名/入口/摘要。URL、账户、
+Token、Provider Key、时间戳、生产私钥和本机路径不进入这个可复现单元。完整契约与
+真实首方摘要见
+[`AGENT_RELEASE_MANIFEST_V1.md`](AGENT_RELEASE_MANIFEST_V1.md)。
+
+H2d2 已完成自主验证与两轮 Kimi 独立交叉测试。Kimi 首轮实跑全部仓库内验证后报告
+3 条 Low；H1/H2d2 随后统一身份字符集、128 字节身份上限和 512 字节相对路径上限，
+并补齐等数量未知 Host receipt 的纵深防御测试。Kimi 第二轮确认三条 Low 全部关闭，
+最终 Blocker/High/Medium/Low 均为零并给出无条件 PASS。生产
+Root/Bundle/endpoint、受签名发布索引、上传、网站发布和用户安装继续保持关闭。

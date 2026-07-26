@@ -177,7 +177,8 @@ Provider Vault 或稳定 Main Session。
 H2d2 Release assembler 是计划中的首个非测试调用方：它必须承接 H1 验证结果，而
 不能绕过 `VerifiedStagedPackage` 类型门。
 
-下一切片 H2d2 应建立跨渠道 `Agent Release Manifest v1`：
+H2d2 已建立跨渠道 `Agent Release Manifest v1`，完整契约见
+[`AGENT_RELEASE_MANIFEST_V1.md`](AGENT_RELEASE_MANIFEST_V1.md)。它已做到：
 
 1. 从 H1 Artifact、Publisher Envelope 和 H2d1 receipts 生成确定性、无秘密的发布
    清单，绑定客户端 Artifact 与全部宿主 bundle；
@@ -186,3 +187,6 @@ H2d2 Release assembler 是计划中的首个非测试调用方：它必须承接
 3. 加入缺 bundle、多 bundle、跨版本、摘要替换、旧 Schema、重复 Host 与非确定性
    输出的失败关闭测试；
 4. 仍只做离线 assembly 与验证，不启用生产上传、Registry endpoint 或真实用户安装。
+
+下一步 H2d3 将让同一 Release Manifest 进入受签名发布索引，并生成客户端 Artifact
+与官网/Host Skill 两种只读投影。
