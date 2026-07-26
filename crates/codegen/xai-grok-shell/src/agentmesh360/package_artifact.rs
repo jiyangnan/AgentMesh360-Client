@@ -22,6 +22,7 @@ pub(super) const SIGNATURE_SCHEMA_VERSION: u32 = 1;
 pub(super) const FILE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub(super) const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
 pub(super) const FILE_MANIFEST_PATH: &str = "package-files.v1.json";
+pub(super) const HOST_SKILL_PLAN_PATH: &str = "host-skills.v1.json";
 pub(super) const MAX_ARTIFACT_BYTES: u64 = 32 * 1024 * 1024;
 pub(super) const MAX_UNPACKED_BYTES: u64 = 128 * 1024 * 1024;
 pub(super) const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;

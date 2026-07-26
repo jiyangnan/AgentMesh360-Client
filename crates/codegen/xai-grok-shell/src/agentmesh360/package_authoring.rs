@@ -24,8 +24,8 @@ use super::agent_packages::{
     AgentPackageCatalog, AgentPackageManifest, PackagePermission, SkillHost,
 };
 use super::package_artifact::{
-    FILE_MANIFEST_PATH, FILE_MANIFEST_SCHEMA_VERSION, MAX_ARTIFACT_BYTES, MAX_FILE_BYTES,
-    MAX_FILE_COUNT, MAX_UNPACKED_BYTES, PACKAGE_MANIFEST_PATH, PackageFileManifest,
+    FILE_MANIFEST_PATH, FILE_MANIFEST_SCHEMA_VERSION, HOST_SKILL_PLAN_PATH, MAX_ARTIFACT_BYTES,
+    MAX_FILE_BYTES, MAX_FILE_COUNT, MAX_UNPACKED_BYTES, PACKAGE_MANIFEST_PATH, PackageFileManifest,
     PackageFileRecord, PackageSignatureEnvelope, SIGNATURE_SCHEMA_VERSION, is_safe_identifier,
     lower_hex, normalized_package_path, signature_payload, validate_sha256,
 };
@@ -35,8 +35,10 @@ const AUTHORING_SCHEMA_VERSION: u32 = 1;
 const SIGNING_REQUEST_SCHEMA_VERSION: u32 = 1;
 const SIGNATURE_RESULT_SCHEMA_VERSION: u32 = 1;
 const PUBLIC_KEY_SCHEMA_VERSION: u32 = 1;
-const HOST_PROJECTION_SCHEMA_VERSION: u32 = 1;
+pub(super) const HOST_SKILL_PLAN_SCHEMA_VERSION: u32 = 1;
+pub(super) const HOST_PROJECTION_SCHEMA_VERSION: u32 = 1;
 const MAX_AUTHORING_PATH_BYTES: usize = 512;
+pub(super) const MAX_HOST_PROJECTION_BYTES: usize = 1024 * 1024;
 const ZSTD_LEVEL: i32 = 3;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -95,26 +97,34 @@ struct PublisherPublicKeyDocument {
     public_key: String,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct HostSkillProjection {
-    schema_version: u32,
-    package_id: String,
-    agent_id: String,
-    version: String,
-    publisher: String,
-    artifact_sha256: String,
-    requested_permissions: Vec<String>,
-    canonical_workflow: PackageFileRecord,
-    skill_bundles: Vec<HostSkillBundleProjection>,
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct HostSkillPlan {
+    pub schema_version: u32,
+    pub package_id: String,
+    pub agent_id: String,
+    pub version: String,
+    pub publisher: String,
+    pub requested_permissions: Vec<PackagePermission>,
+    pub canonical_workflow: PackageFileRecord,
+    pub skill_bundles: Vec<HostSkillBundleProjection>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct HostSkillBundleProjection {
-    host: String,
-    entrypoint: String,
-    files: Vec<PackageFileRecord>,
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct HostSkillProjection {
+    pub schema_version: u32,
+    pub artifact_sha256: String,
+    pub plan_sha256: String,
+    pub plan: HostSkillPlan,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct HostSkillBundleProjection {
+    pub host: SkillHost,
+    pub entrypoint: String,
+    pub files: Vec<PackageFileRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -232,10 +242,21 @@ pub fn build_package(
     }
     enforce_package_limits(&package_files)?;
 
+    let source_file_records = file_records(&package_files)?;
+    let host_skill_plan = host_skill_plan(&manifest, &definition, &source_file_records)?;
+    let host_skill_plan =
+        serde_json::to_vec(&host_skill_plan).context("serialize signed Host Skill plan")?;
+    if host_skill_plan.len() > MAX_HOST_PROJECTION_BYTES {
+        bail!("signed Host Skill plan exceeds the allowed size");
+    }
+    let host_skill_plan_sha256 = sha256_hex(&host_skill_plan);
+    package_files.insert(HOST_SKILL_PLAN_PATH.to_owned(), host_skill_plan);
+    enforce_package_limits(&package_files)?;
+
     let file_records = file_records(&package_files)?;
     let file_manifest = serde_json::to_vec(&PackageFileManifest {
         schema_version: FILE_MANIFEST_SCHEMA_VERSION,
-        files: file_records.clone(),
+        files: file_records,
     })
     .context("serialize Agent Package file manifest")?;
     package_files.insert(FILE_MANIFEST_PATH.to_owned(), file_manifest);
@@ -251,10 +272,21 @@ pub fn build_package(
         signing_request(&manifest, key_id, &artifact_file_name, &artifact_sha256)?;
     let signing_request =
         serde_json::to_vec(&signing_request).context("serialize Agent Package signing request")?;
-    let host_projection = host_projection(&manifest, &definition, &file_records, &artifact_sha256)
-        .and_then(|projection| {
-            serde_json::to_vec(&projection).context("serialize Host Skill projection")
-        })?;
+    let signed_plan_document = package_files
+        .get(HOST_SKILL_PLAN_PATH)
+        .ok_or_else(|| anyhow!("signed Host Skill plan is absent from authored Package"))?;
+    let signed_plan: HostSkillPlan =
+        serde_json::from_slice(signed_plan_document).context("reparse signed Host Skill plan")?;
+    let host_projection = serde_json::to_vec(&HostSkillProjection {
+        schema_version: HOST_PROJECTION_SCHEMA_VERSION,
+        artifact_sha256: artifact_sha256.clone(),
+        plan_sha256: host_skill_plan_sha256,
+        plan: signed_plan,
+    })
+    .context("serialize Host Skill projection")?;
+    if host_projection.len() > MAX_HOST_PROJECTION_BYTES {
+        bail!("Host Skill projection exceeds the allowed size");
+    }
 
     Ok(PackageAuthoringBuild {
         package_id: manifest.package_id.clone(),
@@ -474,12 +506,11 @@ fn validate_signing_request(request: &PackageSigningRequest) -> Result<()> {
     Ok(())
 }
 
-fn host_projection(
+fn host_skill_plan(
     manifest: &AgentPackageManifest,
     definition: &PackageAuthoringDefinition,
     records: &[PackageFileRecord],
-    artifact_sha256: &str,
-) -> Result<HostSkillProjection> {
+) -> Result<HostSkillPlan> {
     let records = records
         .iter()
         .cloned()
@@ -510,26 +541,19 @@ fn host_projection(
                 })
                 .collect::<Result<Vec<_>>>()?;
             Ok(HostSkillBundleProjection {
-                host: bundle.host.as_str().to_owned(),
+                host: bundle.host,
                 entrypoint: adapter.path.clone(),
                 files,
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(HostSkillProjection {
-        schema_version: HOST_PROJECTION_SCHEMA_VERSION,
+    Ok(HostSkillPlan {
+        schema_version: HOST_SKILL_PLAN_SCHEMA_VERSION,
         package_id: manifest.package_id.clone(),
         agent_id: manifest.agent.agent_id.clone(),
         version: manifest.version.clone(),
         publisher: manifest.publisher.clone(),
-        artifact_sha256: artifact_sha256.to_owned(),
-        requested_permissions: manifest
-            .requested_permissions
-            .iter()
-            .copied()
-            .map(PackagePermission::as_str)
-            .map(str::to_owned)
-            .collect(),
+        requested_permissions: manifest.requested_permissions.clone(),
         canonical_workflow,
         skill_bundles: bundles,
     })
@@ -548,7 +572,7 @@ fn file_records(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<PackageFileReco
         .collect()
 }
 
-fn deterministic_archive(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<u8>> {
+pub(super) fn deterministic_archive(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<u8>> {
     let encoder = zstd::stream::write::Encoder::new(Vec::new(), ZSTD_LEVEL)
         .context("create deterministic Agent Package zstd encoder")?;
     let mut archive = tar::Builder::new(encoder);
@@ -689,14 +713,17 @@ fn normalize_authoring_path(value: &str) -> Result<String> {
 fn reject_reserved_source_path(path: &str) -> Result<()> {
     if matches!(
         path,
-        PACKAGE_MANIFEST_PATH | FILE_MANIFEST_PATH | AUTHORING_DEFINITION_PATH
+        PACKAGE_MANIFEST_PATH
+            | FILE_MANIFEST_PATH
+            | HOST_SKILL_PLAN_PATH
+            | AUTHORING_DEFINITION_PATH
     ) {
         bail!("Agent Package authoring source path is reserved");
     }
     Ok(())
 }
 
-fn validate_output_file_name(value: &str) -> Result<()> {
+pub(super) fn validate_output_file_name(value: &str) -> Result<()> {
     let path = Path::new(value);
     if value.is_empty()
         || value.len() > MAX_AUTHORING_PATH_BYTES
@@ -736,11 +763,11 @@ fn decode_canonical_base64(field: &str, value: &str, expected_bytes: usize) -> R
     Ok(decoded)
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     lower_hex(&Sha256::digest(bytes))
 }
 
-fn create_new_private_directory(path: &Path) -> Result<()> {
+pub(super) fn create_new_private_directory(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
@@ -765,7 +792,7 @@ fn create_new_private_directory(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn write_new_private_file(path: &Path, contents: &[u8]) -> Result<()> {
+pub(super) fn write_new_private_file(path: &Path, contents: &[u8]) -> Result<()> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -836,22 +863,33 @@ mod tests {
 
         let projection: serde_json::Value =
             serde_json::from_slice(&first.host_projection).expect("projection");
-        assert_eq!(projection["packageId"], "com.agentmesh360.job-agent");
-        assert_eq!(projection["agentId"], "job-agent");
+        let typed_projection: HostSkillProjection =
+            serde_json::from_slice(&first.host_projection).expect("typed projection");
+        assert_eq!(
+            projection["plan"]["packageId"],
+            "com.agentmesh360.job-agent"
+        );
+        assert_eq!(projection["plan"]["agentId"], "job-agent");
         assert_eq!(projection["artifactSha256"], first.artifact_sha256.as_str());
         assert_eq!(
-            projection["canonicalWorkflow"]["path"],
+            projection["plan"]["canonicalWorkflow"]["path"],
             "docs/agent-onboarding.md"
         );
-        assert_eq!(projection["skillBundles"].as_array().map(Vec::len), Some(2));
         assert_eq!(
-            projection["skillBundles"][0]["entrypoint"],
+            projection["plan"]["skillBundles"].as_array().map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            projection["plan"]["skillBundles"][0]["entrypoint"],
             "skills/claude-code/SKILL.md"
         );
         assert_eq!(
-            projection["skillBundles"][1]["entrypoint"],
+            projection["plan"]["skillBundles"][1]["entrypoint"],
             "skills/openclaw-job-agent/SKILL.md"
         );
+        let signed_plan =
+            serde_json::to_vec(&typed_projection.plan).expect("serialize projection plan");
+        assert_eq!(projection["planSha256"], sha256_hex(&signed_plan).as_str());
         let projection_json = String::from_utf8(first.host_projection.clone()).expect("UTF-8");
         for forbidden in [
             "privateKey",
