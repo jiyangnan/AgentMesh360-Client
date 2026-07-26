@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2c3 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2d0：非秘密发布输入、同源宿主 Skill 投影与可复现 Package 构建门 |
+| 动态 Agent Package | H0/H1 至 H2d0 已通过自主测试和 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | H2d1：从已验签 Artifact 导出宿主 Skill 发布束与新 Agent onboarding smoke |
 
 ## 开发循环记录
 
@@ -2711,3 +2711,101 @@ H2d0 下一切片（须等 H2c3 Kimi 交叉测试关闭后启动）：
    独立门禁；
 4. 验收包括正向可复现构建、客户端/宿主 Skill 同源断言、篡改/多余文件/路径穿越/
    未声明权限失败关闭，以及自主测试和 Kimi 独立交叉测试。
+
+### 循环 37：动态 Agent Package H2d0——同源 Authoring 与可复现构建
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2c3 已经让用户看到经过完整信任链验证的新 Agent/更新，但生产目录仍没有
+安全、可重复的发布输入。如果每次由人工分别整理客户端 Package 和网站 Skill，
+Manifest、工作流、Adapter 与权限很快会漂移。H2d0 只建立离线构建门，不接生产私钥、
+Root/Bundle、endpoint、上传或发布。
+
+H2d0 已经实现：
+
+1. 新增严格 `agentmesh-authoring.toml` v1。Manifest Adapter 与 bundle 必须一一对应，
+   每个 bundle 必须含真实入口；Canonical Workflow、额外 Package 文件与宿主 Skill
+   文件均由显式 allowlist 读取；
+2. Authoring 拒绝未知字段/Schema/权限、路径穿越、非规范路径、保留文件名、symlink、
+   非普通文件、重复/遗漏 Adapter、越界文件和越界总量。定义目录与源码目录可相同，
+   因而未来新 Agent 可把 Manifest、Authoring 和 Skill 都维护在自己的源仓库；
+3. 确定性构建使用排序文件表、`package-files.v1.json`、固定 tar
+   mode/uid/gid/mtime 与 zstd level 3，输出不含时间、随机数、机器路径、账户或
+   Provider 材料；
+4. 单次 build 同时输出客户端 `.ampkg.tar.zst`、非秘密 signing request 与
+   Host Skill projection。投影绑定完整 Artifact SHA-256，并记录 Canonical Workflow
+   和每个宿主入口/文件的路径、长度和 SHA-256；
+5. CLI 不接收私钥且没有网络代码。Finalize 必须重新读取实际 Artifact，核对固定
+   文件名、32 MiB 上限和 SHA-256，重建 H1 确定性 payload 并执行 Ed25519 strict
+   verification，才以 `0600` 创建 Envelope；已存在输出拒绝覆盖；
+6. 输出目录/文件从创建瞬间即为 Unix `0700/0600`，任一写入或权限失败清理本次
+   不完整输出。Signing request、projection 和 receipt 均不含绝对源码路径或秘密；
+7. 三个首方定义均已加入 Authoring v1：Job Agent 投影 Claude Code/OpenClaw，
+   LectureCast 投影 Codex/Claude Code/OpenClaw，Deploy 如实只含 Canonical
+   `AGENTS.md`，不虚构宿主 Adapter。
+
+H2d0 自主验证：
+
+- Authoring 库专项 6 项通过，覆盖逐字节可复现、客户端/宿主同源、外部测试签名经
+  运行时 Artifact Gate 接受、篡改 Artifact/请求/签名、错误公钥、未知权限、遗漏
+  Adapter、路径穿越、未列出源码不影响产物、symlink 与越界文件失败关闭；
+- CLI 契约 1 项通过，build/finalize 的必需参数和 subcommand 结构有效；
+- 使用真实 `/Users/ferdinandji/AgentMesh-JobAgent`、
+  `/Users/ferdinandji/AgentMesh-Lecturecast` 与
+  `/Users/ferdinandji/agentmesh-deploy` 全部构建成功；
+- Job Agent 连续两次构建的 Artifact、signing request、Host Skill projection
+  逐字节一致；Artifact SHA-256 为
+  `745da8cfe76b7bc7a9f685838c651883e1a53009cc589e1aaf617429fb1c6e91`；
+- LectureCast/Deploy Artifact SHA-256 分别为
+  `36af51c4c07c0a7019d1ac14f0548d9785f8c6e22f7ae8fd0cac0bf7b533c929` 和
+  `8bd3a14a54158eaa88f722bbb96febec9c5fbf8fd88cb32a335bd6a7aa0e86b2`；
+- 真实输出目录/文件权限核对为 `0700/0600`。这些只是当前源码的开发证据，不是
+  已签名生产 Release；
+- AgentMesh360 Rust 全量 146 项通过；桌面 57 项通过、另 2 项真实 Host 环境测试按
+  预期 skip；受影响的 Rust lib + Authoring CLI Clippy `-D warnings`、Rustfmt、
+  JS check 与 `git diff --check` 全部通过。全量 Rust 首次在受限沙箱中有 27 项
+  loopback mock 因禁止绑定本地端口失败，在获准的本机环境重跑后 146/146 通过。
+
+Kimi 独立交叉测试：
+
+- Kimi 从基线 `67fc65b` 审查完整 diff、全部未跟踪代码、三个 Authoring 定义和三份
+  计划/架构文档，逐项核对严格 Schema/路径、symlink 与本地 TOCTOU 边界、大小/数量、
+  inventory、自引用清单、可复现 tar+zstd、Adapter/bundle 一致性、权限失败关闭、
+  signing request/Artifact/身份绑定、canonical Base64/SemVer、0700/0600、失败清理、
+  projection 非信任根定位、新 Agent 动态接入和生产关闭边界；
+- Kimi 实际执行 Authoring 6 项、CLI 1 项、AgentMesh360 全量 146 项、桌面 57 项
+  （另 2 项真实 Host 环境测试按预期 skip）、JS check、受影响 Rust lib + CLI
+  Clippy `-D warnings`、Rustfmt 与 diff-check，全部通过；
+- Kimi 用 `agentmesh360-authoring-review` 非生产 keyId 独立构建 Job × 2、
+  LectureCast 和 Deploy；三份 Artifact 摘要与本文档完全一致，Job 的 Artifact、
+  signing request 与 Host projection 均经 `cmp` 证明逐字节一致；
+- Kimi 独立核对 tar 只有 Manifest、文件清单和声明的四个 Job Agent 源文件，输出
+  目录/文件为 `0700/0600`，projection Artifact 摘要正确，JSON 不含 `/Users`、账户、
+  私钥或 Token，既有输出目录拒绝覆盖；
+- Kimi 确认 Blocker/High/Medium/Low 均为零并给出“无条件 PASS”。H2d0 正式关闭。
+
+H2d0 代码提交：`463ecb4`（`feat: author deterministic agent packages`）。
+
+计划复盘：
+
+- H2d0 实现了“一次 authoring、两个产品投影”，但 loose Host projection 本身不是
+  信任根；权威字节仍是 H1 已签名 Artifact。下一轮必须从已验签 Artifact 重新导出，
+  不能直接信任工作区或散落 JSON；
+- 外部 public key 只能验证签名结果自洽，不等于生产 Publisher 信任。运行时仍要求
+  内置 Root → root-signed Publisher Bundle → active key；
+- Authoring CLI 无网络和私钥输入，生产 Root、Bundle、endpoint、Registry
+  Snapshot、上传和发布启用继续为空，不能把本轮测试 key 或 placeholder `keyId`
+  当成生产供应链；
+- BYOK 默认、客户端订阅无效不可进入、Provider Key 只在 Host Vault、稳定 Main
+  Session 和共享 Grok Harness 均未改变；本轮没有回到旧 AgentMesh 原型。
+
+H2d1 下一切片（须等 H2d0 Kimi 交叉测试关闭后启动）：
+
+1. 从通过 H1 Artifact/Envelope 信任验证的内容，确定性导出每个宿主 Agent 的 Skill
+   发布束，不直接读取松散源码作为发布真相；
+2. 逐项核对 Host projection 的 Artifact digest、身份、入口、路径、长度和 SHA-256，
+   篡改、遗漏、多余文件、错误宿主或跨版本投影全部失败关闭；
+3. 为新 Agent 提供可复制的同仓 Manifest/Authoring 模板和 onboarding smoke，证明
+   在受支持 Schema/Capability 内无需修改 Client 内置 Catalog；
+4. 仍不写入用户真实 Codex/Claude Code/OpenClaw 目录，不填生产私钥、Root/Bundle、
+   endpoint，不上传、不发布；完成自主测试后交给 Kimi 独立交叉测试。

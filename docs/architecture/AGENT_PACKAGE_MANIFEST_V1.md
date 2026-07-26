@@ -1,6 +1,6 @@
 # AgentMesh360 Agent Package Manifest v1
 
-状态：H0 与 H1 已实现；动态运行时载入和 Registry 分发待 H2
+状态：H0/H1 至 H2d0 已实现，并通过自主验证和 Kimi 独立交叉测试
 
 本文档固定 AgentMesh360 产品 Agent 的第一个版本化 Package 契约。它解决的核心问题
 不是“把 Prompt 搬进 TOML”，而是让客户端里的持久 Agent 与用户自行安装到 Codex、
@@ -505,13 +505,29 @@ Fetcher 4 项、Host ACP 2 项、AgentMesh360 140 项、桌面 57 项（另 2 �
 下载。有效 Last Known Good 可以继续被安全发现；远端刷新和下载入口仍由独立状态门
 控制，不能因有缓存而绕过生产关闭态。
 
-## 21. H2d0 计划：同源 Authoring 输入与可复现构建门
+## 21. H2d0：同源 Authoring 与可复现构建门
 
-下一切片让一个新 Agent 的 Manifest/Skill 来源同时生成客户端 Package 构建输入和
-宿主 Agent 安装投影，减少两条分发路径的手工复制。构建器先确定性生成 archive
-inventory、Artifact digest 和待签 Envelope payload，再接受外部签名结果；生产
-私钥、账户、Token 和用户数据不得进入仓库、日志、环境快照或 Package。
+新增离线 `agentmesh360-package-author`。它读取严格
+`agentmesh-agent.toml + agentmesh-authoring.toml` 和显式列出的 Agent 源文件，一次
+生成确定性 `.ampkg.tar.zst`、非秘密 signing request 与 Host Skill projection。
+三个输出共享 package/agent/version、Artifact SHA-256 和逐文件路径/长度/SHA-256，
+源码仓库中未声明文件不会进入产物或影响摘要。
 
-H2d0 不启用生产 root、Publisher Bundle、endpoint 或上传发布。真实 key ceremony、
-签名服务和生产开关必须另经安全审计与发布授权。验收包括可复现构建、双投影同源、
-篡改/多余文件/路径穿越/未声明权限失败关闭，以及自主测试与 Kimi 交叉测试。
+构建固定排序、tar mode/uid/gid/mtime 和 zstd level，不包含构建时间、机器路径或
+随机值。输入目录、定义文件和源码路径拒绝 symlink、路径穿越、保留名、未知字段、
+未知权限和越界大小。外部签名 finalize 必须重新读取实际 Artifact，核对固定文件名与
+SHA-256，并使用 Ed25519 strict verification 后才创建 H1 Envelope；CLI 没有私钥、
+网络、上传或生产发布参数。
+
+三个首方真实源仓库均已成功离线构建；Job Agent 连续两次构建的 Artifact、请求和
+投影逐字节一致。完整 Schema、命令、威胁边界、真实摘要和新 Agent 接入流程见
+`AGENT_PACKAGE_AUTHORING_V1.md`。
+
+Host projection 当前是带 Artifact 锚点的非秘密审核索引，不是独立信任根。H2d1 将
+从通过 H1 信任验证的 Artifact 重新导出可验证宿主 Skill 发布束；生产私钥仪式、
+Root/Publisher Bundle、Registry endpoint、上传和发布启用仍是后续独立安全门。
+
+H2d0 已通过自主测试和 Kimi 独立交叉测试。Kimi 实跑 Authoring 6 项、CLI 1 项、
+AgentMesh360 全量 146 项、桌面 57 项（另 2 项真实 Host 测试按预期 skip）、三仓
+真实构建、Job 双构建逐字节比较与全部受影响静态检查；四级问题均为零并给出无条件
+PASS。代码提交为 `463ecb4`。
