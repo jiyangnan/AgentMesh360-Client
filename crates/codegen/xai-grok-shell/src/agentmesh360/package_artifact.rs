@@ -84,6 +84,7 @@ impl PackageArtifactVerifier {
         artifact_path: &Path,
         envelope_document: &str,
     ) -> Result<VerifiedStagedPackage> {
+        let envelope_sha256 = lower_hex(&Sha256::digest(envelope_document.as_bytes()));
         let envelope: PackageSignatureEnvelope =
             serde_json::from_str(envelope_document).context("parse Agent Package signature")?;
         validate_envelope(&envelope)?;
@@ -105,6 +106,7 @@ impl PackageArtifactVerifier {
             Ok((manifest, file_manifest_sha256)) => Ok(VerifiedStagedPackage {
                 manifest,
                 artifact_sha256,
+                envelope_sha256,
                 file_manifest_sha256,
                 signature_key_id: envelope.key_id,
                 staging_dir: Some(staging_dir),
@@ -138,6 +140,7 @@ impl PackageArtifactVerifier {
 pub(crate) struct VerifiedStagedPackage {
     pub manifest: AgentPackageManifest,
     pub artifact_sha256: String,
+    pub envelope_sha256: String,
     pub file_manifest_sha256: String,
     pub signature_key_id: String,
     staging_dir: Option<PathBuf>,
@@ -162,6 +165,7 @@ impl VerifiedStagedPackage {
         Self {
             manifest,
             artifact_sha256: artifact_sha256.into(),
+            envelope_sha256: "0".repeat(64),
             file_manifest_sha256: digest_file_manifest(&staging_dir)
                 .expect("test Package file manifest digest"),
             signature_key_id: signature_key_id.into(),

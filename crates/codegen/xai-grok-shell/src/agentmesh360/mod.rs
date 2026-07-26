@@ -20,6 +20,7 @@ mod package_installer;
 mod package_management;
 mod package_registry_fetcher;
 mod package_registry_snapshot;
+mod package_release;
 mod package_skill_export;
 mod package_trust;
 mod package_trust_cache;

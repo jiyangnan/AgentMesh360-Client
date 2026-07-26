@@ -12,6 +12,8 @@ use super::model_policy::AgentModelPolicy;
 
 const SUPPORTED_MANIFEST_SCHEMA_VERSION: u32 = 1;
 const BUILTIN_CATALOG_REVISION: u64 = 1;
+pub(super) const MAX_PACKAGE_IDENTIFIER_BYTES: usize = 128;
+pub(super) const MAX_PACKAGE_PATH_BYTES: usize = 512;
 const BUILTIN_PACKAGE_DOCUMENTS: [&str; 3] = [
     include_str!("packages/job-agent/agentmesh-agent.toml"),
     include_str!("packages/lecturecast-agent/agentmesh-agent.toml"),
@@ -350,9 +352,9 @@ fn calculate_catalog_revision(packages: &[AgentPackageManifest]) -> u64 {
     u64::from_be_bytes(bytes).max(1)
 }
 
-fn validate_identifier(field: &str, value: &str, allow_period: bool) -> Result<()> {
+pub(super) fn validate_identifier(field: &str, value: &str, allow_period: bool) -> Result<()> {
     let valid = !value.is_empty()
-        && value.len() <= 128
+        && value.len() <= MAX_PACKAGE_IDENTIFIER_BYTES
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase()
                 || byte.is_ascii_digit()
@@ -385,9 +387,9 @@ fn validate_source_repository(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_relative_package_path(field: &str, value: &str) -> Result<()> {
-    if value.trim().is_empty() {
-        bail!("Agent Package {field} must not be empty");
+pub(super) fn validate_relative_package_path(field: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() || value.len() > MAX_PACKAGE_PATH_BYTES {
+        bail!("Agent Package {field} size is invalid");
     }
     let path = Path::new(value);
     if path.is_absolute()
@@ -493,6 +495,13 @@ mod tests {
         let traversal =
             JOB_DOCUMENT.replacen("skills/claude-code/SKILL.md", "../outside/SKILL.md", 1);
         assert!(AgentPackageCatalog::from_documents(&[&traversal]).is_err());
+
+        let overlong = JOB_DOCUMENT.replacen(
+            "skills/claude-code/SKILL.md",
+            &format!("{}.md", "a".repeat(MAX_PACKAGE_PATH_BYTES)),
+            1,
+        );
+        assert!(AgentPackageCatalog::from_documents(&[&overlong]).is_err());
     }
 
     #[test]

@@ -59,20 +59,23 @@ struct HostSkillExportPath {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HostSkillExportReceipt {
-    pub package_id: String,
-    pub agent_id: String,
-    pub version: String,
-    pub source_artifact_sha256: String,
-    pub bundles: Vec<HostSkillBundleReceipt>,
+    package_id: String,
+    agent_id: String,
+    version: String,
+    source_artifact_sha256: String,
+    source_projection_sha256: String,
+    source_plan_sha256: String,
+    signature_key_id: String,
+    bundles: Vec<HostSkillBundleReceipt>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HostSkillBundleReceipt {
-    pub host: String,
-    pub entrypoint: String,
-    pub bundle_path: PathBuf,
-    pub bundle_sha256: String,
+    host: SkillHost,
+    entrypoint: String,
+    bundle_path: PathBuf,
+    bundle_sha256: String,
 }
 
 #[derive(Debug)]
@@ -81,7 +84,86 @@ pub(crate) struct HostSkillExportSet {
     agent_id: String,
     version: String,
     source_artifact_sha256: String,
+    source_projection_sha256: String,
+    source_plan_sha256: String,
+    signature_key_id: String,
     bundles: Vec<HostSkillBundle>,
+}
+
+impl HostSkillExportReceipt {
+    pub(super) fn package_id(&self) -> &str {
+        &self.package_id
+    }
+
+    pub(super) fn agent_id(&self) -> &str {
+        &self.agent_id
+    }
+
+    pub(super) fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub(super) fn source_artifact_sha256(&self) -> &str {
+        &self.source_artifact_sha256
+    }
+
+    pub(super) fn source_plan_sha256(&self) -> &str {
+        &self.source_plan_sha256
+    }
+
+    pub(super) fn source_projection_sha256(&self) -> &str {
+        &self.source_projection_sha256
+    }
+
+    pub(super) fn signature_key_id(&self) -> &str {
+        &self.signature_key_id
+    }
+
+    pub(super) fn bundles(&self) -> &[HostSkillBundleReceipt] {
+        &self.bundles
+    }
+
+    #[cfg(test)]
+    pub(super) fn remove_last_bundle_for_test(&mut self) {
+        self.bundles.pop();
+    }
+
+    #[cfg(test)]
+    pub(super) fn duplicate_first_bundle_for_test(&mut self) {
+        if let Some(bundle) = self.bundles.first().cloned() {
+            self.bundles.push(bundle);
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_version_for_test(&mut self, version: &str) {
+        self.version = version.to_owned();
+    }
+
+    #[cfg(test)]
+    pub(super) fn replace_first_bundle_host_for_test(&mut self, host: SkillHost) {
+        if let Some(bundle) = self.bundles.first_mut() {
+            bundle.host = host;
+        }
+    }
+}
+
+impl HostSkillBundleReceipt {
+    pub(super) fn host(&self) -> SkillHost {
+        self.host
+    }
+
+    pub(super) fn entrypoint(&self) -> &str {
+        &self.entrypoint
+    }
+
+    pub(super) fn bundle_path(&self) -> &Path {
+        &self.bundle_path
+    }
+
+    pub(super) fn bundle_sha256(&self) -> &str {
+        &self.bundle_sha256
+    }
 }
 
 #[derive(Debug)]
@@ -105,7 +187,7 @@ impl HostSkillExportSet {
                 let bundle_path = output_dir.join(&bundle.file_name);
                 write_new_private_file(&bundle_path, &bundle.archive)?;
                 receipts.push(HostSkillBundleReceipt {
-                    host: bundle.host.as_str().to_owned(),
+                    host: bundle.host,
                     entrypoint: bundle.entrypoint,
                     bundle_path,
                     bundle_sha256: bundle.sha256,
@@ -116,6 +198,9 @@ impl HostSkillExportSet {
                 agent_id: self.agent_id,
                 version: self.version,
                 source_artifact_sha256: self.source_artifact_sha256,
+                source_projection_sha256: self.source_projection_sha256,
+                source_plan_sha256: self.source_plan_sha256,
+                signature_key_id: self.signature_key_id,
                 bundles: receipts,
             })
         })();
@@ -133,6 +218,7 @@ pub(crate) fn export_verified_host_skills(
     if projection_document.is_empty() || projection_document.len() > MAX_HOST_PROJECTION_BYTES {
         bail!("Host Skill projection size is invalid");
     }
+    let projection_sha256 = sha256_hex(projection_document);
     let projection: HostSkillProjection = serde_json::from_slice(projection_document)
         .context("parse Host Skill authoring projection")?;
     if projection.schema_version != HOST_PROJECTION_SCHEMA_VERSION {
@@ -237,6 +323,9 @@ pub(crate) fn export_verified_host_skills(
         agent_id: signed_plan.agent_id,
         version: signed_plan.version,
         source_artifact_sha256: verified.artifact_sha256.clone(),
+        source_projection_sha256: projection_sha256,
+        source_plan_sha256: projection.plan_sha256,
+        signature_key_id: verified.signature_key_id.clone(),
         bundles: exports,
     })
 }
@@ -341,7 +430,7 @@ fn read_verified_package_file(staging_root: &Path, record: &PackageFileRecord) -
     Ok(contents)
 }
 
-fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
+pub(super) fn read_bounded_regular_file(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
     let inspected = fs::symlink_metadata(path)
         .with_context(|| format!("inspect Host Skill export input {}", path.display()))?;
     if inspected.file_type().is_symlink() || !inspected.is_file() || inspected.len() > max_bytes {
@@ -403,6 +492,7 @@ mod tests {
         signature_payload,
     };
     use super::super::package_authoring::build_package;
+    use super::super::package_release::assemble_agent_release;
     use super::super::package_trust::{TrustedPublisherKey, TrustedPublisherStore};
     use super::*;
 
@@ -765,6 +855,9 @@ skillBundles = []
             agent_id: "future-agent".into(),
             version: "1.0.0".into(),
             source_artifact_sha256: "0".repeat(64),
+            source_projection_sha256: "1".repeat(64),
+            source_plan_sha256: "2".repeat(64),
+            signature_key_id: TEST_KEY_ID.into(),
             bundles: vec![
                 HostSkillBundle {
                     host: SkillHost::ClaudeCode,
@@ -849,6 +942,8 @@ skillBundles = []
                     .sign(signature_payload(&envelope).as_bytes())
                     .to_bytes(),
             );
+            let envelope_document =
+                serde_json::to_string(&envelope).expect("real envelope document");
             let verified = PackageArtifactVerifier::with_trust_store(
                 root.path().join("verification-state"),
                 TrustedPublisherStore::with_key(TrustedPublisherKey {
@@ -857,10 +952,7 @@ skillBundles = []
                     public_key: signing_key.verifying_key().to_bytes(),
                 }),
             )
-            .verify_to_staging(
-                &receipt.artifact_path,
-                &serde_json::to_string(&envelope).expect("real envelope"),
-            )
+            .verify_to_staging(&receipt.artifact_path, &envelope_document)
             .expect("H1 verifies real first-party Package");
             let export = export_verified_host_skills(&verified, &projection)
                 .expect("export real Host Skills");
@@ -869,14 +961,24 @@ skillBundles = []
                 .write_to_new_directory(&root.path().join("host-exports"))
                 .expect("write real Host Skills");
             assert_eq!(exported.bundles.len(), expected_bundles);
+            let release = assemble_agent_release(
+                &verified,
+                envelope_document.as_bytes(),
+                &projection,
+                &exported,
+            )
+            .expect("assemble real Agent Release")
+            .write_to_new_directory(&root.path().join("release-output"))
+            .expect("write real Agent Release");
             println!(
-                "{} artifact={} bundles={}",
+                "{} artifact={} release={} bundles={}",
                 agent,
                 receipt.artifact_sha256,
+                release.manifest_sha256,
                 exported
                     .bundles
                     .iter()
-                    .map(|bundle| format!("{}:{}", bundle.host, bundle.bundle_sha256))
+                    .map(|bundle| { format!("{}:{}", bundle.host.as_str(), bundle.bundle_sha256) })
                     .collect::<Vec<_>>()
                     .join(",")
             );
