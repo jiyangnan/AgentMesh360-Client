@@ -1,6 +1,7 @@
 # AgentMesh360 Agent Package Authoring v1
 
-状态：H2d0 已实现，并通过自主验证和 Kimi 独立交叉测试；生产签名与发布仍保持关闭
+状态：H2d0 已实现，并通过自主验证和 Kimi 独立交叉测试；H2d1 已扩展签名内嵌
+Host Skill 计划，并通过双方测试；生产签名与发布仍保持关闭
 
 本文档固定 AgentMesh360 新 Agent 的离线 Authoring 契约。目标是让一个 Agent 团队只维护
 一份 Manifest 和一组真实 Skill/Workflow 源文件，即可同时得到：
@@ -23,10 +24,11 @@ flowchart LR
     end
 
     SOURCE --> VALIDATE["严格 Schema、路径、权限、身份与大小校验"]
-    VALIDATE --> INVENTORY["确定性 package-files.v1.json"]
+    VALIDATE --> PLAN["确定性 host-skills.v1.json"]
+    PLAN --> INVENTORY["确定性 package-files.v1.json"]
     INVENTORY --> ARTIFACT["客户端 .ampkg.tar.zst"]
     ARTIFACT --> REQUEST["非秘密 signing request"]
-    INVENTORY --> PROJECTION["Host Skill projection + Artifact digest"]
+    PLAN --> PROJECTION["外部 projection + Artifact/plan digest"]
 
     REQUEST --> SIGNER["仓库外部 Ed25519 Signer"]
     SIGNER --> RESULT["signature result + public key document"]
@@ -36,7 +38,9 @@ flowchart LR
     FINALIZE --> ENVELOPE["Package signature envelope"]
 
     ENVELOPE -. "后续发布门" .-> REGISTRY["AgentMesh360 Package Registry"]
-    PROJECTION -. "后续 H2d1 验证导出" .-> HOSTS["宿主 Agent Skill 发布束"]
+    ARTIFACT --> H2D1["H1 验签后 H2d1 重新导出"]
+    PROJECTION --> H2D1
+    H2D1 --> HOSTS["宿主 Agent Skill 发布束"]
 ```
 
 `agentmesh-agent.toml` 描述产品身份、持久 Agent、模型策略、权限和 Skill 入口；
@@ -113,22 +117,24 @@ cargo run -p xai-grok-shell --bin agentmesh360-package-author -- build \
 | --- | --- |
 | `<package>-<version>.ampkg.tar.zst` | 客户端持久 Agent 的完整 Package |
 | `<package>-<version>.signing-request.v1.json` | 交给外部签名系统的非秘密请求 |
-| `<package>-<version>.host-skills.v1.json` | 同源宿主 Skill 投影和逐文件锚点 |
+| `<package>-<version>.host-skills.v1.json` | 外部审核 projection，绑定 Artifact 和内嵌 plan |
 | stdout JSON receipt | 三个输出的路径和 SHA-256，供 CI 留证 |
 
 可复现规则：
 
 1. 规范路径存入 `BTreeMap`，Archive 按字节序输出；
-2. `package-files.v1.json` 记录每个源文件的路径、长度和小写 SHA-256；
+2. `host-skills.v1.json` 先固化精确宿主文件计划，再由
+   `package-files.v1.json` 覆盖该计划及每个源文件的路径、长度和小写 SHA-256；
 3. tar entry 只允许普通文件，固定 mode `0600`、uid/gid/mtime 为 `0`；
 4. zstd 使用固定 level `3`；
 5. 输出不包含构建时间、机器名、绝对源码路径、随机数或账户信息；
 6. 相同 Manifest、Authoring、源文件、工具版本和 `keyId` 产生逐字节相同的三个输出。
 
-Host Skill 投影包含 package/agent/version/publisher、请求权限、完整 Artifact SHA-256、
-Canonical Workflow 锚点，以及每个宿主的入口和文件锚点。它是非秘密的审核索引，
-不是独立的信任根；H2d1 必须从已验签 Artifact 重新导出宿主发布束，不能只相信一个
-散落的投影 JSON。
+外部 Host Skill projection 包含完整 Artifact SHA-256、内嵌 plan SHA-256 和该 plan
+的审核副本。精确 plan 已作为 `host-skills.v1.json` 进入 Artifact，记录
+package/agent/version/publisher、请求权限、Canonical Workflow，以及每个宿主的入口和
+文件锚点。projection 是非秘密审核索引，不是独立信任根；H2d1 只从 H1 已验签
+Artifact 导出，并要求外部 projection 与签名 plan 完全一致。
 
 ## 4. 外部签名契约
 
@@ -172,13 +178,15 @@ endpoint、上传和发布启用不属于 H2d0。
 
 | Agent | 版本 | Artifact SHA-256 |
 | --- | --- | --- |
-| Job Agent | `0.4.7` | `745da8cfe76b7bc7a9f685838c651883e1a53009cc589e1aaf617429fb1c6e91` |
-| LectureCast Agent | `0.4.0` | `36af51c4c07c0a7019d1ac14f0548d9785f8c6e22f7ae8fd0cac0bf7b533c929` |
-| Deploy Agent | `0.1.1` | `8bd3a14a54158eaa88f722bbb96febec9c5fbf8fd88cb32a335bd6a7aa0e86b2` |
+| Job Agent | `0.4.7` | `d00f374e2442c6853ff8dd39a9d832d4410b86b6027661483205c2d0fd692dd0` |
+| LectureCast Agent | `0.4.0` | `229bb50b7ed095871bb282fe462519d3dcf5aa336283c2441f381f8913bce2b9` |
+| Deploy Agent | `0.1.1` | `9a40f1fe4385f2c1e644cf0ad39d2d2daf0797f736dc1880b38e19ae573792ec` |
 
-Job Agent 连续构建两次，Artifact、signing request 与 Host Skill projection 三者均
-逐字节一致。该摘要是当前工作区真实源文件的开发证据，不是已签名生产 Release，也
-不能替代 Git tag、CI provenance 或 Registry 上线证据。
+三个 Agent 均连续构建两次，Artifact、signing request 与 Host Skill projection
+三者逐字节一致。H2d1 内嵌签名 plan 会改变 H2d0 历史 Artifact 字节，所以上表是
+H2d1 当前源码的新基线；H2d0 文档中旧摘要仍只代表当时已关闭提交。该摘要是当前
+工作区真实源文件的开发证据，不是已签名生产 Release，也不能替代 Git tag、CI
+provenance 或 Registry 上线证据。
 
 ## 6. 新 Agent 接入清单
 
@@ -187,18 +195,19 @@ Job Agent 连续构建两次，Artifact、signing request 与 Host Skill project
 3. 提交严格 Authoring v1，显式列出每个投影所需文件；
 4. 在 CI 中连续构建两次并比较三个输出，执行 Authoring、Artifact 与运行时回归；
 5. 把 signing request 交给仓库外部签名服务，使用 public key document 本地 finalize；
-6. 在 H2d1 从已验签 Artifact 生成并复验各宿主发布束；
+6. 通过 H1 Publisher 信任链验收 Artifact，再由 H2d1 生成并复验各宿主发布束；
 7. 通过独立的生产供应链审计后，才生成 Trust Bundle/Registry Snapshot 并上传；
 8. 客户端用户走订阅硬门禁和 Package 权限批准；宿主 Agent 用户继续走明确的一键
    Skill 安装流程。两条路径消费同一版本和同一文件摘要。
 
-## 7. H2d1 下一步
+## 7. H2d1 结果与 H2d2 下一步
 
-H2d1 将补“已签名 Artifact → 可验证宿主 Skill 发布束”的离线门：
+H2d1 已实现“已签名 Artifact → 可验证宿主 Skill 发布束”的离线门，并用一个不存在于
+内置 Catalog 的 `future-agent` 证明同仓动态接入。完整信任链、bundle Schema、
+篡改矩阵、首方摘要和非目标见
+[`AGENT_PACKAGE_HOST_SKILL_EXPORT_V1.md`](AGENT_PACKAGE_HOST_SKILL_EXPORT_V1.md)。
 
-- 从通过 H1 Artifact/Envelope 信任验证的内容重新生成每个宿主的确定性发布束；
-- 逐项核对 Host projection 的 Artifact、入口、路径、长度和 SHA-256，不信任松散
-  JSON 或源码目录的当前状态；
-- 为新 Agent 提供可复制的同仓定义模板和无需修改 Client Catalog 的 onboarding smoke；
-- 继续不安装到用户真实 Codex/Claude Code/OpenClaw 目录，不填生产私钥、Root、
-  Bundle、endpoint，也不上传或发布。
+下一步 H2d2 将从 H1 Artifact、Envelope 和 H2d1 receipts 生成跨渠道
+`Agent Release Manifest v1`，让客户端 Package Registry 与官网/宿主安装入口绑定同一
+package/version/digest 集合。仍不安装到用户真实目录，不填生产私钥、Root、Bundle
+或 endpoint，也不上传或发布。

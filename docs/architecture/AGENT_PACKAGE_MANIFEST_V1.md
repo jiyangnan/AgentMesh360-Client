@@ -531,3 +531,25 @@ H2d0 已通过自主测试和 Kimi 独立交叉测试。Kimi 实跑 Authoring 6 
 AgentMesh360 全量 146 项、桌面 57 项（另 2 项真实 Host 测试按预期 skip）、三仓
 真实构建、Job 双构建逐字节比较与全部受影响静态检查；四级问题均为零并给出无条件
 PASS。代码提交为 `463ecb4`。
+
+## 22. H2d1：签名内嵌 Host plan 与可验证 Skill 导出
+
+H2d1 把精确 Host Skill plan 以 `host-skills.v1.json` 放进 Artifact，并由
+`package-files.v1.json` 和 Publisher 签名保护。外部 projection 现在同时绑定
+Artifact SHA-256、plan SHA-256 和 plan 审核副本；它仍不是信任根。
+
+导出器只接受 H1 产生的 `VerifiedStagedPackage`。导出前立即复验 staging tree，
+然后要求外部 projection 与签名 plan 完全一致，再逐项核对
+package/agent/version/publisher、请求权限、Canonical Workflow、Adapter Host、入口和
+每个文件的路径/长度/SHA-256。通过后，每个真实 Adapter 生成一个确定性
+`.amskill.tar.zst`；没有 Adapter 的 Deploy Agent 合法导出零个宿主 bundle。
+
+H2d1 还用不在内置 Catalog 的 `future-agent` 完成同仓 onboarding smoke，证明当前
+Schema/Capability 内的新 Agent 不需要修改 Client Catalog。完整流程、Schema、首方
+摘要和测试矩阵见
+[`AGENT_PACKAGE_HOST_SKILL_EXPORT_V1.md`](AGENT_PACKAGE_HOST_SKILL_EXPORT_V1.md)。
+生产私钥、Root/Publisher Bundle、Registry endpoint、上传、网站发布和用户真实宿主
+目录安装继续保持关闭。
+
+H2d1 已通过自主验证和 Kimi 两轮独立交叉测试；Kimi 首轮 Low 全部修复后，第二轮
+Blocker/High/Medium/Low 均为零并给出无条件 PASS。

@@ -20,6 +20,9 @@ Provider Control Plane 与 Host Vault 的已接受决策见
 [`ADR_BACKGROUND_HOST_LIFECYCLE.md`](ADR_BACKGROUND_HOST_LIFECYCLE.md)。
 Agent Package v1 Schema、双投影与 H1/H2 信任边界见
 [`AGENT_PACKAGE_MANIFEST_V1.md`](AGENT_PACKAGE_MANIFEST_V1.md)。
+H2d0 Authoring 与 H2d1 已验签 Host Skill 导出契约分别见
+[`AGENT_PACKAGE_AUTHORING_V1.md`](AGENT_PACKAGE_AUTHORING_V1.md) 和
+[`AGENT_PACKAGE_HOST_SKILL_EXPORT_V1.md`](AGENT_PACKAGE_HOST_SKILL_EXPORT_V1.md)。
 当前实现证据、逐轮计划复盘和下一轮工作见
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
 
@@ -481,7 +484,7 @@ flowchart LR
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
 | BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3 与 F0a 已实现** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a 已加入默认零费用的 OpenAI Chat Provider 契约 Harness 与双重 opt-in Gemini 真实入口，并确认 thought signature 跨轮保真是正式 Catalog 阻断项；外部真实 Provider E2E 仍待用户凭据 |
-| 动态 Agent Package | **H0/H1 至 H2d0 已通过自主测试和 Kimi 独立交叉测试** | 离线 Authoring 已从一份 Manifest/Skill 来源生成确定性客户端 Artifact、外部签名请求和带 Artifact 锚点的 Host Skill 投影；私钥、网络和生产发布配置保持关闭。下一步 H2d1 从已验签 Artifact 导出可验证宿主 Skill 发布束 |
+| 动态 Agent Package | **H0/H1 至 H2d1 已通过自主测试和 Kimi 独立交叉测试** | 精确 Host Skill plan 已进入签名 Artifact；H2d1 只接受 H1 Verified staging，并生成确定性、可审计的宿主 Skill 发布束。动态 `future-agent` smoke 证明受支持 Schema/Capability 内无需修改内置 Catalog。私钥、网络和生产发布配置保持关闭；下一步 H2d2 建立跨客户端/宿主的 Agent Release Manifest |
 | 桌面产品外壳 | **身份外壳与 Agent 首页已实现** | 登录、门禁、账号 / 订阅 / credits、Agent 列表与激活；固定对话、垂直工作区、活动、产物、审批与设置仍是目标 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
 
@@ -498,5 +501,11 @@ ACP/UI 与发布配置仍关闭，真实用户目录当前仍只会使用三个�
 测试和 Kimi 独立交叉测试。H2d0 已加入不处理私钥的离线 Authoring：相同
 Manifest/Skill 来源可复现生成客户端 Artifact、外部 signing request 和带 Artifact
 摘要的宿主 Skill 投影，三个真实首方源仓库已完成构建，并通过自主验证与 Kimi
-独立交叉测试。下一步 H2d1 只从已验签 Artifact 导出可验证宿主 Skill 发布束；
-生产 Trust Store、私钥仪式、endpoint 与发布启用继续作为独立安全门。
+独立交叉测试。H2d1 进一步把精确 Host Skill plan 放进签名 Artifact，只接受 H1
+`VerifiedStagedPackage`，并在复验 staging、Artifact/plan 双摘要、Manifest
+身份/权限、Adapter 和文件 inventory 后生成确定性 `.amskill.tar.zst`。一个不在内置
+Catalog 的 `future-agent` 已完成同仓动态 onboarding smoke，三个首方真实源仓库也已
+通过双构建和 H1 后导出。H2d1 已通过自主验证和 Kimi 两轮独立交叉测试，最终四级
+问题全零并获得无条件 PASS。下一步 H2d2 建立同时绑定客户端 Artifact 与全部宿主
+bundle 的 Agent Release Manifest；生产 Trust Store、私钥仪式、endpoint 与发布
+启用继续作为独立安全门。
