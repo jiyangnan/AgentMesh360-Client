@@ -166,7 +166,7 @@ embedded Root Store = empty
 
 - Release Registry v2 / binder / 双投影专项 7/7；
 - H2d2 Release 5/5、Host export 7/7 + 1 ignored；
-- Trust Cache 5/5、Downloader 6/6、Delivery 14/14、Registry Fetcher 4/4；
+- Trust Cache 4/4、Downloader 6/6、Delivery 14/14、Registry Fetcher 4/4；
 - AgentMesh360 全量 161 项通过、1 个显式首方源码测试默认 ignore；
 - CLI 1/1、桌面 57 + 2 skip、Clippy `--lib --bins -D warnings`、Rustfmt、
   JS check 和 diff-check 通过；
@@ -192,18 +192,15 @@ Kimi 额外执行的 `--all-targets -D warnings` 暴露了本轮未修改的旧
 `provider_contract_harness.rs` dead-code 基线遗留；H2d3 的
 `--lib --bins -D warnings` 门通过，该遗留不属于本轮回归。
 
-## 7. 非目标与下一切片
+## 7. H2d4 消费门
 
-H2d3 只建立受签名发布索引与双投影，不下载 Release Manifest 本身，也不在下载时
-重新比对 Release 文档与 Registry projection。当前 Artifact/Envelope 下载仍依赖已
-验签 Registry v2 的 Client projection；Release 文档的 bounded fetch、digest 校验、
-strict 解析和下载前 cross-check 应作为 H2d4 独立门。
+H2d4 已实现 Release Manifest 的 bounded fetch、digest/strict parse 与 Client/Host
+projection cross-check，并已通过自主验证与 Kimi 独立交叉测试。客户端下载现在必须
+先通过 Release 门，再请求 Envelope/Artifact；H1 验证后的 `fileManifestSha256` 和
+`signatureKeyId` 也必须回对 Release。Kimi session
+`session_5dea9a9a-5e40-4df1-9c62-9c6a54d94c7f` 独立实跑仓库内专项、全量、CLI、
+桌面和静态检查，最终 Blocker/High/Medium/Low 全部为零。完整契约见
+[`AGENT_RELEASE_CONSUMPTION_V1.md`](AGENT_RELEASE_CONSUMPTION_V1.md)。
 
-H2d4 建议范围：
-
-1. 下载 Artifact 前先获取 Release Manifest，限制响应、拒绝 redirect，并核对
-   Registry `releaseManifestSha256`；
-2. strict 验证 Release 文档后，逐项比对 Client projection；Host 发布消费者同样
-   比对 Host projection；
-3. 覆盖 Release 缺失、摘要替换、跨版本、渠道漂移、过期 Registry 与 LKG；
-4. 生产 endpoint/root/bundle、上传、网站发布和真实宿主安装继续关闭。
+生产 endpoint/root/bundle、上传、网站发布和真实宿主安装继续关闭。下一轮先复核
+产品计划与生产发布安全门，不在本文档中擅自启动新的生产切片。

@@ -488,7 +488,7 @@ flowchart LR
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
 | BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3 与 F0a 已实现** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a 已加入默认零费用的 OpenAI Chat Provider 契约 Harness 与双重 opt-in Gemini 真实入口，并确认 thought signature 跨轮保真是正式 Catalog 阻断项；外部真实 Provider E2E 仍待用户凭据 |
-| 动态 Agent Package | **H0/H1 至 H2d3 已通过自主验证与 Kimi 交叉测试** | H2d3 已将 Release Manifest、Artifact/Envelope 和全部 Host channels 绑定到 Root 签名 Registry v2，并从同一 record 生成客户端/官网两种只读投影。动态新 Agent 与零 Adapter 均无需专属代码；两轮 Kimi 审查最终四档全零。私钥、生产 endpoint、上传和发布保持关闭；下一步 H2d4 下载 Release Manifest 并在渠道消费前交叉核对 |
+| 动态 Agent Package | **H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试** | H2d4 已在 Artifact/Envelope 前 bounded fetch Release Manifest，核对 Registry SHA、canonical strict 文档、Client/Host projection 与 H1 metadata。动态新 Agent 与零 Adapter 仍无需专属代码。私钥、生产 endpoint、上传和发布保持关闭；下一轮先复核产品计划与生产发布安全门 |
 | 桌面产品外壳 | **身份外壳与 Agent 首页已实现** | 登录、门禁、账号 / 订阅 / credits、Agent 列表与激活；固定对话、垂直工作区、活动、产物、审批与设置仍是目标 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
 
@@ -524,3 +524,12 @@ revision 反回滚和 LKG 链；发布 binder 只接受 H2d2 `AgentReleaseBuild`
 这项消费侧 cross-check 属于 H2d4。H2d3 已通过自主验证和两轮 Kimi 交叉测试，首轮
 唯一 unknown-Host 测试覆盖 Low 修复后最终四档全零；生产 root/bundle/endpoint、
 上传和发布继续关闭。
+
+H2d4 已把 Release Manifest 设为客户端下载的第一道网络门：1 MiB bounded fetch、
+禁止 redirect、Registry SHA 与 canonical strict parse 通过后，才能消费
+Artifact/Envelope；H1 结果还要回对 Release 的 file-manifest 摘要与签名 key。同一
+验证器覆盖官网/Host projection 与零 Adapter，但没有创建生产官网或 Host 下载服务。
+H2d4 已通过自主验证与 Kimi 独立交叉测试，最终 Blocker/High/Medium/Low 全部为零；
+下一轮先复核产品计划与生产发布安全门，不自行启动 H2d5。
+完整契约见
+[`AGENT_RELEASE_CONSUMPTION_V1.md`](AGENT_RELEASE_CONSUMPTION_V1.md)。

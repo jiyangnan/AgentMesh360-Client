@@ -162,9 +162,14 @@ H2d3 已让同一 Release Manifest 进入受签名 Release Registry v2，完整�
 2. Binder 只接受 H2d2 `AgentReleaseBuild`，发布方只能提供 canonical HTTPS URL；
 3. 同一 record 生成客户端 Artifact 与官网/Host Skill 两种共享 Release reference
    的只读投影，缺项、重复 Host 和跨版本文件名失败关闭；
-4. H2d3 尚不下载 Release Manifest；下载时的 digest/strict parse/渠道 cross-check
-   属于 H2d4。生产 endpoint/root/bundle、上传和发布继续关闭。
+4. H2d4 已在 Artifact/Envelope 前 bounded fetch Release，完成 digest、strict parse、
+   Client/Host projection 与 H1 metadata cross-check；生产 endpoint/root/bundle、
+   上传和发布继续关闭。完整契约见
+   [`AGENT_RELEASE_CONSUMPTION_V1.md`](AGENT_RELEASE_CONSUMPTION_V1.md)。
 
 H2d3 已通过自主验证和两轮 Kimi 独立交叉测试。Kimi 首轮发现的 1 项 unknown-Host
 测试覆盖 Low 已补入等数量、无重复但 Host 集合不匹配的精确断言；第二轮最终四档
 问题全零并给出无条件 PASS。
+
+H2d4 已完成自主验证与 Kimi 独立交叉测试，Kimi 四级问题全部为零并给出无条件
+PASS；本阶段只补消费门，不改变生产关闭态。

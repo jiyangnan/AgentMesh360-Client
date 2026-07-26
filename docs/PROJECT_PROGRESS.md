@@ -37,7 +37,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2d3 已通过自主验证与 Kimi 交叉测试；生产 endpoint/root/bundle 仍为空 | H2d4：下载 Release Manifest 并在渠道消费前交叉核对 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | 先复核产品计划与生产发布安全门，不擅自启动新切片 |
 
 ## 开发循环记录
 
@@ -3035,7 +3035,7 @@ H2d3 定向自主验证：
 
 - Release Registry v2 / binder / 双投影专项 7/7；
 - H2d2 Release 5/5、Host export 7/7 + 1 ignored；
-- Trust Cache 5/5、Downloader 6/6、Delivery 14/14、Registry Fetcher 4/4；
+- Trust Cache 4/4、Downloader 6/6、Delivery 14/14、Registry Fetcher 4/4；
 - AgentMesh360 全量 161 项通过、1 个显式首方源码测试默认 ignore；
 - CLI 1/1、桌面 57 + 2 skip、Clippy `--lib --bins -D warnings`、Rustfmt、
   JS check 与 diff-check 通过；
@@ -3083,3 +3083,71 @@ H2d4 下一切片（须等 H2d3 Kimi 交叉测试关闭后启动）：
    bundles，任一渠道不得绕过共享 Release；
 3. 覆盖 Release 缺失、摘要替换、跨版本、渠道漂移、过期 Registry 和 LKG；
 4. 生产 endpoint/root/bundle、上传、网站发布和真实宿主安装继续关闭。
+
+### 循环 41：动态 Agent Package H2d4——Release Manifest 下载与消费前交叉核对
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+计划复核：H2d3 已建立受 Root 签名的 Registry v2 与 Client/Host 双投影，但客户端下载
+此前仍直接读取 Artifact/Envelope URL，没有取得 Release Manifest 本身。H2d4 因此只
+补消费侧验证门，不改变 Registry 信任根、订阅硬门禁、BYOK、Provider Vault、credits、
+稳定 Main Session 或生产关闭态。
+
+H2d4 已实现：
+
+1. 下载器在 Envelope/Artifact 前先读取受签名 Client projection 的 Release URL，
+   使用相同 origin allowlist、禁止 redirect 的 Host-owned HTTP client 和 1 MiB
+   响应上限；
+2. Release bytes 先核对 Registry SHA-256，再经 H2d2 canonical strict verifier；
+   package/agent/version/publisher、Release/Artifact/Envelope basename 与摘要必须逐项
+   等于 Registry projection；
+3. Artifact 通过既有 H1 签名、inventory、路径与 staging 验证后，实际
+   `fileManifestSha256` 和 `signatureKeyId` 再与 Release 声明核对，防止外层渠道相同
+   但 Release 内部验证 metadata 漂移；
+4. 同一 strict descriptor 校验官网/Host Skill 只读投影的 projection SHA、bundle
+   数量、Host、entrypoint、basename 和 SHA；零 Adapter 继续以空 bundles 正向通过；
+5. Release 404、redirect、声明超限、摘要替换、非 strict JSON、跨版本 URL、Client /
+   Host 渠道漂移均在后续渠道请求或批准对象产生前失败；临时下载与 staging 按既有
+   RAII 清理；
+6. Registry/Trust Bundle 过期时在网络前失败，不允许 stale LKG 成为下载 authority；
+   重新验签且未过期的 LKG 仍可沿用相同 Release 门。
+
+H2d4 定向自主验证：
+
+- Downloader 10/10、Release Registry / 双投影 7/7；
+- AgentMesh360 全量 165 项通过、1 个显式首方源码测试默认 ignore；
+- 下载 → 权限批准 → 安装集成测试通过；
+- Host ACP 跨账户批准与 Runtime refresh 集成测试通过；
+- CLI 1/1、桌面 57 + 2 skip、Clippy `--lib --bins -D warnings`、Rustfmt、
+  JS check 与 diff-check 通过；
+- 显式首方源码测试重新实跑 Job、LectureCast、Deploy；三个既有 Artifact/Release
+  摘要保持不变，并新增通过 Client/Host Release cross-check；
+- 当前证据仍使用测试 key、离线 URL 与本机源码路径，不代表生产 Registry、真实上传、
+  网站发布或用户可下载状态。
+
+完整消费顺序、字段矩阵、失败关闭和边界见
+`docs/architecture/AGENT_RELEASE_CONSUMPTION_V1.md`。
+
+H2d4 本机 Kimi 独立交叉测试：
+
+- Kimi session `session_5dea9a9a-5e40-4df1-9c62-9c6a54d94c7f` 从基线
+  `6f25c68` 读取完整工作区 diff、未跟踪消费契约文档和相关本仓库源码，只读审查
+  Release 网络门、strict verifier、Client/Host 双投影、H1 metadata 回对、LKG、
+  RAII 清理和生产关闭边界；
+- Kimi 独立实跑 Downloader 10/10、Registry 7/7、Release 5/5、Delivery 14/14、
+  Trust Cache 4/4、AgentMesh360 全量 165 + 1 ignored、CLI 1/1、桌面
+  57 + 2 skip，以及 Clippy、Rustfmt、JS check 和 diff-check，全部通过；
+- Kimi 遵守授权边界，没有读取外部首方仓库或运行显式 ignored 首方源码测试；该项
+  只保留为本轮自主验证证据，不冒充交叉验证；
+- Kimi 确认 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。审查同时确认旧
+  H2d3 文档把历史上始终只有 4 个测试的 Trust Cache 写成 5/5；现已校正为 4/4，
+  该计数误差不是 H2d4 代码回归。
+
+计划复盘：
+
+- H2d4 严格停在 Release 消费门，没有创建官网服务、生产 Host 下载器、上传管线或私钥
+  处理；
+- 生产 `PRODUCTION_TRUST_BUNDLE_URL` / `PRODUCTION_REGISTRY_URL` 与 embedded Root
+  Store 继续为空，现有用户不会因此开始远端 Package 下载；
+- H2d4 是当前进展文档已批准的最后切片，现已通过双方验证关闭。下一轮先复核产品
+  计划与生产发布安全门，不自行命名 H2d5 或提前启用生产能力。

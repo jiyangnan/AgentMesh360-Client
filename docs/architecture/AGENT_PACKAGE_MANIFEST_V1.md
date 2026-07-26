@@ -589,3 +589,15 @@ H2d3 已完成自主验证与两轮 Kimi 独立交叉测试。Kimi 首轮唯一 
 unknown-Host 拒绝分支缺少直接用例；补入等数量、无重复但 Host 集合不匹配的精确
 错误断言后，第二轮确认 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。生产
 Root/Bundle/endpoint、上传、网站发布、Release fetch 和真实安装继续关闭。
+
+## 25. H2d4：Release Manifest 消费门
+
+H2d4 在 Artifact/Envelope 前 bounded fetch 受签名 Registry 指向的 Release
+Manifest，核对 SHA-256 并复用 H2d2 strict verifier。Client projection 的身份、文件名
+与摘要必须逐项一致；H1 完成后实际 `fileManifestSha256` 和 `signatureKeyId` 再次
+回对 Release。同一共享验证器覆盖 Host projection/bundles 与零 Adapter。
+
+H2d4 已完成自主验证与 Kimi 独立交叉测试，Kimi 四级问题全部为零并给出无条件
+PASS。生产 Root/Bundle/endpoint、上传、网站发布、真实宿主安装和私钥处理继续关闭；
+完整契约见
+[`AGENT_RELEASE_CONSUMPTION_V1.md`](AGENT_RELEASE_CONSUMPTION_V1.md)。
