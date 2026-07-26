@@ -1010,6 +1010,14 @@ skillBundles = []
                 },
             )
             .expect("bind real Agent Release to Registry projections");
+            registry_record
+                .client_projection()
+                .verify_release_document(release_build.document_for_test())
+                .expect("cross-check real Client Release projection");
+            registry_record
+                .host_projection()
+                .verify_release_document(release_build.document_for_test())
+                .expect("cross-check real Host Release projection");
             assert_eq!(
                 registry_record.client_projection().release_manifest,
                 registry_record.host_projection().release_manifest

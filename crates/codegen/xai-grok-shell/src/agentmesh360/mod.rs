@@ -1267,6 +1267,7 @@ mod tests {
 
     async fn serve_package_artifacts(
         fixture: &package_artifact::DownloadArtifactFixture,
+        release_document: &[u8],
     ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -1275,6 +1276,7 @@ mod tests {
             .local_addr()
             .expect("Package artifact mock address");
         let responses = [
+            ("application/json", release_document.to_vec()),
             ("application/json", fixture.envelope.as_bytes().to_vec()),
             ("application/octet-stream", fixture.artifact.clone()),
         ];
@@ -1314,14 +1316,19 @@ mod tests {
         state_home: &std::path::Path,
         root: &SigningKey,
         fixture: &package_artifact::DownloadArtifactFixture,
+        release_document: &[u8],
     ) {
         let root_key_id = "agentmesh360-root-host-test-2026";
+        let release_url = format!(
+            "{}/com.agentmesh360.job-agent-0.4.7.agent-release.v1.json",
+            package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
+        );
         let artifact_url = format!(
-            "{}/job-agent.tar.zst",
+            "{}/com.agentmesh360.job-agent-0.4.7.ampkg.tar.zst",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let envelope_url = format!(
-            "{}/job-agent.signature.json",
+            "{}/com.agentmesh360.job-agent-0.4.7.signature.v1.json",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let trust = package_trust::signed_bundle_document_for_test(
@@ -1331,7 +1338,7 @@ mod tests {
             "2026-08-01T00:00:00Z",
             7,
         );
-        let registry = package_registry_snapshot::signed_registry_record_document_for_test(
+        let registry = package_registry_snapshot::signed_registry_release_record_document_for_test(
             root,
             root_key_id,
             42,
@@ -1339,6 +1346,8 @@ mod tests {
             "com.agentmesh360.job-agent",
             "job-agent",
             "0.4.7",
+            &release_url,
+            &package_authoring::sha256_hex(release_document),
             &artifact_url,
             &fixture.artifact_sha256,
             &envelope_url,
@@ -1665,9 +1674,19 @@ mod tests {
             .run_until(async {
                 let state_home = tempfile::tempdir().expect("state home");
                 let fixture = package_artifact::download_artifact_fixture_for_test();
+                let release = package_release::release_document_for_download_test(
+                    "com.agentmesh360.job-agent",
+                    "job-agent",
+                    "0.4.7",
+                    &fixture.artifact_sha256,
+                    &fixture.envelope_sha256,
+                    &fixture.file_manifest_sha256,
+                    &fixture.signature_key_id,
+                );
                 let root = SigningKey::from_bytes(&[91_u8; 32]);
-                seed_host_remote_package(state_home.path(), &root, &fixture);
-                let (transport_origin, packages) = serve_package_artifacts(&fixture).await;
+                seed_host_remote_package(state_home.path(), &root, &fixture, &release);
+                let (transport_origin, packages) =
+                    serve_package_artifacts(&fixture, &release).await;
                 let account_42 = ACTIVE_BOOTSTRAP
                     .replace("\"id\":1", "\"id\":2")
                     .replace("u@example.com", "other@example.com")
@@ -1889,7 +1908,7 @@ mod tests {
                 ] {
                     assert!(!response_json.contains(sensitive));
                 }
-                assert_eq!(packages.await.expect("Package artifact server").len(), 2);
+                assert_eq!(packages.await.expect("Package artifact server").len(), 3);
                 assert_eq!(core.await.expect("Core server").len(), 3);
             })
             .await;

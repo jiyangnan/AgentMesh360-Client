@@ -26,6 +26,7 @@ use super::package_authoring::{
 use super::package_skill_export::{HostSkillExportReceipt, read_bounded_regular_file};
 
 const AGENT_RELEASE_SCHEMA_VERSION: u32 = 1;
+pub(super) const MAX_RELEASE_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_RELEASE_INPUT_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -79,8 +80,10 @@ pub(super) struct VerifiedAgentReleaseDescriptor {
     pub release_sha256: String,
     pub artifact_file_name: String,
     pub artifact_sha256: String,
+    pub artifact_file_manifest_sha256: String,
     pub envelope_file_name: String,
     pub envelope_sha256: String,
+    pub envelope_signature_key_id: String,
     pub host_projection_file_name: String,
     pub host_projection_sha256: String,
     pub host_bundles: Vec<VerifiedHostBundleDescriptor>,
@@ -116,7 +119,7 @@ pub(crate) struct AgentReleaseBuild {
 
 impl AgentReleaseBuild {
     pub(super) fn verified_descriptor(&self) -> Result<VerifiedAgentReleaseDescriptor> {
-        let descriptor = describe_verified_agent_release(&self.document)?;
+        let descriptor = verify_agent_release_descriptor(&self.document)?;
         if descriptor.package_id != self.package_id
             || descriptor.agent_id != self.agent_id
             || descriptor.version != self.version
@@ -150,6 +153,11 @@ impl AgentReleaseBuild {
     #[cfg(test)]
     pub(super) fn tamper_document_for_test(&mut self) {
         self.document.push(b' ');
+    }
+
+    #[cfg(test)]
+    pub(super) fn document_for_test(&self) -> &[u8] {
+        &self.document
     }
 }
 
@@ -321,7 +329,7 @@ pub(crate) fn assemble_agent_release(
 }
 
 fn verify_agent_release_document(document: &[u8]) -> Result<AgentReleaseManifest> {
-    if document.is_empty() || document.len() > MAX_RELEASE_INPUT_BYTES {
+    if document.is_empty() || document.len() > MAX_RELEASE_MANIFEST_BYTES {
         bail!("Agent Release Manifest size is invalid");
     }
     let manifest: AgentReleaseManifest =
@@ -410,7 +418,9 @@ fn verify_agent_release_document(document: &[u8]) -> Result<AgentReleaseManifest
     Ok(manifest)
 }
 
-fn describe_verified_agent_release(document: &[u8]) -> Result<VerifiedAgentReleaseDescriptor> {
+pub(super) fn verify_agent_release_descriptor(
+    document: &[u8],
+) -> Result<VerifiedAgentReleaseDescriptor> {
     let manifest = verify_agent_release_document(document)?;
     Ok(VerifiedAgentReleaseDescriptor {
         release_file_name: format!(
@@ -424,8 +434,10 @@ fn describe_verified_agent_release(document: &[u8]) -> Result<VerifiedAgentRelea
         publisher: manifest.publisher,
         artifact_file_name: manifest.client_artifact.file_name,
         artifact_sha256: manifest.client_artifact.sha256,
+        artifact_file_manifest_sha256: manifest.client_artifact.file_manifest_sha256,
         envelope_file_name: manifest.client_artifact.signature_envelope_file_name,
         envelope_sha256: manifest.client_artifact.signature_envelope_sha256,
+        envelope_signature_key_id: manifest.client_artifact.signature_key_id,
         host_projection_file_name: manifest.host_skill_plan.projection_file_name,
         host_projection_sha256: manifest.host_skill_plan.projection_sha256,
         host_bundles: manifest
@@ -439,6 +451,42 @@ fn describe_verified_agent_release(document: &[u8]) -> Result<VerifiedAgentRelea
             })
             .collect(),
     })
+}
+
+#[cfg(test)]
+pub(super) fn release_document_for_download_test(
+    package_id: &str,
+    agent_id: &str,
+    version: &str,
+    artifact_sha256: &str,
+    envelope_sha256: &str,
+    file_manifest_sha256: &str,
+    signature_key_id: &str,
+) -> Vec<u8> {
+    let manifest = AgentReleaseManifest {
+        schema_version: AGENT_RELEASE_SCHEMA_VERSION,
+        package_id: package_id.into(),
+        agent_id: agent_id.into(),
+        version: version.into(),
+        publisher: "agentmesh360".into(),
+        client_artifact: ClientArtifactRelease {
+            file_name: format!("{package_id}-{version}.ampkg.tar.zst"),
+            sha256: artifact_sha256.into(),
+            file_manifest_sha256: file_manifest_sha256.into(),
+            signature_envelope_file_name: format!("{package_id}-{version}.signature.v1.json"),
+            signature_envelope_sha256: envelope_sha256.into(),
+            signature_key_id: signature_key_id.into(),
+        },
+        host_skill_plan: HostSkillPlanRelease {
+            projection_file_name: format!("{package_id}-{version}.host-skills.v1.json"),
+            projection_sha256: "d".repeat(64),
+            signed_plan_sha256: "f".repeat(64),
+        },
+        host_bundles: Vec::new(),
+    };
+    let document = serde_json::to_vec(&manifest).expect("serialize download Release fixture");
+    verify_agent_release_document(&document).expect("verify download Release fixture");
+    document
 }
 
 fn host_bundle_file_name(package_id: &str, version: &str, host: SkillHost) -> Result<String> {

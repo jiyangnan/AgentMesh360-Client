@@ -10,7 +10,9 @@ use url::Url;
 
 use super::access::ClientAccess;
 use super::agent_packages::{SkillHost, validate_relative_package_path};
-use super::package_release::AgentReleaseBuild;
+use super::package_release::{
+    AgentReleaseBuild, VerifiedAgentReleaseDescriptor, verify_agent_release_descriptor,
+};
 use super::package_trust::{PublisherTrustAudit, TrustedPublisherStore, TrustedRootStore};
 
 const REGISTRY_SNAPSHOT_SCHEMA_VERSION: u32 = 2;
@@ -237,6 +239,106 @@ impl RemotePackageRecord {
             sha256: self.release_manifest_sha256.clone(),
         }
     }
+}
+
+impl RemoteClientReleaseProjection {
+    pub(crate) fn verify_release_document(
+        &self,
+        document: &[u8],
+    ) -> Result<VerifiedAgentReleaseDescriptor> {
+        let release = verify_projection_release_reference(
+            document,
+            &self.release_manifest,
+            &self.package_id,
+            &self.agent_id,
+            &self.version,
+            &self.publisher,
+        )?;
+        if self.artifact_sha256 != release.artifact_sha256
+            || self.envelope_sha256 != release.envelope_sha256
+        {
+            bail!("Agent Release Client projection digest differs from the Release Manifest");
+        }
+        validate_release_location(
+            "artifactUrl",
+            &self.artifact_url,
+            &release.artifact_file_name,
+        )?;
+        validate_release_location(
+            "envelopeUrl",
+            &self.envelope_url,
+            &release.envelope_file_name,
+        )?;
+        Ok(release)
+    }
+}
+
+impl RemoteHostReleaseProjection {
+    pub(crate) fn verify_release_document(&self, document: &[u8]) -> Result<()> {
+        let release = verify_projection_release_reference(
+            document,
+            &self.release_manifest,
+            &self.package_id,
+            &self.agent_id,
+            &self.version,
+            &self.publisher,
+        )?;
+        if self.host_projection_sha256 != release.host_projection_sha256 {
+            bail!("Agent Release Host projection digest differs from the Release Manifest");
+        }
+        validate_release_location(
+            "hostProjectionUrl",
+            &self.host_projection_url,
+            &release.host_projection_file_name,
+        )?;
+        if self.bundles.len() != release.host_bundles.len() {
+            bail!(
+                "Agent Release Host projection bundle coverage differs from the Release Manifest"
+            );
+        }
+        for (bundle, expected) in self.bundles.iter().zip(&release.host_bundles) {
+            if bundle.host != expected.host
+                || bundle.entrypoint != expected.entrypoint
+                || bundle.bundle_sha256 != expected.sha256
+            {
+                bail!("Agent Release Host bundle differs from the Release Manifest");
+            }
+            validate_release_location(
+                "hostBundles.bundleUrl",
+                &bundle.bundle_url,
+                &expected.file_name,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn verify_projection_release_reference(
+    document: &[u8],
+    reference: &RemoteReleaseReference,
+    package_id: &str,
+    agent_id: &str,
+    version: &str,
+    publisher: &str,
+) -> Result<VerifiedAgentReleaseDescriptor> {
+    let release =
+        verify_agent_release_descriptor(document).context("verify Agent Release Manifest")?;
+    if release.release_sha256 != reference.sha256 {
+        bail!("Agent Release Manifest digest differs from the verified Registry");
+    }
+    validate_release_location(
+        "releaseManifestUrl",
+        &reference.url,
+        &release.release_file_name,
+    )?;
+    if release.package_id != package_id
+        || release.agent_id != agent_id
+        || release.version != version
+        || release.publisher != publisher
+    {
+        bail!("Agent Release projection identity differs from the Release Manifest");
+    }
+    Ok(release)
 }
 
 pub(crate) fn bind_verified_release_record(
@@ -573,6 +675,40 @@ pub(super) fn signed_registry_record_document_for_test(
     envelope_url: &str,
     envelope_sha256: &str,
 ) -> String {
+    signed_registry_release_record_document_for_test(
+        root,
+        root_key_id,
+        revision,
+        trust_bundle_sequence,
+        package_id,
+        agent_id,
+        version,
+        &format!("{artifact_url}.agent-release.v1.json"),
+        &"c".repeat(64),
+        artifact_url,
+        artifact_sha256,
+        envelope_url,
+        envelope_sha256,
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn signed_registry_release_record_document_for_test(
+    root: &ed25519_dalek::SigningKey,
+    root_key_id: &str,
+    revision: u64,
+    trust_bundle_sequence: u64,
+    package_id: &str,
+    agent_id: &str,
+    version: &str,
+    release_manifest_url: &str,
+    release_manifest_sha256: &str,
+    artifact_url: &str,
+    artifact_sha256: &str,
+    envelope_url: &str,
+    envelope_sha256: &str,
+) -> String {
     use ed25519_dalek::Signer as _;
 
     let mut snapshot = PackageRegistrySnapshot {
@@ -587,8 +723,8 @@ pub(super) fn signed_registry_record_document_for_test(
             agent_id: agent_id.into(),
             version: version.into(),
             publisher: "agentmesh360".into(),
-            release_manifest_url: format!("{artifact_url}.agent-release.v1.json"),
-            release_manifest_sha256: "c".repeat(64),
+            release_manifest_url: release_manifest_url.into(),
+            release_manifest_sha256: release_manifest_sha256.into(),
             artifact_url: artifact_url.into(),
             artifact_sha256: artifact_sha256.into(),
             envelope_url: envelope_url.into(),
@@ -654,6 +790,11 @@ mod tests {
         );
         let client = record.client_projection();
         let host = record.host_projection();
+        client
+            .verify_release_document(release.document_for_test())
+            .expect("cross-check Client projection");
+        host.verify_release_document(release.document_for_test())
+            .expect("cross-check Host projection");
         assert_eq!(client.release_manifest, host.release_manifest);
         assert_eq!(
             client.release_manifest.sha256,
@@ -669,6 +810,52 @@ mod tests {
         assert!(!host_json.contains("artifactUrl"));
         assert!(!host_json.contains("envelopeUrl"));
         assert_eq!(host.bundles.len(), 2);
+
+        let mut artifact_drift = client.clone();
+        artifact_drift.artifact_sha256 = "0".repeat(64);
+        assert!(
+            artifact_drift
+                .verify_release_document(release.document_for_test())
+                .is_err()
+        );
+        let mut envelope_version_drift = client;
+        envelope_version_drift.envelope_url = envelope_version_drift
+            .envelope_url
+            .replace("1.0.0", "2.0.0");
+        assert!(
+            envelope_version_drift
+                .verify_release_document(release.document_for_test())
+                .is_err()
+        );
+
+        let mut host_drift = host.clone();
+        host_drift.bundles[0].entrypoint = "skills/other/SKILL.md".into();
+        assert!(
+            host_drift
+                .verify_release_document(release.document_for_test())
+                .is_err()
+        );
+        let mut host_digest_drift = host.clone();
+        host_digest_drift.host_projection_sha256 = "0".repeat(64);
+        assert!(
+            host_digest_drift
+                .verify_release_document(release.document_for_test())
+                .is_err()
+        );
+        let mut host_bundle_drift = host.clone();
+        host_bundle_drift.bundles[0].bundle_sha256 = "0".repeat(64);
+        assert!(
+            host_bundle_drift
+                .verify_release_document(release.document_for_test())
+                .is_err()
+        );
+        let mut missing_host = host;
+        missing_host.bundles.pop();
+        assert!(
+            missing_host
+                .verify_release_document(release.document_for_test())
+                .is_err()
+        );
     }
 
     #[test]
@@ -746,7 +933,10 @@ mod tests {
             bind_verified_release_record(&release, release_locations(package_id, version, &[]))
                 .expect("bind zero-Adapter Release");
         assert!(record.host_bundles.is_empty());
-        assert!(record.host_projection().bundles.is_empty());
+        let host = record.host_projection();
+        assert!(host.bundles.is_empty());
+        host.verify_release_document(release.document_for_test())
+            .expect("cross-check zero-Adapter Host projection");
     }
 
     #[test]

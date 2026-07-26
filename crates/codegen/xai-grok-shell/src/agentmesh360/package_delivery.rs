@@ -391,7 +391,8 @@ mod tests {
         VerifiedStagedPackage, download_artifact_fixture_for_test,
     };
     use super::super::package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN;
-    use super::super::package_registry_snapshot::signed_registry_record_document_for_test;
+    use super::super::package_registry_snapshot::signed_registry_release_record_document_for_test;
+    use super::super::package_release::release_document_for_download_test;
     use super::super::package_trust::{
         TrustedPublisherKey, TrustedPublisherStore, TrustedRootKey, TrustedRootStore,
         signed_bundle_document_for_test,
@@ -407,13 +408,23 @@ mod tests {
     async fn signed_registry_download_flows_into_approval_and_install() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
+        let release = release_document_for_download_test(
+            PACKAGE_ID,
+            "job-agent",
+            "0.4.7",
+            &fixture.artifact_sha256,
+            &fixture.envelope_sha256,
+            &fixture.file_manifest_sha256,
+            &fixture.signature_key_id,
+        );
         let (origin, server) = serve(vec![
+            TestResponse::bytes("application/json", &release),
             TestResponse::json(&fixture.envelope),
             TestResponse::artifact(&fixture.artifact),
         ])
         .await;
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture);
+        seed_remote_package(temp.path(), &root, &fixture, &release);
         let service = PackageDeliveryService::for_test(
             temp.path(),
             roots(&root),
@@ -437,7 +448,7 @@ mod tests {
             installed.runtime_visibility,
             PackageRuntimeVisibility::Visible { .. }
         ));
-        assert_eq!(server.await.expect("server requests").len(), 2);
+        assert_eq!(server.await.expect("server requests").len(), 3);
         assert!(
             temp.path()
                 .join("packages/.downloads")
@@ -1206,12 +1217,16 @@ mod tests {
         state_home: &std::path::Path,
         root: &SigningKey,
         fixture: &DownloadArtifactFixture,
+        release_document: &[u8],
     ) {
-        let artifact_url = format!("{PRODUCTION_PACKAGE_ORIGIN}/job-agent.tar.zst");
-        let envelope_url = format!("{PRODUCTION_PACKAGE_ORIGIN}/job-agent.signature.json");
+        let release_url =
+            format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.7.agent-release.v1.json");
+        let artifact_url = format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.7.ampkg.tar.zst");
+        let envelope_url =
+            format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.7.signature.v1.json");
         let trust =
             signed_bundle_document_for_test(root, ROOT_KEY_ID, 7, "2026-08-01T00:00:00Z", 7);
-        let registry = signed_registry_record_document_for_test(
+        let registry = signed_registry_release_record_document_for_test(
             root,
             ROOT_KEY_ID,
             42,
@@ -1219,6 +1234,8 @@ mod tests {
             PACKAGE_ID,
             "job-agent",
             "0.4.7",
+            &release_url,
+            &lower_hex(&Sha256::digest(release_document)),
             &artifact_url,
             &fixture.artifact_sha256,
             &envelope_url,
@@ -1242,18 +1259,19 @@ mod tests {
     }
 
     impl TestResponse {
-        fn json(body: &str) -> Self {
+        fn bytes(content_type: &'static str, body: &[u8]) -> Self {
             Self {
-                content_type: "application/json",
-                body: body.as_bytes().to_vec(),
+                content_type,
+                body: body.to_vec(),
             }
         }
 
+        fn json(body: &str) -> Self {
+            Self::bytes("application/json", body.as_bytes())
+        }
+
         fn artifact(body: &[u8]) -> Self {
-            Self {
-                content_type: "application/octet-stream",
-                body: body.to_vec(),
-            }
+            Self::bytes("application/octet-stream", body)
         }
     }
 

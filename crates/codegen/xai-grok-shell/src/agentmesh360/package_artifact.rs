@@ -587,6 +587,8 @@ pub(super) struct DownloadArtifactFixture {
     pub envelope: String,
     pub artifact_sha256: String,
     pub envelope_sha256: String,
+    pub file_manifest_sha256: String,
+    pub signature_key_id: String,
 }
 
 #[cfg(test)]
@@ -629,6 +631,7 @@ pub(super) fn download_artifact_fixture_for_test() -> DownloadArtifactFixture {
         })
         .expect("serialize Package download fixture inventory"),
     );
+    let file_manifest_sha256 = lower_hex(&Sha256::digest(&files[FILE_MANIFEST_PATH]));
 
     let mut artifact = Vec::new();
     {
@@ -673,6 +676,8 @@ pub(super) fn download_artifact_fixture_for_test() -> DownloadArtifactFixture {
         envelope,
         artifact_sha256,
         envelope_sha256,
+        file_manifest_sha256,
+        signature_key_id: "agentmesh360-release-test".into(),
     }
 }
 
