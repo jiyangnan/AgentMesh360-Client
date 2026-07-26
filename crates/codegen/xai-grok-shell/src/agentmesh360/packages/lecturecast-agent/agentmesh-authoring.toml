@@ -1,0 +1,23 @@
+schemaVersion = 1
+packageFiles = []
+
+[[skillBundles]]
+host = "codex"
+files = [
+  "skills/codex/SKILL.md",
+  "skills/shared/director-workflow.md",
+]
+
+[[skillBundles]]
+host = "claude-code"
+files = [
+  "skills/claude-code/SKILL.md",
+  "skills/shared/director-workflow.md",
+]
+
+[[skillBundles]]
+host = "openclaw"
+files = [
+  "skills/openclaw/SKILL.md",
+  "skills/shared/director-workflow.md",
+]

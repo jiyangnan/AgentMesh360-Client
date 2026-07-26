@@ -1,0 +1,13 @@
+schemaVersion = 1
+packageFiles = []
+
+[[skillBundles]]
+host = "claude-code"
+files = [
+  "skills/claude-code/README.md",
+  "skills/claude-code/SKILL.md",
+]
+
+[[skillBundles]]
+host = "openclaw"
+files = ["skills/openclaw-job-agent/SKILL.md"]

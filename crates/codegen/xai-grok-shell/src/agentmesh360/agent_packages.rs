@@ -135,6 +135,16 @@ pub(crate) enum SkillHost {
     Openclaw,
 }
 
+impl SkillHost {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Codex => "codex",
+            Self::ClaudeCode => "claude-code",
+            Self::Openclaw => "openclaw",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AgentPackageCatalog {

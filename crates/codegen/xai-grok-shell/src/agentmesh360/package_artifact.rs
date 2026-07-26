@@ -18,14 +18,14 @@ use super::agent_packages::{AgentPackageCatalog, AgentPackageManifest};
 use super::package_trust::TrustedPublisherKey;
 use super::package_trust::TrustedPublisherStore;
 
-const SIGNATURE_SCHEMA_VERSION: u32 = 1;
-const FILE_MANIFEST_SCHEMA_VERSION: u32 = 1;
-const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
+pub(super) const SIGNATURE_SCHEMA_VERSION: u32 = 1;
+pub(super) const FILE_MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub(super) const PACKAGE_MANIFEST_PATH: &str = "agentmesh-agent.toml";
 pub(super) const FILE_MANIFEST_PATH: &str = "package-files.v1.json";
-const MAX_ARTIFACT_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_UNPACKED_BYTES: u64 = 128 * 1024 * 1024;
-const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_FILE_COUNT: usize = 1024;
+pub(super) const MAX_ARTIFACT_BYTES: u64 = 32 * 1024 * 1024;
+pub(super) const MAX_UNPACKED_BYTES: u64 = 128 * 1024 * 1024;
+pub(super) const MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
+pub(super) const MAX_FILE_COUNT: usize = 1024;
 const MAX_ARCHIVE_ENTRY_COUNT: usize = 2048;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -42,17 +42,17 @@ pub(crate) struct PackageSignatureEnvelope {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PackageFileManifest {
-    schema_version: u32,
-    files: Vec<PackageFileRecord>,
+pub(super) struct PackageFileManifest {
+    pub schema_version: u32,
+    pub files: Vec<PackageFileRecord>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PackageFileRecord {
-    path: String,
-    size: u64,
-    sha256: String,
+pub(super) struct PackageFileRecord {
+    pub path: String,
+    pub size: u64,
+    pub sha256: String,
 }
 
 pub(crate) struct PackageArtifactVerifier {
@@ -202,7 +202,7 @@ fn validate_envelope(envelope: &PackageSignatureEnvelope) -> Result<()> {
     Ok(())
 }
 
-fn is_safe_identifier(value: &str) -> bool {
+pub(super) fn is_safe_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.' | b'_')
@@ -211,7 +211,7 @@ fn is_safe_identifier(value: &str) -> bool {
         && !value.ends_with(['-', '.', '_'])
 }
 
-fn signature_payload(envelope: &PackageSignatureEnvelope) -> String {
+pub(super) fn signature_payload(envelope: &PackageSignatureEnvelope) -> String {
     format!(
         "agentmesh360-package-signature-v1\nkeyId={}\npublisher={}\npackageId={}\nversion={}\nartifactSha256={}\n",
         envelope.key_id,
@@ -479,7 +479,7 @@ fn verify_referenced_paths(staging_dir: &Path, manifest: &AgentPackageManifest) 
     Ok(())
 }
 
-fn normalized_package_path(path: &Path) -> Result<PathBuf> {
+pub(super) fn normalized_package_path(path: &Path) -> Result<PathBuf> {
     if path.as_os_str().is_empty()
         || path.is_absolute()
         || path
@@ -516,7 +516,7 @@ fn digest_unbounded_file(path: &Path) -> Result<String> {
     Ok(lower_hex(&digest.finalize()))
 }
 
-fn validate_sha256(field: &str, value: &str) -> Result<()> {
+pub(super) fn validate_sha256(field: &str, value: &str) -> Result<()> {
     if value.len() != 64
         || !value
             .bytes()
@@ -527,7 +527,7 @@ fn validate_sha256(field: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn lower_hex(bytes: &[u8]) -> String {
+pub(super) fn lower_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
 
     let mut output = String::with_capacity(bytes.len() * 2);
