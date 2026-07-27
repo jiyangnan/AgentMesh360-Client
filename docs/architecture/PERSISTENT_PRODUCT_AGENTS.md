@@ -118,11 +118,12 @@ D1c1 已以 Host 可信 Session Route Context 接到产品 Session 主 Prompt �
 覆盖用户 Prompt 和 synthetic auto-wake，并在 actor 接收后记录实际 Turn Route。D1c2
 已经用无 Grok 登录的真实 Job Agent 激活和 Prompt 跑通 Host ACP mock 成功链，订阅、
 账户、Assignment 与 Vault 失败矩阵也已通过。图片、权限分类、压缩、后台任务和 subagent
-等辅助推理旁路正按 D1d 统一 Authority 计划收口；其中 D1d0 已实现辅助 role 的 main
+等辅助推理旁路已经按 D1d 统一 Authority 计划收口；其中 D1d0 已实现辅助 role 的 main
 Assignment fallback、实际 assignment role 审计和 Host role-aware Authority；D1d1 已验证
 当前模板的图片随 main 多模态 Binding 提交，并加固休眠 Cursor twin 的 `vision` 路由；
-自动权限分类已接入 `permission_classifier` Binding 且失败只回退本地策略，当前正在接入
-必要压缩。Provider UI 和真实 Provider E2E 仍未实现。
+自动权限分类、必要压缩与产品 subagent 路由均已接入 Host-owned Binding。Provider
+设置页、Assignment 和三档 Probe 已实现；需要用户凭据与费用授权的外部真实 Provider
+E2E 仍未执行。
 
 G0 已把默认运行方式从 `--no-leader` 改为 AgentMesh360 专属 socket 上的 Grok
 Leader。Electron 只持有可丢弃的 ACP stdio Bridge：应用退出时 Bridge detach，
@@ -138,6 +139,11 @@ Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目�
 避免未迁移就让现有对话不可见。当前源码可以描述为“系统登录后由无窗口主进程恢复
 Host 与 Agent”，但签名、公证安装包中的 macOS Login Item 注册/批准/升级仍需发布
 验收，不能把开发 smoke 写成生产已验证。
+
+H2d4 后的产品计划复核确认，下一项先补桌面固定 Main Session 对话入口。Renderer
+继续只用 `agentId`，由主进程与 Host 解析账户绑定的 Main Session，不把本机路径或
+可伪造的 Session authority 暴露给页面。生产 Package 与桌面发布硬门见
+[`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 
 ## 上游同步规则
 

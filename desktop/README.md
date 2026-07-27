@@ -25,12 +25,19 @@
 - 退出登录时删除本机 Refresh Token，并立即撤销 Host 的产品 Agent 准入状态。
 - Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
   API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
-  引用和最后四位；Host 还提供声明式 Catalog 与三层 Model Assignment 管理方法。
-  这些管理能力尚未暴露给 Renderer。
+  引用和最后四位；Host 还提供声明式 Catalog 与三层 Model Assignment 管理方法；
+- Renderer 已有 Provider 设置页、Profile/Assignment 管理、三档显式 Probe 与付费
+  二次确认；
+- Renderer 已有 Agent Package Center，按 `packageId` 展示发现、下载、权限批准、
+  reconcile 与 rollback；URL、digest、签名材料和本机路径仍只由 Host 持有；
+- H2d4 已补齐 Release Manifest 消费门，但生产 Root、Trust Bundle、Registry endpoint
+  和上传发布保持关闭，所以当前 Package Center 不会取得真实生产远端内容。
 
-本切片尚未实现 OAuth、BYOK Provider 设置 UI、Session Binding、真实模型路由、
-固定对话界面、垂直业务工作区和动态 Agent Package。这些能力仍按
+当前尚未实现 OAuth、固定 Main Session 对话界面和垂直业务工作区；外部真实 Provider
+E2E 仍需要用户凭据与费用授权，动态 Agent Package 的生产发布也仍关闭。这些能力按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。
+H2d4 后的顺序复核与发布硬门见
+[`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](../docs/architecture/PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 
 ## 运行结构
 

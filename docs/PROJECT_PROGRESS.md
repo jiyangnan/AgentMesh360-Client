@@ -32,12 +32,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码 | 签名安装包 Login Item 平台 E2E；当前主线回到动态 Package |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码 | 固定 Main Session 桌面对话入口；签名安装包 Login Item E2E 仍是发布门 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | 先复核产品计划与生产发布安全门，不擅自启动新切片 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | 生产启用等待独立 R0-R6 安全门，不自行启动 H2d5 |
 
 ## 开发循环记录
 
@@ -3151,3 +3151,71 @@ H2d4 本机 Kimi 独立交叉测试：
   Store 继续为空，现有用户不会因此开始远端 Package 下载；
 - H2d4 是当前进展文档已批准的最后切片，现已通过双方验证关闭。下一轮先复核产品
   计划与生产发布安全门，不自行命名 H2d5 或提前启用生产能力。
+
+### 循环 42：H2d4 后产品计划复核与生产发布安全门
+
+状态：自主审计、文档更新与两轮本机 Kimi 独立交叉复核已完成
+
+本轮没有继续写 Package 功能，而是按循环 41 约定回看产品蓝图、持久 Agent、桌面
+外壳、后台 Host 和生产关闭源码，判断下一项是否应启用真实发布。
+
+自主审计结论：
+
+1. 不能直接启用生产 Package。`PRODUCTION_TRUST_BUNDLE_URL`、
+   `PRODUCTION_REGISTRY_URL`、embedded Root 与 Publisher Bundle 继续为空；仓库没有
+   生产 key ceremony、签名发布流水线、不可变上传/原子 Registry 发布、canary 或事故
+   响应证据；
+2. 桌面正式分发仍只有本地 `electron-builder --mac`，没有 Developer ID、公证、
+   自动更新和发布配置；签名安装包 Login Item、升级、卸载与受控 Host shutdown
+   仍是明确发布门；
+3. 当前最靠前的产品缺口是固定 Main Session 对话入口。Agent 卡片虽然显示“打开对话”，
+   但只调用激活；公开 Agent 投影不含 `mainSessionId`，主进程/Preload/Renderer 没有
+   `session/load`、`session/prompt` 或 `session/update` 通路，侧边栏会话入口仍禁用；
+4. 下一开发项因此回到桌面产品外壳：Renderer 只提交 `agentId`，由主进程与 Host
+   解析账户绑定的固定 Main Session，复用标准 ACP 会话协议，先完成 Job Agent 的历史
+   加载、持续对话、订阅失败关闭和重连恢复，再用同一路径覆盖其他 Agent；
+5. 生产 Package 与桌面发布分别受适用门约束：Package 启用需要
+   R0/R1/R2/R3/R5/R6，桌面正式分发需要 R0/R4/R5/R6；两者一起向用户开放时才要求
+   R0-R6 全部关闭，不能通过填常量绕过。
+
+本轮同步修正文档漂移：
+
+- `desktop/README.md` 不再错误声称 Provider UI、Session Binding 和动态 Package
+  尚未实现，改为区分已实现的设置/Package Center 与仍关闭的真实 Provider E2E、
+  固定对话和生产发布；
+- `PERSISTENT_PRODUCT_AGENTS.md` 更新 D1d、Provider UI 和下一产品项状态；
+- `PRODUCT_BLUEPRINT.md` 把桌面固定对话列为下一验收点，并链接新的
+  `PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`。
+
+自主验证：
+
+- `git diff --check` 通过；
+- Markdown 相对链接、代码围栏和两个新增 Mermaid flowchart 基础检查通过；
+- 桌面测试 57 项通过、2 项按既有真实 Host 环境门槛 skip；
+- `npm run check` 通过；
+- 本轮没有修改 Rust、Electron 源码或生产配置，因此没有把此前 H2d4 全量结果冒充为
+  本轮新增代码测试。
+
+计划复盘：
+
+- 下一轮不进入 Package H2d5，也不触碰生产 Root、endpoint、私钥、上传或发布；
+- 下一开发项只做固定 Main Session 对话入口第一切片，不一次扩展活动、产物、审批、
+  垂直工作区、OAuth 或新 Provider 协议；
+- 外部真实 Provider E2E 等待用户明确提供测试凭据与费用授权，不作为本地 UI
+  基础开发的阻塞项；
+- Kimi 首轮发现 1 项 Low：发布门标题把 Package 与桌面分发混在一起，无法判断
+  R4 是否阻断独立 Package 评审；现已按两条发布链标注适用门并修正文案；
+- 完整门槛、顺序和非目标见
+  `docs/architecture/PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`。
+
+Kimi 独立交叉复核：
+
+- session `session_82ff5b58-3839-4ea5-849a-acf563f07bb6` 只读审查当前完整 diff 和
+  未跟踪门槛文档，并直接从 Rust/Electron 源码验证生产关闭态、固定对话缺口、
+  Provider/Package/Binding 状态与桌面分发配置；
+- 首轮 Blocker/High/Medium 为零，报告 1 项 Low：同一门表混用 Agent Package 标题
+  与桌面 R4，和“两条链单独评审”不够清楚；
+- 修复后分别定义 Package 的 R0/R1/R2/R3/R5/R6 与桌面的 R0/R4/R5/R6，并保留
+  两者一起开放才要求 R0-R6 全关；Kimi 第二轮确认集合、表格和跨文档文案一致；
+- 两轮都执行 `git diff --check`，第二轮同时核对相对链接、代码围栏与 Mermaid，
+  最终 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。
