@@ -152,6 +152,21 @@ app.whenReady().then(async () => {
   currentConversation = {
     ...currentConversation,
     streaming: true,
+    activities: [
+      {
+        activityId: 'activity-1',
+        toolKind: 'read',
+        status: 'completed',
+        title: 'Read /private/account-7/resume.pdf',
+        rawInput: { apiKey: 'sk-private' },
+      },
+      {
+        activityId: 'activity-2',
+        toolKind: 'execute',
+        status: 'in_progress',
+        title: 'rm -rf /private/account-7',
+      },
+    ],
     interaction: {
       interactionId: 'permission-1',
       kind: 'permission',
@@ -169,10 +184,19 @@ app.whenReady().then(async () => {
   ));
   const permissionDom = await window.webContents.executeJavaScript(`({
     body: document.body.innerText,
+    activityCount: document.querySelectorAll('[data-activity-id]').length,
     optionCount: document.querySelectorAll('[data-permission-option]').length,
     hasPermanentChoice: document.body.innerText.includes('永久允许'),
   })`);
   assert.equal(permissionDom.body.includes('Run the verified deploy command'), true);
+  assert.equal(permissionDom.body.includes('读取资料'), true);
+  assert.equal(permissionDom.body.includes('执行操作'), true);
+  assert.equal(permissionDom.body.includes('已完成'), true);
+  assert.equal(permissionDom.body.includes('执行中'), true);
+  assert.equal(permissionDom.body.includes('/private/account-7'), false);
+  assert.equal(permissionDom.body.includes('sk-private'), false);
+  assert.equal(permissionDom.body.includes('rm -rf'), false);
+  assert.equal(permissionDom.activityCount, 2);
   assert.equal(permissionDom.optionCount, 2);
   assert.equal(permissionDom.hasPermanentChoice, false);
   await window.webContents.executeJavaScript(`
@@ -269,6 +293,7 @@ function conversationState(agentId, messages) {
     agentId,
     displayName,
     messages,
+    activities: [],
     streaming: false,
     transcriptTruncated: false,
     error: null,

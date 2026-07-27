@@ -7,6 +7,8 @@ const MAX_PROMPT_CHARS = 16_000;
 const MAX_CHUNK_CHARS = 32_000;
 const MAX_PUBLIC_MESSAGES = 200;
 const MAX_PUBLIC_TRANSCRIPT_CHARS = 200_000;
+const MAX_PUBLIC_ACTIVITIES = 50;
+const MAX_PRIVATE_TOOL_CALL_ID_CHARS = 200;
 const MAX_PERMISSION_TITLE_CHARS = 300;
 const MAX_PERMISSION_OPTION_CHARS = 160;
 const MAX_PERMISSION_OPTION_ID_CHARS = 200;
@@ -23,6 +25,19 @@ const SAFE_TOOL_KINDS = new Set([
   'execute',
   'fetch',
 ]);
+const SAFE_ACTIVITY_TOOL_KINDS = new Set([
+  ...SAFE_TOOL_KINDS,
+  'think',
+  'switch_mode',
+  'other',
+]);
+const SAFE_ACTIVITY_STATUSES = new Set([
+  'pending',
+  'in_progress',
+  'completed',
+  'failed',
+]);
+const TERMINAL_ACTIVITY_STATUSES = new Set(['completed', 'failed']);
 const SESSION_UPDATE_METHODS = new Set([
   'session/update',
   'x.ai/session/update',
@@ -47,6 +62,9 @@ class AgentConversationController {
     this.messages = [];
     this.messageCounter = 0;
     this.transcriptTruncated = false;
+    this.activities = [];
+    this.activityByToolCallId = new Map();
+    this.activityCounter = 0;
     this.openPromise = null;
     this.openAgentId = null;
     this.permissionInteraction = null;
@@ -127,6 +145,7 @@ class AgentConversationController {
       if (this.authority !== authority) return this.snapshot;
       this.#cancelPermission();
       if (error?.code === 'host_timeout') {
+        this.#clearActivities();
         this.authority = null;
         this.#publish({
           ...this.#conversationBase(authority),
@@ -199,6 +218,7 @@ class AgentConversationController {
     this.host.off?.('permission-resolved', this.handlePermissionResolved);
     this.listeners.clear();
     this.#cancelPermission();
+    this.#clearActivities();
     this.authority = null;
   }
 
@@ -207,6 +227,7 @@ class AgentConversationController {
     const publicAgent = state.agents?.find((agent) => agent.agentId === agentId);
     if (!publicAgent) throw new Error('当前账号没有此 Agent');
     this.#cancelPermission();
+    this.#clearActivities();
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;
@@ -216,6 +237,7 @@ class AgentConversationController {
       agentId,
       displayName: publicAgent.displayName || agentId,
       messages: [],
+      activities: [],
       streaming: false,
       transcriptTruncated: false,
       error: null,
@@ -260,6 +282,7 @@ class AgentConversationController {
         agentId,
         displayName: publicAgent.displayName || agentId,
         messages: this.#publicMessages(),
+        activities: this.#publicActivities(),
         streaming: false,
         transcriptTruncated: this.transcriptTruncated,
         error: safeConversationError(error, '暂时无法打开此 Agent 的主对话。'),
@@ -285,12 +308,14 @@ class AgentConversationController {
     const previous = this.authority;
     if (!previous) return;
     this.#cancelPermission();
+    this.#clearActivities();
     this.authority = null;
     this.#publish({
       phase: 'error',
       agentId: previous.agentId,
       displayName: previous.displayName,
       messages: this.#publicMessages(),
+      activities: [],
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: '后台连接已恢复，请重新打开对话以继续。',
@@ -301,12 +326,14 @@ class AgentConversationController {
     const previous = this.authority;
     if (!previous) return;
     this.#cancelPermission();
+    this.#clearActivities();
     this.authority = null;
     this.#publish({
       phase: 'error',
       agentId: previous.agentId,
       displayName: previous.displayName,
       messages: this.#publicMessages(),
+      activities: [],
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: 'Agent Host 已断开，请重新打开对话以继续。',
@@ -376,6 +403,14 @@ class AgentConversationController {
       return;
     }
     const update = message.params.update;
+    if (update?.sessionUpdate === 'tool_call') {
+      if (this.#recordToolCall(update)) this.#publishActivityState(authority);
+      return;
+    }
+    if (update?.sessionUpdate === 'tool_call_update') {
+      if (this.#recordToolCallUpdate(update)) this.#publishActivityState(authority);
+      return;
+    }
     const role = update?.sessionUpdate === 'user_message_chunk'
       ? 'user'
       : update?.sessionUpdate === 'agent_message_chunk'
@@ -392,6 +427,77 @@ class AgentConversationController {
       streaming: this.snapshot.streaming === true,
       error: null,
       stopReason: null,
+    });
+  }
+
+  #recordToolCall(update) {
+    const toolCallId = safePrivateToolCallId(update?.toolCallId);
+    const status = safeActivityStatus(update?.status, true);
+    if (!toolCallId || !status) return false;
+    const toolKind = safeActivityToolKind(update?.kind);
+    const existing = this.activityByToolCallId.get(toolCallId);
+    if (existing) {
+      if (TERMINAL_ACTIVITY_STATUSES.has(existing.public.status)) return false;
+      let changed = false;
+      if (existing.public.toolKind !== toolKind) {
+        existing.public.toolKind = toolKind;
+        changed = true;
+      }
+      return this.#applyActivityStatus(existing, status) || changed;
+    }
+    this.activityCounter += 1;
+    const activity = {
+      toolCallId,
+      public: {
+        activityId: `activity-${this.activityCounter}`,
+        toolKind,
+        status,
+      },
+    };
+    this.activities.push(activity);
+    this.activityByToolCallId.set(toolCallId, activity);
+    while (this.activities.length > MAX_PUBLIC_ACTIVITIES) {
+      const removed = this.activities.shift();
+      this.activityByToolCallId.delete(removed.toolCallId);
+    }
+    return true;
+  }
+
+  #recordToolCallUpdate(update) {
+    const toolCallId = safePrivateToolCallId(update?.toolCallId);
+    if (!toolCallId) return false;
+    const activity = this.activityByToolCallId.get(toolCallId);
+    if (!activity) return false;
+    if (TERMINAL_ACTIVITY_STATUSES.has(activity.public.status)) return false;
+    let changed = false;
+    if (update.kind !== undefined && SAFE_ACTIVITY_TOOL_KINDS.has(update.kind)) {
+      if (activity.public.toolKind !== update.kind) {
+        activity.public.toolKind = update.kind;
+        changed = true;
+      }
+    }
+    if (update.status !== undefined) {
+      const status = safeActivityStatus(update.status, false);
+      if (status) changed = this.#applyActivityStatus(activity, status) || changed;
+    }
+    return changed;
+  }
+
+  #applyActivityStatus(activity, nextStatus) {
+    const currentStatus = activity.public.status;
+    if (currentStatus === nextStatus) return false;
+    if (TERMINAL_ACTIVITY_STATUSES.has(currentStatus)) return false;
+    activity.public.status = nextStatus;
+    return true;
+  }
+
+  #publishActivityState(authority) {
+    this.#publish({
+      ...this.#conversationBase(authority),
+      phase: this.snapshot.streaming ? 'sending' : this.snapshot.phase,
+      streaming: this.snapshot.streaming === true,
+      error: this.snapshot.error ?? null,
+      stopReason: this.snapshot.stopReason ?? null,
     });
   }
 
@@ -427,6 +533,7 @@ class AgentConversationController {
       agentId: authority.agentId,
       displayName: authority.displayName,
       messages: this.#publicMessages(),
+      activities: this.#publicActivities(),
       transcriptTruncated: this.transcriptTruncated,
       ...(this.permissionInteraction?.authority === authority
         ? { interaction: { ...this.permissionInteraction.public } }
@@ -436,6 +543,10 @@ class AgentConversationController {
 
   #publicMessages() {
     return this.messages.map((message) => ({ ...message }));
+  }
+
+  #publicActivities() {
+    return this.activities.map((activity) => ({ ...activity.public }));
   }
 
   #requireReadyAccount(expectedAccountId = null) {
@@ -457,7 +568,13 @@ class AgentConversationController {
     this.messages = [];
     this.messageCounter = 0;
     this.transcriptTruncated = false;
+    this.#clearActivities();
     this.#publish({ phase: 'idle' });
+  }
+
+  #clearActivities() {
+    this.activities = [];
+    this.activityByToolCallId.clear();
   }
 
   #cancelPermission() {
@@ -547,6 +664,23 @@ function safePermissionText(value, maxChars, fallback) {
     ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim()
     : '';
   return (text || fallback).slice(0, maxChars);
+}
+
+function safePrivateToolCallId(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= MAX_PRIVATE_TOOL_CALL_ID_CHARS
+    ? value
+    : null;
+}
+
+function safeActivityToolKind(value) {
+  return SAFE_ACTIVITY_TOOL_KINDS.has(value) ? value : 'other';
+}
+
+function safeActivityStatus(value, defaultPending) {
+  if (value === undefined && defaultPending) return 'pending';
+  return SAFE_ACTIVITY_STATUSES.has(value) ? value : null;
 }
 
 function validateAgentId(value) {

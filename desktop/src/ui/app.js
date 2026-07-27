@@ -287,6 +287,7 @@ function renderReady(state) {
 
 function conversationView() {
   const messages = Array.isArray(conversationUi.messages) ? conversationUi.messages : [];
+  const activities = safeConversationActivities(conversationUi.activities);
   const loading = conversationUi.phase === 'loading';
   const sending = conversationUi.streaming === true;
   const displayName = conversationUi.displayName || 'Agent';
@@ -311,6 +312,7 @@ function conversationView() {
       <div class="conversation-gates">${gates}</div>
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
         ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
+        ${activities.length ? conversationActivitiesView(activities) : ''}
         ${messages.length
     ? messages.map(conversationMessage).join('')
     : `<div class="conversation-empty">${loading ? '正在恢复历史…' : `这里会显示 ${escapeHtml(displayName)} 的持久对话历史。`}</div>`}
@@ -324,6 +326,87 @@ function conversationView() {
         </div>
       </form>
     </section>`;
+}
+
+function safeConversationActivities(value) {
+  if (!Array.isArray(value)) return [];
+  const safeStatuses = new Set(['pending', 'in_progress', 'completed', 'failed']);
+  return value.slice(-50).flatMap((activity) => {
+    if (
+      !/^activity-\d+$/.test(activity?.activityId || '')
+      || !safeStatuses.has(activity?.status)
+    ) {
+      return [];
+    }
+    return [{
+      activityId: activity.activityId,
+      toolKind: activityToolKind(activity.toolKind),
+      status: activity.status,
+    }];
+  });
+}
+
+function conversationActivitiesView(activities) {
+  return `
+    <section class="conversation-activities" aria-label="Agent 最近活动">
+      <header>
+        <div>
+          <p class="eyebrow">Harness Activity</p>
+          <h2>最近活动</h2>
+        </div>
+        <span>只显示操作类型和状态</span>
+      </header>
+      <div class="conversation-activity-list">
+        ${activities.map((activity) => `
+          <div
+            class="conversation-activity ${escapeHtml(activity.status)}"
+            data-activity-id="${escapeHtml(activity.activityId)}"
+          >
+            <i aria-hidden="true"></i>
+            <strong>${escapeHtml(activityToolKindLabel(activity.toolKind))}</strong>
+            <span>${escapeHtml(activityStatusLabel(activity.status))}</span>
+          </div>`).join('')}
+      </div>
+    </section>`;
+}
+
+function activityToolKind(kind) {
+  return [
+    'read',
+    'edit',
+    'delete',
+    'move',
+    'search',
+    'execute',
+    'fetch',
+    'think',
+    'switch_mode',
+    'other',
+  ].includes(kind) ? kind : 'other';
+}
+
+function activityToolKindLabel(kind) {
+  return {
+    read: '读取资料',
+    edit: '编辑内容',
+    delete: '删除内容',
+    move: '移动内容',
+    search: '搜索信息',
+    execute: '执行操作',
+    fetch: '获取外部信息',
+    think: '分析处理',
+    switch_mode: '切换工作模式',
+    other: '处理工具任务',
+  }[kind] || '处理工具任务';
+}
+
+function activityStatusLabel(status) {
+  return {
+    pending: '等待执行',
+    in_progress: '执行中',
+    completed: '已完成',
+    failed: '未完成',
+  }[status] || '状态未知';
 }
 
 function permissionInteractionView(interaction) {
@@ -446,6 +529,7 @@ async function openConversation(agentId) {
     agentId,
     displayName: currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId,
     messages: [],
+    activities: [],
     streaming: false,
     error: null,
   };

@@ -52,8 +52,20 @@ test('conversation prompt uses private authority, streams bounded text, and igno
     assert.equal(text, '继续帮我分析这个岗位');
     fixture.host.emitSession(sessionId, 'user_message_chunk', text);
     fixture.host.emitSession(sessionId, 'tool_call', null, {
+      toolCallId: 'private-tool-call-id',
       title: 'Read /Users/private/resume.pdf',
+      kind: 'read',
+      status: 'pending',
       rawInput: { apiKey: 'sk-private' },
+      rawOutput: { token: 'private-output' },
+      content: [{ type: 'content', content: { type: 'text', text: 'private content' } }],
+      locations: [{ path: '/Users/private/resume.pdf' }],
+    });
+    fixture.host.emitSession(sessionId, 'tool_call_update', null, {
+      toolCallId: 'private-tool-call-id',
+      title: 'Finished reading /Users/private/resume.pdf',
+      status: 'completed',
+      rawOutput: { token: 'private-result' },
     });
     fixture.host.emitSession(sessionId, 'agent_message_chunk', '我会先对齐岗位要求，');
     fixture.host.emitSession(sessionId, 'agent_message_chunk', '再检查你的证据。');
@@ -69,15 +81,37 @@ test('conversation prompt uses private authority, streams bounded text, and igno
     { role: 'user', text: '继续帮我分析这个岗位' },
     { role: 'assistant', text: '我会先对齐岗位要求，再检查你的证据。' },
   ]);
+  assert.deepEqual(snapshot.activities, [{
+    activityId: 'activity-1',
+    toolKind: 'read',
+    status: 'completed',
+  }]);
   const serialized = JSON.stringify(snapshot);
-  assert.equal(serialized.includes('/Users/private'), false);
-  assert.equal(serialized.includes('sk-private'), false);
-  assert.equal(serialized.includes('rawInput'), false);
+  for (const forbidden of [
+    'private-tool-call-id',
+    '/Users/private',
+    'sk-private',
+    'private-output',
+    'private content',
+    'private-result',
+    'rawInput',
+    'rawOutput',
+    'locations',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
 });
 
 test('conversation authority is cleared when identity access or the Leader attachment changes', async () => {
   const fixture = makeFixture();
   await fixture.controller.open('job-agent');
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'private-before-block',
+    title: 'Private blocked activity',
+    kind: 'search',
+    status: 'in_progress',
+  });
+  assert.equal(fixture.controller.getSnapshot().activities.length, 1);
 
   fixture.identity.publish({ phase: 'blocked', account: { id: 7 } });
   assert.deepEqual(fixture.controller.getSnapshot(), { phase: 'idle' });
@@ -88,10 +122,17 @@ test('conversation authority is cleared when identity access or the Leader attac
 
   fixture.identity.publish(readyIdentity());
   await fixture.controller.open('job-agent');
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'private-before-reconnect',
+    title: 'Private reconnect activity',
+    kind: 'fetch',
+    status: 'pending',
+  });
   fixture.host.emit('reconnected');
   const reconnectSnapshot = fixture.controller.getSnapshot();
   assert.equal(reconnectSnapshot.phase, 'error');
   assert.equal(reconnectSnapshot.agentId, 'job-agent');
+  assert.deepEqual(reconnectSnapshot.activities, []);
   assert.equal(JSON.stringify(reconnectSnapshot).includes('private-session-id'), false);
   await assert.rejects(
     fixture.controller.send('still fails'),
@@ -140,6 +181,12 @@ test('conversation rejects a different concurrent open instead of returning the 
 test('conversation revokes authority after a prompt timeout and ignores late chunks', async () => {
   const fixture = makeFixture();
   await fixture.controller.open('job-agent');
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'private-timeout-activity',
+    title: 'Private timed activity',
+    kind: 'execute',
+    status: 'in_progress',
+  });
   fixture.host.promptImpl = async ({ sessionId }) => {
     setImmediate(() => {
       fixture.host.emitSession(sessionId, 'agent_message_chunk', '迟到的内容');
@@ -152,8 +199,132 @@ test('conversation revokes authority after a prompt timeout and ignores late chu
 
   assert.equal(snapshot.phase, 'error');
   assert.match(snapshot.error, /响应超时/);
+  assert.deepEqual(snapshot.activities, []);
   assert.equal(JSON.stringify(fixture.controller.getSnapshot()).includes('迟到的内容'), false);
   await assert.rejects(fixture.controller.send('不能交错重发'), /重新打开/);
+});
+
+test('conversation restores terminal activities from Host replay without exposing tool payloads', async () => {
+  const fixture = makeFixture();
+  fixture.host.loadImpl = async () => {
+    fixture.host.emitSession('private-session-id', 'tool_call', null, {
+      toolCallId: 'private-replay-tool-id',
+      title: 'Search /private/account-7/contracts',
+      kind: 'search',
+      status: 'completed',
+      rawInput: { query: 'private-customer' },
+      rawOutput: { matches: ['/private/account-7/contracts/a.md'] },
+      content: [{ type: 'content', content: { type: 'text', text: 'private replay output' } }],
+      locations: [{ path: '/private/account-7/contracts/a.md' }],
+      _meta: { isReplay: true, secret: 'private-replay-meta' },
+    });
+    fixture.host.emitSession('another-account-session', 'tool_call', null, {
+      toolCallId: 'other-account-tool-id',
+      title: 'Other account work',
+      kind: 'execute',
+      status: 'completed',
+    });
+    return {};
+  };
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.deepEqual(snapshot.activities, [{
+    activityId: 'activity-1',
+    toolKind: 'search',
+    status: 'completed',
+  }]);
+  const serialized = JSON.stringify(snapshot);
+  for (const forbidden of [
+    'private-replay-tool-id',
+    'other-account-tool-id',
+    '/private/account-7',
+    'private-customer',
+    'private replay output',
+    'private-replay-meta',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation keeps activities bounded and ignores malformed or regressive tool updates', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'terminal-private-id',
+    title: 'Private completed title',
+    kind: 'execute',
+    status: 'completed',
+  });
+  fixture.host.emitSession('private-session-id', 'tool_call_update', null, {
+    toolCallId: 'terminal-private-id',
+    title: 'Regressive private title',
+    kind: 'delete',
+    status: 'in_progress',
+  });
+  assert.deepEqual(fixture.controller.getSnapshot().activities, [
+    {
+      activityId: 'activity-1',
+      toolKind: 'execute',
+      status: 'completed',
+    },
+  ]);
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'unknown-status-private-id',
+    title: 'Unknown future status',
+    kind: 'edit',
+    status: 'future_status',
+  });
+  assert.equal(fixture.controller.getSnapshot().activities.length, 1);
+  fixture.host.emitSession('private-session-id', 'tool_call_update', null, {
+    toolCallId: 'missing-private-id',
+    status: 'completed',
+  });
+  assert.equal(fixture.controller.getSnapshot().activities.length, 1);
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 42,
+    title: 'Malformed id',
+    kind: 'read',
+    status: 'pending',
+  });
+  for (let index = 0; index < 60; index += 1) {
+    fixture.host.emitSession('private-session-id', 'tool_call', null, {
+      toolCallId: `bounded-private-id-${index}`,
+      title: `Private title ${index}`,
+      kind: index % 2 === 0 ? 'read' : 'future_kind',
+      status: index % 3 === 0 ? 'in_progress' : 'completed',
+    });
+  }
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.equal(snapshot.activities.length, 50);
+  assert.equal(snapshot.activities[0].activityId.startsWith('activity-'), true);
+  assert.equal(snapshot.activities.at(-1).toolKind, 'other');
+  assert.equal(
+    snapshot.activities.some(({ status }) => ![
+      'pending',
+      'in_progress',
+      'completed',
+      'failed',
+    ].includes(status)),
+    false,
+  );
+  const terminal = snapshot.activities.find(({ activityId }) => activityId === 'activity-1');
+  assert.equal(terminal, undefined);
+  const serialized = JSON.stringify(snapshot);
+  for (const forbidden of [
+    'terminal-private-id',
+    'unknown-status-private-id',
+    'missing-private-id',
+    'bounded-private-id',
+    'Private title',
+    'Regressive private title',
+    'future_status',
+    'future_kind',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
 });
 
 test('conversation fails closed when a ready-looking identity lacks explicit client access', async () => {
@@ -354,13 +525,27 @@ test('conversation cancels the old permission before opening another Agent', asy
     'job-switch-request',
     'Job operation',
   ));
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'private-job-activity',
+    title: 'Private Job activity',
+    kind: 'search',
+    status: 'in_progress',
+  });
 
-  await fixture.controller.open('deploy-agent');
+  const deploySnapshot = await fixture.controller.open('deploy-agent');
 
   assert.deepEqual(fixture.host.permissionResponses, [{
     requestId: 'job-switch-request',
     optionId: null,
   }]);
+  assert.deepEqual(deploySnapshot.activities, []);
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'late-private-job-activity',
+    title: 'Late private Job activity',
+    kind: 'read',
+    status: 'completed',
+  });
+  assert.deepEqual(fixture.controller.getSnapshot().activities, []);
   fixture.host.emit('permission-request', permissionRequest(
     'deploy-request',
     'Deploy operation',
@@ -425,6 +610,12 @@ test('conversation cancels a pending permission and revokes authority on Host ex
   const fixture = makeFixture();
   await fixture.controller.open('job-agent');
   fixture.host.emit('permission-request', permissionRequest('exit-request', 'Exit operation'));
+  fixture.host.emitSession('private-session-id', 'tool_call', null, {
+    toolCallId: 'private-exit-activity',
+    title: 'Private exit activity',
+    kind: 'edit',
+    status: 'in_progress',
+  });
 
   fixture.host.emit('exit', new Error('private host details'));
 
@@ -432,6 +623,7 @@ test('conversation cancels a pending permission and revokes authority on Host ex
   assert.equal(snapshot.phase, 'error');
   assert.match(snapshot.error, /Host 已断开/);
   assert.equal(snapshot.interaction, undefined);
+  assert.deepEqual(snapshot.activities, []);
   assert.equal(JSON.stringify(snapshot).includes('private host details'), false);
   assert.deepEqual(fixture.host.permissionResponses, [{
     requestId: 'exit-request',
