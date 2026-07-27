@@ -942,6 +942,318 @@ test('conversation reports an expired permission without exposing Host authority
   assert.equal(JSON.stringify(snapshot).includes('private-session-id'), false);
 });
 
+test('conversation projects live Harness background tasks without exposing raw task fields', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+
+  fixture.host.emitSessionMethod('x.ai/task_backgrounded', 'private-session-id', {
+    sessionUpdate: 'task_backgrounded',
+    tool_call_id: 'private-tool-call',
+    task_id: 'private-task-command',
+    command: 'curl -H "Authorization: Bearer sk-private" https://private.example',
+    cwd: '/private/account-7/job-agent',
+    output_file: '/private/account-7/task.log',
+    description: 'Deploy private service',
+  });
+  fixture.host.emitSessionMethod('x.ai/task_backgrounded', 'private-session-id', {
+    sessionUpdate: 'task_backgrounded',
+    tool_call_id: 'private-monitor-call',
+    task_id: 'private-task-monitor',
+    command: '[monitor] tail private.log',
+    cwd: '/private/account-7/job-agent',
+    output_file: '/private/account-7/monitor.log',
+    monitor_description: 'Watch private errors',
+  });
+
+  assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, [
+    {
+      backgroundId: 'background-1',
+      kind: 'command',
+      status: 'running',
+    },
+    {
+      backgroundId: 'background-2',
+      kind: 'monitor',
+      status: 'running',
+    },
+  ]);
+
+  fixture.host.emitSessionMethod('x.ai/task_completed', 'private-session-id', {
+    sessionUpdate: 'task_completed',
+    task_snapshot: {
+      task_id: 'private-task-command',
+      command: 'private completed command',
+      cwd: '/private/account-7/job-agent',
+      output: 'private output',
+      output_file: '/private/account-7/task.log',
+      exit_code: 0,
+      signal: null,
+      completed: true,
+      kind: 'bash',
+      explicitly_killed: false,
+    },
+    will_wake: false,
+  });
+  fixture.host.emitSessionMethod('x.ai/task_completed', 'private-session-id', {
+    sessionUpdate: 'task_completed',
+    task_snapshot: {
+      task_id: 'private-task-monitor',
+      command: 'private monitor command',
+      cwd: '/private/account-7/job-agent',
+      output: 'private monitor output',
+      output_file: '/private/account-7/monitor.log',
+      exit_code: null,
+      signal: 'SIGTERM',
+      completed: true,
+      kind: 'monitor',
+      explicitly_killed: true,
+    },
+    will_wake: false,
+  });
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.deepEqual(snapshot.backgroundTasks, [
+    {
+      backgroundId: 'background-1',
+      kind: 'command',
+      status: 'completed',
+    },
+    {
+      backgroundId: 'background-2',
+      kind: 'monitor',
+      status: 'stopped',
+    },
+  ]);
+  const serialized = JSON.stringify(snapshot);
+  for (const forbidden of [
+    'private-task',
+    'private-tool-call',
+    'private-monitor-call',
+    '/private/account-7',
+    'sk-private',
+    'private.example',
+    'private output',
+    'Deploy private service',
+    'Watch private errors',
+    'SIGTERM',
+    'exit_code',
+    'output_file',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation replays Harness background state and closes cold-start orphans as stopped', async () => {
+  const fixture = makeFixture();
+  fixture.host.loadImpl = async ({ sessionId }) => {
+    fixture.host.emitSessionMethod('x.ai/session/update', sessionId, {
+      sessionUpdate: 'task_backgrounded',
+      tool_call_id: 'replayed-private-tool-call',
+      task_id: 'replayed-private-task',
+      command: 'sleep 999 with private args',
+      cwd: '/private/replayed/cwd',
+      output_file: '/private/replayed/output.log',
+    }, { isReplay: true });
+    fixture.host.emitSessionMethod('x.ai/task_completed', sessionId, {
+      sessionUpdate: 'task_completed',
+      task_snapshot: {
+        task_id: 'replayed-private-task',
+        command: 'sleep 999 with private args',
+        cwd: '/private/replayed/cwd',
+        output: '',
+        output_file: '',
+        exit_code: null,
+        signal: 'session_restart',
+        completed: true,
+        kind: 'bash',
+        explicitly_killed: false,
+      },
+      will_wake: false,
+    });
+    return {};
+  };
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.deepEqual(snapshot.backgroundTasks, [{
+    backgroundId: 'background-1',
+    kind: 'command',
+    status: 'stopped',
+  }]);
+  assert.equal(JSON.stringify(snapshot).includes('replayed-private'), false);
+  assert.equal(JSON.stringify(snapshot).includes('session_restart'), false);
+});
+
+test('conversation reconciles missed startup notifications with the Host-owned safe task snapshot', async () => {
+  const fixture = makeFixture();
+  fixture.host.backgroundActivityImpl = async () => ({
+    activities: [
+      {
+        taskId: 'private-live-task',
+        kind: 'monitor',
+        status: 'running',
+        command: 'must not cross the Host boundary',
+        cwd: '/private/cwd',
+      },
+      {
+        taskId: 'private-completed-task',
+        kind: 'command',
+        status: 'completed',
+        output: 'private output',
+      },
+    ],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.deepEqual(snapshot.backgroundTasks, [
+    {
+      backgroundId: 'background-1',
+      kind: 'monitor',
+      status: 'running',
+    },
+    {
+      backgroundId: 'background-2',
+      kind: 'command',
+      status: 'completed',
+    },
+  ]);
+  assert.deepEqual(fixture.host.backgroundActivityCalls, ['job-agent']);
+  const serialized = JSON.stringify(snapshot);
+  for (const forbidden of [
+    'private-live-task',
+    'private-completed-task',
+    'Host boundary',
+    '/private/cwd',
+    'private output',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation does not stop a concurrent live task merely because it missed one snapshot', async () => {
+  const fixture = makeFixture();
+  fixture.host.loadImpl = async ({ sessionId }) => {
+    fixture.host.emitSessionMethod('x.ai/task_backgrounded', sessionId, {
+      sessionUpdate: 'task_backgrounded',
+      task_id: 'private-concurrent-live-task',
+      command: 'private concurrent command',
+      cwd: '/private/concurrent',
+      output_file: '/private/concurrent.log',
+    });
+    return {};
+  };
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.deepEqual(snapshot.backgroundTasks, [{
+    backgroundId: 'background-1',
+    kind: 'command',
+    status: 'running',
+  }]);
+  assert.equal(JSON.stringify(snapshot).includes('private-concurrent'), false);
+});
+
+test('conversation fails a malformed Host background snapshot closed without closing text chat', async () => {
+  const fixture = makeFixture();
+  fixture.host.backgroundActivityImpl = async () => ({
+    activities: [{
+      taskId: 'private-invalid-task',
+      kind: 'future-kind',
+      status: 'running',
+      command: 'private invalid command',
+    }],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.equal(snapshot.phase, 'ready');
+  assert.equal(snapshot.backgroundStatus, 'unavailable');
+  assert.deepEqual(snapshot.backgroundTasks, []);
+  assert.equal(JSON.stringify(snapshot).includes('private-invalid'), false);
+});
+
+test('conversation bounds background tasks, freezes terminal state, and clears them with authority', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+
+  fixture.host.emitSessionMethod('session/update', 'private-session-id', {
+    sessionUpdate: 'task_backgrounded',
+    task_id: 'wrong-method-private-task',
+  });
+  fixture.host.emitSessionMethod('x.ai/task_backgrounded', 'another-private-session', {
+    sessionUpdate: 'task_backgrounded',
+    task_id: 'wrong-session-private-task',
+  });
+  fixture.host.emitSessionMethod('x.ai/task_completed', 'private-session-id', {
+    sessionUpdate: 'task_completed',
+    task_snapshot: { task_id: 'unknown-private-task', exit_code: 0 },
+  });
+  fixture.host.emitSessionMethod('x.ai/task_backgrounded', 'private-session-id', {
+    sessionUpdate: 'task_backgrounded',
+    task_id: 42,
+  });
+  assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, []);
+
+  for (let index = 0; index < 55; index += 1) {
+    const taskId = `private-bounded-task-${index}`;
+    fixture.host.emitSessionMethod('x.ai/task_backgrounded', 'private-session-id', {
+      sessionUpdate: 'task_backgrounded',
+      tool_call_id: `private-bounded-call-${index}`,
+      task_id: taskId,
+      command: `private command ${index}`,
+      cwd: '/private/cwd',
+      output_file: '/private/output',
+      ...(index === 54 ? { monitor_description: 'private monitor' } : {}),
+    });
+    fixture.host.emitSessionMethod('x.ai/task_completed', 'private-session-id', {
+      sessionUpdate: 'task_completed',
+      task_snapshot: {
+        task_id: taskId,
+        exit_code: index % 2 === 0 ? 0 : 1,
+        signal: null,
+        completed: true,
+        kind: index === 54 ? 'monitor' : 'bash',
+        explicitly_killed: false,
+      },
+    });
+  }
+  fixture.host.emitSessionMethod('x.ai/task_backgrounded', 'private-session-id', {
+    sessionUpdate: 'task_backgrounded',
+    task_id: 'private-bounded-task-54',
+    monitor_description: null,
+  });
+  fixture.host.emitSessionMethod('x.ai/task_completed', 'private-session-id', {
+    sessionUpdate: 'task_completed',
+    task_snapshot: {
+      task_id: 'private-bounded-task-54',
+      exit_code: 1,
+      signal: 'late-regression',
+      kind: 'bash',
+      explicitly_killed: false,
+    },
+  });
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.equal(snapshot.backgroundTasks.length, 50);
+  assert.deepEqual(snapshot.backgroundTasks.at(-1), {
+    backgroundId: 'background-55',
+    kind: 'monitor',
+    status: 'completed',
+  });
+  assert.equal(
+    snapshot.backgroundTasks.some(({ kind, status }) => (
+      !['command', 'monitor'].includes(kind)
+      || !['running', 'completed', 'failed', 'stopped'].includes(status)
+    )),
+    false,
+  );
+  assert.equal(JSON.stringify(snapshot).includes('private-bounded'), false);
+
+  fixture.host.emit('reconnected');
+  assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, []);
+});
+
 function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   return {
     requestId,
@@ -977,6 +1289,7 @@ function makeFixture() {
     promptCalls: [],
     artifactCalls: [],
     projectStateCalls: [],
+    backgroundActivityCalls: [],
     permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
@@ -990,6 +1303,7 @@ function makeFixture() {
       revision: 0,
       project: null,
     }),
+    backgroundActivityImpl: async () => ({ activities: [] }),
     async listAgents() {
       return {
         agents: [
@@ -1036,6 +1350,10 @@ function makeFixture() {
       this.projectStateCalls.push(agentId);
       return this.projectStateImpl(agentId);
     },
+    async listAgentBackgroundActivities(agentId) {
+      this.backgroundActivityCalls.push(agentId);
+      return this.backgroundActivityImpl(agentId);
+    },
     respondPermission(requestId, optionId) {
       this.permissionResponses.push({ requestId, optionId });
       this.emit('permission-resolved', { requestId });
@@ -1046,13 +1364,16 @@ function makeFixture() {
         ...(text === null ? {} : { content: { type: 'text', text } }),
         ...extra,
       };
+      this.emitSessionMethod('session/update', sessionId, update);
+    },
+    emitSessionMethod(method, sessionId, update, meta = {}) {
       this.emit('notification', {
         jsonrpc: '2.0',
-        method: 'session/update',
+        method,
         params: {
           sessionId,
           update,
-          _meta: { rawPrivateMetadata: 'do-not-project' },
+          _meta: { rawPrivateMetadata: 'do-not-project', ...meta },
         },
       });
     },

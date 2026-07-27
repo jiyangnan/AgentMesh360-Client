@@ -564,6 +564,24 @@ button { -webkit-app-region: no-drag; }
 .conversation-activity.completed span { color: #9fdcc4; }
 .conversation-activity.failed i { background: #ff8e93; }
 .conversation-activity.failed span { color: #efacb0; }
+.conversation-background { margin: 0 0 26px; padding: 16px; border: 1px solid rgba(169,151,255,.13); border-radius: 12px; background: rgba(169,151,255,.025); }
+.conversation-background > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.conversation-background h2 { margin: 3px 0 0; color: #e1dcf5; font-size: 13px; font-weight: 600; }
+.conversation-background > header > span { color: #807990; font-size: 8px; }
+.conversation-background-list { display: grid; gap: 7px; margin-top: 13px; }
+.conversation-background-task { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid rgba(255,255,255,.045); border-radius: 8px; background: rgba(255,255,255,.018); }
+.conversation-background-task i { width: 6px; height: 6px; border-radius: 50%; background: #748097; }
+.conversation-background-task strong { color: #c2bad8; font-size: 10px; font-weight: 500; }
+.conversation-background-task span { color: #827b91; font-size: 8px; }
+.conversation-background-task.running i { background: #a997ff; box-shadow: 0 0 9px rgba(169,151,255,.5); }
+.conversation-background-task.running span { color: #c6baff; }
+.conversation-background-task.completed i { background: var(--mint); }
+.conversation-background-task.completed span { color: #9fdcc4; }
+.conversation-background-task.failed i { background: #ff8e93; }
+.conversation-background-task.failed span { color: #efacb0; }
+.conversation-background-task.stopped i { background: #8c96a7; }
+.conversation-background-task.stopped span { color: #9ca7b7; }
+.background-activity-error { margin: 13px 0 0; color: #c5a8aa; font-size: 9px; }
 .conversation-project { margin: 0 0 26px; padding: 17px; border: 1px solid rgba(92,174,255,.13); border-radius: 12px; background: rgba(70,147,255,.03); }
 .conversation-project > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .conversation-project h2 { margin: 3px 0 0; color: #dae8f7; font-size: 13px; font-weight: 600; }

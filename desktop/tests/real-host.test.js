@@ -7,7 +7,9 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { EventEmitter } = require('node:events');
 const { AcpHostClient, HostRequestError } = require('../src/host/acp-client');
+const { AgentConversationController } = require('../src/conversation-controller');
 
 const hostBinary = process.env.AGENTMESH360_REAL_HOST_BIN;
 
@@ -102,6 +104,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     const serializedProjectState = JSON.stringify(projectState);
     assert.equal(serializedProjectState.includes('workspaceDir'), false);
     assert.equal(serializedProjectState.includes('nextCommand'), false);
+    assert.deepEqual(
+      await client.listAgentBackgroundActivities('lecturecast-agent'),
+      { activities: [] },
+    );
     const emptyBindingHistory = await client.getSessionBindingHistory({
       sessionId: legacySessionId,
       role: 'main',
@@ -146,6 +152,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
     );
     await assert.rejects(
+      client.listAgentBackgroundActivities('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
+    );
+    await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
         role: 'main',
@@ -166,6 +176,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     assert.equal(
       (await client.getWorkspaceProjectState('lecturecast-agent')).project.title,
       '函数课程',
+    );
+    assert.deepEqual(
+      await client.listAgentBackgroundActivities('lecturecast-agent'),
+      { activities: [] },
     );
     await assert.rejects(
       client.loadSession({
@@ -195,6 +209,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );
     await assert.rejects(
+      client.listAgentBackgroundActivities('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
         role: 'main',
@@ -214,6 +232,140 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('real Grok Host replay closes cold-start background tasks without exposing task authority', {
+  skip: !hostBinary ? 'set AGENTMESH360_REAL_HOST_BIN to run the real Host background replay test' : false,
+  timeout: 45000,
+}, async () => {
+  const server = http.createServer((request, response) => {
+    if (request.url !== '/v1/account/client-bootstrap') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify(bootstrapFixture(true, 31)));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agentmesh360-background-host-'));
+  const stateHome = path.join(home, '.agentmesh360');
+  const grokHome = path.join(home, '.grok');
+  const env = {
+    ...process.env,
+    HOME: home,
+    GROK_HOME: grokHome,
+    AGENTMESH360_HOME: stateHome,
+    AGENTMESH360_HOST_MODE: 'embedded',
+    AGENTMESH360_CORE_URL: `http://127.0.0.1:${port}`,
+  };
+  let firstClient = null;
+  let secondClient = null;
+  let controller = null;
+
+  try {
+    firstClient = new AcpHostClient({
+      command: hostBinary,
+      env,
+      requestTimeoutMs: 15000,
+    });
+    await firstClient.bootstrap('background-first-token');
+    const activation = await firstClient.activateAgent('job-agent');
+    const { mainSessionId: sessionId, workspaceDir } = activation.agent;
+    assert.ok(sessionId);
+    await firstClient.loadSession({ sessionId, cwd: workspaceDir });
+    await firstClient.stop();
+    firstClient = null;
+
+    const sessionDir = findDirectoryNamed(path.join(grokHome, 'sessions'), sessionId);
+    assert.ok(sessionDir, 'real Host must persist the activated Main Session');
+    const updatesPath = path.join(sessionDir, 'updates.jsonl');
+    fs.appendFileSync(updatesPath, `${JSON.stringify({
+      timestamp: 1,
+      method: '_x.ai/session/update',
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: 'task_backgrounded',
+          tool_call_id: 'private-real-tool-call',
+          task_id: 'private-real-background-task',
+          command: 'curl -H "Authorization: Bearer sk-private" https://private.example',
+          cwd: '/private/real/workspace',
+          output_file: '/private/real/task.log',
+          monitor_description: null,
+          description: 'Private real background operation',
+        },
+      },
+    })}\n`);
+
+    secondClient = new AcpHostClient({
+      command: hostBinary,
+      env,
+      requestTimeoutMs: 15000,
+    });
+    await secondClient.bootstrap('background-second-token');
+    const agents = (await secondClient.listAgents()).agents.map((agent) => ({
+      agentId: agent.agentId,
+      displayName: agent.displayName,
+      description: agent.description,
+    }));
+    const identity = Object.assign(new EventEmitter(), {
+      state: {
+        phase: 'ready',
+        account: { id: 31 },
+        access: { canEnterClient: true },
+        agents,
+      },
+      getState() { return this.state; },
+      subscribe(listener) {
+        this.on('state', listener);
+        listener(this.state);
+        return () => this.off('state', listener);
+      },
+    });
+    controller = new AgentConversationController({
+      identity,
+      host: secondClient,
+      activateAgent: async () => identity.getState(),
+    });
+
+    const snapshot = await controller.open('job-agent');
+
+    assert.deepEqual(snapshot.backgroundTasks, [{
+      backgroundId: 'background-1',
+      kind: 'command',
+      status: 'stopped',
+    }]);
+    const serialized = JSON.stringify(snapshot);
+    for (const forbidden of [
+      'private-real',
+      'sk-private',
+      'private.example',
+      'session_restart',
+      sessionId,
+      workspaceDir,
+    ]) {
+      assert.equal(serialized.includes(forbidden), false);
+    }
+  } finally {
+    controller?.dispose();
+    await secondClient?.stop().catch(() => {});
+    await firstClient?.stop().catch(() => {});
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+function findDirectoryNamed(root, targetName) {
+  if (!fs.existsSync(root)) return null;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(root, entry.name);
+    if (entry.name === targetName) return candidate;
+    const nested = findDirectoryNamed(candidate, targetName);
+    if (nested) return nested;
+  }
+  return null;
+}
 
 function writeArtifactManifest(workspaceDir) {
   const controlDir = path.join(workspaceDir, '.agentmesh360');

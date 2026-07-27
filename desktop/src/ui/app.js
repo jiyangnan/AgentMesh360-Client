@@ -288,6 +288,8 @@ function renderReady(state) {
 function conversationView() {
   const messages = Array.isArray(conversationUi.messages) ? conversationUi.messages : [];
   const activities = safeConversationActivities(conversationUi.activities);
+  const backgroundTasks = safeConversationBackgroundTasks(conversationUi.backgroundTasks);
+  const backgroundUnavailable = conversationUi.backgroundStatus === 'unavailable';
   const artifacts = safeConversationArtifacts(conversationUi.artifacts);
   const artifactUnavailable = conversationUi.artifactStatus === 'unavailable';
   const project = safeConversationProject(conversationUi.project);
@@ -319,6 +321,9 @@ function conversationView() {
         ${project || projectUnavailable
     ? conversationProjectView(project, projectUnavailable)
     : ''}
+        ${backgroundTasks.length || backgroundUnavailable
+    ? conversationBackgroundTasksView(backgroundTasks, backgroundUnavailable)
+    : ''}
         ${activities.length ? conversationActivitiesView(activities) : ''}
         ${artifacts.length || artifactUnavailable
     ? conversationArtifactsView(artifacts, artifactUnavailable)
@@ -335,6 +340,56 @@ function conversationView() {
           <button class="secondary" type="submit" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}>发送</button>
         </div>
       </form>
+    </section>`;
+}
+
+function safeConversationBackgroundTasks(value) {
+  if (!Array.isArray(value)) return [];
+  const safeKinds = new Set(['command', 'monitor']);
+  const safeStatuses = new Set(['running', 'completed', 'failed', 'stopped']);
+  const seen = new Set();
+  return value.slice(-50).flatMap((task) => {
+    const backgroundId = typeof task?.backgroundId === 'string' ? task.backgroundId : '';
+    if (
+      !/^background-\d+$/.test(backgroundId)
+      || seen.has(backgroundId)
+      || !safeKinds.has(task?.kind)
+      || !safeStatuses.has(task?.status)
+    ) {
+      return [];
+    }
+    seen.add(backgroundId);
+    return [{
+      backgroundId,
+      kind: task.kind,
+      status: task.status,
+    }];
+  });
+}
+
+function conversationBackgroundTasksView(tasks, unavailable) {
+  return `
+    <section class="conversation-background" aria-label="Agent 后台活动">
+      <header>
+        <div>
+          <p class="eyebrow">Harness Runtime</p>
+          <h2>后台活动</h2>
+        </div>
+        <span>只显示类型和运行状态</span>
+      </header>
+      ${unavailable
+    ? '<p class="background-activity-error">后台活动状态暂时不可用。</p>'
+    : `<div class="conversation-background-list">
+        ${tasks.map((task) => `
+          <div
+            class="conversation-background-task ${escapeHtml(task.status)}"
+            data-background-id="${escapeHtml(task.backgroundId)}"
+          >
+            <i aria-hidden="true"></i>
+            <strong>${escapeHtml(backgroundTaskKindLabel(task.kind))}</strong>
+            <span>${escapeHtml(backgroundTaskStatusLabel(task.status))}</span>
+          </div>`).join('')}
+      </div>`}
     </section>`;
 }
 
@@ -623,6 +678,22 @@ function activityStatusLabel(status) {
   }[status] || '状态未知';
 }
 
+function backgroundTaskKindLabel(kind) {
+  return {
+    command: '后台命令',
+    monitor: '监控任务',
+  }[kind] || '后台活动';
+}
+
+function backgroundTaskStatusLabel(status) {
+  return {
+    running: '运行中',
+    completed: '已完成',
+    failed: '失败',
+    stopped: '已停止',
+  }[status] || '状态未知';
+}
+
 function permissionInteractionView(interaction) {
   const options = Array.isArray(interaction?.options) ? interaction.options : [];
   const responding = interaction?.responding === true;
@@ -744,6 +815,8 @@ async function openConversation(agentId) {
     displayName: currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId,
     messages: [],
     activities: [],
+    backgroundTasks: [],
+    backgroundStatus: 'ready',
     artifacts: [],
     artifactStatus: 'ready',
     project: null,

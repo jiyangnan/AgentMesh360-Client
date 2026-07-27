@@ -167,6 +167,27 @@ app.whenReady().then(async () => {
         title: 'rm -rf /private/account-7',
       },
     ],
+    backgroundTasks: [
+      {
+        backgroundId: 'background-1',
+        kind: 'command',
+        status: 'running',
+        command: 'curl -H "Authorization: Bearer sk-private" https://private.example',
+        cwd: '/private/account-7',
+      },
+      {
+        backgroundId: 'background-2',
+        kind: 'monitor',
+        status: 'stopped',
+        output: 'private monitor output',
+        signal: 'session_restart',
+      },
+      {
+        backgroundId: 'private-background-id',
+        kind: 'command',
+        status: 'failed',
+      },
+    ],
     artifacts: [
       {
         artifactId: 'role-fit-report',
@@ -229,6 +250,7 @@ app.whenReady().then(async () => {
   const permissionDom = await window.webContents.executeJavaScript(`({
     body: document.body.innerText,
     activityCount: document.querySelectorAll('[data-activity-id]').length,
+    backgroundCount: document.querySelectorAll('[data-background-id]').length,
     artifactCount: document.querySelectorAll('[data-artifact-id]').length,
     projectCount: document.querySelectorAll('.conversation-project').length,
     projectStepCount: document.querySelectorAll('[data-project-step-id]').length,
@@ -240,6 +262,10 @@ app.whenReady().then(async () => {
   assert.equal(permissionDom.body.includes('执行操作'), true);
   assert.equal(permissionDom.body.includes('已完成'), true);
   assert.equal(permissionDom.body.includes('执行中'), true);
+  assert.equal(permissionDom.body.includes('后台命令'), true);
+  assert.equal(permissionDom.body.includes('监控任务'), true);
+  assert.equal(permissionDom.body.includes('运行中'), true);
+  assert.equal(permissionDom.body.includes('已停止'), true);
   assert.equal(permissionDom.body.includes('岗位匹配报告'), true);
   assert.equal(permissionDom.body.includes('课程音频'), true);
   assert.equal(permissionDom.body.includes('文档'), true);
@@ -256,7 +282,11 @@ app.whenReady().then(async () => {
   assert.equal(permissionDom.body.includes('artifacts/private-report.pdf'), false);
   assert.equal(permissionDom.body.includes('jobagent round status'), false);
   assert.equal(permissionDom.body.includes('Private'), false);
+  assert.equal(permissionDom.body.includes('private monitor output'), false);
+  assert.equal(permissionDom.body.includes('session_restart'), false);
+  assert.equal(permissionDom.body.includes('private.example'), false);
   assert.equal(permissionDom.activityCount, 2);
+  assert.equal(permissionDom.backgroundCount, 2);
   assert.equal(permissionDom.artifactCount, 2);
   assert.equal(permissionDom.projectCount, 1);
   assert.equal(permissionDom.projectStepCount, 2);
@@ -285,6 +315,24 @@ app.whenReady().then(async () => {
   assert.equal(await window.webContents.executeJavaScript(
     "document.getElementById('conversation-form') !== null",
   ), true);
+
+  currentConversation = {
+    ...currentConversation,
+    backgroundTasks: [{
+      backgroundId: 'background-unsafe',
+      kind: 'command',
+      status: 'running',
+      command: 'private unavailable command',
+    }],
+    backgroundStatus: 'unavailable',
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.body.innerText.includes('后台活动状态暂时不可用。')",
+  ));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.body.innerText.includes('private unavailable command')",
+  ), false);
 
   currentConversation = {
     ...currentConversation,
@@ -357,6 +405,8 @@ function conversationState(agentId, messages) {
     displayName,
     messages,
     activities: [],
+    backgroundTasks: [],
+    backgroundStatus: 'ready',
     artifacts: [],
     project: null,
     projectStatus: 'ready',

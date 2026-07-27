@@ -8,8 +8,10 @@ const MAX_CHUNK_CHARS = 32_000;
 const MAX_PUBLIC_MESSAGES = 200;
 const MAX_PUBLIC_TRANSCRIPT_CHARS = 200_000;
 const MAX_PUBLIC_ACTIVITIES = 50;
+const MAX_PUBLIC_BACKGROUND_TASKS = 50;
 const MAX_PUBLIC_ARTIFACTS = 100;
 const MAX_PRIVATE_TOOL_CALL_ID_CHARS = 200;
+const MAX_PRIVATE_TASK_ID_CHARS = 200;
 const MAX_PERMISSION_TITLE_CHARS = 300;
 const MAX_PERMISSION_OPTION_CHARS = 160;
 const MAX_PERMISSION_OPTION_ID_CHARS = 200;
@@ -39,6 +41,16 @@ const SAFE_ACTIVITY_STATUSES = new Set([
   'failed',
 ]);
 const TERMINAL_ACTIVITY_STATUSES = new Set(['completed', 'failed']);
+const SAFE_BACKGROUND_KINDS = new Set(['command', 'monitor']);
+const SAFE_BACKGROUND_STATUSES = new Set([
+  'running',
+  'completed',
+  'failed',
+  'stopped',
+]);
+const TERMINAL_BACKGROUND_STATUSES = new Set(['completed', 'failed', 'stopped']);
+const BACKGROUND_STATUS_READY = 'ready';
+const BACKGROUND_STATUS_UNAVAILABLE = 'unavailable';
 const ARTIFACT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const SAFE_ARTIFACT_KINDS = new Set([
   'document',
@@ -95,6 +107,10 @@ class AgentConversationController {
     this.activities = [];
     this.activityByToolCallId = new Map();
     this.activityCounter = 0;
+    this.backgroundTasks = [];
+    this.backgroundTaskByPrivateId = new Map();
+    this.backgroundTaskCounter = 0;
+    this.backgroundStatus = BACKGROUND_STATUS_READY;
     this.artifacts = [];
     this.artifactStatus = ARTIFACT_STATUS_READY;
     this.project = null;
@@ -168,6 +184,8 @@ class AgentConversationController {
       });
       if (this.authority !== authority) return this.snapshot;
       this.#cancelPermission();
+      await this.#refreshBackgroundTasks(authority);
+      if (this.authority !== authority) return this.snapshot;
       await this.#refreshArtifacts(authority);
       if (this.authority !== authority) return this.snapshot;
       await this.#refreshProjectState(authority);
@@ -184,6 +202,7 @@ class AgentConversationController {
       this.#cancelPermission();
       if (error?.code === 'host_timeout') {
         this.#clearActivities();
+        this.#clearBackgroundTasks();
         this.#clearArtifacts();
         this.#clearProjectState();
         this.authority = null;
@@ -259,6 +278,7 @@ class AgentConversationController {
     this.listeners.clear();
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearBackgroundTasks();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -270,6 +290,7 @@ class AgentConversationController {
     if (!publicAgent) throw new Error('当前账号没有此 Agent');
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearBackgroundTasks();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -282,6 +303,8 @@ class AgentConversationController {
       displayName: publicAgent.displayName || agentId,
       messages: [],
       activities: [],
+      backgroundTasks: [],
+      backgroundStatus: BACKGROUND_STATUS_READY,
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
       project: null,
@@ -316,6 +339,8 @@ class AgentConversationController {
       await this.host.loadSession({ sessionId, cwd });
       if (this.authority !== authority) return this.snapshot;
       this.#requireReadyAccount(authority.accountId);
+      await this.#refreshBackgroundTasks(authority);
+      if (this.authority !== authority) return this.snapshot;
       await this.#refreshArtifacts(authority);
       if (this.authority !== authority) return this.snapshot;
       await this.#refreshProjectState(authority);
@@ -335,6 +360,8 @@ class AgentConversationController {
         displayName: publicAgent.displayName || agentId,
         messages: this.#publicMessages(),
         activities: this.#publicActivities(),
+        backgroundTasks: this.#publicBackgroundTasks(),
+        backgroundStatus: this.backgroundStatus,
         artifacts: this.#publicArtifacts(),
         artifactStatus: this.artifactStatus,
         project: this.#publicProject(),
@@ -365,6 +392,7 @@ class AgentConversationController {
     if (!previous) return;
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearBackgroundTasks();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -374,6 +402,8 @@ class AgentConversationController {
       displayName: previous.displayName,
       messages: this.#publicMessages(),
       activities: [],
+      backgroundTasks: [],
+      backgroundStatus: BACKGROUND_STATUS_READY,
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
       project: null,
@@ -389,6 +419,7 @@ class AgentConversationController {
     if (!previous) return;
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearBackgroundTasks();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -398,6 +429,8 @@ class AgentConversationController {
       displayName: previous.displayName,
       messages: this.#publicMessages(),
       activities: [],
+      backgroundTasks: [],
+      backgroundStatus: BACKGROUND_STATUS_READY,
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
       project: null,
@@ -465,12 +498,22 @@ class AgentConversationController {
     const authority = this.authority;
     if (
       !authority
-      || !SESSION_UPDATE_METHODS.has(message?.method)
       || message?.params?.sessionId !== authority.sessionId
     ) {
       return;
     }
     const update = message.params.update;
+    if (isHarnessBackgroundMethod(message?.method, update?.sessionUpdate)) {
+      const changed = update.sessionUpdate === 'task_backgrounded'
+        ? this.#recordBackgroundTask(
+          update,
+          message?.params?._meta?.isReplay === true,
+        )
+        : this.#recordBackgroundTaskCompletion(update);
+      if (changed) this.#publishActivityState(authority);
+      return;
+    }
+    if (!SESSION_UPDATE_METHODS.has(message?.method)) return;
     if (update?.sessionUpdate === 'tool_call') {
       if (this.#recordToolCall(update)) this.#publishActivityState(authority);
       return;
@@ -569,6 +612,40 @@ class AgentConversationController {
     });
   }
 
+  #recordBackgroundTask(update, restoredFromReplay = false) {
+    const privateTaskId = safePrivateTaskId(update?.task_id);
+    if (!privateTaskId) return false;
+    const kind = update.monitor_description === undefined || update.monitor_description === null
+      ? 'command'
+      : 'monitor';
+    const existing = this.backgroundTaskByPrivateId.get(privateTaskId);
+    if (existing) {
+      if (TERMINAL_BACKGROUND_STATUSES.has(existing.public.status)) return false;
+      if (kind === 'monitor' && existing.public.kind !== 'monitor') {
+        existing.public.kind = 'monitor';
+        return true;
+      }
+      return false;
+    }
+
+    this.#appendBackgroundTask(privateTaskId, kind, 'running', restoredFromReplay);
+    return true;
+  }
+
+  #recordBackgroundTaskCompletion(update) {
+    const snapshot = update?.task_snapshot;
+    if (!snapshot || typeof snapshot !== 'object') return false;
+    const privateTaskId = safePrivateTaskId(snapshot.task_id);
+    if (!privateTaskId) return false;
+    const task = this.backgroundTaskByPrivateId.get(privateTaskId);
+    if (!task || TERMINAL_BACKGROUND_STATUSES.has(task.public.status)) return false;
+    const status = backgroundCompletionStatus(snapshot);
+    if (!status) return false;
+    if (snapshot.kind === 'monitor') task.public.kind = 'monitor';
+    task.public.status = status;
+    return true;
+  }
+
   #appendMessage(role, text) {
     const previous = this.messages.at(-1);
     if (previous?.role === role) {
@@ -602,6 +679,8 @@ class AgentConversationController {
       displayName: authority.displayName,
       messages: this.#publicMessages(),
       activities: this.#publicActivities(),
+      backgroundTasks: this.#publicBackgroundTasks(),
+      backgroundStatus: this.backgroundStatus,
       artifacts: this.#publicArtifacts(),
       artifactStatus: this.artifactStatus,
       project: this.#publicProject(),
@@ -619,6 +698,106 @@ class AgentConversationController {
 
   #publicActivities() {
     return this.activities.map((activity) => ({ ...activity.public }));
+  }
+
+  #publicBackgroundTasks() {
+    return this.backgroundTasks.map((task) => ({ ...task.public }));
+  }
+
+  async #refreshBackgroundTasks(authority) {
+    let response;
+    try {
+      response = await this.host.listAgentBackgroundActivities(authority.agentId);
+    } catch {
+      if (this.authority !== authority) return;
+      this.#clearBackgroundTasks();
+      this.backgroundStatus = BACKGROUND_STATUS_UNAVAILABLE;
+      return;
+    }
+    if (this.authority !== authority) return;
+    try {
+      this.#requireReadyAccount(authority.accountId);
+    } catch (error) {
+      this.#clearBackgroundTasks();
+      throw error;
+    }
+    try {
+      this.#reconcileBackgroundTasks(response);
+      this.backgroundStatus = BACKGROUND_STATUS_READY;
+    } catch {
+      if (this.authority !== authority) return;
+      this.#clearBackgroundTasks();
+      this.backgroundStatus = BACKGROUND_STATUS_UNAVAILABLE;
+    }
+  }
+
+  #reconcileBackgroundTasks(value) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || !Array.isArray(value.activities)
+      || value.activities.length > MAX_PUBLIC_BACKGROUND_TASKS
+    ) {
+      throw new Error('invalid Harness background activity projection');
+    }
+    const snapshots = new Map();
+    for (const activity of value.activities) {
+      const privateTaskId = safePrivateTaskId(activity?.taskId);
+      if (
+        !privateTaskId
+        || snapshots.has(privateTaskId)
+        || !SAFE_BACKGROUND_KINDS.has(activity?.kind)
+        || !SAFE_BACKGROUND_STATUSES.has(activity?.status)
+      ) {
+        throw new Error('invalid Harness background activity');
+      }
+      snapshots.set(privateTaskId, {
+        kind: activity.kind,
+        status: activity.status,
+      });
+    }
+
+    for (const task of this.backgroundTasks) {
+      const authoritative = snapshots.get(task.privateTaskId);
+      if (!authoritative) {
+        if (task.restoredFromReplay && task.public.status === 'running') {
+          task.public.status = 'stopped';
+        }
+        continue;
+      }
+      snapshots.delete(task.privateTaskId);
+      if (TERMINAL_BACKGROUND_STATUSES.has(task.public.status)) continue;
+      task.public.kind = authoritative.kind;
+      task.public.status = authoritative.status;
+      task.restoredFromReplay = false;
+    }
+
+    for (const [privateTaskId, activity] of snapshots) {
+      this.#appendBackgroundTask(privateTaskId, activity.kind, activity.status, false);
+    }
+  }
+
+  #appendBackgroundTask(privateTaskId, kind, status, restoredFromReplay) {
+    this.backgroundTaskCounter += 1;
+    const task = {
+      privateTaskId,
+      restoredFromReplay,
+      public: {
+        backgroundId: `background-${this.backgroundTaskCounter}`,
+        kind,
+        status,
+      },
+    };
+    this.backgroundTasks.push(task);
+    this.backgroundTaskByPrivateId.set(privateTaskId, task);
+    while (this.backgroundTasks.length > MAX_PUBLIC_BACKGROUND_TASKS) {
+      const terminalIndex = this.backgroundTasks.findIndex(({ public: value }) => (
+        TERMINAL_BACKGROUND_STATUSES.has(value.status)
+      ));
+      const [removed] = this.backgroundTasks.splice(terminalIndex < 0 ? 0 : terminalIndex, 1);
+      this.backgroundTaskByPrivateId.delete(removed.privateTaskId);
+    }
+    return task;
   }
 
   #publicArtifacts() {
@@ -707,6 +886,7 @@ class AgentConversationController {
     this.messageCounter = 0;
     this.transcriptTruncated = false;
     this.#clearActivities();
+    this.#clearBackgroundTasks();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.#publish({ phase: 'idle' });
@@ -715,6 +895,12 @@ class AgentConversationController {
   #clearActivities() {
     this.activities = [];
     this.activityByToolCallId.clear();
+  }
+
+  #clearBackgroundTasks() {
+    this.backgroundTasks = [];
+    this.backgroundTaskByPrivateId.clear();
+    this.backgroundStatus = BACKGROUND_STATUS_READY;
   }
 
   #clearArtifacts() {
@@ -922,6 +1108,54 @@ function safePrivateToolCallId(value) {
     && value.length <= MAX_PRIVATE_TOOL_CALL_ID_CHARS
     ? value
     : null;
+}
+
+function safePrivateTaskId(value) {
+  return typeof value === 'string'
+    && value.length > 0
+    && value.length <= MAX_PRIVATE_TASK_ID_CHARS
+    && !/[\u0000-\u001F\u007F-\u009F]/.test(value)
+    ? value
+    : null;
+}
+
+function isHarnessBackgroundMethod(method, sessionUpdate) {
+  if (sessionUpdate === 'task_backgrounded') {
+    return method === 'x.ai/task_backgrounded'
+      || method === 'x.ai/session/update'
+      || method === '_x.ai/session/update';
+  }
+  if (sessionUpdate === 'task_completed') {
+    return method === 'x.ai/task_completed'
+      || method === 'x.ai/session/update'
+      || method === '_x.ai/session/update';
+  }
+  return false;
+}
+
+function backgroundCompletionStatus(snapshot) {
+  if (
+    snapshot.signal === 'session_restart'
+    || snapshot.explicitly_killed === true
+  ) {
+    return 'stopped';
+  }
+  const exitCode = snapshot.exit_code;
+  const signal = snapshot.signal;
+  if (exitCode === 0) return 'completed';
+  if (
+    (exitCode === null || exitCode === undefined)
+    && (signal === null || signal === undefined)
+  ) {
+    return 'completed';
+  }
+  if (
+    (Number.isSafeInteger(exitCode) && exitCode !== 0)
+    || (typeof signal === 'string' && signal.length > 0)
+  ) {
+    return 'failed';
+  }
+  return null;
 }
 
 function safeActivityToolKind(value) {
