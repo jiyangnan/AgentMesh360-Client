@@ -3,15 +3,18 @@
 状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
 安全只读工具活动、Workspace Artifact、通用 Project State、Harness 后台活动与
 Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也已完成自主验证与
-本机 Kimi 四级清零；所有生产发布能力保持关闭
+本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划；所有生产
+发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
 1. 按既定产品蓝图，客户端下一项应开发什么；
 2. 哪些条件全部满足后，才可以单独决定是否启用生产 Agent Package 与桌面分发。
 
-本轮只审计和排定顺序，不生成生产 Root/Publisher key，不配置生产 endpoint，不上传
-Artifact，不发布 Registry，不签名或公证桌面安装包，也不写用户真实宿主目录。
+Cycle 56 仍只审计和排定顺序，不生成生产 Root/Publisher key，不配置生产 endpoint，
+不上传 Artifact，不发布 Registry，不签名或公证桌面安装包，也不写用户真实宿主目录。
+R1-R6 的可执行工作包、三种 canary 与证据边界见
+[`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
 
 ## 1. 结论
 
@@ -205,7 +208,11 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
+6. **桌面与 Package 生产准备计划（Cycle 56 已完成）**：已经拆分 E0 本地演练、
+   E1 隔离 staging、E2 封闭生产候选与 E3 正式生产，并区分 Package、Desktop 和
+   Combined canary；下一步只能进入 P1 的 R6 Runbook/最小事件 Schema 独立切片。
+   测试/生产 key、外部服务、真实订阅/BYOK canary、签名、公证和 cohort 仍各自等待
+   精确授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -362,3 +369,25 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   边界保持清楚；
 - F0b 清零不改变 R1-R6：下一步只能先形成内部 canary/生产准备独立计划并等待单独
   授权，不能自动生成 Root/Publisher key、配置 endpoint、上传、签名、公证或发布。
+
+## 15. 循环 56 生产准备与内部 Canary 计划检查点
+
+- 重新核对生产常量、Root/Publisher Trust Store、H2d0-H2d4、远端 bounded fetch、
+  LKG/反回滚、Electron builder、Login Item、shutdown 和仓库发布工作流；
+- 确认生产 Root、Publisher Bundle 与两个 Registry endpoint 仍为空；桌面只有本地
+  `build:mac`，没有仓库自有自动更新、Developer ID/公证配置或发布工作流；
+- 新计划明确 Package、Desktop、Combined 三种 canary，以及 E0 本地演练、E1 隔离
+  staging、E2 封闭生产候选、E3 正式生产四种环境；
+- R5 被定义为 canary 的退出门：Package canary 进入前必须先有 R1/R2/R3/R6 前置
+  证据，Desktop canary 进入前必须先有 R4/R6 前置证据，Combined canary 不能拿
+  单链证据代替；
+- R1-R6 均补齐 authority、进入条件、证据、退出判定、停止条件、rollback 与明确
+  批准卡；旧 Provider 测试授权、GitHub 推送授权或笼统“继续开发”不能替代生产授权；
+- 固定 P0-P8 顺序：本轮只关闭 P0 计划，下一独立开发切片是 P1 R6 Runbook 与最小
+  事件 Schema；不会跳到 key ceremony、外部服务、真实 canary、签名、公证或发布；
+- 自主静态验证确认五份文档链接、diff-check、生产关闭常量和根 `target/` 边界；
+  Kimi session `session_858d2a9f-0fcb-4333-93ee-184a41399e9d` 独立核对源码事实、
+  R1-R6、三种 canary、P0-P8 与文档一致性，没有构建、读取 Keychain 或调用
+  Provider，最终 Blocker/High/Medium/Low 全零并 PASS；
+- 完整结构化计划见
+  [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。

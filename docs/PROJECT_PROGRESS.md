@@ -32,12 +32,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区增量与 Gemini F0b 已按计划完成双方验证；下一步只形成生产准备/内部 canary 的独立计划，不自动启动 Scheduler、Agent 专属 UI 或生产发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Cycle 56 生产准备计划已按原顺序完成；下一步只进入 P1 R6 Runbook/事件 Schema，不自动启动 Scheduler、Agent 专属 UI、key、endpoint 或生产发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | 生产启用等待独立 R0-R6 安全门，不自行启动 H2d5 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；生产 endpoint/root/bundle 仍为空 | 当前只完成 P0 计划；P1 先建立 R6 Runbook/最小事件 Schema，R1-R5 外部 authority 分别等待精确授权 |
 
 ## 开发循环记录
 
@@ -3991,3 +3991,62 @@ Kimi 独立交叉测试：
 - F0b 已按闭环关闭，但不等于生产发布。R1-R6 仍未满足，下一轮只能形成独立的生产准备/内部
   canary 计划并等待单独授权，不能自动填入生产 Root、endpoint、签名、公证或发布
   配置。
+
+### 循环 56：生产准备与内部 Canary 结构化计划
+
+状态：计划、自主静态验证与本机 Kimi 独立复核已完成
+
+计划校准：
+
+- 循环开始先复核产品蓝图、发布硬门和当前源码，没有沿用 F0b 后的惯性继续加
+  Provider、Scheduler、Subagent、Agent 专属 UI 或虚构 H2d5；
+- 生产 Root、Publisher Trust Bundle、Trust/Registry endpoint 均继续为空；
+  `desktop/package.json` 只有本地 DMG/ZIP 构建，没有仓库自有 Developer ID/公证、
+  自动更新或发布工作流；
+- 因此本轮只形成计划，不生成 key、不建外部服务、不运行真实 canary、不签名/公证、
+  不上传/发布、不调用 Provider、不消耗 credits 或费用。
+
+已经形成：
+
+1. 新增
+   [`architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)，
+   区分 Package、Desktop、Combined 三种 canary；
+2. 固定 E0 本地确定性演练、E1 隔离内部 staging、E2 封闭生产候选和 E3 正式生产，
+   并用状态机阻止 rehearsal/canary/candidate/released 混写；
+3. 给 R1-R6 补齐 authority、进入条件、必须证据、退出判定、停止条件和 rollback；
+4. 把 R5 定义为 canary 的退出门，解决“R5 未完成所以无法开始 canary”的循环依赖；
+5. 建立订阅/Provider、Package、Desktop/持久 Agent 的 canary 场景矩阵，以及秘密/
+   用户内容禁止记录边界；
+6. 固定 P0-P8 工作包和明确批准卡：本轮只关闭 P0，下一步仅进入 P1 R6
+   Runbook/最小事件 Schema；测试/生产 key、staging、真实 BYOK、Apple 凭据、
+   Registry 发布和 cohort 扩大分别需要新的精确授权。
+
+自主验证：
+
+- 五份变更文档的相对链接全部解析到现有文件，新计划的 Markdown fence 成对、无
+  Tab 或行尾空白，Mermaid 文本结构检查通过；
+- `git diff --check` 通过；`PRODUCTION_TRUST_BUNDLE_URL`、
+  `PRODUCTION_REGISTRY_URL`、`EMBEDDED_PUBLISHER_TRUST_BUNDLE` 与内置 Root 继续
+  保持空值；
+- 仓库根 `target/` 不存在，磁盘仍有约 64 GiB 可用；本轮没有运行 Cargo/npm/
+  Electron 构建或测试，没有调用 Provider、读取 Keychain 或使用 credits。
+
+Kimi 独立复核：
+
+- Kimi CLI session `session_858d2a9f-0fcb-4333-93ee-184a41399e9d` 在用户已明确
+  授权完整 diff、未跟踪内容和本地路径的边界内，读取新计划、四份同步文档及相关
+  Package trust/fetch/release、desktop build、Login Item、shutdown 源码；
+- 独立运行 `git status`、完整 diff、`git diff --check`、生产常量/源码定向核对、
+  五份文档链接检查，以及新文件空白、Tab 和 fence 检查；
+- 确认 H2d0-H2d4 没有被写成上传/发布能力，三种 canary、E0-E3、R5 退出门、
+  P0-P8、BYOK/订阅/费用、rollback/撤回/吊销和 secret/content 边界均一致；
+- 没有读取 Keychain、调用 Provider、运行构建/测试或创建 `target`；最终
+  Blocker/High/Medium/Low 全部为零并给出 PASS。
+
+计划复盘：
+
+- 本轮严格完成原计划中的“先形成生产准备/内部 canary 计划”，没有跳到生产执行；
+- P0 现已关闭，R1-R6 仍未满足，rehearsal/canary/production 均未开始；
+- 下一轮只进入 P1：R6 事故响应 Runbook、最小非秘密事件 Schema 和证据模板。任何
+  测试/生产 key、外部 staging、真实订阅/BYOK 请求、Apple 签名/公证、Registry
+  发布或 cohort 扩大继续等待各自精确授权。

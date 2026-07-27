@@ -46,15 +46,21 @@
   本地 `activity-N`、允许列表工具类别和四态状态；最多保留 50 项，终态冻结，Host
   replay 是唯一历史来源。上游 Tool Call ID、标题、内容、位置、原始输入输出、命令
   和路径不会进入 Renderer。
+- Workspace Artifact、Project State、普通 Harness 后台活动与 Session Plan 已使用
+  Host-owned authority 做成有界只读投影；页面不取得路径、原始任务、Todo ID、
+  Scheduler、Subagent 或业务 mutation authority。
+- Gemini F0b 已在用户明确的 12 次短请求上限内使用 11 次完成真实契约验证；Catalog
+  只加入实际通过的官方兼容预设，不批量声称其他 Provider 已兼容。
 
-当前尚未实现 OAuth、Harness 问题/计划审批、产物和垂直业务工作区；
-外部真实 Provider E2E 仍需要用户凭据与费用授权，动态 Agent Package 的生产发布也
-仍关闭。生产
-Registry 关闭意味着当前动态 Agent 泛化只有本地 fixture 证据，不代表用户已经能从
-远端取得新 Agent。这些能力按
+当前尚未实现 OAuth、Plan/Todo mutation、Scheduler、Subagent 或 Agent 专属垂直
+页面；其他 Provider 的真实 E2E 仍需逐个取得凭据与费用授权，动态 Agent Package
+的生产发布也仍关闭。生产 Registry 关闭意味着当前动态 Agent 泛化只有本地 fixture
+证据，不代表用户已经能从远端取得新 Agent。这些能力按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。
 H2d4 后的顺序复核与发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](../docs/architecture/PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
+Cycle 56 的生产准备与内部 canary 计划见
+[`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](../docs/architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
 
 ## 运行结构
 
