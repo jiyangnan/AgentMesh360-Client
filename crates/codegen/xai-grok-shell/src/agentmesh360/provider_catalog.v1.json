@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "catalogRevision": 1,
+  "catalogRevision": 2,
   "providers": [
     {
       "presetId": "openai",
@@ -34,6 +34,33 @@
       "allowedEndpointOrigins": ["https://api.anthropic.com"],
       "quirks": ["anthropic_version_2023_06_01"],
       "models": []
+    },
+    {
+      "presetId": "google-gemini",
+      "displayName": "Google Gemini",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://generativelanguage.googleapis.com"],
+      "quirks": [],
+      "models": [
+        {
+          "modelId": "gemini-3.5-flash-lite",
+          "displayName": "Gemini 3.5 Flash-Lite",
+          "capability": {
+            "contextWindow": 1048576,
+            "maxOutputTokens": 65536,
+            "tools": "supported",
+            "parallelToolCalls": "unknown",
+            "vision": "unknown",
+            "structuredOutput": "supported",
+            "reasoning": "supported",
+            "streaming": "supported",
+            "source": "catalog"
+          }
+        }
+      ]
     },
     {
       "presetId": "compatible-openai-responses",

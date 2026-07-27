@@ -1371,6 +1371,7 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         })
     }
 
@@ -1926,6 +1927,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }));
         }
         hist.push(ConversationItem::User(UserItem {
@@ -2523,6 +2525,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }));
         }
         hist.push(ConversationItem::User(UserItem {

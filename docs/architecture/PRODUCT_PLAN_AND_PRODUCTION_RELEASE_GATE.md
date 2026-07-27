@@ -1,9 +1,9 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
 状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
-安全只读工具活动、Workspace Artifact、通用 Project State 与 Harness 后台活动安全
-投影已通过自主验证和本机 Kimi 最终独立交叉复核；Session Plan 安全投影也已完成
-双方验证并四级清零；所有生产发布能力保持关闭
+安全只读工具活动、Workspace Artifact、通用 Project State、Harness 后台活动与
+Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也已完成自主验证与
+本机 Kimi 四级清零；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -91,8 +91,9 @@ flowchart LR
 保持权威，Workspace 只保存通用安全 read model。循环 50 已实现固定公共状态卡，
 没有铺开 Agent 专属垂直 UI。循环 51-52 又先审计并只实现普通后台进程最小投影；
 循环 53-54 先审计并只实现 canonical Session Plan 最小只读投影，没有直接实现
-Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划闭环，下一产品步骤
-回到凭据依赖的真实 Provider E2E；它必须等待用户提供隔离测试凭据与费用授权。
+Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划闭环。循环 55 在
+用户明确提供隔离测试凭据、模型、12 次短请求上限与费用授权后执行 Gemini F0b，
+实现、自主验证与 Kimi 四级清零已完成；普通功能路线现已走到生产准备门前。
 
 ## 2. 当前能力核对
 
@@ -100,7 +101,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | --- | --- | --- |
 | 订阅准入 | Core、Host、桌面三层失败关闭，订阅无效不能进入工作区 | 已有产品基础 |
 | 持久身份 | 账户隔离 Agent Registry、固定 Main Session、Leader detach/reconnect/恢复 | 开发链已验证 |
-| BYOK | Provider Profile/Vault、Assignment、Binding、路由、设置页与 Probe 已实现 | 外部真实 Provider E2E 仍独立待验 |
+| BYOK | Provider Profile/Vault、Assignment、Binding、路由、设置页、Probe，以及 Gemini F0b thought state/重启 Tool Loop 与官方预设已完成双方验证 | F0b 已关闭；其他 Provider 仍需逐个真实验收 |
 | Agent Package | H0/H1 至 H2d4 的本地信任、发布描述与消费门已通过双方测试 | 生产 authority 仍为空 |
 | Package Center | 发现、下载、批准、回滚、reconcile 的安全 UI/Host 接口已实现 | 因生产 Registry 关闭而无真实远端内容 |
 | 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭 |
@@ -200,7 +201,10 @@ flowchart TD
    Project State、普通 Harness 后台活动与 Session Plan 已依次完成 authority
    审计、最小只读投影和 Kimi 独立复核；继续不实现 Scheduler、Subagent、任务控制
    或 Agent 专属页面；
-5. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
+5. **凭据依赖的真实 Provider E2E（F0b 已完成）**：用户已明确提供
+   测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
+   Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
+   已通过，并完成 Kimi 四级清零；
 6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
@@ -332,3 +336,29 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   全部为零、无条件 PASS；
 - 循环 52 已关闭；R0 与 R1-R6 状态不变，不启动 Scheduler、Subagent、Agent 专属
   UI、Package H2d5 或生产发布。
+
+## 14. 循环 53-55 Session Plan 与 Gemini F0b 检查点
+
+- 循环 53 先审计 TodoState、ACP Plan、Resources 恢复、旧 Plan 与 Plan Mode
+  authority；循环 54 才实现通用 Session Plan 安全只读投影并经双方验证四级清零；
+- 循环 55 严格回到原顺序的“凭据依赖真实 Provider E2E”，只在用户明确授权 Key、
+  模型、最多 12 次短请求和费用风险后开始，最终只使用 11 次；
+- Gemini 真实基础契约与重启模拟 Tool Loop 通过；thought signature 以类型化、
+  16 KiB 有界、不打印值的状态贯通 stream、Conversation、JSONL 和精确回放；
+- 仅精确 Google 官方 HTTPS endpoint 与相同 model ID 可消费该状态；其他 Provider、
+  origin 和模型全部剥离，未引入任意 `extra_body` 或静默 fallback；
+- Catalog 只加入已真实验证的 `google-gemini` / `gemini-3.5-flash-lite`；没有顺带
+  加入其他未测 Provider、Native/Interactions、内置工具、Scheduler、Agent 专属 UI
+  或 Package 生产能力；
+- 自主验证已覆盖完整 Rust 类型/Conversation/Sampler 回归、Shell 定向回归、JSONL
+  重启、Catalog、Clippy、Rustfmt、104 项桌面测试、真实 Host 3/3 与四组 Electron
+  smoke；
+- Kimi session `session_839105d3-70b3-4373-943c-8263c12bc8db` 独立执行 Types
+  279、Sampler 189、Chat State 339、零费用 Provider 3/2 ignored、JSONL 1/1、
+  Catalog 4/4、桌面 101/3 skip、四组 Electron smoke 与格式/diff 检查；唯一 Low
+  注释修复后四级全零、无条件 PASS；
+- Kimi 的重复完整 Shell target 达 18.8 GiB 后为保护磁盘被主动终止并删除，没有
+  冒充成功或代码失败；完整 Shell 182 项与 Clippy 只由主 Agent 自主验证，双方结果
+  边界保持清楚；
+- F0b 清零不改变 R1-R6：下一步只能先形成内部 canary/生产准备独立计划并等待单独
+  授权，不能自动生成 Root/Publisher key、配置 endpoint、上传、签名、公证或发布。

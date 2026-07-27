@@ -2684,6 +2684,7 @@ actual user question";
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result(
                 "call_1",
@@ -2717,6 +2718,7 @@ actual user question";
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("call_3", "File edited successfully."),
             ConversationItem::tool_result(
@@ -2976,6 +2978,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ]);
         assert_eq!(result.len(), 3);
@@ -3000,6 +3003,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ]);
         assert_eq!(result.len(), 1, "reasoning sibling must be dropped");
@@ -3050,6 +3054,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("tc1", "match found"),
         ]);
@@ -3093,6 +3098,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ]);
         assert_eq!(result.len(), 1);
@@ -3129,6 +3135,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("tc1", "match"),
             ConversationItem::user("second turn"),
@@ -3139,6 +3146,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("tc2", "stray"),
             ConversationItem::user("third turn"),
@@ -3148,6 +3156,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ]);
         assert_eq!(result.len(), 6);
@@ -3217,6 +3226,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("tc1", "files"),
         ];

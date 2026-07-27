@@ -9,7 +9,10 @@ use xai_grok_test_support::{MockInferenceServer, ScriptedResponse, SseEvent};
 
 mod common;
 
-use common::provider_contract_harness::{OpenAiChatContractTarget, run_openai_chat_contract};
+use common::provider_contract_harness::{
+    OpenAiChatContractTarget, run_google_thought_signature_tool_loop_contract,
+    run_openai_chat_contract,
+};
 
 const GEMINI_OPENAI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai/";
 
@@ -196,4 +199,27 @@ async fn gemini_openai_chat_live_contract() {
     assert!(report.function_calling);
     assert!(report.structured_output);
     assert!(report.reasoning_effort);
+}
+
+#[tokio::test]
+#[ignore = "requires explicit Gemini BYOK opt-in and makes exactly two provider requests"]
+async fn gemini_google_thought_signature_live_contract() {
+    assert_eq!(
+        std::env::var("AGENTMESH360_GEMINI_CONTRACT").as_deref(),
+        Ok("1"),
+        "set AGENTMESH360_GEMINI_CONTRACT=1 to authorize a real, potentially billed contract run"
+    );
+    let api_key = std::env::var("AGENTMESH360_GEMINI_API_KEY")
+        .expect("AGENTMESH360_GEMINI_API_KEY is required");
+    let model =
+        std::env::var("AGENTMESH360_GEMINI_MODEL").expect("AGENTMESH360_GEMINI_MODEL is required");
+    let target =
+        OpenAiChatContractTarget::new("gemini", GEMINI_OPENAI_BASE_URL, model, api_key).unwrap();
+
+    let report = run_google_thought_signature_tool_loop_contract(&target)
+        .await
+        .unwrap();
+    assert!(report.restarted_tool_loop);
+    assert!(report.tool_signature_bytes > 0);
+    assert!(report.final_message_signature_bytes > 0);
 }

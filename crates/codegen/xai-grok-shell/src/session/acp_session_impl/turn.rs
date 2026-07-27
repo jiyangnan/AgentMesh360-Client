@@ -2300,6 +2300,7 @@ impl SessionActor {
                         name: tc.name,
                         arguments: tc.arguments.as_ref().to_owned(),
                     },
+                    extra_content: None,
                 })
                 .collect();
             self.emit_event(crate::session::events::Event::PhaseChanged {

@@ -1,208 +1,286 @@
 # Gemini 官方 OpenAI 兼容端点契约 Spike
 
-状态：F0a 已完成；F0b 真实 Provider 契约与 thought state 仍未通过  
-核验日期：2026-07-24
+状态：F0b 实现、自主验证与本机 Kimi 独立交叉测试已完成
+核验日期：2026-07-27
 
-本文记录 Google Gemini 通过官方 OpenAI 兼容端点接入 AgentMesh360 Client 的事实、
-本地实现、未验证项和 Catalog 准入结论。它不能被“某次请求返回了文本”替代；未来
-升级模型、Sampling 类型或 Google 兼容层时，应重新运行本文定义的契约。
+本文记录 Google Gemini 通过官方 OpenAI Chat 兼容端点进入 AgentMesh360 Client 的
+真实契约、Provider thought state 设计、持久化边界、Catalog 准入证据和后续复验门。
+“首轮能返回文本”不能替代本文的多轮 Tool Loop 契约。
 
 相关实现：
 
-- [`test_provider_contracts.rs`](../../crates/codegen/xai-grok-shell/tests/test_provider_contracts.rs)；
+- [`types.rs`](../../crates/codegen/xai-grok-sampling-types/src/types.rs)；
+- [`conversation.rs`](../../crates/codegen/xai-grok-sampling-types/src/conversation.rs)；
+- [`client.rs`](../../crates/codegen/xai-grok-sampler/src/client.rs)；
+- [`chat_completions.rs`](../../crates/codegen/xai-grok-sampler/src/stream/chat_completions.rs)；
 - [`provider_contract_harness.rs`](../../crates/codegen/xai-grok-shell/tests/common/provider_contract_harness.rs)；
-- [`provider_catalog.rs`](../../crates/codegen/xai-grok-shell/src/agentmesh360/provider_catalog.rs)；
-- [`CC_SWITCH_PROVIDER_RESEARCH.md`](CC_SWITCH_PROVIDER_RESEARCH.md)。
+- [`test_provider_contracts.rs`](../../crates/codegen/xai-grok-shell/tests/test_provider_contracts.rs)；
+- [`provider_catalog.v1.json`](../../crates/codegen/xai-grok-shell/src/agentmesh360/provider_catalog.v1.json)。
 
-## 1. 当前结论
+## 1. F0b 结论
 
-截至 2026-07-24：
+截至 2026-07-27，原 Catalog 七项准入门已经取得对应证据：
 
-1. Google 官方文档确认 Gemini 提供 OpenAI Chat Completions 兼容端点，使用 Bearer
-   API Key，并记录了 Streaming、Function Calling、Structured Output 和
-   `reasoning_effort`；
-2. Grok Build 现有 `ApiBackend::ChatCompletions` 能生成这些基础请求形状，本地 mock
-   契约已通过；
-3. 已增加可复用的 OpenAI Chat Provider Harness，以及双重显式 opt-in 的 Gemini
-   真实测试入口；
-4. 当前没有用户提供的 Gemini API Key，因此没有发起真实 Google 请求，也没有产生
-   Provider 费用；
-5. 更关键的是，当前 Chat Completions 类型不能保真保存并跨轮回传 Gemini thought
-   signature，也不能发送 Google `extra_body`。对持久、多轮、带工具的产品 Agent，
-   这是 Catalog 准入阻断项；
-6. 因此 Gemini **尚未加入内置官方 Catalog**。用户仍可用自定义
-   OpenAI Chat Compatible Profile 做自行承担风险的测试，但不能把它解释为
-   AgentMesh360 已正式验证。
+1. `gemini-3.5-flash-lite` 的真实 Streaming、Function Calling、Structured Output
+   和 `reasoning_effort=low` 均通过现有 `SamplingClient`；
+2. 真实 Tool Loop 的脱敏 wire 位置已经确认；
+3. thought signature 已在 stream decode → `ConversationItem` → Session JSONL →
+   history replay → request encode 中字节保真；
+4. 两次真实请求之间执行序列化/反序列化模拟进程重启，恢复后的工具调用继续成功，
+   第二轮严格返回 `tool-loop-ok`；
+5. Google 当日官方模型页确认 Stable Model ID、1,048,576 输入上限和 65,536 输出
+   上限；
+6. Profile 保存、Catalog 浏览继续零网络；真实 Probe 和本契约仍需用户明确确认；
+7. Catalog 只把真实测过的 Tools、Structured Output、Reasoning、Streaming 标为
+   `supported`，Parallel Tool Calls 与 Vision 保持 `unknown`。
 
-## 2. 官方协议事实
+因此 `Google Gemini / gemini-3.5-flash-lite` 已满足加入内置声明式 Catalog 的条件。
+这只说明 AgentMesh360 的 OpenAI Chat 主会话路径通过，不代表 Gemini Native、
+Interactions、内置 Search/Maps/Computer Use 或全部多模态能力已经接入。
 
-证据仅采用 Google 一手文档：
+## 2. 官方协议与模型事实
+
+证据只采用 Google 一手文档：
 
 - [OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)；
-- [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking)；
-- [Gemini 3 Developer Guide](https://ai.google.dev/gemini-api/docs/gemini-3)。
+- [Thought signatures](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)；
+- [Gemini 3.5 Flash-Lite 模型页](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)；
+- [最新模型迁移说明](https://ai.google.dev/gemini-api/docs/latest-model)。
 
-### 2.1 端点与认证
-
-官方 OpenAI 兼容 Base URL：
+官方 OpenAI 兼容 Base URL 为：
 
 ```text
-https://generativelanguage.googleapis.com/v1beta/openai/
+https://generativelanguage.googleapis.com/v1beta/openai
 ```
 
-Chat Completions 端点：
+AgentMesh360 使用：
 
 ```text
-POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+POST /chat/completions
 Authorization: Bearer <GEMINI_API_KEY>
-Content-Type: application/json
 ```
 
-这正好映射到现有：
+对应现有 `ProviderProtocol::OpenaiChat`、`ApiBackend::ChatCompletions` 和
+`AuthScheme::Bearer`。
 
-- `ProviderProtocol::OpenAiChat`；
-- `ApiBackend::ChatCompletions`；
-- `AuthScheme::Bearer`。
+2026-07-23 更新的官方模型页与最新模型说明确认：
 
-官方页面当前示例使用 `gemini-3.6-flash`，但模型目录会变化。F0 不据此把任何模型 ID
-硬编码进 Catalog；正式预设必须在真实契约当日重新确认模型及能力。
+- Model ID：`gemini-3.5-flash-lite`；
+- 状态：GA / Stable；
+- 输入上限：1,048,576 tokens；
+- 输出上限：65,536 tokens；
+- Function Calling、Structured Outputs 与 Thinking：官方支持；
+- `temperature`、`top_p`、`top_k` 已弃用。产品路由保持这些参数为空，由 Provider
+  使用默认采样；契约 Harness 也不再主动发送这些字段。
 
-### 2.2 官方文档覆盖的能力
+Catalog 不保存价格，也不把官方文档声明但本轮未真实执行的 Vision、Parallel Tool
+Calls 等能力写成已验证。
 
-| 能力 | Google 官方状态 | 当前本地 Harness 状态 | 当前准入状态 |
-| --- | --- | --- | --- |
-| Bearer API Key | 已记录 | 请求 Header mock 已验证 | 基础通过 |
-| Chat Completions | 已记录 | endpoint 组合与解析已验证 | 基础通过 |
-| Streaming | 已记录 | SSE 文本收集已验证 | mock 通过，真实未测 |
-| Function Calling | 已记录 | tool schema、auto choice、参数解析已验证 | mock 通过，真实未测 |
-| Structured Output | 已记录 | strict JSON Schema 请求与 JSON 解析已验证 | mock 通过，真实未测 |
-| `reasoning_effort` | 已记录并映射到 Gemini thinking 配置 | `low` 请求形状已验证 | mock 通过，真实未测 |
-| Thought summary | 需 Google `extra_body` 开启 | 当前无 `extra_body` 通道 | 未支持 |
-| Thought signature 跨轮回传 | 多轮推理连续性需要 | 当前 Chat 类型不保真 | **阻断** |
-| Models list/retrieve | 已记录 | E3 Catalog 未声明免费 metadata | 本轮不自动调用 |
-| OpenAI Responses | 官方兼容页未作为当前主路径记录 | 本轮不外推 | unknown |
-| Gemini Native / Interactions | Google 推荐用于完整新能力 | 尚未实现 | 后置 Spike |
+## 3. 真实测试与请求预算
 
-Google 将 OpenAI 兼容支持标为 beta，并建议不受 OpenAI SDK 约束的新应用优先使用
-Gemini Direct API；当前文档顶部还推荐 Interactions API 获取最新功能和模型。因此
-OpenAI 兼容路径适合作为 M1 的复用候选，但不能推导出它等价于 Gemini 全能力。
+用户明确授权使用已保存测试 Key、指定 `gemini-3.5-flash-lite`，本轮最多 12 次短
+请求，并同意可能消耗免费额度或产生 Provider 费用。
 
-## 3. 为什么 thought signature 是持久 Agent 的硬门槛
+自主验证分为：
 
-Google 官方 thinking 文档说明：thought signature 是加密的模型内部推理状态，多轮
-推理连续性需要它。客户端若采用无状态全历史请求，必须把收到的 thought block 和
-signature 原样回传，不能修改或删除；某些内置工具的调用和结果也可能携带独立
-signature。
+| 阶段 | 请求数 | 结果 |
+| --- | ---: | --- |
+| 四项基础真实契约 | 4 | Streaming、Function Calling、Structured Output、Reasoning 全部通过 |
+| 脱敏 wire 定位 | 3 | 非流式工具响应、下一轮回放、流式工具响应位置确认 |
+| 首次持久化 Tool Loop | 2 | 重启模拟与第二轮严格输出通过 |
+| 最终代码 Tool Loop 复验 | 2 | 去除弃用采样参数后的同一契约复验 |
+| 合计 | 11 / 12 | 剩余 1 次未使用 |
 
-AgentMesh360 的 Job Agent、LectureCast Agent 和 Deploy Agent 都是固定 Main Session
-的持久产品 Agent，不是一次性聊天框。它们会：
+测试没有调用 Models list/retrieve，没有读取 AgentMesh360 Provider Vault，也没有自动
+重试真实契约。Key 只从 macOS Keychain 注入测试子进程；Key 和真实 signature 值不
+进入仓库、文档或测试输出。早期用于脱敏结构检查的 `/tmp` 原始响应必须在本轮收尾时
+删除。
 
-- 多轮持续工作；
-- 调用本地工具并回传 Tool Result；
-- 休眠、恢复和重放 Session；
-- 在压缩、记忆和子 Agent 后继续主会话。
+## 4. 脱敏 wire fixture
 
-因此只验证“首轮文本能返回”会制造高风险假阳性：短对话看起来可用，长任务或 Tool
-Loop 才发生推理连续性丢失、400 错误或质量突降。这正是 Harness 契约必须高于普通
-API Ping 的原因。
+真实工具调用的 signature 位于工具调用本身：
 
-当前源码差距：
+```json
+{
+  "delta": {
+    "tool_calls": [
+      {
+        "id": "call_<redacted>",
+        "type": "function",
+        "function": {
+          "name": "report_marker",
+          "arguments": "{\"marker\":\"agentmesh360-f0b\"}"
+        },
+        "extra_content": {
+          "google": {
+            "thought_signature": "<opaque>"
+          }
+        }
+      }
+    ]
+  }
+}
+```
 
-- `ChatCompletionRequest` 没有 Provider-specific `extra_body`；
-- `ChatCompletionChunkDelta` / `ChatResponseMessage` 没有 Gemini thought signature
-  字段；
-- `AssistantItem` / `ToolCall` 没有可持久化、可原样回放的 signature；
-- Chat 历史转换无法把 signature 放回下一轮请求。
+本次真实 SSE 的首个工具 chunk 未提供显式 `index`；现有类型按 OpenAI 兼容约定将其
+安全默认成 `0`。下一轮请求必须把同一 signature 放回同一个 assistant tool call：
 
-在没有观察真实 Google wire shape 并建立 round-trip fixture 前，不应凭猜测添加字段，
-也不应把 signature 塞进普通文本或未受约束的 JSON 扩展。
+```json
+{
+  "role": "assistant",
+  "tool_calls": [
+    {
+      "id": "call_<same>",
+      "type": "function",
+      "function": {
+        "name": "report_marker",
+        "arguments": "{\"marker\":\"agentmesh360-f0b\"}"
+      },
+      "extra_content": {
+        "google": {
+          "thought_signature": "<same opaque bytes>"
+        }
+      }
+    }
+  ]
+}
+```
 
-## 4. 已实现的 Provider Harness
+工具结果之后的最终 assistant signature 位于 message-level
+`delta.extra_content.google.thought_signature`，可能出现在没有正文的末尾 chunk。
+因此 message state 和 per-tool-call state 不能共用一个最后写入值。
 
-`run_openai_chat_contract` 是 Provider-neutral 的真实 SamplingClient 契约，不直接手写
-另一套 HTTP 客户端。它依次检查：
+## 5. Provider Extension Envelope
 
-1. Streaming 文本非空；
-2. Tool 定义能发出、模型能返回指定函数和合法 JSON 参数；
-3. strict JSON Schema 能生成并解析指定结构；
-4. `reasoning_effort=low` 能被发送且模型返回非空结果。
+F0b 没有增加任意 `extra_body: JSON` 逃逸通道，而是建立受限类型：
 
-默认测试使用 `MockInferenceServer`，验证：
+```text
+ProviderExtensionEnvelope
+└── google
+    └── thought_signature: OpaqueThoughtSignature
+```
 
-- 四次请求都只命中 `chat/completions`；
-- Bearer Header 正确；
-- `stream=true`；
-- Tool、`tool_choice`、`response_format.json_schema.strict` 与
-  `reasoning_effort` 的 wire shape；
-- SSE、Tool Call 和 JSON 输出能由现有 Grok Sampling 数据面解析；
-- Target 的 `Debug` 只输出 `credential_present`，不输出 BYOK Key。
+约束：
 
-这套 Harness 可复用于 DeepSeek、Kimi、GLM、Qwen、OpenRouter 等 OpenAI Chat
-Compatible Provider。每个正式预设仍需自己的真实 Target、模型和能力证据。
+1. 每个 signature 必须非空且不超过 16 KiB；
+2. 序列化必须原样保留 UTF-8 bytes，不做 trim、重编码或规范化；
+3. `Debug` 只显示 byte length，不显示值；
+4. 未审核 Provider 或 Google 子字段在 decode 时忽略，且不会重新发送；
+5. `AssistantProviderState` 分开保存 message extension 与
+   `tool_call_id → extension` 有序映射；
+6. 冲突 chunk、没有 Tool Call ID 的工具 signature 或同 ID 不同 signature 均使该
+   stream 失败关闭；
+7. Chat SSE 诊断只记录 payload byte length，反序列化错误也不打印原始 chunk。
 
-默认零费用命令：
+## 6. 路由隔离与持久化
+
+Conversation 可能比 Provider Profile 或模型选择存活更久，因此回放采用双门：
+
+1. Base URL 必须精确匹配 HTTPS 官方 origin 与
+   `/v1beta/openai` 路径；代理、自定义域、HTTP、userinfo、query、fragment 和其他
+   path 均不允许 Google extension；
+2. assistant `model_id` 必须与当前请求 model 完全一致。
+
+非 Google Chat 路由会同时清除：
+
+- 出站 message/tool-call provider extension；
+- 入站 non-stream message/tool-call provider extension；
+- 入站 streaming message/tool-call provider extension。
+
+这避免自定义兼容端点伪造 Google state，也避免会话切换 Provider 或模型后把不透明
+状态发送到错误数据接收方。
+
+`AssistantItem.provider_state` 使用现有 `ConversationItem` JSONL 持久化，不建立第二
+套 Session 数据库。旧 Session 缺少该字段时默认为空；本地真实存储适配器测试已经
+覆盖“写入 JSONL—新实例加载—重新编码请求”。
+
+## 7. 契约入口
+
+默认零费用测试：
 
 ```bash
 cargo test -p xai-grok-shell --test test_provider_contracts
 ```
 
-预期结果为 3 项本地测试通过，1 项真实 Gemini 测试忽略。
-
-## 5. 真实 Gemini 测试的安全入口
-
-真实测试可能消耗用户的 Google 配额或费用，因此同时需要：
-
-1. 测试本身被 `#[ignore]`；
-2. `AGENTMESH360_GEMINI_CONTRACT=1` 显式授权；
-3. 专用 `AGENTMESH360_GEMINI_API_KEY`；
-4. 显式 `AGENTMESH360_GEMINI_MODEL`。
-
-运行方式：
+真实基础契约每次四个短请求：
 
 ```bash
 AGENTMESH360_GEMINI_CONTRACT=1 \
-AGENTMESH360_GEMINI_API_KEY='<用户明确提供的测试 Key>' \
-AGENTMESH360_GEMINI_MODEL='<当日确认的模型 ID>' \
+AGENTMESH360_GEMINI_API_KEY='<用户明确授权的测试 Key>' \
+AGENTMESH360_GEMINI_MODEL='gemini-3.5-flash-lite' \
 cargo test -p xai-grok-shell --test test_provider_contracts \
   gemini_openai_chat_live_contract -- --ignored --exact
 ```
 
-约束：
+真实持久化 Tool Loop 每次严格两个请求：
 
-- 绝不自动读取 AgentMesh360 Provider Vault；
-- 绝不复用机器上其他 Gemini/GCloud 环境秘密；
-- 失败信息不得打印 Key；
-- 当前每次完整运行最多发四个短请求，但具体账单仍由 Provider 决定；
-- 即使四项基础真实契约通过，也不能绕过 thought signature round-trip 阻断。
+```bash
+AGENTMESH360_GEMINI_CONTRACT=1 \
+AGENTMESH360_GEMINI_API_KEY='<用户明确授权的测试 Key>' \
+AGENTMESH360_GEMINI_MODEL='gemini-3.5-flash-lite' \
+cargo test -p xai-grok-shell --test test_provider_contracts \
+  gemini_google_thought_signature_live_contract -- --ignored --exact
+```
 
-## 6. Catalog 准入门
+真实入口继续保持 `#[ignore]` 与环境 gate；普通 `cargo test --ignored` 也不能在缺少
+明确 opt-in 时产生费用。
 
-Gemini 官方预设只有同时满足以下条件才能加入内置 Catalog：
+## 8. Catalog 声明
 
-1. 真实 Streaming、Function Calling、Structured Output 与 Reasoning 契约通过；
-2. 对真实 Gemini 3 Tool Loop 抓取脱敏 fixture，明确 signature 的响应和下一轮请求形状；
-3. 实现 signature 在 stream decode → `ConversationItem` → Session persistence →
-   history replay → 下一轮 request encode 的字节保真；
-4. 重启 Session 后继续 Tool Loop 的真实契约通过；
-5. 模型 ID、context window、output limit 和能力证据在加入当日重新核验；
-6. Profile 保存仍保持零网络；真实 Probe 和契约测试仍需用户明确确认；
-7. Catalog 能力只标记实测项，其他保持 `unknown`。
+内置 Catalog revision 从 1 升到 2，新增：
 
-内置 Catalog 单元测试现已加入显式门禁：在上述条件未关闭前，出现 Google 官方
-`generativelanguage.googleapis.com` 预设会使测试失败。
+- Preset：`google-gemini`；
+- Protocol：`openai_chat`；
+- Auth：`bearer_api_key`；
+- 官方 endpoint origin allowlist；
+- Model：`gemini-3.5-flash-lite`；
+- Context/Output：1,048,576 / 65,536；
+- `tools/structuredOutput/reasoning/streaming = supported`；
+- `parallelToolCalls/vision = unknown`。
 
-## 7. 后续实现建议
+Profile 保存仍不联网；用户必须明确提交 BYOK Key、创建 Assignment，并在显式 Probe
+或真实对话时才调用 Provider。不存在静默 Provider fallback。
 
-下一技术切片不应直接“加 Gemini 预设”，而应是 F0b：
+## 9. 复验条件与非目标
 
-1. 由用户明确提供仅用于契约测试的 Gemini Key 和模型；
-2. 先运行当前四项基础真实契约，保存不含正文与秘密的结果；
-3. 用最小真实 Tool Loop 捕获脱敏 wire fixture；
-4. 设计 Provider Extension Envelope，范围只覆盖受审查的 request/response 扩展，
-   不能变成任意 Agent 注入 JSON 的逃逸通道；
-5. 为 thought signature 建立持久化和跨重启 round-trip 测试；
-6. 复核兼容层是否足以支持产品 Main Session；若不足，再评估 Gemini
-   Native/Interactions Adapter。
+出现以下任一变化时，必须重新执行至少本地 fixture、JSONL restart 和两请求真实 Tool
+Loop：
 
-F0b 之前可以并行推进不依赖外部 Key 的切片 G：独立后台 Host、自启动、UI 重连与崩溃
-恢复。它是所有持久产品 Agent 的共同价值，不应被单个 Provider 的外部凭据门槛阻塞。
+- Google 改变 OpenAI 兼容 signature 位置或字段名；
+- Model ID、上下文或输出上限变化；
+- Chat streaming/Conversation/Session storage 结构变化；
+- Provider endpoint allowlist 或 Profile normalization 变化；
+- Catalog 切换到新的 Gemini 模型。
+
+本轮明确不实现：
+
+- Gemini Native 或 Interactions Backend；
+- Google 内置工具和完整多模态接入；
+- 自动读取用户其他 Gemini/GCloud 凭据；
+- 自动模型发现、自动真实 Probe 或自动计费请求；
+- DeepSeek、Kimi、GLM、Qwen 等未经各自真实契约验证的正式预设；
+- Scheduler、Subagent 产品面、Agent 专属 UI、Package H2d5 或生产发布。
+
+F0b 关闭后，原产品计划的普通功能切片已经走到生产发布安全门前。R1-R6 仍未满足，
+因此下一步只能先形成独立的生产准备/内部 canary 计划并等待单独授权，不能自动填入
+生产 Root、endpoint、签名、公证或发布配置。
+
+## 10. Kimi 独立交叉测试
+
+Kimi CLI session `session_839105d3-70b3-4373-943c-8263c12bc8db` 只读审查完整
+F0b diff、五份中文计划文档和全部安全边界，并独立执行：
+
+- Types 279、Sampler 189、Chat State 339；
+- 默认零费用 Provider 契约 3 pass / 2 个真实入口 ignored；
+- JSONL restart 1/1、Catalog 4/4；
+- 桌面 104 项为 101 pass、0 fail、3 个默认 real-host skip；
+- Rustfmt、`git diff --check`、`npm run check` 与四组 Electron smoke。
+
+它的新建完整 Shell target 达 18.8 GiB 后被主 Agent 为保护磁盘主动终止并清除；
+该批次没有记录为成功或代码失败。Kimi 改用主 Agent 已构建的测试二进制完成上述
+Provider/JSONL/Catalog 独立执行，并明确没有把仅由主 Agent 执行的完整 Shell 182 项
+和 Clippy 冒充为自己的结果。
+
+唯一 Low 是一个测试注释被机械新增字段污染，修复后同一 session 复核关闭。最终
+Blocker/High/Medium/Low 全部为零并给出无条件 PASS；没有读取 Keychain、真实
+signature 原始文件或调用任何真实 Provider。

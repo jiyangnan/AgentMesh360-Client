@@ -7,6 +7,7 @@
 //! The internal representation captures a superset of features from both APIs,
 //! allowing seamless switching between backends via configuration.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -14,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::rs;
 use crate::types::{
     ChatCompletionRequest, ChatContentBlock, ChatRequestMessage, ChatResponseMessage, FinishReason,
-    ImageUrl, MessageContent, Role, ToolCallRequest, ToolChoice, ToolDefinition, TraceContext,
-    Usage,
+    ImageUrl, MessageContent, ProviderExtensionEnvelope, Role, ToolCallRequest, ToolChoice,
+    ToolDefinition, TraceContext, Usage,
 };
 
 // ============================================================================
@@ -257,6 +258,47 @@ pub struct AssistantItem {
     /// backends that don't echo it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<crate::ReasoningEffort>,
+    /// Provider-owned opaque state attached to this exact assistant response.
+    ///
+    /// It is typed and bounded by [`ProviderExtensionEnvelope`], persisted
+    /// with the conversation, and replayed only by an explicitly compatible
+    /// Chat Completions route.
+    #[serde(default, skip_serializing_if = "AssistantProviderState::is_empty")]
+    pub provider_state: AssistantProviderState,
+}
+
+/// Provider extensions associated with one assistant response.
+///
+/// Message-level state is kept separately from per-tool-call state because
+/// Google validates the latter at the exact tool-call position on replay.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AssistantProviderState {
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub message: Option<ProviderExtensionEnvelope>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tool_calls: BTreeMap<String, ProviderExtensionEnvelope>,
+}
+
+impl AssistantProviderState {
+    pub fn is_empty(&self) -> bool {
+        provider_extension_option_is_empty(&self.message)
+            && self
+                .tool_calls
+                .values()
+                .all(ProviderExtensionEnvelope::is_empty)
+    }
+
+    pub fn tool_call(&self, tool_call_id: &str) -> Option<&ProviderExtensionEnvelope> {
+        self.tool_calls
+            .get(tool_call_id)
+            .filter(|extension| !extension.is_empty())
+    }
+}
+
+fn provider_extension_option_is_empty(extension: &Option<ProviderExtensionEnvelope>) -> bool {
+    extension
+        .as_ref()
+        .is_none_or(ProviderExtensionEnvelope::is_empty)
 }
 
 /// Tool result message
@@ -1075,6 +1117,7 @@ impl ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: AssistantProviderState::default(),
         })
     }
 
@@ -1090,6 +1133,7 @@ impl ConversationItem {
             model_id: Some(model_id.into()),
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: AssistantProviderState::default(),
         })
     }
 
@@ -1101,6 +1145,7 @@ impl ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: AssistantProviderState::default(),
         })
     }
 
@@ -1595,14 +1640,25 @@ impl From<ChatRequestMessage> for ConversationItem {
                 // path (`response_to_conversation_items`).
                 let content = msg.text_content();
                 let model_id = msg.model_id;
+                let message_provider_extension =
+                    msg.extra_content.filter(|extension| !extension.is_empty());
+                let mut tool_provider_extensions = BTreeMap::new();
 
                 let tool_calls: Vec<ToolCall> = msg
                     .tool_calls
                     .into_iter()
-                    .map(|tc| ToolCall {
-                        id: Arc::<str>::from(tc.id.unwrap_or_default()),
-                        name: tc.function.name,
-                        arguments: Arc::<str>::from(tc.function.arguments),
+                    .map(|tc| {
+                        let id = tc.id.unwrap_or_default();
+                        if let Some(extension) =
+                            tc.extra_content.filter(|extension| !extension.is_empty())
+                        {
+                            tool_provider_extensions.insert(id.clone(), extension);
+                        }
+                        ToolCall {
+                            id: Arc::<str>::from(id),
+                            name: tc.function.name,
+                            arguments: Arc::<str>::from(tc.function.arguments),
+                        }
                     })
                     .collect();
 
@@ -1612,6 +1668,10 @@ impl From<ChatRequestMessage> for ConversationItem {
                     model_id,
                     model_fingerprint: None,
                     reasoning_effort: None,
+                    provider_state: AssistantProviderState {
+                        message: message_provider_extension,
+                        tool_calls: tool_provider_extensions,
+                    },
                 })
             }
             Role::Tool => {
@@ -1750,16 +1810,21 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
                 tool_call_id: None,
                 model_id: None,
                 reasoning_content: None,
+                extra_content: None,
             }
         }
         ConversationItem::Assistant(a) => {
+            let provider_state = a.provider_state;
             let tool_calls: Vec<ToolCallRequest> = a
                 .tool_calls
                 .into_iter()
                 .map(|tc| {
                     let arguments = sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
-                    ToolCallRequest::function(tc.name, arguments.as_ref().to_owned())
-                        .with_id(tc.id.as_ref().to_owned())
+                    let mut request =
+                        ToolCallRequest::function(tc.name, arguments.as_ref().to_owned())
+                            .with_id(tc.id.as_ref().to_owned());
+                    request.extra_content = provider_state.tool_call(tc.id.as_ref()).cloned();
+                    request
                 })
                 .collect();
 
@@ -1776,6 +1841,7 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
                 tool_call_id: None,
                 model_id: a.model_id,
                 reasoning_content: None,
+                extra_content: provider_state.message,
             }
         }
         ConversationItem::ToolResult(t) => {
@@ -1802,6 +1868,7 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
                     tool_call_id: Some(t.tool_call_id),
                     model_id: None,
                     reasoning_content: None,
+                    extra_content: None,
                 }
             }
         }
@@ -1816,6 +1883,7 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
             tool_call_id: None,
             model_id: None,
             reasoning_content: None,
+            extra_content: None,
         },
         // Unreachable: `conversation_to_chat_messages` (the only caller)
         // folds `Reasoning` siblings into the following assistant and
@@ -1903,14 +1971,23 @@ impl From<ChatResponseMessage> for ConversationItem {
         // conversation; this `From` impl is only used in tests and legacy
         // paths.
         let content = msg.content.unwrap_or_default();
+        let message_provider_extension =
+            msg.extra_content.filter(|extension| !extension.is_empty());
+        let mut tool_provider_extensions = BTreeMap::new();
 
         let tool_calls: Vec<ToolCall> = msg
             .tool_calls
             .into_iter()
-            .map(|tc| ToolCall {
-                id: Arc::<str>::from(tc.id),
-                name: tc.function.name,
-                arguments: Arc::<str>::from(tc.function.arguments),
+            .map(|tc| {
+                if let Some(extension) = tc.extra_content.filter(|extension| !extension.is_empty())
+                {
+                    tool_provider_extensions.insert(tc.id.clone(), extension);
+                }
+                ToolCall {
+                    id: Arc::<str>::from(tc.id),
+                    name: tc.function.name,
+                    arguments: Arc::<str>::from(tc.function.arguments),
+                }
             })
             .collect();
 
@@ -1920,6 +1997,10 @@ impl From<ChatResponseMessage> for ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: AssistantProviderState {
+                message: message_provider_extension,
+                tool_calls: tool_provider_extensions,
+            },
         })
     }
 }
@@ -2035,6 +2116,7 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
         model_id: Some(model_id),
         model_fingerprint,
         reasoning_effort,
+        provider_state: AssistantProviderState::default(),
     }));
 
     items
@@ -3336,6 +3418,7 @@ impl From<crate::messages::MessagesResponse> for ConversationItem {
             model_id: Some(resp.model),
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: AssistantProviderState::default(),
         })
     }
 }
@@ -3466,6 +3549,65 @@ mod compaction_item_bridge_tests {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+
+    #[test]
+    fn assistant_provider_state_persists_and_replays_at_exact_tool_call() {
+        let message_extension = ProviderExtensionEnvelope::google_thought_signature(
+            crate::OpaqueThoughtSignature::new("fixture-message-signature").unwrap(),
+        );
+        let tool_extension = ProviderExtensionEnvelope::google_thought_signature(
+            crate::OpaqueThoughtSignature::new("fixture-tool-signature").unwrap(),
+        );
+        let mut tool_calls = BTreeMap::new();
+        tool_calls.insert("call_1".to_string(), tool_extension.clone());
+        let item = ConversationItem::Assistant(AssistantItem {
+            content: String::new().into(),
+            tool_calls: vec![ToolCall {
+                id: "call_1".into(),
+                name: "report_marker".to_string(),
+                arguments: r#"{"marker":"agentmesh360-f0b"}"#.into(),
+            }],
+            model_id: Some("gemini-3.5-flash-lite".to_string()),
+            model_fingerprint: None,
+            reasoning_effort: None,
+            provider_state: AssistantProviderState {
+                message: Some(message_extension.clone()),
+                tool_calls,
+            },
+        });
+
+        let persisted = serde_json::to_vec(&item).expect("assistant must persist");
+        let restored: ConversationItem =
+            serde_json::from_slice(&persisted).expect("assistant must restore");
+        assert!(
+            !format!("{restored:?}").contains("fixture-tool-signature"),
+            "opaque provider state must stay out of Debug output"
+        );
+
+        let request_message = conversation_item_to_chat_message(restored);
+        assert_eq!(request_message.extra_content, Some(message_extension));
+        assert_eq!(request_message.tool_calls.len(), 1);
+        assert_eq!(
+            request_message.tool_calls[0].extra_content,
+            Some(tool_extension)
+        );
+    }
+
+    #[test]
+    fn assistant_provider_state_defaults_empty_for_legacy_session_item() {
+        let item = ConversationItem::assistant("legacy");
+        let mut persisted = serde_json::to_value(item).unwrap();
+        persisted
+            .as_object_mut()
+            .expect("tagged assistant object")
+            .remove("provider_state");
+
+        let restored: ConversationItem = serde_json::from_value(persisted).unwrap();
+        let ConversationItem::Assistant(assistant) = restored else {
+            panic!("expected assistant");
+        };
+        assert!(assistant.provider_state.is_empty());
+    }
 
     #[test]
     fn prior_turn_interrupt_serde_round_trip_and_unknown_fallback() {
@@ -3770,6 +3912,7 @@ mod tests {
             tool_calls: vec![],
             tool_call_id: None,
             citations: None,
+            extra_content: None,
         };
 
         let item: ConversationItem = response_msg.into();
@@ -3784,6 +3927,7 @@ mod tests {
             tool_calls: vec![],
             tool_call_id: None,
             citations: None,
+            extra_content: None,
         };
 
         let item: ConversationItem = response_with_reasoning.into();
@@ -3808,9 +3952,11 @@ mod tests {
                     name: "read_file".to_string(),
                     arguments: r#"{"path": "/foo.txt"}"#.to_string(),
                 },
+                extra_content: None,
             }],
             tool_call_id: None,
             citations: None,
+            extra_content: None,
         };
 
         let item: ConversationItem = response_with_tools.into();
@@ -4092,6 +4238,7 @@ mod tests {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         };
 
         let item = ConversationItem::Assistant(assistant.clone());
@@ -4547,6 +4694,7 @@ mod tests {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         });
 
         for item in [reasoning_item, assistant_item] {
@@ -4579,6 +4727,7 @@ mod tests {
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             // New user message
             ConversationItem::user("Now what is 3+3?"),
@@ -4639,6 +4788,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ]);
 
@@ -5278,6 +5428,7 @@ if text == "Compare these images:");
             model_id: Some("messages-compatible-model".into()),
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         });
 
         // Reasoning now lives as a sibling `ConversationItem::Reasoning`,
@@ -5474,6 +5625,7 @@ if text == "Compare these images:");
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             // Completed tool pair
             ConversationItem::Assistant(AssistantItem {
@@ -5486,6 +5638,7 @@ if text == "Compare these images:");
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("call_1", "fn main() {}"),
             ConversationItem::Assistant(AssistantItem {
@@ -5494,6 +5647,7 @@ if text == "Compare these images:");
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             // Mid-turn: orphaned tool_use (no result yet)
             ConversationItem::Assistant(AssistantItem {
@@ -5506,6 +5660,7 @@ if text == "Compare these images:");
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ]
     }
@@ -6241,6 +6396,7 @@ if text == "Compare these images:");
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         })];
 
         transform_conversation_cwd(&mut items, worktree, root);
@@ -6307,6 +6463,7 @@ if text == "Compare these images:");
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ];
 
@@ -6364,6 +6521,7 @@ if text == "Compare these images:");
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ];
 
@@ -6415,6 +6573,7 @@ if text == "Compare these images:");
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
         ];
 
@@ -6523,6 +6682,7 @@ if text == "Compare these images:");
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         })];
 
         transform_conversation_cwd(&mut items, "/old/path", "/new/path");
@@ -6638,6 +6798,7 @@ if text == "Compare these images:");
                 model_id: Some("test-model".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             })],
             stop_reason: Some(StopReason::Stop),
             usage: None,
@@ -6659,6 +6820,7 @@ if text == "Compare these images:");
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             })],
             stop_reason: Some(StopReason::Stop),
             usage: None,
@@ -6684,6 +6846,7 @@ if text == "Compare these images:");
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             })],
             stop_reason: Some(StopReason::ToolCalls),
             usage: None,
@@ -6881,6 +7044,7 @@ if text == "Compare these images:");
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         }
         .with_model_id("grok-3");
 
@@ -6970,6 +7134,7 @@ if text == "Compare these images:");
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
+            provider_state: Default::default(),
         })
     }
 
@@ -7672,6 +7837,7 @@ if image_url.url == "data:image/png;base64,iVBOR")
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result_with_images(
                 "call_1",
@@ -8185,6 +8351,7 @@ if url.contains("iVBOR")));
                     model_id: None,
                     model_fingerprint: None,
                     reasoning_effort: None,
+                    provider_state: Default::default(),
                 }),
             ],
             stop_reason: Some(StopReason::Stop),
@@ -9418,6 +9585,7 @@ if url.contains("iVBOR")));
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                provider_state: Default::default(),
             }),
             ConversationItem::tool_result("call_1", "file contents"),
         ]);

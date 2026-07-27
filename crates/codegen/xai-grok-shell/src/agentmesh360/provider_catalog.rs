@@ -287,15 +287,31 @@ mod tests {
         assert!(catalog.provider("openai").is_some());
         assert!(catalog.provider("xai").is_some());
         assert!(catalog.provider("anthropic").is_some());
-        assert!(
-            !catalog.providers.iter().any(|provider| {
-                provider
-                    .default_base_url
-                    .as_deref()
-                    .is_some_and(|url| url.contains("generativelanguage.googleapis.com"))
-            }),
-            "Gemini must stay out of the built-in Catalog until the live contract and thought-state round trip pass"
+        let gemini = catalog
+            .provider("google-gemini")
+            .expect("F0b-qualified Gemini preset");
+        assert_eq!(
+            gemini.default_base_url.as_deref(),
+            Some("https://generativelanguage.googleapis.com/v1beta/openai")
         );
+        assert_eq!(gemini.protocol, ProviderProtocol::OpenaiChat);
+        let flash_lite = catalog
+            .model("google-gemini", "gemini-3.5-flash-lite")
+            .expect("qualified Gemini model");
+        assert_eq!(flash_lite.capability.context_window, Some(1_048_576));
+        assert_eq!(flash_lite.capability.max_output_tokens, Some(65_536));
+        assert_eq!(flash_lite.capability.tools, CapabilityStatus::Supported);
+        assert_eq!(
+            flash_lite.capability.parallel_tool_calls,
+            CapabilityStatus::Unknown
+        );
+        assert_eq!(flash_lite.capability.vision, CapabilityStatus::Unknown);
+        assert_eq!(
+            flash_lite.capability.structured_output,
+            CapabilityStatus::Supported
+        );
+        assert_eq!(flash_lite.capability.reasoning, CapabilityStatus::Supported);
+        assert_eq!(flash_lite.capability.streaming, CapabilityStatus::Supported);
         assert_eq!(
             catalog.provider("anthropic").expect("anthropic").quirks,
             [ProviderQuirk::AnthropicVersion2023_06_01]

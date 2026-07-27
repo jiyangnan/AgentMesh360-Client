@@ -1,5 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use std::fmt;
 use std::num::NonZeroU64;
 
 // ============================================================================
@@ -58,6 +59,113 @@ where
     T: Default + Deserialize<'de>,
 {
     Option::<T>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
+}
+
+/// Maximum size of one provider-owned opaque reasoning signature.
+///
+/// The value is deliberately generous compared with the currently observed
+/// Gemini wire value, while still preventing an unbounded provider extension
+/// from entering persisted conversation state.
+pub const MAX_OPAQUE_THOUGHT_SIGNATURE_BYTES: usize = 16 * 1024;
+
+/// An opaque provider reasoning signature.
+///
+/// The bytes must round-trip exactly. `Debug` intentionally reports only the
+/// byte length so test failures and diagnostics never print provider state.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OpaqueThoughtSignature(String);
+
+impl OpaqueThoughtSignature {
+    pub fn new(value: impl Into<String>) -> Result<Self, &'static str> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err("thought signature must not be empty");
+        }
+        if value.len() > MAX_OPAQUE_THOUGHT_SIGNATURE_BYTES {
+            return Err("thought signature exceeds the provider-state size limit");
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl fmt::Debug for OpaqueThoughtSignature {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpaqueThoughtSignature")
+            .field("byte_length", &self.0.len())
+            .finish()
+    }
+}
+
+impl Serialize for OpaqueThoughtSignature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for OpaqueThoughtSignature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Google-owned fields nested under OpenAI-compatible `extra_content`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GoogleProviderExtension {
+    pub thought_signature: OpaqueThoughtSignature,
+}
+
+/// Typed, allowlisted provider extension envelope.
+///
+/// This is intentionally not a free-form JSON map. Unknown provider fields
+/// are ignored on decode and never replayed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderExtensionEnvelope {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub google: Option<GoogleProviderExtension>,
+}
+
+impl ProviderExtensionEnvelope {
+    pub fn google_thought_signature(signature: OpaqueThoughtSignature) -> Self {
+        Self {
+            google: Some(GoogleProviderExtension {
+                thought_signature: signature,
+            }),
+        }
+    }
+
+    pub fn thought_signature(&self) -> Option<&OpaqueThoughtSignature> {
+        self.google.as_ref().map(|google| &google.thought_signature)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.google.is_none()
+    }
+}
+
+fn provider_extension_option_is_empty(extension: &Option<ProviderExtensionEnvelope>) -> bool {
+    extension
+        .as_ref()
+        .is_none_or(ProviderExtensionEnvelope::is_empty)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -243,6 +351,9 @@ pub struct ChatRequestMessage {
     /// The reasoning/thinking content from the model (for models that support extended thinking)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    /// Typed provider-owned fields for compatible APIs.
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub extra_content: Option<ProviderExtensionEnvelope>,
 }
 
 impl ChatRequestMessage {
@@ -255,6 +366,7 @@ impl ChatRequestMessage {
             tool_call_id: None,
             model_id: None,
             reasoning_content: None,
+            extra_content: None,
         }
     }
 
@@ -267,6 +379,7 @@ impl ChatRequestMessage {
             tool_call_id: None,
             model_id: None,
             reasoning_content: None,
+            extra_content: None,
         }
     }
 
@@ -283,6 +396,7 @@ impl ChatRequestMessage {
             tool_call_id: None,
             model_id: Some(model_id.into()),
             reasoning_content,
+            extra_content: None,
         }
     }
 
@@ -295,6 +409,7 @@ impl ChatRequestMessage {
             tool_call_id: None,
             model_id: None,
             reasoning_content: None,
+            extra_content: None,
         }
     }
 
@@ -307,6 +422,7 @@ impl ChatRequestMessage {
             tool_call_id: Some(tool_call_id.into()),
             model_id: None,
             reasoning_content: None,
+            extra_content: None,
         }
     }
 
@@ -439,6 +555,8 @@ pub struct ToolCallRequest {
     #[serde(rename = "type")]
     pub kind: ToolType,
     pub function: ToolCallFunction,
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub extra_content: Option<ProviderExtensionEnvelope>,
 }
 
 impl ToolCallRequest {
@@ -447,6 +565,7 @@ impl ToolCallRequest {
             id: None,
             kind: ToolType::Function,
             function: ToolCallFunction::new(name, arguments),
+            extra_content: None,
         }
     }
 
@@ -500,6 +619,8 @@ pub struct ChatResponseMessage {
     pub tool_call_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub citations: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub extra_content: Option<ProviderExtensionEnvelope>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -508,6 +629,8 @@ pub struct ToolCallResponse {
     #[serde(rename = "type")]
     pub kind: String,
     pub function: ToolCallFunction,
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub extra_content: Option<ProviderExtensionEnvelope>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -616,6 +739,9 @@ pub struct ToolCallDelta {
     /// The function name and/or argument fragment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub function: Option<ToolCallFunctionDelta>,
+    /// Provider extension normally arrives on the first tool-call chunk.
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub extra_content: Option<ProviderExtensionEnvelope>,
 }
 
 /// Streaming delta for function name/arguments within a tool call.
@@ -647,6 +773,10 @@ pub struct ChatChunkDelta {
     pub tool_calls: Vec<ToolCallDelta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Provider extension for message-level opaque state. It may arrive in an
+    /// otherwise empty final streaming chunk.
+    #[serde(default, skip_serializing_if = "provider_extension_option_is_empty")]
+    pub extra_content: Option<ProviderExtensionEnvelope>,
 }
 
 /// Parameters to control realtime data.
@@ -1197,6 +1327,82 @@ impl From<crate::messages::MessagesRequest> for MessagesRequestWrapper {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn opaque_thought_signature_is_bounded_and_debug_redacted() {
+        const SENTINEL: &str = "fixture-signature-that-must-not-appear-in-debug";
+        let signature = OpaqueThoughtSignature::new(SENTINEL).expect("valid fixture");
+
+        assert_eq!(signature.as_str(), SENTINEL);
+        assert_eq!(signature.len(), SENTINEL.len());
+        let debug = format!("{signature:?}");
+        assert!(debug.contains(&SENTINEL.len().to_string()));
+        assert!(!debug.contains(SENTINEL));
+        assert!(OpaqueThoughtSignature::new("").is_err());
+        assert!(
+            OpaqueThoughtSignature::new(
+                "x".repeat(MAX_OPAQUE_THOUGHT_SIGNATURE_BYTES.saturating_add(1))
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn google_provider_extension_matches_reviewed_wire_fixture_exactly() {
+        let fixture = json!({
+            "google": {
+                "thought_signature": "fixture-signature"
+            }
+        });
+        let extension: ProviderExtensionEnvelope =
+            serde_json::from_value(fixture.clone()).expect("fixture must decode");
+
+        assert_eq!(
+            extension.thought_signature().expect("signature").as_str(),
+            "fixture-signature"
+        );
+        assert_eq!(
+            serde_json::to_value(extension).expect("fixture must encode"),
+            fixture
+        );
+    }
+
+    #[test]
+    fn provider_extension_ignores_and_never_replays_unknown_fields() {
+        let extension: ProviderExtensionEnvelope = serde_json::from_value(json!({
+            "google": {
+                "thought_signature": "fixture-signature",
+                "unreviewed": "drop-me"
+            },
+            "unreviewed_provider": {
+                "secret": "drop-me"
+            }
+        }))
+        .expect("reviewed field must decode");
+
+        assert_eq!(
+            serde_json::to_value(extension).expect("extension must encode"),
+            json!({
+                "google": {
+                    "thought_signature": "fixture-signature"
+                }
+            })
+        );
+
+        let unknown_only: ProviderExtensionEnvelope = serde_json::from_value(json!({
+            "unreviewed_provider": {"secret": "drop-me"}
+        }))
+        .unwrap();
+        let mut message = ChatRequestMessage::assistant("done", "fixture-model", None);
+        message.extra_content = Some(unknown_only);
+        assert!(
+            serde_json::to_value(message)
+                .unwrap()
+                .get("extra_content")
+                .is_none(),
+            "an empty allowlist envelope must not reach the wire"
+        );
+    }
 
     #[test]
     fn reasoning_effort_serde_lowercase_round_trip() {

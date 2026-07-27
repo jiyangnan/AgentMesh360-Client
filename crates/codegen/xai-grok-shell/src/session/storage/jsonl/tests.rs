@@ -34,6 +34,51 @@ fn create_test_plan_state() -> TodoState {
     TodoState::default()
 }
 #[tokio::test]
+async fn provider_state_survives_jsonl_restart_and_replays_exactly() {
+    use std::collections::BTreeMap;
+    use xai_grok_sampling_types::{
+        AssistantItem, AssistantProviderState, OpaqueThoughtSignature,
+        ProviderExtensionEnvelope, ToolCall, conversation_item_to_chat_message,
+    };
+    let temp_dir = TempDir::new().unwrap();
+    let info = create_test_info();
+    let adapter = JsonlStorageAdapter::with_root(temp_dir.path().to_path_buf());
+    adapter.init_session(&info, default_model_id()).await.unwrap();
+    let extension = ProviderExtensionEnvelope::google_thought_signature(
+        OpaqueThoughtSignature::new("fixture-restart-signature").unwrap(),
+    );
+    let mut tool_provider_state = BTreeMap::new();
+    tool_provider_state.insert("call_restart".to_string(), extension.clone());
+    let assistant = ConversationItem::Assistant(AssistantItem {
+        content: String::new().into(),
+        tool_calls: vec![ToolCall {
+            id: "call_restart".into(),
+            name: "report_marker".to_string(),
+            arguments: r#"{"marker":"agentmesh360-f0b"}"#.into(),
+        }],
+        model_id: Some("gemini-3.5-flash-lite".to_string()),
+        model_fingerprint: None,
+        reasoning_effort: None,
+        provider_state: AssistantProviderState {
+            message: None,
+            tool_calls: tool_provider_state,
+        },
+    });
+    adapter.append_chat_message(&info, &assistant).await.unwrap();
+
+    let restarted = JsonlStorageAdapter::with_root(temp_dir.path().to_path_buf());
+    let loaded = restarted.load_session(&info).await.unwrap();
+    let message = conversation_item_to_chat_message(loaded.chat_history[0].clone());
+    assert_eq!(
+        message.tool_calls[0]
+            .extra_content
+            .as_ref()
+            .and_then(ProviderExtensionEnvelope::thought_signature)
+            .map(OpaqueThoughtSignature::as_str),
+        Some("fixture-restart-signature")
+    );
+}
+#[tokio::test]
 async fn write_compaction_segment_numbers_and_indexes_resume_safely() {
     use crate::extensions::notification::CompactionSegmentFile;
     use xai_grok_sampling_types::ConversationItem;
@@ -1556,7 +1601,7 @@ fn fork_filter_consecutive_users_with_tool_calls() {
         ConversationItem::user("query"), ConversationItem::Assistant(AssistantItem {
         content : String::new().into(), tool_calls : vec![ToolCall { id : "tc1".into(),
         name : "bash".into(), arguments : "{}".into(), }], model_id : None,
-        model_fingerprint : None, reasoning_effort : None, }),
+        model_fingerprint : None, reasoning_effort : None,  provider_state: Default::default(),}),
         ConversationItem::tool_result("tc1", "output"),
         ConversationItem::user("follow-up"),
     ];
@@ -1573,7 +1618,7 @@ fn fork_filter_preserves_complete_tool_turn() {
         ConversationItem::user("q"), ConversationItem::Assistant(AssistantItem { content
         : String::new().into(), tool_calls : vec![ToolCall { id : "tc1".into(), name :
         "bash".into(), arguments : "{}".into(), }], model_id : None, model_fingerprint :
-        None, reasoning_effort : None, }), ConversationItem::tool_result("tc1",
+        None, reasoning_effort : None,  provider_state: Default::default(),}), ConversationItem::tool_result("tc1",
         "output"),
     ];
     super::fork_filter_chat(&mut items);
@@ -1587,7 +1632,7 @@ fn fork_filter_strips_incomplete_tool_turn() {
         ConversationItem::user("q2"), ConversationItem::Assistant(AssistantItem { content
         : String::new().into(), tool_calls : vec![ToolCall { id : "tc1".into(), name :
         "bash".into(), arguments : "{}".into(), }], model_id : None, model_fingerprint :
-        None, reasoning_effort : None, }),
+        None, reasoning_effort : None,  provider_state: Default::default(),}),
     ];
     super::fork_filter_chat(&mut items);
     assert_eq!(
@@ -1696,7 +1741,7 @@ fn fork_filter_keeps_multi_tool_cycle_turn_with_reasoning() {
         ConversationItem::Assistant(AssistantItem { content : String::new().into(),
         tool_calls : vec![ToolCall { id : "tc1".into(), name : "bash".into(), arguments :
         "{}".into(), }], model_id : None, model_fingerprint : None, reasoning_effort :
-        None, }), ConversationItem::tool_result("tc1", "output"),
+        None,  provider_state: Default::default(),}), ConversationItem::tool_result("tc1", "output"),
         ConversationItem::Reasoning(xai_grok_sampling_types::synthesized_reasoning_item("reflect",)),
         ConversationItem::assistant("final text"),
     ];
@@ -1722,7 +1767,7 @@ fn fork_filter_keeps_multi_tool_turn_with_reasoning_between_results() {
         tool_calls : vec![ToolCall { id : "tc1".into(), name : "bash".into(), arguments :
         "{}".into(), }, ToolCall { id : "tc2".into(), name : "grep".into(), arguments :
         "{}".into(), },], model_id : None, model_fingerprint : None, reasoning_effort :
-        None, }), ConversationItem::tool_result("tc1", "out1"),
+        None,  provider_state: Default::default(),}), ConversationItem::tool_result("tc1", "out1"),
         ConversationItem::Reasoning(xai_grok_sampling_types::synthesized_reasoning_item("mid")),
         ConversationItem::tool_result("tc2", "out2"),
         ConversationItem::Reasoning(xai_grok_sampling_types::synthesized_reasoning_item("reflect",)),

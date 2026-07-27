@@ -39,8 +39,8 @@ H2d4 后的产品顺序复核与生产发布硬门见
 - BYOK 是默认推理模式。用户明确选择模型 Provider，并自行承担 Provider 侧的
   模型费用。M1 Core 复用 Grok 已有的 OpenAI Responses、OpenAI Chat Completions
   和 Anthropic Messages 三种 Backend；OpenAI、xAI、Anthropic 及通用兼容端点先
-  完成契约测试。Google Gemini 在专项验证后优先通过官方 OpenAI 兼容端点进入预设
-  扩展，Native/Interactions 能力后置。
+  完成契约测试。Google Gemini 已在专项真实验证后通过官方 OpenAI 兼容端点进入
+  声明式预设，Native/Interactions 能力后置。
 - BYOK 模型调用不消耗 AgentMesh360 credits。Credits 只用于明确标识的
   AgentMesh360 云端动作。
 - Job Agent、LectureCast Agent、Deploy Agent 以及未来的产品 Agent，都是单例、
@@ -489,9 +489,9 @@ flowchart LR
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
-| BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3 与 F0a 已实现** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a 已加入默认零费用的 OpenAI Chat Provider 契约 Harness 与双重 opt-in Gemini 真实入口，并确认 thought signature 跨轮保真是正式 Catalog 阻断项；外部真实 Provider E2E 仍待用户凭据 |
+| BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成自主验证与 Kimi 四级清零** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a 建立默认零费用契约 Harness，F0b 用 11/12 次授权短请求验证 Gemini Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop，增加类型化 thought signature 保真和精确 endpoint/model 隔离，并加入 `google-gemini` / `gemini-3.5-flash-lite` 官方预设 |
 | 动态 Agent Package | **H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试** | H2d4 已在 Artifact/Envelope 前 bounded fetch Release Manifest，核对 Registry SHA、canonical strict 文档、Client/Host projection 与 H1 metadata。生产 Root、Publisher Bundle、endpoint、上传和发布仍关闭；生产启用前须关闭适用于 Agent Package 的 R0/R1/R2/R3/R5/R6 |
-| 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现** | 三个首方 Agent 已通过真实 detach/Leader 替换恢复；动态 Agent 只有本地通用化 fixture，生产 Registry 仍关闭。Artifact/Project State 使用通用 Manifest 与 Renderer 白名单；后台活动和 Session Plan 分别由 TerminalBackend 与 Main Session Resources 提供 authority，均不硬编码 Agent 类型。通用工作区增量完成后，下一步回到凭据依赖的真实 Provider E2E；Scheduler、Subagent 与 Agent 专属 UI 不自动启动 |
+| 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现** | 三个首方 Agent 已通过真实 detach/Leader 替换恢复；动态 Agent 只有本地通用化 fixture，生产 Registry 仍关闭。Artifact/Project State 使用通用 Manifest 与 Renderer 白名单；后台活动和 Session Plan 分别由 TerminalBackend 与 Main Session Resources 提供 authority，均不硬编码 Agent 类型。通用工作区增量与 Gemini F0b 完成后，下一步只能先形成生产准备/内部 canary 独立计划；Scheduler、Subagent 与 Agent 专属 UI 不自动启动 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
 
 Job Agent、LectureCast Agent 和 Deploy Agent 已从相同的 Manifest v1 载入，不再
@@ -550,7 +550,8 @@ Host-owned 安全快照共同对账，Renderer 只见本地 ID、固定类型与
 Session Plan 只从当前 Main Session Resources 的 canonical `TodoState` 读取
 content/四态；ACP Plan 仅作为刷新信号，Renderer 明确区分模型计划和业务进度。
 循环 50、循环 52 与循环 54 均已完成自主验证和 Kimi 独立复核，最终四级问题全零。
-通用工作区增量完成后的下一产品步骤是凭据依赖的真实 Provider E2E；生产 Package
-与桌面发布继续受独立 R0-R6 安全门约束，
+通用工作区增量后的 Gemini F0b 已在用户明确授权下完成双方验证和 Kimi 四级清零，
+普通功能路线已走到生产准备门前。生产 Package 与桌面发布继续受独立 R0-R6
+安全门约束，下一步只能先形成内部 canary/生产准备计划并等待单独授权，
 完整结论见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。

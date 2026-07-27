@@ -88,6 +88,7 @@ mod tests {
                     reasoning_content: None,
                     tool_calls: vec![],
                     tool_call_id: None,
+                    extra_content: None,
                 },
                 finish_reason: None,
             }],

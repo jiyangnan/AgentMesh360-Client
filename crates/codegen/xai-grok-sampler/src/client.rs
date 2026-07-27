@@ -325,8 +325,53 @@ struct ClientDefaults {
     top_p: Option<f32>,
     api_backend: ApiBackend,
     auth_scheme: AuthScheme,
+    allow_google_openai_extensions: bool,
     stream_tool_calls: bool,
     doom_loop_recovery: Option<xai_grok_sampling_types::DoomLoopRecoveryPolicy>,
+}
+
+const GOOGLE_OPENAI_COMPATIBILITY_HOST: &str = "generativelanguage.googleapis.com";
+const GOOGLE_OPENAI_COMPATIBILITY_PATH: &str = "/v1beta/openai";
+
+fn is_official_google_openai_compatibility_endpoint(base_url: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(base_url) else {
+        return false;
+    };
+    url.scheme() == "https"
+        && url.host_str() == Some(GOOGLE_OPENAI_COMPATIBILITY_HOST)
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path().trim_end_matches('/') == GOOGLE_OPENAI_COMPATIBILITY_PATH
+}
+
+fn strip_chat_request_provider_extensions(request: &mut ChatCompletionRequest) {
+    for message in &mut request.messages {
+        message.extra_content = None;
+        for tool_call in &mut message.tool_calls {
+            tool_call.extra_content = None;
+        }
+    }
+}
+
+fn strip_chat_response_provider_extensions(response: &mut ChatCompletionResponse) {
+    for choice in &mut response.choices {
+        choice.message.extra_content = None;
+        for tool_call in &mut choice.message.tool_calls {
+            tool_call.extra_content = None;
+        }
+    }
+}
+
+fn strip_chat_chunk_provider_extensions(chunk: &mut ChatCompletionChunk) {
+    for choice in &mut chunk.choices {
+        choice.delta.extra_content = None;
+        for tool_call in &mut choice.delta.tool_calls {
+            tool_call.extra_content = None;
+        }
+    }
 }
 
 // =============================================================================
@@ -537,6 +582,9 @@ impl SamplingClient {
             top_p: config.top_p,
             api_backend: config.api_backend,
             auth_scheme: config.auth_scheme,
+            allow_google_openai_extensions: is_official_google_openai_compatibility_endpoint(
+                &config.base_url,
+            ),
             stream_tool_calls: config.stream_tool_calls,
             doom_loop_recovery: config.doom_loop_recovery,
         };
@@ -727,6 +775,32 @@ impl SamplingClient {
         Ok(request)
     }
 
+    /// Enforce provider isolation for persisted opaque state.
+    ///
+    /// Conversation history can outlive a route. The safe default therefore
+    /// strips every provider extension before serialization; only a route
+    /// that explicitly opted into Google's reviewed OpenAI-compatible
+    /// envelope may replay it.
+    fn apply_chat_provider_extension_policy(&self, request: &mut ChatCompletionRequest) {
+        if !self.defaults.allow_google_openai_extensions {
+            strip_chat_request_provider_extensions(request);
+            return;
+        }
+
+        // A thought signature is valid only in the model context that
+        // produced it. Persisted histories survive model switches, so a
+        // missing or different origin model must fail closed.
+        let request_model = request.model.as_deref();
+        for message in &mut request.messages {
+            if message.model_id.as_deref() != request_model {
+                message.extra_content = None;
+                for tool_call in &mut message.tool_calls {
+                    tool_call.extra_content = None;
+                }
+            }
+        }
+    }
+
     async fn handle_response(&self, response: reqwest::Response) -> Result<ChatCompletionResponse> {
         let status = response.status();
         let model_metadata = extract_model_metadata(response.headers());
@@ -774,7 +848,8 @@ impl SamplingClient {
         &self,
         request: ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse> {
-        let payload = self.apply_defaults(request)?;
+        let mut payload = self.apply_defaults(request)?;
+        self.apply_chat_provider_extension_policy(&mut payload);
         let x_grok_conv_id = &payload.x_grok_conv_id.clone().unwrap_or_default();
         let x_grok_req_id = &payload.x_grok_req_id.clone().unwrap_or_default();
         let model_id = payload.model.clone().unwrap_or_default();
@@ -805,7 +880,11 @@ impl SamplingClient {
             e
         })?;
 
-        self.handle_response(response).await
+        let mut completion = self.handle_response(response).await?;
+        if !self.defaults.allow_google_openai_extensions {
+            strip_chat_response_provider_extensions(&mut completion);
+        }
+        Ok(completion)
     }
 
     /// Start a streaming chat completion request. Returns a stream of typed chunks.
@@ -827,7 +906,8 @@ impl SamplingClient {
         BoxStream<'static, Result<ChatCompletionChunk>>,
         Option<ResponseModelMetadata>,
     )> {
-        let payload = self.apply_defaults(request)?;
+        let mut payload = self.apply_defaults(request)?;
+        self.apply_chat_provider_extension_policy(&mut payload);
         let x_grok_conv_id = &payload.x_grok_conv_id.clone().unwrap_or_default();
         let x_grok_req_id = &payload.x_grok_req_id.clone().unwrap_or_default();
         let model_id = payload.model.clone().unwrap_or_default();
@@ -959,7 +1039,7 @@ impl SamplingClient {
                             target: crate::sampling_log::TARGET,
                             event = "sse_chunk",
                             backend = "chat_completions",
-                            data = %data,
+                            data_bytes = data.len(),
                         );
 
                         if let Some(stream_error) = try_parse_stream_error(data) {
@@ -969,7 +1049,7 @@ impl SamplingClient {
                                 serde_json::from_str::<ChatCompletionChunk>(data).map_err(|e| {
                                     tracing::error!(
                                         error = %e,
-                                        raw_data = %data,
+                                        data_bytes = data.len(),
                                         "Failed to deserialize ChatCompletionChunk from stream"
                                     );
                                     SamplingError::Serialization(e)
@@ -983,6 +1063,17 @@ impl SamplingClient {
                     }
                 };
                 std::future::ready(item)
+            })
+            .map({
+                let allow_provider_extensions = self.defaults.allow_google_openai_extensions;
+                move |result| {
+                    result.map(|mut chunk| {
+                        if !allow_provider_extensions {
+                            strip_chat_chunk_provider_extensions(&mut chunk);
+                        }
+                        chunk
+                    })
+                }
             })
             .boxed();
 
@@ -1699,6 +1790,7 @@ impl SamplingClient {
 
         let trace = request.trace.take();
         let mut chat_request: ChatCompletionRequest = request.into();
+        self.apply_chat_provider_extension_policy(&mut chat_request);
         if let Some(trace) = trace {
             chat_request.trace = Some(trace);
         }
@@ -1717,6 +1809,7 @@ impl SamplingClient {
 
         let trace = request.trace.take();
         let mut chat_request: ChatCompletionRequest = request.into();
+        self.apply_chat_provider_extension_policy(&mut chat_request);
         if let Some(trace) = trace {
             chat_request.trace = Some(trace);
         }
@@ -1913,7 +2006,9 @@ impl SamplingClient {
 mod tests {
     use super::*;
     use indexmap::IndexMap;
-    use xai_grok_sampling_types::types::ChatRequestMessage;
+    use xai_grok_sampling_types::types::{
+        ChatRequestMessage, OpaqueThoughtSignature, ProviderExtensionEnvelope, ToolCallRequest,
+    };
 
     fn minimal_config() -> SamplerConfig {
         SamplerConfig {
@@ -2086,6 +2181,153 @@ mod tests {
     fn new_with_minimal_config_succeeds() {
         let client = SamplingClient::new(minimal_config()).expect("client should construct");
         assert_eq!(client.api_backend(), ApiBackend::ChatCompletions);
+    }
+
+    fn request_with_google_extension(message_model: Option<&str>) -> ChatCompletionRequest {
+        let extension = ProviderExtensionEnvelope::google_thought_signature(
+            OpaqueThoughtSignature::new("fixture-signature").unwrap(),
+        );
+        let mut tool_call =
+            ToolCallRequest::function("report_marker", r#"{"marker":"agentmesh360-f0b"}"#)
+                .with_id("call_fixture");
+        tool_call.extra_content = Some(extension.clone());
+        let mut message = ChatRequestMessage::assistant_tool_call(tool_call);
+        message.model_id = message_model.map(str::to_string);
+        message.extra_content = Some(extension);
+        ChatCompletionRequest::new("gemini-3.5-flash-lite", vec![message])
+    }
+
+    #[test]
+    fn official_google_openai_endpoint_match_is_exact() {
+        for allowed in [
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "https://generativelanguage.googleapis.com:443/v1beta/openai",
+        ] {
+            assert!(
+                is_official_google_openai_compatibility_endpoint(allowed),
+                "{allowed}"
+            );
+        }
+        for denied in [
+            "http://generativelanguage.googleapis.com/v1beta/openai",
+            "https://generativelanguage.googleapis.com/v1beta/openai/other",
+            "https://generativelanguage.googleapis.com/v1beta/openai?proxy=true",
+            "https://user@generativelanguage.googleapis.com/v1beta/openai",
+            "https://generativelanguage.googleapis.example/v1beta/openai",
+            "https://example.test/v1beta/openai",
+        ] {
+            assert!(
+                !is_official_google_openai_compatibility_endpoint(denied),
+                "{denied}"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_extension_replay_requires_official_endpoint_and_same_model() {
+        let custom_client =
+            SamplingClient::new(minimal_config()).expect("custom client must construct");
+        let mut custom_request = request_with_google_extension(Some("gemini-3.5-flash-lite"));
+        custom_client.apply_chat_provider_extension_policy(&mut custom_request);
+        assert!(custom_request.messages[0].extra_content.is_none());
+        assert!(
+            custom_request.messages[0].tool_calls[0]
+                .extra_content
+                .is_none()
+        );
+
+        let google_client = SamplingClient::new(SamplerConfig {
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+            model: "gemini-3.5-flash-lite".to_string(),
+            ..minimal_config()
+        })
+        .expect("official Google client must construct");
+        let mut matching_request = request_with_google_extension(Some("gemini-3.5-flash-lite"));
+        google_client.apply_chat_provider_extension_policy(&mut matching_request);
+        assert!(matching_request.messages[0].extra_content.is_some());
+        assert!(
+            matching_request.messages[0].tool_calls[0]
+                .extra_content
+                .is_some()
+        );
+
+        let mut switched_model_request = request_with_google_extension(Some("gemini-3-flash"));
+        google_client.apply_chat_provider_extension_policy(&mut switched_model_request);
+        assert!(switched_model_request.messages[0].extra_content.is_none());
+        assert!(
+            switched_model_request.messages[0].tool_calls[0]
+                .extra_content
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn non_google_inbound_provider_extensions_are_stripped() {
+        let mut response: ChatCompletionResponse = serde_json::from_value(serde_json::json!({
+            "id": "fixture",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_fixture",
+                        "type": "function",
+                        "function": {"name": "report_marker", "arguments": "{}"},
+                        "extra_content": {
+                            "google": {"thought_signature": "fixture-signature"}
+                        }
+                    }],
+                    "extra_content": {
+                        "google": {"thought_signature": "fixture-signature"}
+                    }
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }))
+        .unwrap();
+        strip_chat_response_provider_extensions(&mut response);
+        assert!(response.choices[0].message.extra_content.is_none());
+        assert!(
+            response.choices[0].message.tool_calls[0]
+                .extra_content
+                .is_none()
+        );
+
+        let mut chunk: ChatCompletionChunk = serde_json::from_value(serde_json::json!({
+            "id": "fixture",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "role": "assistant",
+                    "content": null,
+                    "reasoning_content": null,
+                    "tool_calls": [{
+                        "id": "call_fixture",
+                        "type": "function",
+                        "function": {"name": "report_marker", "arguments": "{}"},
+                        "extra_content": {
+                            "google": {"thought_signature": "fixture-signature"}
+                        }
+                    }],
+                    "extra_content": {
+                        "google": {"thought_signature": "fixture-signature"}
+                    }
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }))
+        .unwrap();
+        strip_chat_chunk_provider_extensions(&mut chunk);
+        assert!(chunk.choices[0].delta.extra_content.is_none());
+        assert!(chunk.choices[0].delta.tool_calls[0].extra_content.is_none());
     }
 
     #[test]

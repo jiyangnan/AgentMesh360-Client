@@ -1,6 +1,7 @@
 # CC Switch Provider 调研与 AgentMesh360 Provider 架构决策
 
-状态：调研完成，切片 A/B/C/D0/D1/E1/E2/E3 与 F0a 已实现；F0b 真实契约待外部凭据
+状态：调研完成，切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成自主验证与本机 Kimi
+四级清零
 
 调研日期：2026-07-22
 
@@ -48,7 +49,7 @@ Turn Route。离线 `trace_classify` CLI 经来源审计确认不属于产品 Se
 Catalog 与 global/agent role Assignment 的最小设置页，并固定保存零网络、Key 提交后
 清空和跨账户 snapshot 清理。E3 已加入 Host-owned 三档显式 Probe、付费二次确认与
 非秘密历史；当前进入 F0 Gemini 官方 OpenAI 兼容契约 Spike，外部真实付费 Provider
-E2E 仍是目标能力。
+E2E 已在 F0b 使用用户明确授权的 Gemini 测试 Key 完成，未扩展到其他 Provider。
 
 逐轮实施证据、计划复盘和下一轮验收条件统一记录在
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
@@ -973,11 +974,15 @@ lease 复用既有 Grok Sampling，且不改变 Session Binding、Turn Route 或
   Calling、Structured Output 与 `reasoning_effort` 文档边界；
 - F0a 已实现可复用、默认零费用的 OpenAI Chat Provider Harness，并提供双重显式
   opt-in 的真实 Gemini 契约入口；
-- F0a 确认当前 Chat 数据模型无法保真回传 Gemini thought signature，也没有受控
+- F0a 确认旧 Chat 数据模型无法保真回传 Gemini thought signature，也没有受控
   `extra_body` 通道；这是持久多轮 Agent 的 Catalog 准入阻断项；
-- F0b 需用用户明确提供的测试 Key 验证真实 Streaming、Tool Call、Reasoning、
-  Structured Output，并捕获脱敏的 thought signature Tool Loop fixture；
-- 通过后加入 Google 预设，再逐步加入 DeepSeek、Kimi、GLM、Qwen 等声明式预设；
+- F0b 已用用户明确授权的测试 Key 和 11/12 次短请求验证真实 Streaming、Function
+  Calling、Reasoning、Structured Output，并捕获脱敏 thought signature Tool Loop
+  fixture；
+- F0b 新增受限类型化 Provider Extension、精确 endpoint/model 隔离、JSONL 重启
+  恢复与两请求 Tool Loop，第二轮严格返回 `tool-loop-ok`；真实值不进入仓库或日志；
+- Catalog revision 2 已加入 `google-gemini` / `gemini-3.5-flash-lite`，只声明本轮
+  真实测过的能力；DeepSeek、Kimi、GLM、Qwen 仍需逐个通过相同契约门；
 - Native/Interactions 需求单独形成 Spike 结论，不阻塞 M1。
 
 完整事实、测试入口、准入条件与下一步见

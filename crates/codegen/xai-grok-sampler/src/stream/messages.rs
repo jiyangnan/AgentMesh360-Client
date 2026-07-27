@@ -494,6 +494,7 @@ pub fn stream_messages<'a>(
             model_fingerprint: None,
             // The Messages API does not echo the applied reasoning effort.
             reasoning_effort: None,
+            provider_state: Default::default(),
         });
 
         let mut items: Vec<ConversationItem> = Vec::new();

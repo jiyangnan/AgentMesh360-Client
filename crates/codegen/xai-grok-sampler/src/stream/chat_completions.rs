@@ -10,13 +10,41 @@ use futures_util::StreamExt;
 use futures_util::stream::{BoxStream, Stream};
 
 use xai_grok_sampling_types::{
-    AssistantItem, ChatCompletionChunk, ConversationItem, ConversationResponse,
-    ResponseModelMetadata, SamplingError, StopReason, TokenUsage, ToolCall,
+    AssistantItem, AssistantProviderState, ChatCompletionChunk, ConversationItem,
+    ConversationResponse, ProviderExtensionEnvelope, ResponseModelMetadata, SamplingError,
+    StopReason, TokenUsage, ToolCall,
 };
 
 use crate::events::{SamplingChannel, SamplingErrorInfo, SamplingEvent};
 use crate::metrics::InferenceLatencyStats;
 use crate::types::RequestId;
+
+#[derive(Default)]
+struct AccumulatedToolCall {
+    id: String,
+    name: String,
+    arguments: String,
+    provider_extension: Option<ProviderExtensionEnvelope>,
+}
+
+fn merge_provider_extension(
+    destination: &mut Option<ProviderExtensionEnvelope>,
+    incoming: ProviderExtensionEnvelope,
+) -> Result<(), SamplingError> {
+    if incoming.is_empty() {
+        return Ok(());
+    }
+    if let Some(existing) = destination {
+        if existing != &incoming {
+            return Err(SamplingError::EventStreamError(
+                "conflicting provider extension in one streamed response".to_string(),
+            ));
+        }
+        return Ok(());
+    }
+    *destination = Some(incoming);
+    Ok(())
+}
 
 /// Transform a raw Chat Completions chunk stream into a stream of
 /// [`SamplingEvent`]s.
@@ -69,11 +97,11 @@ pub fn stream_chat_completions<'a>(
 
         let mut content_acc = String::new();
         let mut reasoning_acc = String::new();
+        let mut message_provider_extension: Option<ProviderExtensionEnvelope> = None;
         // Tool call deltas keyed by positional index. Each entry is
-        // (id, name, arguments_buffer); the first chunk for an index
-        // carries id+name and starts the arguments buffer, subsequent
-        // chunks append to arguments only.
-        let mut tool_call_acc: BTreeMap<u32, (String, String, String)> = BTreeMap::new();
+        // an ID/name/arguments buffer plus typed provider state. The first
+        // chunk normally carries all fields; later chunks append arguments.
+        let mut tool_call_acc: BTreeMap<u32, AccumulatedToolCall> = BTreeMap::new();
 
         // Index counter spanning text + reasoning chunks (matches the
         // shell's chunk_index used for notification correlation).
@@ -152,6 +180,20 @@ pub fn stream_chat_completions<'a>(
 
                 let delta = choice.delta;
 
+                if let Some(extension) = delta.extra_content {
+                    if let Err(err) = merge_provider_extension(
+                        &mut message_provider_extension,
+                        extension,
+                    ) {
+                        yield SamplingEvent::Failed {
+                            request_id: request_id.clone(),
+                            error: SamplingErrorInfo::from(&err),
+                        };
+                        return;
+                    }
+                    chunk_has_content = true;
+                }
+
                 if let Some(text) = delta.content
                     && !text.is_empty()
                 {
@@ -199,25 +241,35 @@ pub fn stream_chat_completions<'a>(
 
                     let entry = tool_call_acc
                         .entry(tc_delta.index)
-                        .or_insert_with(|| (String::new(), String::new(), String::new()));
+                        .or_default();
 
                     let mut id_for_event: Option<String> = None;
                     let mut name_for_event: Option<String> = None;
                     let mut args_for_event: Option<String> = None;
 
                     if let Some(id) = tc_delta.id {
-                        entry.0 = id.clone();
+                        entry.id = id.clone();
                         id_for_event = Some(id);
                     }
                     if let Some(func) = tc_delta.function {
                         if let Some(name) = func.name {
-                            entry.1 = name.clone();
+                            entry.name = name.clone();
                             name_for_event = Some(name);
                         }
                         if let Some(args) = func.arguments {
-                            entry.2.push_str(&args);
+                            entry.arguments.push_str(&args);
                             args_for_event = Some(args);
                         }
+                    }
+                    if let Some(extension) = tc_delta.extra_content
+                        && let Err(err) =
+                            merge_provider_extension(&mut entry.provider_extension, extension)
+                    {
+                        yield SamplingEvent::Failed {
+                            request_id: request_id.clone(),
+                            error: SamplingErrorInfo::from(&err),
+                        };
+                        return;
                     }
 
                     yield SamplingEvent::ToolCallDelta {
@@ -245,14 +297,40 @@ pub fn stream_chat_completions<'a>(
         }
 
         // ── Build the final response ─────────────────────────────────
-        let tool_calls: Vec<ToolCall> = tool_call_acc
-            .into_values()
-            .map(|(id, name, arguments)| ToolCall {
-                id: std::sync::Arc::<str>::from(id),
-                name,
-                arguments: std::sync::Arc::<str>::from(arguments),
-            })
-            .collect();
+        let mut tool_calls: Vec<ToolCall> = Vec::with_capacity(tool_call_acc.len());
+        let mut tool_provider_extensions = BTreeMap::new();
+        for accumulated in tool_call_acc.into_values() {
+            if let Some(extension) = accumulated.provider_extension {
+                if accumulated.id.is_empty() {
+                    let err = SamplingError::EventStreamError(
+                        "provider extension arrived without a tool call ID".to_string(),
+                    );
+                    yield SamplingEvent::Failed {
+                        request_id: request_id.clone(),
+                        error: SamplingErrorInfo::from(&err),
+                    };
+                    return;
+                }
+                if let Some(previous) =
+                    tool_provider_extensions.insert(accumulated.id.clone(), extension.clone())
+                    && previous != extension
+                {
+                    let err = SamplingError::EventStreamError(
+                        "conflicting provider extensions for one tool call ID".to_string(),
+                    );
+                    yield SamplingEvent::Failed {
+                        request_id: request_id.clone(),
+                        error: SamplingErrorInfo::from(&err),
+                    };
+                    return;
+                }
+            }
+            tool_calls.push(ToolCall {
+                id: std::sync::Arc::<str>::from(accumulated.id),
+                name: accumulated.name,
+                arguments: std::sync::Arc::<str>::from(accumulated.arguments),
+            });
+        }
 
         // Honor tool calls by overriding the stop reason if the model
         // forgot to set it (mirrors the shell's behavior).
@@ -275,6 +353,10 @@ pub fn stream_chat_completions<'a>(
                 model_fingerprint,
                 // Chat Completions does not echo the applied reasoning effort.
                 reasoning_effort: None,
+                provider_state: AssistantProviderState {
+                    message: message_provider_extension,
+                    tool_calls: tool_provider_extensions,
+                },
             }));
         } else {
             items.push(ConversationItem::assistant(""));
@@ -308,7 +390,8 @@ mod tests {
     use futures_util::stream;
     use std::pin::pin;
     use xai_grok_sampling_types::{
-        ChatChunkChoice, ChatChunkDelta, FinishReason, Role, ToolCallDelta as ChunkToolCallDelta,
+        ChatChunkChoice, ChatChunkDelta, FinishReason, OpaqueThoughtSignature,
+        ProviderExtensionEnvelope, Role, ToolCallDelta as ChunkToolCallDelta,
         ToolCallFunctionDelta, Usage, rs,
     };
 
@@ -343,6 +426,7 @@ mod tests {
             reasoning_content: None,
             tool_calls: vec![],
             tool_call_id: None,
+            extra_content: None,
         }])
     }
 
@@ -435,6 +519,7 @@ mod tests {
             reasoning_content: Some("thinking...".into()),
             tool_calls: vec![],
             tool_call_id: None,
+            extra_content: None,
         }]);
         reasoning_chunk.choices[0].finish_reason = None;
 
@@ -505,8 +590,10 @@ mod tests {
                     name: Some("do_thing".into()),
                     arguments: Some("{\"x\":".into()),
                 }),
+                extra_content: None,
             }],
             tool_call_id: None,
+            extra_content: None,
         }]);
         // Second chunk has only argument fragment.
         let chunk2 = make_chunk(vec![ChatChunkDelta {
@@ -521,8 +608,10 @@ mod tests {
                     name: None,
                     arguments: Some("1}".into()),
                 }),
+                extra_content: None,
             }],
             tool_call_id: None,
+            extra_content: None,
         }]);
 
         let raw = stream::iter::<Vec<Result<ChatCompletionChunk, SamplingError>>>(vec![
@@ -578,6 +667,138 @@ mod tests {
             }
             other => panic!("expected Completed, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn observed_google_tool_signature_chunk_persists_on_assistant() {
+        let observed_fixture = serde_json::json!({
+            "id": "fixture-chunk",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "gemini-3.5-flash-lite",
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "role": "assistant",
+                    "content": null,
+                    "reasoning_content": null,
+                    "tool_calls": [{
+                        "id": "call_fixture",
+                        "type": "function",
+                        "function": {
+                            "name": "report_marker",
+                            "arguments": "{\"marker\":\"agentmesh360-f0b\"}"
+                        },
+                        "extra_content": {
+                            "google": {
+                                "thought_signature": "fixture-tool-signature"
+                            }
+                        }
+                    }],
+                    "tool_call_id": null
+                },
+                "finish_reason": "tool_calls"
+            }]
+        });
+        let chunk: ChatCompletionChunk =
+            serde_json::from_value(observed_fixture).expect("reviewed fixture must decode");
+        let events = collect(stream_chat_completions(
+            stream::iter(vec![Ok(chunk)]).boxed(),
+            None,
+            rid(),
+            Duration::from_secs(60),
+        ))
+        .await;
+
+        let SamplingEvent::Completed { response, .. } = events.last().unwrap() else {
+            panic!("expected Completed");
+        };
+        let assistant = response.assistant().expect("assistant item");
+        assert_eq!(assistant.model_id.as_deref(), Some("gemini-3.5-flash-lite"));
+        assert_eq!(
+            assistant
+                .provider_state
+                .tool_call("call_fixture")
+                .and_then(ProviderExtensionEnvelope::thought_signature)
+                .map(OpaqueThoughtSignature::as_str),
+            Some("fixture-tool-signature")
+        );
+    }
+
+    #[tokio::test]
+    async fn message_signature_in_empty_final_chunk_is_preserved() {
+        let mut signature_chunk = final_chunk(FinishReason::Stop);
+        signature_chunk.choices[0].delta.extra_content =
+            Some(ProviderExtensionEnvelope::google_thought_signature(
+                OpaqueThoughtSignature::new("fixture-message-signature").unwrap(),
+            ));
+        let events = collect(stream_chat_completions(
+            stream::iter(vec![Ok(text_chunk("done")), Ok(signature_chunk)]).boxed(),
+            None,
+            rid(),
+            Duration::from_secs(60),
+        ))
+        .await;
+
+        let SamplingEvent::Completed { response, .. } = events.last().unwrap() else {
+            panic!("expected Completed");
+        };
+        assert_eq!(
+            response
+                .assistant()
+                .and_then(|assistant| assistant.provider_state.message.as_ref())
+                .and_then(ProviderExtensionEnvelope::thought_signature)
+                .map(OpaqueThoughtSignature::as_str),
+            Some("fixture-message-signature")
+        );
+    }
+
+    #[tokio::test]
+    async fn conflicting_streamed_provider_extensions_fail_closed() {
+        fn tool_signature_chunk(signature: &str) -> ChatCompletionChunk {
+            make_chunk(vec![ChatChunkDelta {
+                role: Some(Role::Assistant),
+                content: None,
+                reasoning_content: None,
+                tool_calls: vec![ChunkToolCallDelta {
+                    index: 0,
+                    id: Some("call_fixture".to_string()),
+                    kind: Some("function".to_string()),
+                    function: Some(ToolCallFunctionDelta {
+                        name: Some("report_marker".to_string()),
+                        arguments: Some("{}".to_string()),
+                    }),
+                    extra_content: Some(ProviderExtensionEnvelope::google_thought_signature(
+                        OpaqueThoughtSignature::new(signature).unwrap(),
+                    )),
+                }],
+                tool_call_id: None,
+                extra_content: None,
+            }])
+        }
+
+        let events = collect(stream_chat_completions(
+            stream::iter(vec![
+                Ok(tool_signature_chunk("fixture-signature-a")),
+                Ok(tool_signature_chunk("fixture-signature-b")),
+            ])
+            .boxed(),
+            None,
+            rid(),
+            Duration::from_secs(60),
+        ))
+        .await;
+
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, SamplingEvent::Failed { .. }))
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, SamplingEvent::Completed { .. }))
+        );
     }
 
     #[tokio::test]

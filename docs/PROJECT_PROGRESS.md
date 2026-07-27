@@ -32,11 +32,11 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区增量已按计划闭环；下一产品步骤是凭据依赖的真实 Provider E2E，必须等待用户提供隔离测试凭据和费用授权；Scheduler、Subagent、Agent 专属 UI 与生产发布不自动启动 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区增量与 Gemini F0b 已按计划完成双方验证；下一步只形成生产准备/内部 canary 的独立计划，不自动启动 Scheduler、Agent 专属 UI 或生产发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
-| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
-| Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成 | 外部 Provider 契约通过后再增加正式预设 |
+| Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
 | 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；生产 endpoint/root/bundle 仍为空 | 生产启用等待独立 R0-R6 安全门，不自行启动 H2d5 |
 
 ## 开发循环记录
@@ -3905,3 +3905,89 @@ Kimi 独立交叉测试：
   Plan。下一产品步骤回到既定计划中的“凭据依赖的真实 Provider E2E”，但必须等待
   用户提供隔离测试凭据并明确费用授权；在此之前不擅自实现 Scheduler、Subagent、
   Agent 专属 UI、Package H2d5 或生产发布。
+
+### 循环 55：Gemini F0b 真实契约与 thought state 保真
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+已经实现：
+
+1. 新增只允许 `google.thought_signature` 的类型化 Provider Extension Envelope；
+   单值非空、最大 16 KiB，序列化保持原字节，`Debug` 和 SSE 诊断只记录长度；
+2. `AssistantItem` 分开持有 message-level 与按 Tool Call ID 索引的 provider state，
+   并贯通 stream decode、Conversation、JSONL 持久化、重启加载和 request encode；
+3. 对 Google state 执行双门隔离：只允许精确的 Google 官方 HTTPS OpenAI endpoint，
+   且历史响应模型必须与当前请求模型完全一致；其他 origin、Provider 或模型的入站/
+   出站扩展全部剥离；
+4. Streaming 对冲突签名、没有 Tool Call ID 的工具签名和同 ID 不同签名失败关闭；
+   未审核字段只可忽略，不能经客户端重新发送；
+5. 内置 Catalog revision 升到 2，增加 `google-gemini` /
+   `gemini-3.5-flash-lite`；仅把本轮真实测过的 Tools、Structured Output、
+   Reasoning、Streaming 标记为 `supported`，Parallel Tool Calls 与 Vision 保持
+   `unknown`；
+6. 真实契约 Harness 保持双重环境 opt-in 和默认 `#[ignore]`；持久化 Tool Loop
+   严格只发两次请求，中间序列化/反序列化整个响应模拟进程重启，第二轮必须精确返回
+   `tool-loop-ok`。
+
+真实 Provider 证据：
+
+- 用户明确授权已保存测试 Key、指定 `gemini-3.5-flash-lite`，本轮最多 12 次短请求
+  并同意可能消耗免费额度或产生费用；
+- 实际共使用 11/12 次：4 次基础 Streaming/Function Calling/Structured Output/
+  Reasoning，3 次脱敏 wire 定位，2 次首次持久化 Tool Loop，2 次最终代码复验；
+- 真实 SSE 证实工具签名位于
+  `delta.tool_calls[].extra_content.google.thought_signature`，最终 assistant
+  签名可位于空末尾 chunk 的
+  `delta.extra_content.google.thought_signature`；
+- 最终两请求 Tool Loop 通过：签名在重启模拟前后保持精确相等，工具结果续轮严格
+  返回 `tool-loop-ok`；测试和文档只记录长度，不记录真实值；
+- Key 仅从 macOS Keychain 注入测试子进程，没有进入仓库、SQLite、Session、日志或
+  测试输出。本轮不会再使用剩余第 12 次请求。
+
+自主验证：
+
+- `xai-grok-sampling-types`：279 pass；`xai-chat-state`：339 pass；
+  `xai-grok-sampler`：189 pass；
+- AgentMesh360 Shell 定向回归：182 pass、0 fail、1 个与本轮无关的首方源路径测试
+  按设计 ignored；Provider 默认零费用契约：3 pass、2 个真实入口 ignored；
+- JSONL 新实例恢复、Catalog 定向测试和最终真实 Gemini Tool Loop 均通过；
+- `cargo check -p xai-grok-shell --tests`、Rustfmt，以及 sampling types/sampler
+  全 targets 与 Shell lib 的 Clippy `-D warnings` 通过；Clippy 首轮指出公开
+  `len()` 缺少 `is_empty()`，补齐接口后复验通过；
+- 桌面 104 项为 101 pass、0 fail、3 个默认 real-host skip；三个 skip 已用本轮
+  源码构建的 Host 显式运行 3/3；`npm run check` 通过；
+- Conversation、Package、Provider、Visual 四组真实 Electron smoke 全部退出码 0，
+  ready 截图已人工检查；
+- Rust 构建全部写入 `/tmp/agentmesh360-cycle55-target`，仓库根目录 `target/`
+  始终不存在；真实响应临时文件将在最终提交前删除。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI session `session_839105d3-70b3-4373-943c-8263c12bc8db` 在用户明确授权
+  下只读审查相对 `origin/main` 的 31 个修改文件、完整 diff、五份中文文档，以及
+  Provider state、Sampler、Session JSONL、Catalog、桌面和真实 Host 测试边界；
+- Kimi 独立执行 `git diff --check`、Rustfmt、Types 279、Sampler 189、Chat State
+  339、桌面 104 项（101 pass、0 fail、3 个按设计 real-host skip）、`npm run
+  check` 与 Conversation/Package/Provider/Visual 四组 Electron smoke，全部通过；
+- Kimi 新建的完整 Shell 编译 target 膨胀到 18.8 GiB，使磁盘只剩 562 MiB；主 Agent
+  为保护磁盘主动终止该重复编译并清除 122,624 个文件，恢复约 18 GiB。该批次没有
+  冒充成功，也不是代码失败；Kimi 随后直接使用本轮主 Agent 已构建的测试二进制，
+  独立运行零费用 Provider 契约 3 pass/2 ignored、JSONL restart 1/1 与 Catalog
+  4/4，全部通过；
+- Kimi 没有把未独立执行的完整 Shell 182 项与 Clippy 写成自己的通过；这两项只由
+  主 Agent 自主验证通过并明确分开记录；
+- Kimi 唯一 Low 是机械补字段污染了 laziness 测试中的历史结构注释；主 Agent 恢复
+  原注释后，同一 session 只读复核关闭；
+- 最终 Blocker/High/Medium/Low 全部为零并给出无条件 PASS；Kimi 未读取 Keychain
+  或真实 signature 原始文件，未调用真实 Provider，未修改工作区，仓库根
+  `target/` 始终不存在。
+
+计划复盘：
+
+- 循环 54 结束后回到“凭据依赖的真实 Provider E2E”，用户授权后才执行，顺序与费用
+  边界均得到遵守；
+- 没有增加平行 Sampling/Agent Loop、任意 `extra_body`、自动模型发现、自动真实
+  Probe、Native/Interactions、Google 内置工具或静默 fallback；
+- F0b 已按闭环关闭，但不等于生产发布。R1-R6 仍未满足，下一轮只能形成独立的生产准备/内部
+  canary 计划并等待单独授权，不能自动填入生产 Root、endpoint、签名、公证或发布
+  配置。
