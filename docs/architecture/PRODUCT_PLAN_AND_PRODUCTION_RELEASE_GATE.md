@@ -1,7 +1,8 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
-状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复与标准 ACP 单次权限审批已
-通过自主验证和本机 Kimi 最终独立交叉复核；所有生产发布能力保持关闭
+状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批与
+安全只读工具活动投影已通过自主验证和本机 Kimi 最终独立交叉复核；所有生产发布能力
+保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -47,7 +48,7 @@ flowchart LR
     RESTORE --> RESOLVE
 ```
 
-循环 43-45 已完成这一流程的文本对话、多 Agent 通用化与最小权限确认：
+循环 43-46 已完成这一流程的文本对话、多 Agent 通用化、最小权限确认与只读活动：
 
 - 用户从任意当前账号 Host Catalog Agent 卡片进入真实固定主对话；
 - Renderer 仍看不到 `mainSessionId` 与本机路径，只提交 `agentId` 和文本；
@@ -61,10 +62,14 @@ flowchart LR
   生成的选项标识；原始 Request/Session/Tool/Option authority 留在主进程；
 - 用户只能“仅本次允许”“仅本次拒绝”或取消，永久选项与未知上游选项失败关闭；
   订阅、账户、Agent、重连、Host 和超时生命周期都会撤销待处理权限。
+- 标准 ACP `tool_call` / `tool_call_update` 只投影本地活动 ID、允许列表工具类别和
+  四态状态；私有 Tool Call ID、标题、内容、原始输入输出、命令和路径不进入 Renderer；
+  Host replay 是唯一历史来源，投影最多 50 项且终态冻结。
 
 动态 `future-agent` 的本地 fixture 证明用户层不需要 Agent 专属代码，但生产 Registry
-仍关闭，不能写成真实远端动态 Agent 已交付。下一项按原计划继续工作区增量，先审计
-并实现安全、只读的 Harness 工具活动状态投影；这仍比启用生产 Package 分发更靠前。
+仍关闭，不能写成真实远端动态 Agent 已交付。下一项按原计划继续工作区增量，但只先
+审计产物与垂直状态的 Host/Package authority 来源，不直接实现 UI；这仍比启用生产
+Package 分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -77,7 +82,8 @@ flowchart LR
 | Package Center | 发现、下载、批准、回滚、reconcile 的安全 UI/Host 接口已实现 | 因生产 Registry 关闭而无真实远端内容 |
 | 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭 |
 | Harness 单次权限 | 标准 ACP `session/request_permission` 已接入 Main-owned authority，只投影一次性允许/拒绝与取消，生命周期失败关闭 | 最小用户确认边界已关闭；不是完整 Harness |
-| 垂直工作区 | 活动、产物、审批、项目状态仍为目标 | 对话入口后分步实现 |
+| Harness 工具活动 | 标准 ACP ToolCall 只投影本地 ID、允许列表类别与四态状态；Host replay、50 项上限、终态冻结和生命周期清理已验证 | 安全只读可观察性已关闭；不含工具控制或产物 |
+| 垂直工作区 | 产物、项目状态和 Agent 专属结构化界面仍为目标 | 下一轮先审计 authority 与恢复来源，不直接铺开 UI |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
 ## 3. 已关闭第一切片的边界
@@ -164,8 +170,8 @@ flowchart TD
    和动态 Agent 使用同一通路；
 3. **最小 Harness 单次权限（已完成）**：接入标准 ACP 反向请求，由主进程持有
    authority，只允许一次性选择并在全部身份/生命周期变化时失败关闭；
-4. **工作区增量（下一轮）**：先审计并实现安全、只读的工具活动状态投影，再按产品
-   价值加入产物和垂直状态，不一次铺满；
+4. **工作区增量（进行中）**：安全、只读的工具活动状态投影已完成；下一轮只审计
+   产物与垂直状态的 Host/Package authority、恢复语义和脱敏边界，不一次铺满；
 5. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
 6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
 
@@ -232,3 +238,20 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   无条件 PASS；
 - R0 按既定判定项更新为“已满足（开发验证）”，但 R1-R6 和完整 Harness/垂直工作区
   不因此关闭；下一轮只进入安全、只读的 Harness 工具活动状态投影。
+
+## 11. 循环 46 实施检查点
+
+- 功能提交：`6d1dbf1 feat: add safe harness activity projection`；
+- 桌面 `npm test`：83 pass、0 fail、2 个真实 Host 环境门 skip；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 全部通过；
+- Main 只用私有 Tool Call ID 合并通知，Renderer 只见 `activity-N`、允许列表工具
+  类别与 `pending/in_progress/completed/failed`；投影最多 50 项、终态冻结；
+- 订阅、账户、Agent、重连、Host 退出、Prompt 超时和旧 Session 晚到边界全部有
+  回归测试；Renderer 还有独立白名单，不读取上游标题、内容、路径或原始输入输出；
+- Kimi session `session_818e5746-4cc2-48bc-b0da-9d89384e67cb` 独立审查完整 diff，
+  运行 85 项 Node 测试、检查与四组 Electron smoke；核对真实测试职责后最终
+  Blocker/High/Medium/Low 全零并 PASS；
+- 两个真实 Host 环境 skip 验证的是 Leader/Agent 恢复与订阅/账户契约，不触发真实
+  工具活动；本轮没有重建已清理的 Rust target，也不把源码审计写成真实工具 E2E；
+- R0 仍是“已满足（开发验证）”，R1-R6 与生产门保持原状。下一轮只审计产物/垂直
+  状态的 authority 和恢复来源，不启动 Package H2d5 或生产发布。

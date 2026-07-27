@@ -140,8 +140,8 @@ Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目�
 Host 与 Agent”，但签名、公证安装包中的 macOS Login Item 注册/批准/升级仍需发布
 验收，不能把开发 smoke 写成生产已验证。
 
-循环 43-45 已完成固定 Main Session 文本对话、多 Agent 通用化与标准 ACP 单次权限
-确认。Renderer
+循环 43-46 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
+确认与安全只读工具活动。Renderer
 继续只用 `agentId` 与文本，由主进程与 Host 解析账户绑定的 Main Session；标准 ACP
 replay / live update 只投影有界的用户与 Agent 文本，本机路径、Session authority、
 Provider 凭据、thought/tool/meta 和原始 Host 错误不暴露给页面。账户切换、订阅
@@ -150,8 +150,11 @@ Provider 凭据、thought/tool/meta 和原始 Host 错误不暴露给页面。�
 入口；真实 Host 已验证 Job、LectureCast、Deploy 在 detach 与 Leader 替换后保持
 各自唯一 Main Session，动态 Agent 仅有本地通用化 fixture。权限请求由主进程持有
 原始 Request/Session/Tool/Option authority，页面只能选择经精确白名单过滤的一次性
-允许、拒绝或取消；身份和生命周期变化均失败关闭。下一轮只审计并实现安全、只读的
-Harness 工具活动状态投影。生产 Package 与桌面发布硬门见
+允许、拒绝或取消；身份和生命周期变化均失败关闭。工具活动继续来自标准 Host
+replay/live update，主进程仅保留用于合并的私有 Tool Call ID，页面只看到最多 50 项
+本地活动 ID、允许列表工具类别和四态状态；终态、账户、Session 与生命周期边界均
+失败关闭。下一轮只审计产物和垂直状态可采用的 Host/Package authority、恢复语义与
+脱敏边界，不直接建立第二套产物存储或 UI。生产 Package 与桌面发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 
 ## 上游同步规则

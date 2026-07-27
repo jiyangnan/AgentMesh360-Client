@@ -42,8 +42,12 @@
   Option authority；页面只显示安全工具摘要，并只能“仅本次允许”“仅本次拒绝”或
   取消。永久/未知选项以及订阅、账号、Agent、重连、Host、Prompt 和超时变化均失败
   关闭。
+- 标准 ACP `tool_call` / `tool_call_update` 由主进程按当前 Session 合并，页面只显示
+  本地 `activity-N`、允许列表工具类别和四态状态；最多保留 50 项，终态冻结，Host
+  replay 是唯一历史来源。上游 Tool Call ID、标题、内容、位置、原始输入输出、命令
+  和路径不会进入 Renderer。
 
-当前尚未实现 OAuth、Harness 问题/计划审批、只读工具活动、产物和垂直业务工作区；
+当前尚未实现 OAuth、Harness 问题/计划审批、产物和垂直业务工作区；
 外部真实 Provider E2E 仍需要用户凭据与费用授权，动态 Agent Package 的生产发布也
 仍关闭。生产
 Registry 关闭意味着当前动态 Agent 泛化只有本地 fixture 证据，不代表用户已经能从

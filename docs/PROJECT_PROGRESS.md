@@ -32,7 +32,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路和标准 ACP 单次权限审批 | 下一轮只审计并实现安全、只读的 Harness 工具活动状态投影；签名安装包 Login Item E2E 仍是发布门 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批与安全只读工具活动投影 | 下一轮只审计产物与垂直状态的 Host/Package authority 来源，不直接实现新 UI；签名安装包 Login Item E2E 仍是发布门 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -3437,3 +3437,71 @@ Kimi 独立交叉测试：
 - 循环 46 非目标是原始 `rawInput`、路径、命令、内容、工具控制、产物、垂直 UI、
   问题/计划审批、Provider、Package 与生产发布。验收必须包含安全枚举、有界投影、
   当前 Session/账号/订阅归属、重连清理、自主测试和 Kimi 四级问题清零。
+
+### 循环 46：标准 ACP Harness 工具活动安全投影
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+本地功能提交：`6d1dbf1 feat: add safe harness activity projection`
+
+计划校准：
+
+- 循环开始先复核循环 45、产品计划、标准 ACP `tool_call` /
+  `tool_call_update` Schema 和 Grok Build replay 实现，确认活动历史继续由 Host
+  replay 提供，不增加第二套活动数据库；
+- 本轮只把工具类别与四态状态作为只读可观察性投影。上游 Tool Call ID、标题、内容、
+  locations、`rawInput`、`rawOutput`、命令、路径和密钥全部留在主进程/Host；
+- 本轮不实现工具控制、产物、垂直业务 UI、问题/计划审批、Provider、Package 或
+  生产发布。
+
+已经实现：
+
+1. Controller 只接受当前 authority 与当前 Session 的标准工具通知；私有 Tool Call ID
+   只用于主进程内合并，Renderer 收到的是本地单调生成的 `activity-N`；
+2. 工具类别严格归一为 `read/edit/delete/move/search/execute/fetch/think/switch_mode/
+   other`，状态只接受 `pending/in_progress/completed/failed`；终态记录整体冻结，
+   后续通知不能回退状态或改写类别；
+3. 最近活动最多保留 50 项，淘汰时同时删除私有 ID 映射；Host replay 恢复终态活动，
+   未知 ID、非法 ID、未知状态和其他 Session 通知全部忽略；
+4. 订阅失效、ready→ready 账号切换、切换 Agent、关闭/重开、Leader 重连、Host
+   退出和 Prompt 超时都会清空活动；旧 Session 的迟到通知不能污染新 Agent；
+5. Renderer 再次执行本地 ID、类别、状态与 50 项上限白名单，只用本地中文标签渲染
+   “最近活动”，不会读取 Controller 即使误传的标题、原始输入或路径字段。
+
+自主验证：
+
+- 失败优先的 Controller 测试在实现前为 19 项中 15 通过、4 失败，失败原因均是活动
+  投影尚不存在；实现后定向测试 19/19 通过；
+- 最终 `cd desktop && npm test`：85 项中 83 项通过、0 失败，2 项既有真实 Host
+  环境门 skip；两项分别验证持久 Leader/Agent 恢复与订阅/账户契约，不生成
+  `tool_call`，不能冒充本轮真实 Host 工具活动 E2E；
+- `npm run check`、`git diff --check` 通过；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 全部退出码 0；
+- 本轮没有重建已按用户要求清理的大体积 Rust `target/`。实际 Grok 源码
+  `tracker.rs` 已核对标准 ToolCall/ToolCallUpdate 与四态合并，但没有把源码审计写成
+  真实工具调用 E2E。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI 可恢复 session `session_818e5746-4cc2-48bc-b0da-9d89384e67cb`，只读审查
+  基线 `038795c` 后的完整 diff、Controller authority、Grok/ACP Schema、replay、
+  Renderer 双重白名单和测试边界；
+- Kimi 独立执行 85 项 Node 测试、语法检查、diff-check，以及 Conversation、
+  Package、Provider、Visual 四组 Electron smoke；结果同样为 83 pass、0 fail、
+  2 个与本轮无关的真实 Host 环境 skip，四组 smoke 均退出码 0；
+- 初始报告把两个既有 real-host skip 误归因为本轮活动投影缺口，核对两个测试的真实
+  断言范围后撤销该 Low；没有为归零重建与本轮无关的 54 GiB Rust target；
+- 最终确认 Blocker/High/Medium/Low 全部为零并给出 PASS。
+
+计划复盘：
+
+- 活动仍复用标准 Grok Build Harness/ACP 与 Host replay，Main 只做有界安全投影，
+  没有建立第二套 Agent Loop、活动持久化或 Renderer authority；
+- R0 继续保持“已满足（开发验证）”；只读活动不等于完整 Harness，也没有关闭
+  R1-R6、真实工具 E2E、产物/垂直工作区或生产发布；
+- 循环 47 只启动“产物与垂直状态 authority 审计”：识别标准 ACP、Grok Session、
+  Agent Package 和 Workspace 中哪些对象可成为稳定、可恢复、可脱敏的产品产物来源，
+  先形成契约与安全边界，不直接实现 UI；
+- 循环 47 非目标是读取或投影 `rawInput/rawOutput/content/locations`、建立第二套产物
+  数据库、执行工具、修改 Package/Provider、启用 Registry 或生产发布。只有确认
+  Host-owned ID、账户/Session 归属、恢复语义和 Renderer 白名单后，才排最小实现。
