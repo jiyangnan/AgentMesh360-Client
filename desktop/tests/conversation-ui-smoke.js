@@ -167,6 +167,29 @@ app.whenReady().then(async () => {
         title: 'rm -rf /private/account-7',
       },
     ],
+    artifacts: [
+      {
+        artifactId: 'role-fit-report',
+        title: '岗位匹配报告',
+        kind: 'document',
+        sizeBytes: 183421,
+        relativePath: 'artifacts/private-report.pdf',
+        downloadUrl: 'file:///private/account-7/report.pdf',
+        digest: 'private-digest',
+      },
+      {
+        artifactId: 'lecture-audio',
+        title: '课程音频',
+        kind: 'audio',
+        sizeBytes: 2383421,
+      },
+      {
+        artifactId: 'control-title',
+        title: 'Private\u0085Title',
+        kind: 'document',
+        sizeBytes: 10,
+      },
+    ],
     interaction: {
       interactionId: 'permission-1',
       kind: 'permission',
@@ -185,6 +208,7 @@ app.whenReady().then(async () => {
   const permissionDom = await window.webContents.executeJavaScript(`({
     body: document.body.innerText,
     activityCount: document.querySelectorAll('[data-activity-id]').length,
+    artifactCount: document.querySelectorAll('[data-artifact-id]').length,
     optionCount: document.querySelectorAll('[data-permission-option]').length,
     hasPermanentChoice: document.body.innerText.includes('永久允许'),
   })`);
@@ -193,10 +217,18 @@ app.whenReady().then(async () => {
   assert.equal(permissionDom.body.includes('执行操作'), true);
   assert.equal(permissionDom.body.includes('已完成'), true);
   assert.equal(permissionDom.body.includes('执行中'), true);
+  assert.equal(permissionDom.body.includes('岗位匹配报告'), true);
+  assert.equal(permissionDom.body.includes('课程音频'), true);
+  assert.equal(permissionDom.body.includes('文档'), true);
+  assert.equal(permissionDom.body.includes('音频'), true);
   assert.equal(permissionDom.body.includes('/private/account-7'), false);
   assert.equal(permissionDom.body.includes('sk-private'), false);
   assert.equal(permissionDom.body.includes('rm -rf'), false);
+  assert.equal(permissionDom.body.includes('private-digest'), false);
+  assert.equal(permissionDom.body.includes('artifacts/private-report.pdf'), false);
+  assert.equal(permissionDom.body.includes('Private'), false);
   assert.equal(permissionDom.activityCount, 2);
+  assert.equal(permissionDom.artifactCount, 2);
   assert.equal(permissionDom.optionCount, 2);
   assert.equal(permissionDom.hasPermanentChoice, false);
   await window.webContents.executeJavaScript(`
@@ -294,6 +326,7 @@ function conversationState(agentId, messages) {
     displayName,
     messages,
     activities: [],
+    artifacts: [],
     streaming: false,
     transcriptTruncated: false,
     error: null,

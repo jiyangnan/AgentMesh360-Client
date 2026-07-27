@@ -8,6 +8,7 @@ const MAX_CHUNK_CHARS = 32_000;
 const MAX_PUBLIC_MESSAGES = 200;
 const MAX_PUBLIC_TRANSCRIPT_CHARS = 200_000;
 const MAX_PUBLIC_ACTIVITIES = 50;
+const MAX_PUBLIC_ARTIFACTS = 100;
 const MAX_PRIVATE_TOOL_CALL_ID_CHARS = 200;
 const MAX_PERMISSION_TITLE_CHARS = 300;
 const MAX_PERMISSION_OPTION_CHARS = 160;
@@ -38,6 +39,19 @@ const SAFE_ACTIVITY_STATUSES = new Set([
   'failed',
 ]);
 const TERMINAL_ACTIVITY_STATUSES = new Set(['completed', 'failed']);
+const ARTIFACT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+const SAFE_ARTIFACT_KINDS = new Set([
+  'document',
+  'image',
+  'audio',
+  'video',
+  'archive',
+  'code',
+  'data',
+  'other',
+]);
+const ARTIFACT_STATUS_READY = 'ready';
+const ARTIFACT_STATUS_UNAVAILABLE = 'unavailable';
 const SESSION_UPDATE_METHODS = new Set([
   'session/update',
   'x.ai/session/update',
@@ -65,6 +79,8 @@ class AgentConversationController {
     this.activities = [];
     this.activityByToolCallId = new Map();
     this.activityCounter = 0;
+    this.artifacts = [];
+    this.artifactStatus = ARTIFACT_STATUS_READY;
     this.openPromise = null;
     this.openAgentId = null;
     this.permissionInteraction = null;
@@ -134,6 +150,8 @@ class AgentConversationController {
       });
       if (this.authority !== authority) return this.snapshot;
       this.#cancelPermission();
+      await this.#refreshArtifacts(authority);
+      if (this.authority !== authority) return this.snapshot;
       this.#publish({
         ...this.#conversationBase(authority),
         phase: 'ready',
@@ -146,6 +164,7 @@ class AgentConversationController {
       this.#cancelPermission();
       if (error?.code === 'host_timeout') {
         this.#clearActivities();
+        this.#clearArtifacts();
         this.authority = null;
         this.#publish({
           ...this.#conversationBase(authority),
@@ -219,6 +238,7 @@ class AgentConversationController {
     this.listeners.clear();
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearArtifacts();
     this.authority = null;
   }
 
@@ -228,6 +248,7 @@ class AgentConversationController {
     if (!publicAgent) throw new Error('当前账号没有此 Agent');
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearArtifacts();
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;
@@ -238,6 +259,8 @@ class AgentConversationController {
       displayName: publicAgent.displayName || agentId,
       messages: [],
       activities: [],
+      artifacts: [],
+      artifactStatus: ARTIFACT_STATUS_READY,
       streaming: false,
       transcriptTruncated: false,
       error: null,
@@ -268,6 +291,8 @@ class AgentConversationController {
       await this.host.loadSession({ sessionId, cwd });
       if (this.authority !== authority) return this.snapshot;
       this.#requireReadyAccount(authority.accountId);
+      await this.#refreshArtifacts(authority);
+      if (this.authority !== authority) return this.snapshot;
       this.#publish({
         ...this.#conversationBase(authority),
         phase: 'ready',
@@ -283,6 +308,8 @@ class AgentConversationController {
         displayName: publicAgent.displayName || agentId,
         messages: this.#publicMessages(),
         activities: this.#publicActivities(),
+        artifacts: this.#publicArtifacts(),
+        artifactStatus: this.artifactStatus,
         streaming: false,
         transcriptTruncated: this.transcriptTruncated,
         error: safeConversationError(error, '暂时无法打开此 Agent 的主对话。'),
@@ -309,6 +336,7 @@ class AgentConversationController {
     if (!previous) return;
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearArtifacts();
     this.authority = null;
     this.#publish({
       phase: 'error',
@@ -316,6 +344,8 @@ class AgentConversationController {
       displayName: previous.displayName,
       messages: this.#publicMessages(),
       activities: [],
+      artifacts: [],
+      artifactStatus: ARTIFACT_STATUS_READY,
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: '后台连接已恢复，请重新打开对话以继续。',
@@ -327,6 +357,7 @@ class AgentConversationController {
     if (!previous) return;
     this.#cancelPermission();
     this.#clearActivities();
+    this.#clearArtifacts();
     this.authority = null;
     this.#publish({
       phase: 'error',
@@ -334,6 +365,8 @@ class AgentConversationController {
       displayName: previous.displayName,
       messages: this.#publicMessages(),
       activities: [],
+      artifacts: [],
+      artifactStatus: ARTIFACT_STATUS_READY,
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: 'Agent Host 已断开，请重新打开对话以继续。',
@@ -534,6 +567,8 @@ class AgentConversationController {
       displayName: authority.displayName,
       messages: this.#publicMessages(),
       activities: this.#publicActivities(),
+      artifacts: this.#publicArtifacts(),
+      artifactStatus: this.artifactStatus,
       transcriptTruncated: this.transcriptTruncated,
       ...(this.permissionInteraction?.authority === authority
         ? { interaction: { ...this.permissionInteraction.public } }
@@ -547,6 +582,37 @@ class AgentConversationController {
 
   #publicActivities() {
     return this.activities.map((activity) => ({ ...activity.public }));
+  }
+
+  #publicArtifacts() {
+    return this.artifacts.map((artifact) => ({ ...artifact }));
+  }
+
+  async #refreshArtifacts(authority) {
+    let response;
+    try {
+      response = await this.host.listWorkspaceArtifacts(authority.agentId);
+    } catch {
+      if (this.authority !== authority) return;
+      this.artifacts = [];
+      this.artifactStatus = ARTIFACT_STATUS_UNAVAILABLE;
+      return;
+    }
+    if (this.authority !== authority) return;
+    try {
+      this.#requireReadyAccount(authority.accountId);
+    } catch (error) {
+      this.#clearArtifacts();
+      throw error;
+    }
+    try {
+      this.artifacts = projectWorkspaceArtifacts(response);
+      this.artifactStatus = ARTIFACT_STATUS_READY;
+    } catch {
+      if (this.authority !== authority) return;
+      this.artifacts = [];
+      this.artifactStatus = ARTIFACT_STATUS_UNAVAILABLE;
+    }
   }
 
   #requireReadyAccount(expectedAccountId = null) {
@@ -569,12 +635,18 @@ class AgentConversationController {
     this.messageCounter = 0;
     this.transcriptTruncated = false;
     this.#clearActivities();
+    this.#clearArtifacts();
     this.#publish({ phase: 'idle' });
   }
 
   #clearActivities() {
     this.activities = [];
     this.activityByToolCallId.clear();
+  }
+
+  #clearArtifacts() {
+    this.artifacts = [];
+    this.artifactStatus = ARTIFACT_STATUS_READY;
   }
 
   #cancelPermission() {
@@ -597,6 +669,43 @@ class AgentConversationController {
     this.snapshot = deepFreeze(JSON.parse(JSON.stringify(value)));
     for (const listener of this.listeners) listener(this.snapshot);
   }
+}
+
+function projectWorkspaceArtifacts(value) {
+  if (
+    value?.schemaVersion !== 1
+    || !Number.isSafeInteger(value?.revision)
+    || value.revision < 0
+    || !Array.isArray(value?.artifacts)
+    || value.artifacts.length > MAX_PUBLIC_ARTIFACTS
+    || (value.revision === 0 && value.artifacts.length !== 0)
+  ) {
+    throw new Error('invalid Workspace Artifact projection');
+  }
+  const ids = new Set();
+  return value.artifacts.map((artifact) => {
+    const artifactId = artifact?.artifactId;
+    const title = typeof artifact?.title === 'string' ? artifact.title.trim() : '';
+    if (
+      !ARTIFACT_ID_PATTERN.test(artifactId || '')
+      || ids.has(artifactId)
+      || title.length < 1
+      || title.length > 120
+      || /[\u0000-\u001F\u007F-\u009F]/.test(title)
+      || !SAFE_ARTIFACT_KINDS.has(artifact?.kind)
+      || !Number.isSafeInteger(artifact?.sizeBytes)
+      || artifact.sizeBytes < 0
+    ) {
+      throw new Error('invalid Workspace Artifact');
+    }
+    ids.add(artifactId);
+    return {
+      artifactId,
+      title,
+      kind: artifact.kind,
+      sizeBytes: artifact.sizeBytes,
+    };
+  });
 }
 
 function projectPermissionRequest(request, interactionCounter) {

@@ -564,6 +564,17 @@ button { -webkit-app-region: no-drag; }
 .conversation-activity.completed span { color: #9fdcc4; }
 .conversation-activity.failed i { background: #ff8e93; }
 .conversation-activity.failed span { color: #efacb0; }
+.conversation-artifacts { margin: 0 0 26px; padding: 16px; border: 1px solid rgba(103,221,176,.12); border-radius: 12px; background: rgba(103,221,176,.025); }
+.conversation-artifacts > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.conversation-artifacts h2 { margin: 3px 0 0; color: #d9eee6; font-size: 13px; font-weight: 600; }
+.conversation-artifacts > header > span { color: #6f827c; font-size: 8px; }
+.conversation-artifact-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-top: 13px; }
+.conversation-artifact { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.045); border-radius: 9px; background: rgba(255,255,255,.018); }
+.conversation-artifact > span { display: grid; place-items: center; width: 34px; height: 34px; color: #aee3cf; font-size: 9px; border: 1px solid rgba(103,221,176,.14); border-radius: 9px; background: rgba(103,221,176,.045); }
+.conversation-artifact div { min-width: 0; }
+.conversation-artifact strong { display: block; color: #cddbd6; font-size: 10px; font-weight: 500; overflow-wrap: anywhere; }
+.conversation-artifact small { display: block; margin-top: 4px; color: #71807b; font-size: 8px; }
+.artifact-index-error { margin: 13px 0 0; color: #c5a8aa; font-size: 9px; }
 .conversation-empty { display: grid; min-height: 250px; place-items: center; color: #667286; font-size: 11px; text-align: center; }
 .conversation-truncated { margin: 0 auto 20px; color: #7d899a; font-size: 9px; text-align: center; }
 .conversation-message {

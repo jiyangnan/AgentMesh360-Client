@@ -104,6 +104,16 @@ test('conversation prompt uses private authority, streams bounded text, and igno
 
 test('conversation authority is cleared when identity access or the Leader attachment changes', async () => {
   const fixture = makeFixture();
+  fixture.host.artifactImpl = async () => ({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: 'saved-report',
+      title: '已保存报告',
+      kind: 'document',
+      sizeBytes: 1024,
+    }],
+  });
   await fixture.controller.open('job-agent');
   fixture.host.emitSession('private-session-id', 'tool_call', null, {
     toolCallId: 'private-before-block',
@@ -112,6 +122,7 @@ test('conversation authority is cleared when identity access or the Leader attac
     status: 'in_progress',
   });
   assert.equal(fixture.controller.getSnapshot().activities.length, 1);
+  assert.equal(fixture.controller.getSnapshot().artifacts.length, 1);
 
   fixture.identity.publish({ phase: 'blocked', account: { id: 7 } });
   assert.deepEqual(fixture.controller.getSnapshot(), { phase: 'idle' });
@@ -133,6 +144,7 @@ test('conversation authority is cleared when identity access or the Leader attac
   assert.equal(reconnectSnapshot.phase, 'error');
   assert.equal(reconnectSnapshot.agentId, 'job-agent');
   assert.deepEqual(reconnectSnapshot.activities, []);
+  assert.deepEqual(reconnectSnapshot.artifacts, []);
   assert.equal(JSON.stringify(reconnectSnapshot).includes('private-session-id'), false);
   await assert.rejects(
     fixture.controller.send('still fails'),
@@ -180,6 +192,16 @@ test('conversation rejects a different concurrent open instead of returning the 
 
 test('conversation revokes authority after a prompt timeout and ignores late chunks', async () => {
   const fixture = makeFixture();
+  fixture.host.artifactImpl = async () => ({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: 'saved-report',
+      title: '已保存报告',
+      kind: 'document',
+      sizeBytes: 1024,
+    }],
+  });
   await fixture.controller.open('job-agent');
   fixture.host.emitSession('private-session-id', 'tool_call', null, {
     toolCallId: 'private-timeout-activity',
@@ -200,6 +222,7 @@ test('conversation revokes authority after a prompt timeout and ignores late chu
   assert.equal(snapshot.phase, 'error');
   assert.match(snapshot.error, /响应超时/);
   assert.deepEqual(snapshot.activities, []);
+  assert.deepEqual(snapshot.artifacts, []);
   assert.equal(JSON.stringify(fixture.controller.getSnapshot()).includes('迟到的内容'), false);
   await assert.rejects(fixture.controller.send('不能交错重发'), /重新打开/);
 });
@@ -245,6 +268,130 @@ test('conversation restores terminal activities from Host replay without exposin
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test('conversation loads and refreshes a bounded Host-owned artifact projection', async () => {
+  const fixture = makeFixture();
+  let revision = 1;
+  fixture.host.artifactImpl = async () => ({
+    schemaVersion: 1,
+    revision,
+    artifacts: revision === 1
+      ? [{
+        artifactId: 'role-fit-report',
+        title: '岗位匹配报告',
+        kind: 'document',
+        sizeBytes: 183421,
+        relativePath: 'artifacts/private-report.pdf',
+        digest: 'private-digest',
+      }]
+      : [{
+        artifactId: 'role-fit-report',
+        title: '岗位匹配报告（已更新）',
+        kind: 'document',
+        sizeBytes: 193421,
+        absolutePath: '/private/account-7/job-agent/artifacts/report.pdf',
+      }],
+  });
+
+  const opened = await fixture.controller.open('job-agent');
+  assert.deepEqual(opened.artifacts, [{
+    artifactId: 'role-fit-report',
+    title: '岗位匹配报告',
+    kind: 'document',
+    sizeBytes: 183421,
+  }]);
+  assert.deepEqual(fixture.host.artifactCalls, ['job-agent']);
+
+  revision = 2;
+  const sent = await fixture.controller.send('更新报告');
+  assert.deepEqual(sent.artifacts, [{
+    artifactId: 'role-fit-report',
+    title: '岗位匹配报告（已更新）',
+    kind: 'document',
+    sizeBytes: 193421,
+  }]);
+  assert.deepEqual(fixture.host.artifactCalls, ['job-agent', 'job-agent']);
+  const serialized = JSON.stringify(sent);
+  for (const forbidden of [
+    'relativePath',
+    'private-digest',
+    'absolutePath',
+    '/private/account-7',
+    'schemaVersion',
+    'revision',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation fails closed on malformed artifact projections without closing chat', async () => {
+  const fixture = makeFixture();
+  fixture.host.artifactImpl = async () => ({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: '../escape',
+      title: 'Private /path',
+      kind: 'future-kind',
+      sizeBytes: -1,
+    }],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.equal(snapshot.phase, 'ready');
+  assert.deepEqual(snapshot.artifacts, []);
+  assert.equal(snapshot.artifactStatus, 'unavailable');
+  assert.equal(JSON.stringify(snapshot).includes('../escape'), false);
+  assert.equal(JSON.stringify(snapshot).includes('Private /path'), false);
+});
+
+test('conversation rejects C1 control characters in artifact titles', async () => {
+  const fixture = makeFixture();
+  fixture.host.artifactImpl = async () => ({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: 'control-title',
+      title: 'Private\u0085Title',
+      kind: 'document',
+      sizeBytes: 10,
+    }],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.equal(snapshot.phase, 'ready');
+  assert.deepEqual(snapshot.artifacts, []);
+  assert.equal(snapshot.artifactStatus, 'unavailable');
+  assert.equal(JSON.stringify(snapshot).includes('Private'), false);
+});
+
+test('conversation ignores a stale artifact response after account authority is revoked', async () => {
+  const fixture = makeFixture();
+  let resolveArtifacts;
+  fixture.host.artifactImpl = () => new Promise((resolve) => {
+    resolveArtifacts = resolve;
+  });
+
+  const opening = fixture.controller.open('job-agent');
+  await new Promise((resolve) => setImmediate(resolve));
+  fixture.identity.publish({ phase: 'blocked', account: { id: 7 } });
+  resolveArtifacts({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: 'stale-private-report',
+      title: '旧账号报告',
+      kind: 'document',
+      sizeBytes: 10,
+    }],
+  });
+
+  const snapshot = await opening;
+  assert.deepEqual(snapshot, { phase: 'idle' });
+  assert.equal(JSON.stringify(fixture.controller.getSnapshot()).includes('stale-private-report'), false);
 });
 
 test('conversation keeps activities bounded and ignores malformed or regressive tool updates', async () => {
@@ -520,6 +667,18 @@ test('conversation cancels permission when authority changes and rejects stale R
 
 test('conversation cancels the old permission before opening another Agent', async () => {
   const fixture = makeFixture();
+  fixture.host.artifactImpl = async (agentId) => ({
+    schemaVersion: 1,
+    revision: agentId === 'job-agent' ? 1 : 0,
+    artifacts: agentId === 'job-agent'
+      ? [{
+        artifactId: 'job-report',
+        title: 'Job Report',
+        kind: 'document',
+        sizeBytes: 10,
+      }]
+      : [],
+  });
   await fixture.controller.open('job-agent');
   fixture.host.emit('permission-request', permissionRequest(
     'job-switch-request',
@@ -539,6 +698,7 @@ test('conversation cancels the old permission before opening another Agent', asy
     optionId: null,
   }]);
   assert.deepEqual(deploySnapshot.activities, []);
+  assert.deepEqual(deploySnapshot.artifacts, []);
   fixture.host.emitSession('private-session-id', 'tool_call', null, {
     toolCallId: 'late-private-job-activity',
     title: 'Late private Job activity',
@@ -608,6 +768,16 @@ test('conversation keeps the first permission and cancels a concurrent second re
 
 test('conversation cancels a pending permission and revokes authority on Host exit', async () => {
   const fixture = makeFixture();
+  fixture.host.artifactImpl = async () => ({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: 'exit-report',
+      title: 'Exit Report',
+      kind: 'document',
+      sizeBytes: 10,
+    }],
+  });
   await fixture.controller.open('job-agent');
   fixture.host.emit('permission-request', permissionRequest('exit-request', 'Exit operation'));
   fixture.host.emitSession('private-session-id', 'tool_call', null, {
@@ -624,6 +794,7 @@ test('conversation cancels a pending permission and revokes authority on Host ex
   assert.match(snapshot.error, /Host 已断开/);
   assert.equal(snapshot.interaction, undefined);
   assert.deepEqual(snapshot.activities, []);
+  assert.deepEqual(snapshot.artifacts, []);
   assert.equal(JSON.stringify(snapshot).includes('private host details'), false);
   assert.deepEqual(fixture.host.permissionResponses, [{
     requestId: 'exit-request',
@@ -685,9 +856,15 @@ function makeFixture() {
   const host = Object.assign(new EventEmitter(), {
     loadCalls: [],
     promptCalls: [],
+    artifactCalls: [],
     permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
+    artifactImpl: async () => ({
+      schemaVersion: 1,
+      revision: 0,
+      artifacts: [],
+    }),
     async listAgents() {
       return {
         agents: [
@@ -725,6 +902,10 @@ function makeFixture() {
     async promptSession(request) {
       this.promptCalls.push(request);
       return this.promptImpl(request);
+    },
+    async listWorkspaceArtifacts(agentId) {
+      this.artifactCalls.push(agentId);
+      return this.artifactImpl(agentId);
     },
     respondPermission(requestId, optionId) {
       this.permissionResponses.push({ requestId, optionId });

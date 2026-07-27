@@ -288,6 +288,8 @@ function renderReady(state) {
 function conversationView() {
   const messages = Array.isArray(conversationUi.messages) ? conversationUi.messages : [];
   const activities = safeConversationActivities(conversationUi.activities);
+  const artifacts = safeConversationArtifacts(conversationUi.artifacts);
+  const artifactUnavailable = conversationUi.artifactStatus === 'unavailable';
   const loading = conversationUi.phase === 'loading';
   const sending = conversationUi.streaming === true;
   const displayName = conversationUi.displayName || 'Agent';
@@ -313,6 +315,9 @@ function conversationView() {
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
         ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
         ${activities.length ? conversationActivitiesView(activities) : ''}
+        ${artifacts.length || artifactUnavailable
+    ? conversationArtifactsView(artifacts, artifactUnavailable)
+    : ''}
         ${messages.length
     ? messages.map(conversationMessage).join('')
     : `<div class="conversation-empty">${loading ? '正在恢复历史…' : `这里会显示 ${escapeHtml(displayName)} 的持久对话历史。`}</div>`}
@@ -368,6 +373,104 @@ function conversationActivitiesView(activities) {
           </div>`).join('')}
       </div>
     </section>`;
+}
+
+function safeConversationArtifacts(value) {
+  if (!Array.isArray(value)) return [];
+  const safeKinds = new Set([
+    'document',
+    'image',
+    'audio',
+    'video',
+    'archive',
+    'code',
+    'data',
+    'other',
+  ]);
+  const seen = new Set();
+  return value.slice(0, 100).flatMap((artifact) => {
+    const artifactId = typeof artifact?.artifactId === 'string' ? artifact.artifactId : '';
+    const title = typeof artifact?.title === 'string' ? artifact.title.trim() : '';
+    if (
+      !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(artifactId)
+      || seen.has(artifactId)
+      || !title
+      || title.length > 120
+      || /[\u0000-\u001F\u007F-\u009F]/.test(title)
+      || !safeKinds.has(artifact?.kind)
+      || !Number.isSafeInteger(artifact?.sizeBytes)
+      || artifact.sizeBytes < 0
+    ) {
+      return [];
+    }
+    seen.add(artifactId);
+    return [{
+      artifactId,
+      title,
+      kind: artifact.kind,
+      sizeBytes: artifact.sizeBytes,
+    }];
+  });
+}
+
+function conversationArtifactsView(artifacts, unavailable) {
+  return `
+    <section class="conversation-artifacts" aria-label="Agent 产物">
+      <header>
+        <div>
+          <p class="eyebrow">Workspace Artifacts</p>
+          <h2>产物</h2>
+        </div>
+        <span>Host 验证的只读索引</span>
+      </header>
+      ${unavailable
+    ? '<p class="artifact-index-error">产物索引暂时不可用。</p>'
+    : `<div class="conversation-artifact-list">
+          ${artifacts.map((artifact) => `
+            <article class="conversation-artifact" data-artifact-id="${escapeHtml(artifact.artifactId)}">
+              <span aria-hidden="true">${escapeHtml(artifactKindSymbol(artifact.kind))}</span>
+              <div>
+                <strong>${escapeHtml(artifact.title)}</strong>
+                <small>${escapeHtml(artifactKindLabel(artifact.kind))} · ${escapeHtml(formatArtifactSize(artifact.sizeBytes))}</small>
+              </div>
+            </article>`).join('')}
+        </div>`}
+    </section>`;
+}
+
+function artifactKindSymbol(kind) {
+  return {
+    document: '文',
+    image: '图',
+    audio: '音',
+    video: '影',
+    archive: '包',
+    code: '码',
+    data: '数',
+    other: '件',
+  }[kind] || '件';
+}
+
+function artifactKindLabel(kind) {
+  return {
+    document: '文档',
+    image: '图片',
+    audio: '音频',
+    video: '视频',
+    archive: '归档',
+    code: '代码',
+    data: '数据',
+    other: '其他',
+  }[kind] || '其他';
+}
+
+function formatArtifactSize(sizeBytes) {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  if (sizeBytes < 1024 * 1024 * 1024) {
+    return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function activityToolKind(kind) {
@@ -530,6 +633,8 @@ async function openConversation(agentId) {
     displayName: currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId,
     messages: [],
     activities: [],
+    artifacts: [],
+    artifactStatus: 'ready',
     streaming: false,
     error: null,
   };

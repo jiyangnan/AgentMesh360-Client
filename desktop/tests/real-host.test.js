@@ -55,6 +55,7 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     ]);
     assert.equal(list.agents[0].mainSessionId, legacySessionId);
     const firstAccountSessions = new Set([legacySessionId]);
+    let artifactAgent;
     for (const agentId of ['lecturecast-agent', 'deploy-agent']) {
       const activated = await client.activateAgent(agentId);
       assert.equal(activated.agent.agentId, agentId);
@@ -65,7 +66,23 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
         sessionId: activated.agent.mainSessionId,
         cwd: activated.agent.workspaceDir,
       });
+      if (agentId === 'lecturecast-agent') artifactAgent = activated.agent;
     }
+    writeArtifactManifest(artifactAgent.workspaceDir);
+    const artifacts = await client.listWorkspaceArtifacts('lecturecast-agent');
+    assert.deepEqual(artifacts, {
+      schemaVersion: 1,
+      revision: 1,
+      artifacts: [{
+        artifactId: 'lesson-audio',
+        title: '课程音频',
+        kind: 'audio',
+        sizeBytes: 11,
+      }],
+    });
+    const serializedArtifacts = JSON.stringify(artifacts);
+    assert.equal(serializedArtifacts.includes('relativePath'), false);
+    assert.equal(serializedArtifacts.includes(artifactAgent.workspaceDir), false);
     const emptyBindingHistory = await client.getSessionBindingHistory({
       sessionId: legacySessionId,
       role: 'main',
@@ -102,6 +119,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       cwd: secondAccountWorkspace,
     });
     await assert.rejects(
+      client.listWorkspaceArtifacts('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
+    );
+    await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
         role: 'main',
@@ -115,6 +136,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     const restoredFirstAccount = await client.listAgents();
     const restoredJob = restoredFirstAccount.agents.find((agent) => agent.agentId === 'job-agent');
     assert.equal(restoredJob.mainSessionId, legacySessionId);
+    assert.equal(
+      (await client.listWorkspaceArtifacts('lecturecast-agent')).artifacts[0].artifactId,
+      'lesson-audio',
+    );
     await assert.rejects(
       client.loadSession({
         sessionId: secondAccountSessionId,
@@ -132,6 +157,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     );
     await assert.rejects(
       client.getProviderCatalog(),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
+      client.listWorkspaceArtifacts('lecturecast-agent'),
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );
     await assert.rejects(
@@ -154,6 +183,24 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+function writeArtifactManifest(workspaceDir) {
+  const controlDir = path.join(workspaceDir, '.agentmesh360');
+  const artifactsDir = path.join(workspaceDir, 'artifacts');
+  fs.mkdirSync(controlDir, { recursive: true });
+  fs.mkdirSync(artifactsDir, { recursive: true });
+  fs.writeFileSync(path.join(artifactsDir, 'lesson.mp3'), 'audio-bytes');
+  fs.writeFileSync(path.join(controlDir, 'artifacts-v1.json'), JSON.stringify({
+    schemaVersion: 1,
+    revision: 1,
+    artifacts: [{
+      artifactId: 'lesson-audio',
+      title: '课程音频',
+      kind: 'audio',
+      relativePath: 'artifacts/lesson.mp3',
+    }],
+  }));
+}
 
 function initializeLegacyState(stateHome, sessionId) {
   fs.mkdirSync(stateHome, { recursive: true });
