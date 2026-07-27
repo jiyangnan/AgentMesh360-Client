@@ -6,32 +6,36 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const opens = [];
 const prompts = [];
+let currentConversation = { phase: 'idle' };
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
-  ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
+  ipcMain.handle('conversation:get-snapshot', () => currentConversation);
   ipcMain.handle('conversation:open', (event, agentId) => {
     opens.push(agentId);
-    assert.equal(agentId, 'job-agent');
-    const state = conversationState([
-      { id: 'message-1', role: 'user', text: '上次的岗位分析还在吗？' },
-      { id: 'message-2', role: 'assistant', text: '在，我们可以从证据匹配继续。' },
+    assert.equal(readyState().agents.some((agent) => agent.agentId === agentId), true);
+    currentConversation = conversationState(agentId, [
+      { id: 'message-1', role: 'user', text: `上次的 ${agentId} 工作还在吗？` },
+      { id: 'message-2', role: 'assistant', text: '在，我们可以从上次进度继续。' },
     ]);
-    event.sender.send('conversation:state', state);
-    return state;
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
   });
   ipcMain.handle('conversation:send', (event, text) => {
     prompts.push(text);
-    const state = conversationState([
+    currentConversation = conversationState(currentConversation.agentId, [
       { id: 'message-1', role: 'user', text: '上次的岗位分析还在吗？' },
       { id: 'message-2', role: 'assistant', text: '在，我们可以从证据匹配继续。' },
       { id: 'message-3', role: 'user', text },
       { id: 'message-4', role: 'assistant', text: '已继续分析。' },
     ]);
-    event.sender.send('conversation:state', state);
-    return state;
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
   });
-  ipcMain.handle('conversation:close', () => ({ phase: 'idle' }));
+  ipcMain.handle('conversation:close', () => {
+    currentConversation = { phase: 'idle' };
+    return currentConversation;
+  });
   for (const channel of [
     'identity:login',
     'identity:logout',
@@ -61,9 +65,30 @@ app.whenReady().then(async () => {
   ));
   const agentActions = await window.webContents.executeJavaScript(`({
     jobConversation: document.querySelector('[data-open-conversation="job-agent"]') !== null,
-    lectureActivation: document.querySelector('[data-activate-agent="lecturecast-agent"]') !== null,
+    lectureConversation: document.querySelector('[data-open-conversation="lecturecast-agent"]') !== null,
+    deployConversation: document.querySelector('[data-open-conversation="deploy-agent"]') !== null,
+    dynamicConversation: document.querySelector('[data-open-conversation="future-agent"]') !== null,
+    activationOnly: document.querySelectorAll('[data-activate-agent]').length,
+    symbols: Array.from(document.querySelectorAll('.agent-symbol'), (node) => node.textContent),
   })`);
-  assert.deepEqual(agentActions, { jobConversation: true, lectureActivation: true });
+  assert.deepEqual(agentActions, {
+    jobConversation: true,
+    lectureConversation: true,
+    deployConversation: true,
+    dynamicConversation: true,
+    activationOnly: 0,
+    symbols: ['J', 'L', 'D', 'F'],
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-open-conversation=\"future-agent\"]').click()",
+  );
+  await waitFor(() => opens.length === 1);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.body.innerText.includes('Future Agent')",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-back').click()",
+  );
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-open-conversation=\"job-agent\"]').click()",
   );
@@ -75,9 +100,9 @@ app.whenReady().then(async () => {
     body: document.body.innerText,
     messages: document.querySelectorAll('.conversation-message').length,
   })`);
-  assert.deepEqual(opens, ['job-agent']);
+  assert.deepEqual(opens, ['future-agent', 'job-agent']);
   assert.equal(openedDom.messages, 2);
-  assert.equal(openedDom.body.includes('上次的岗位分析还在吗？'), true);
+  assert.equal(openedDom.body.includes('上次的 job-agent 工作还在吗？'), true);
   assert.equal(openedDom.body.includes('private-session-id'), false);
   assert.equal(openedDom.body.includes('/private/account-7'), false);
 
@@ -88,7 +113,7 @@ app.whenReady().then(async () => {
     "document.querySelector('[data-open-conversation=\"job-agent\"]') !== null",
   ));
   window.webContents.send('conversation:state', {
-    ...conversationState([
+    ...conversationState('job-agent', [
       { id: 'message-1', role: 'assistant', text: '后台更新不应抢走当前页面。' },
     ]),
     streaming: true,
@@ -113,6 +138,30 @@ app.whenReady().then(async () => {
     "document.body.innerText.includes('已继续分析。')",
   ));
   assert.deepEqual(prompts, ['继续匹配这份 JD']);
+
+  await window.reload();
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.body.innerText.includes('已继续分析。')",
+  ));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.getElementById('conversation-form') !== null",
+  ), true);
+
+  currentConversation = {
+    ...currentConversation,
+    phase: 'error',
+    streaming: false,
+    error: '后台连接已恢复，请重新打开对话以继续。',
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-reopen-conversation=\"job-agent\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-reopen-conversation=\"job-agent\"]').click()",
+  );
+  await waitFor(() => opens.length === 3);
+  assert.deepEqual(opens, ['future-agent', 'job-agent', 'job-agent']);
   await app.quit();
 }).catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);
@@ -141,16 +190,32 @@ function readyState() {
         desiredState: 'stopped',
         runtimeState: 'available',
       },
+      {
+        agentId: 'deploy-agent',
+        displayName: 'Deploy Agent',
+        description: '负责发布前检查、部署执行以及上线后的证据验证。',
+        desiredState: 'stopped',
+        runtimeState: 'available',
+      },
+      {
+        agentId: 'future-agent',
+        displayName: 'Future Agent',
+        description: '通过动态 Agent Package 安装的未来 Agent。',
+        desiredState: 'stopped',
+        runtimeState: 'available',
+      },
     ],
     checkedAt: new Date().toISOString(),
   };
 }
 
-function conversationState(messages) {
+function conversationState(agentId, messages) {
+  const displayName = readyState().agents
+    .find((agent) => agent.agentId === agentId)?.displayName || agentId;
   return {
     phase: 'ready',
-    agentId: 'job-agent',
-    displayName: 'Job Agent',
+    agentId,
+    displayName,
     messages,
     streaming: false,
     transcriptTruncated: false,

@@ -139,7 +139,7 @@ function renderSignedOut(state) {
         <div class="story-copy">
           <p class="eyebrow">Persistent Agent Workspace</p>
           <h1>你的专业 Agent，<br><span>始终在场。</span></h1>
-          <p>激活一次，长期驻留。Job Agent、Lecturecast Agent 与 Deploy Agent 会保留各自的固定主会话，随时从上次进度继续。</p>
+          <p>激活一次，长期驻留。每个已激活的产品 Agent 都会保留自己的固定主会话，随时从上次进度继续。</p>
         </div>
         <div class="resident-line"><i class="pulse" aria-hidden="true"></i>Grok Build Harness · 本地持久会话</div>
       </div>
@@ -280,36 +280,39 @@ function renderReady(state) {
   for (const button of document.querySelectorAll('[data-open-conversation]')) {
     button.addEventListener('click', () => openConversation(button.dataset.openConversation));
   }
-  for (const button of document.querySelectorAll('[data-activate-agent]')) {
-    button.addEventListener('click', () => bridge.activateAgent(button.dataset.activateAgent));
-  }
 }
 
 function conversationView() {
   const messages = Array.isArray(conversationUi.messages) ? conversationUi.messages : [];
   const loading = conversationUi.phase === 'loading';
   const sending = conversationUi.streaming === true;
+  const displayName = conversationUi.displayName || 'Agent';
+  const canReopen = conversationUi.phase === 'error' && conversationUi.agentId;
   return `
     <section class="conversation-shell" aria-label="固定 Main Session 对话">
       <header class="conversation-header">
         <button class="ghost conversation-back" type="button">← 返回 Agent</button>
         <div>
           <p class="eyebrow">Persistent Main Session</p>
-          <h1>${escapeHtml(conversationUi.displayName || 'Job Agent')}</h1>
+          <h1>${escapeHtml(displayName)}</h1>
           <p>${loading ? '正在由 Host 解析并加载固定主会话…' : '同一账号、同一 Agent、同一个持久主会话'}</p>
         </div>
         <span class="conversation-state ${sending ? 'working' : ''}">${sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : '已连接'}</span>
       </header>
-      ${conversationUi.error ? `<div class="conversation-error" role="alert">${escapeHtml(conversationUi.error)}</div>` : ''}
+      ${conversationUi.error ? `
+        <div class="conversation-error" role="alert">
+          <span>${escapeHtml(conversationUi.error)}</span>
+          ${canReopen ? `<button class="ghost" type="button" data-reopen-conversation="${escapeHtml(conversationUi.agentId)}">重新打开</button>` : ''}
+        </div>` : ''}
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
         ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
         ${messages.length
     ? messages.map(conversationMessage).join('')
-    : `<div class="conversation-empty">${loading ? '正在恢复历史…' : '这里会显示 Job Agent 的持久对话历史。'}</div>`}
-        ${sending ? '<div class="conversation-typing"><i></i><i></i><i></i><span>Job Agent 正在继续这项工作</span></div>' : ''}
+    : `<div class="conversation-empty">${loading ? '正在恢复历史…' : `这里会显示 ${escapeHtml(displayName)} 的持久对话历史。`}</div>`}
+        ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${escapeHtml(displayName)} 正在继续这项工作</span></div>` : ''}
       </div>
       <form class="conversation-composer" id="conversation-form">
-        <textarea name="message" maxlength="16000" rows="3" placeholder="继续上次的工作，或告诉 Job Agent 你现在需要什么…" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}></textarea>
+        <textarea name="message" maxlength="16000" rows="3" placeholder="继续上次的工作，或告诉这个 Agent 你现在需要什么…" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}></textarea>
         <div>
           <span>Renderer 只接收安全文本投影；Session ID、路径和 Provider 凭据留在 Host。</span>
           <button class="secondary" type="submit" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}>发送</button>
@@ -320,10 +323,12 @@ function conversationView() {
 
 function conversationMessage(message) {
   const role = message?.role === 'user' ? 'user' : 'assistant';
+  const displayName = conversationUi.displayName || 'Agent';
+  const initial = Array.from(displayName.trim())[0]?.toUpperCase() || 'A';
   return `
     <article class="conversation-message ${role}">
-      <span>${role === 'user' ? '你' : 'J'}</span>
-      <div><b>${role === 'user' ? '你' : escapeHtml(conversationUi.displayName || 'Job Agent')}</b><p>${escapeHtml(message?.text || '')}</p></div>
+      <span>${role === 'user' ? '你' : escapeHtml(initial)}</span>
+      <div><b>${role === 'user' ? '你' : escapeHtml(displayName)}</b><p>${escapeHtml(message?.text || '')}</p></div>
     </article>`;
 }
 
@@ -331,6 +336,9 @@ function wireConversation() {
   document.querySelector('.conversation-back')?.addEventListener('click', () => {
     workspaceView = 'agents';
     renderReady(currentState);
+  });
+  document.querySelector('[data-reopen-conversation]')?.addEventListener('click', (event) => {
+    openConversation(event.currentTarget.dataset.reopenConversation);
   });
   const transcript = document.getElementById('conversation-transcript');
   if (transcript) transcript.scrollTop = transcript.scrollHeight;
@@ -1451,20 +1459,16 @@ function publicError(error, fallback) {
 function agentCard(agent, index, activatingAgentId) {
   const resident = isResident(agent);
   const activating = activatingAgentId === agent.agentId;
-  const symbols = ['J', 'L', 'D'];
   const tones = ['tone-violet', 'tone-mint', 'tone-blue'];
-  const conversationEnabled = agent.agentId === 'job-agent';
-  const buttonAttribute = conversationEnabled
-    ? `data-open-conversation="${escapeHtml(agent.agentId)}"`
-    : `data-activate-agent="${escapeHtml(agent.agentId)}"`;
+  const symbol = Array.from(String(agent.displayName || agent.agentId || '').trim())[0]
+    ?.toUpperCase() || 'A';
+  const buttonAttribute = `data-open-conversation="${escapeHtml(agent.agentId)}"`;
   const buttonLabel = activating
     ? '正在唤醒…'
-    : conversationEnabled
-      ? resident ? '打开对话' : '激活并打开'
-      : resident ? '重新唤醒' : '激活常驻';
+    : resident ? '打开对话' : '激活并打开';
   return `
     <article class="agent-card ${tones[index % tones.length]}">
-      <div class="agent-symbol">${escapeHtml(symbols[index % symbols.length])}</div>
+      <div class="agent-symbol">${escapeHtml(symbol)}</div>
       <h3>${escapeHtml(agent.displayName)}</h3>
       <p>${escapeHtml(agent.description)}</p>
       <div class="agent-meta">

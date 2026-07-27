@@ -11,7 +11,7 @@ const { IdentityController } = require('../src/identity-controller');
 
 const hostBinary = process.env.AGENTMESH360_REAL_HOST_BIN;
 
-test('persistent Grok Host survives desktop detach and restores the same product Agent', {
+test('persistent Grok Host restores every first-party product Agent after detach and Leader replacement', {
   skip: !hostBinary ? 'set AGENTMESH360_REAL_HOST_BIN to run the persistent Host lifecycle test' : false,
   timeout: 60000,
 }, async () => {
@@ -58,9 +58,13 @@ test('persistent Grok Host survives desktop detach and restores the same product
     });
     const allowed = await firstClient.bootstrap('persistent-host-access-token');
     assert.equal(allowed.access.canEnterClient, true);
-    const activated = await firstClient.activateAgent('job-agent');
-    const sessionId = activated.agent.mainSessionId;
-    assert.ok(sessionId);
+    const sessionIds = new Map();
+    for (const agentId of ['job-agent', 'lecturecast-agent', 'deploy-agent']) {
+      const activated = await firstClient.activateAgent(agentId);
+      assert.ok(activated.agent.mainSessionId);
+      sessionIds.set(agentId, activated.agent.mainSessionId);
+    }
+    assert.equal(new Set(sessionIds.values()).size, 3);
 
     leaderPid = await waitForLeaderPid(lockPath);
     assert.equal(isProcessAlive(leaderPid), true);
@@ -102,13 +106,13 @@ test('persistent Grok Host survives desktop detach and restores the same product
     const restoredIdentity = await identity.start();
     assert.equal(restoredIdentity.phase, 'ready');
     const list = await secondClient.listAgents();
-    const jobAgent = list.agents.find((agent) => agent.agentId === 'job-agent');
-
-    assert.equal(jobAgent.mainSessionId, sessionId);
-    await secondClient.loadSession({
-      sessionId,
-      cwd: jobAgent.workspaceDir,
-    });
+    for (const agent of list.agents) {
+      assert.equal(agent.mainSessionId, sessionIds.get(agent.agentId));
+      await secondClient.loadSession({
+        sessionId: agent.mainSessionId,
+        cwd: agent.workspaceDir,
+      });
+    }
     assert.equal(Number(fs.readFileSync(lockPath, 'utf8').trim()), leaderPid);
     assert.equal(secondClient.getRuntimeStatus().bridgeState, 'connected');
 
@@ -127,12 +131,13 @@ test('persistent Grok Host survives desktop detach and restores the same product
     assert.equal(identity.getState().phase, 'ready');
     assert.equal(refreshCalls, 2);
     const restored = await secondClient.listAgents();
-    const restoredJob = restored.agents.find((agent) => agent.agentId === 'job-agent');
-    assert.equal(restoredJob.mainSessionId, sessionId);
-    await secondClient.loadSession({
-      sessionId,
-      cwd: restoredJob.workspaceDir,
-    });
+    for (const agent of restored.agents) {
+      assert.equal(agent.mainSessionId, sessionIds.get(agent.agentId));
+      await secondClient.loadSession({
+        sessionId: agent.mainSessionId,
+        cwd: agent.workspaceDir,
+      });
+    }
   } catch (error) {
     const leaderLogPath = path.join(home, '.grok', 'leader.log');
     const leaderLog = fs.existsSync(leaderLogPath)

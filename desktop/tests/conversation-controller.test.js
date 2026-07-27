@@ -170,6 +170,44 @@ test('conversation fails closed when a ready-looking identity lacks explicit cli
   assert.equal(fixture.activationCalls, 0);
 });
 
+test('conversation opens every current-account catalog agent through the same private Host path', async () => {
+  const fixture = makeFixture();
+
+  for (const agentId of [
+    'job-agent',
+    'lecturecast-agent',
+    'deploy-agent',
+    'future-agent',
+  ]) {
+    const snapshot = await fixture.controller.open(agentId);
+    assert.equal(snapshot.phase, 'ready');
+    assert.equal(snapshot.agentId, agentId);
+    assert.equal(snapshot.displayName, fixture.identity.getState().agents
+      .find((agent) => agent.agentId === agentId).displayName);
+  }
+
+  assert.deepEqual(fixture.host.loadCalls.map((call) => call.sessionId), [
+    'private-session-id',
+    'private-lecture-session',
+    'private-deploy-session',
+    'private-future-session',
+  ]);
+});
+
+test('conversation clears the previous account snapshot on a ready-to-ready account switch', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('future-agent');
+
+  fixture.identity.publish({
+    ...readyIdentity(),
+    account: { id: 8 },
+  });
+  fixture.host.emitSession('private-future-session', 'agent_message_chunk', '旧账号迟到内容');
+
+  assert.deepEqual(fixture.controller.getSnapshot(), { phase: 'idle' });
+  await assert.rejects(fixture.controller.send('不能沿用旧账号'), /尚未打开/);
+});
+
 test('conversation projection is bounded while full history remains Host-owned', async () => {
   const fixture = makeFixture();
   fixture.host.loadImpl = async () => {
@@ -213,12 +251,32 @@ function makeFixture() {
     promptImpl: async () => ({ stopReason: 'end_turn' }),
     async listAgents() {
       return {
-        agents: [{
-          agentId: 'job-agent',
-          displayName: 'Job Agent',
-          mainSessionId: 'private-session-id',
-          workspaceDir: '/private/account-7/job-agent',
-        }],
+        agents: [
+          {
+            agentId: 'job-agent',
+            displayName: 'Job Agent',
+            mainSessionId: 'private-session-id',
+            workspaceDir: '/private/account-7/job-agent',
+          },
+          {
+            agentId: 'lecturecast-agent',
+            displayName: 'Lecturecast Agent',
+            mainSessionId: 'private-lecture-session',
+            workspaceDir: '/private/account-7/lecturecast-agent',
+          },
+          {
+            agentId: 'deploy-agent',
+            displayName: 'Deploy Agent',
+            mainSessionId: 'private-deploy-session',
+            workspaceDir: '/private/account-7/deploy-agent',
+          },
+          {
+            agentId: 'future-agent',
+            displayName: 'Future Agent',
+            mainSessionId: 'private-future-session',
+            workspaceDir: '/private/account-7/future-agent',
+          },
+        ],
       };
     },
     async loadSession(request) {
@@ -267,13 +325,36 @@ function readyIdentity() {
   return {
     phase: 'ready',
     account: { id: 7 },
-    agents: [{
-      agentId: 'job-agent',
-      displayName: 'Job Agent',
-      description: 'Career copilot',
-      desiredState: 'running',
-      runtimeState: 'resident',
-    }],
+    agents: [
+      {
+        agentId: 'job-agent',
+        displayName: 'Job Agent',
+        description: 'Career copilot',
+        desiredState: 'running',
+        runtimeState: 'resident',
+      },
+      {
+        agentId: 'lecturecast-agent',
+        displayName: 'Lecturecast Agent',
+        description: 'Lecture production copilot',
+        desiredState: 'inactive',
+        runtimeState: 'available',
+      },
+      {
+        agentId: 'deploy-agent',
+        displayName: 'Deploy Agent',
+        description: 'Deployment copilot',
+        desiredState: 'inactive',
+        runtimeState: 'available',
+      },
+      {
+        agentId: 'future-agent',
+        displayName: 'Future Agent',
+        description: 'Dynamically installed agent',
+        desiredState: 'inactive',
+        runtimeState: 'available',
+      },
+    ],
     access: { canEnterClient: true, reason: 'subscription_active' },
   };
 }

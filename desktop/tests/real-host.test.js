@@ -54,6 +54,18 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       'deploy-agent',
     ]);
     assert.equal(list.agents[0].mainSessionId, legacySessionId);
+    const firstAccountSessions = new Set([legacySessionId]);
+    for (const agentId of ['lecturecast-agent', 'deploy-agent']) {
+      const activated = await client.activateAgent(agentId);
+      assert.equal(activated.agent.agentId, agentId);
+      assert.ok(activated.agent.mainSessionId);
+      assert.equal(firstAccountSessions.has(activated.agent.mainSessionId), false);
+      firstAccountSessions.add(activated.agent.mainSessionId);
+      await client.loadSession({
+        sessionId: activated.agent.mainSessionId,
+        cwd: activated.agent.workspaceDir,
+      });
+    }
     const emptyBindingHistory = await client.getSessionBindingHistory({
       sessionId: legacySessionId,
       role: 'main',
