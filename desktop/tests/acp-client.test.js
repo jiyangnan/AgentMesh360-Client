@@ -400,6 +400,76 @@ test('Session Provider Binding methods keep route snapshots Host-owned', async (
   await client.stop();
 });
 
+test('ACP session methods keep Main Session authority private and forward streaming notifications', async () => {
+  const received = [];
+  let child;
+  const spawnImpl = () => {
+    child = fakeChild((request) => {
+      received.push(request);
+      if (request.method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} };
+      if (request.method === 'session/load') return {};
+      if (request.method === 'session/prompt') return { stopReason: 'end_turn' };
+      return {};
+    });
+    return child;
+  };
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+  const notifications = [];
+  client.on('notification', (message) => notifications.push(message));
+
+  await client.loadSession({
+    sessionId: 'private-main-session',
+    cwd: '/private/account/job-agent',
+  });
+  child.stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'session/update',
+    params: {
+      sessionId: 'private-main-session',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'streamed reply' },
+      },
+    },
+  })}\n`);
+  await new Promise((resolve) => setImmediate(resolve));
+  const response = await client.promptSession({
+    sessionId: 'private-main-session',
+    text: 'hello',
+  });
+
+  assert.equal(response.stopReason, 'end_turn');
+  assert.deepEqual(received.slice(1), [
+    {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/load',
+      params: {
+        sessionId: 'private-main-session',
+        cwd: '/private/account/job-agent',
+        mcpServers: [],
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: {
+        sessionId: 'private-main-session',
+        prompt: [{ type: 'text', text: 'hello' }],
+      },
+    },
+  ]);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].params.update.content.text, 'streamed reply');
+  await client.stop();
+});
+
 function fakeChild(handler) {
   const child = new EventEmitter();
   child.stdout = new PassThrough();

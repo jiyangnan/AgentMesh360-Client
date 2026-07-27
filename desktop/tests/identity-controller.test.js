@@ -87,6 +87,23 @@ test('login persists only the refresh token and activation is available only fro
   assert.equal(fixture.host.calls.activateAgent, 1);
 });
 
+test('Agent activation failures never project raw Host errors into Renderer state', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  fixture.host.activateAgent = async () => {
+    fixture.host.calls.activateAgent += 1;
+    throw Object.assign(new Error('failed at /private/account with sk-private'), {
+      code: 'host_request_failed',
+    });
+  };
+
+  const state = await fixture.controller.activateAgent('job-agent');
+
+  assert.equal(state.activationError, 'Agent 激活失败，请稍后重试');
+  assert.equal(JSON.stringify(state).includes('/private/account'), false);
+  assert.equal(JSON.stringify(state).includes('sk-private'), false);
+});
+
 test('an unexpected Host exit immediately closes an already-open Agent workspace', async () => {
   const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
   await fixture.controller.start();

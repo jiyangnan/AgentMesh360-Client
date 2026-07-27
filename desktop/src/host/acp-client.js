@@ -45,6 +45,8 @@ class AcpHostClient extends EventEmitter {
     resourcesPath = process.resourcesPath,
     spawnImpl = spawn,
     requestTimeoutMs = 20000,
+    sessionLoadTimeoutMs = 120000,
+    sessionPromptTimeoutMs = 30 * 60 * 1000,
   } = {}) {
     super();
     this.runtime = resolveHostRuntime({ env });
@@ -56,6 +58,8 @@ class AcpHostClient extends EventEmitter {
     this.env = this.runtime.env;
     this.spawnImpl = spawnImpl;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.sessionLoadTimeoutMs = sessionLoadTimeoutMs;
+    this.sessionPromptTimeoutMs = sessionPromptTimeoutMs;
     this.child = null;
     this.pending = new Map();
     this.nextId = 1;
@@ -87,6 +91,23 @@ class AcpHostClient extends EventEmitter {
 
   async activateAgent(agentId) {
     return this.#extension('x.agentmesh360/agents/activate', { agentId });
+  }
+
+  async loadSession({ sessionId, cwd }) {
+    await this.start();
+    return this.#request('session/load', {
+      sessionId,
+      cwd,
+      mcpServers: [],
+    }, this.sessionLoadTimeoutMs);
+  }
+
+  async promptSession({ sessionId, text }) {
+    await this.start();
+    return this.#request('session/prompt', {
+      sessionId,
+      prompt: [{ type: 'text', text }],
+    }, this.sessionPromptTimeoutMs);
   }
 
   async getAgentPackageCatalog() {
@@ -323,7 +344,7 @@ class AcpHostClient extends EventEmitter {
     return envelope.result;
   }
 
-  #request(method, params) {
+  #request(method, params, timeoutMs = this.requestTimeoutMs) {
     if (!this.child?.stdin?.writable) {
       return Promise.reject(new HostRequestError('host_unavailable', 'Agent Host 尚未运行'));
     }
@@ -332,7 +353,7 @@ class AcpHostClient extends EventEmitter {
       const timeout = setTimeout(() => {
         this.pending.delete(id);
         reject(new HostRequestError('host_timeout', 'Agent Host 响应超时'));
-      }, this.requestTimeoutMs);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timeout });
       try {
         this.#write({ jsonrpc: '2.0', id, method, params });

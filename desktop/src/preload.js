@@ -11,6 +11,16 @@ contextBridge.exposeInMainWorld('agentmesh360', {
   logout: () => ipcRenderer.invoke('identity:logout'),
   recheck: () => ipcRenderer.invoke('identity:recheck'),
   activateAgent: (agentId) => ipcRenderer.invoke('agent:activate', String(agentId || '').slice(0, 100)),
+  getConversationSnapshot: () => ipcRenderer.invoke('conversation:get-snapshot'),
+  openAgentConversation: (agentId) => ipcRenderer.invoke(
+    'conversation:open',
+    String(agentId || '').slice(0, 100),
+  ),
+  sendConversationMessage: (text) => ipcRenderer.invoke(
+    'conversation:send',
+    String(text || '').slice(0, 16_001),
+  ),
+  closeAgentConversation: () => ipcRenderer.invoke('conversation:close'),
   getProviderSnapshot: () => ipcRenderer.invoke('provider:get-snapshot'),
   createProviderProfile: ({ profile, apiKey }) => ipcRenderer.invoke('provider:create-profile', {
     profile,
@@ -76,5 +86,10 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on('identity:state', handler);
     return () => ipcRenderer.removeListener('identity:state', handler);
+  },
+  onConversationState: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on('conversation:state', handler);
+    return () => ipcRenderer.removeListener('conversation:state', handler);
   },
 });

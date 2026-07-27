@@ -8,6 +8,7 @@ const writes = [];
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
+  ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
   ipcMain.handle('provider:get-snapshot', () => providerSnapshot());
   ipcMain.handle('provider:create-profile', (_event, payload) => {
     writes.push({ kind: 'profile', payload });

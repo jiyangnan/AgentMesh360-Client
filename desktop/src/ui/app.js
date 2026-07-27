@@ -29,8 +29,15 @@ let backgroundUi = {
   message: null,
   busy: false,
 };
+let conversationUi = { phase: 'idle' };
 
 bridge.onState(render);
+bridge.onConversationState((state) => {
+  conversationUi = state || { phase: 'idle' };
+  if (currentState.phase === 'ready' && workspaceView === 'conversation') {
+    renderReady(currentState);
+  }
+});
 bridge.getState().then(render).catch(() => render({
   phase: 'unavailable',
   message: '桌面身份服务没有响应',
@@ -66,6 +73,8 @@ function render(state) {
       message: null,
       busy: false,
     };
+    conversationUi = { phase: 'idle' };
+    restoreConversationSnapshot(readyAccountId);
   } else if (['signed_out', 'blocked', 'unavailable'].includes(currentState.phase)) {
     readyAccountId = null;
     workspaceView = 'agents';
@@ -77,6 +86,7 @@ function render(state) {
     packageUi.unknownOutcome = null;
     backgroundUi.snapshot = null;
     backgroundUi.phase = 'idle';
+    conversationUi = { phase: 'idle' };
   }
   switch (currentState.phase) {
     case 'signed_out':
@@ -95,6 +105,25 @@ function render(state) {
     case 'checking':
     default:
       renderChecking(currentState);
+  }
+}
+
+async function restoreConversationSnapshot(accountId) {
+  try {
+    const state = await bridge.getConversationSnapshot();
+    if (
+      currentState.phase !== 'ready'
+      || currentState.account?.id !== accountId
+      || !state
+      || state.phase === 'idle'
+    ) {
+      return;
+    }
+    conversationUi = state;
+    workspaceView = 'conversation';
+    renderReady(currentState);
+  } catch {
+    // The Agent cards remain available as the safe recovery path.
   }
 }
 
@@ -202,7 +231,7 @@ function renderReady(state) {
         ${brand()}
         <p class="nav-label">Workspace</p>
         <button class="nav-item ${workspaceView === 'agents' ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>常驻 Agent</button>
-        <button class="nav-item" type="button" disabled><i class="nav-dot"></i>会话 <span class="muted">后续</span></button>
+        <button class="nav-item ${workspaceView === 'conversation' ? 'active' : ''}" id="nav-conversation" type="button" ${conversationUi.phase === 'idle' ? 'disabled' : ''}><i class="nav-dot"></i>当前对话</button>
         <button class="nav-item ${workspaceView === 'packages' ? 'active' : ''}" id="nav-packages" type="button"><i class="nav-dot"></i>Agent Package</button>
         <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>Provider 设置</button>
         <button class="nav-item ${workspaceView === 'client' ? 'active' : ''}" id="nav-client" type="button"><i class="nav-dot"></i>客户端设置</button>
@@ -213,11 +242,15 @@ function renderReady(state) {
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
-      <main class="workspace-main">${workspaceView === 'packages' ? packageCenterView() : workspaceView === 'providers' ? providerSettingsView(state) : workspaceView === 'client' ? backgroundSettingsView() : agentWorkspaceView(state)}</main>
+      <main class="workspace-main">${workspaceView === 'conversation' ? conversationView() : workspaceView === 'packages' ? packageCenterView() : workspaceView === 'providers' ? providerSettingsView(state) : workspaceView === 'client' ? backgroundSettingsView() : agentWorkspaceView(state)}</main>
     </section>`;
   document.getElementById('logout').addEventListener('click', () => bridge.logout());
   document.getElementById('nav-agents').addEventListener('click', () => {
     workspaceView = 'agents';
+    renderReady(currentState);
+  });
+  document.getElementById('nav-conversation')?.addEventListener('click', () => {
+    workspaceView = 'conversation';
     renderReady(currentState);
   });
   document.getElementById('nav-packages').addEventListener('click', () => {
@@ -235,16 +268,113 @@ function renderReady(state) {
     renderReady(currentState);
     if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
   });
-  if (workspaceView === 'packages') {
+  if (workspaceView === 'conversation') {
+    wireConversation();
+  } else if (workspaceView === 'packages') {
     wirePackageCenter();
   } else if (workspaceView === 'providers') {
     wireProviderSettings();
   } else if (workspaceView === 'client') {
     wireBackgroundSettings();
   }
-  for (const button of document.querySelectorAll('[data-agent-id]')) {
-    button.addEventListener('click', () => bridge.activateAgent(button.dataset.agentId));
+  for (const button of document.querySelectorAll('[data-open-conversation]')) {
+    button.addEventListener('click', () => openConversation(button.dataset.openConversation));
   }
+  for (const button of document.querySelectorAll('[data-activate-agent]')) {
+    button.addEventListener('click', () => bridge.activateAgent(button.dataset.activateAgent));
+  }
+}
+
+function conversationView() {
+  const messages = Array.isArray(conversationUi.messages) ? conversationUi.messages : [];
+  const loading = conversationUi.phase === 'loading';
+  const sending = conversationUi.streaming === true;
+  return `
+    <section class="conversation-shell" aria-label="固定 Main Session 对话">
+      <header class="conversation-header">
+        <button class="ghost conversation-back" type="button">← 返回 Agent</button>
+        <div>
+          <p class="eyebrow">Persistent Main Session</p>
+          <h1>${escapeHtml(conversationUi.displayName || 'Job Agent')}</h1>
+          <p>${loading ? '正在由 Host 解析并加载固定主会话…' : '同一账号、同一 Agent、同一个持久主会话'}</p>
+        </div>
+        <span class="conversation-state ${sending ? 'working' : ''}">${sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : '已连接'}</span>
+      </header>
+      ${conversationUi.error ? `<div class="conversation-error" role="alert">${escapeHtml(conversationUi.error)}</div>` : ''}
+      <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
+        ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
+        ${messages.length
+    ? messages.map(conversationMessage).join('')
+    : `<div class="conversation-empty">${loading ? '正在恢复历史…' : '这里会显示 Job Agent 的持久对话历史。'}</div>`}
+        ${sending ? '<div class="conversation-typing"><i></i><i></i><i></i><span>Job Agent 正在继续这项工作</span></div>' : ''}
+      </div>
+      <form class="conversation-composer" id="conversation-form">
+        <textarea name="message" maxlength="16000" rows="3" placeholder="继续上次的工作，或告诉 Job Agent 你现在需要什么…" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}></textarea>
+        <div>
+          <span>Renderer 只接收安全文本投影；Session ID、路径和 Provider 凭据留在 Host。</span>
+          <button class="secondary" type="submit" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}>发送</button>
+        </div>
+      </form>
+    </section>`;
+}
+
+function conversationMessage(message) {
+  const role = message?.role === 'user' ? 'user' : 'assistant';
+  return `
+    <article class="conversation-message ${role}">
+      <span>${role === 'user' ? '你' : 'J'}</span>
+      <div><b>${role === 'user' ? '你' : escapeHtml(conversationUi.displayName || 'Job Agent')}</b><p>${escapeHtml(message?.text || '')}</p></div>
+    </article>`;
+}
+
+function wireConversation() {
+  document.querySelector('.conversation-back')?.addEventListener('click', () => {
+    workspaceView = 'agents';
+    renderReady(currentState);
+  });
+  const transcript = document.getElementById('conversation-transcript');
+  if (transcript) transcript.scrollTop = transcript.scrollHeight;
+  const form = document.getElementById('conversation-form');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const textarea = form.elements.message;
+    const text = textarea.value.trim();
+    if (!text) return;
+    textarea.value = '';
+    try {
+      const state = await bridge.sendConversationMessage(text);
+      conversationUi = state;
+    } catch (error) {
+      conversationUi = {
+        ...conversationUi,
+        error: publicError(error, '消息发送失败'),
+      };
+    }
+    if (currentState.phase === 'ready') renderReady(currentState);
+  });
+}
+
+async function openConversation(agentId) {
+  workspaceView = 'conversation';
+  conversationUi = {
+    phase: 'loading',
+    agentId,
+    displayName: currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId,
+    messages: [],
+    streaming: false,
+    error: null,
+  };
+  renderReady(currentState);
+  try {
+    conversationUi = await bridge.openAgentConversation(agentId);
+  } catch (error) {
+    conversationUi = {
+      ...conversationUi,
+      phase: 'error',
+      error: publicError(error, '暂时无法打开此 Agent 的主对话'),
+    };
+  }
+  if (currentState.phase === 'ready') renderReady(currentState);
 }
 
 function packageCenterView() {
@@ -1323,6 +1453,15 @@ function agentCard(agent, index, activatingAgentId) {
   const activating = activatingAgentId === agent.agentId;
   const symbols = ['J', 'L', 'D'];
   const tones = ['tone-violet', 'tone-mint', 'tone-blue'];
+  const conversationEnabled = agent.agentId === 'job-agent';
+  const buttonAttribute = conversationEnabled
+    ? `data-open-conversation="${escapeHtml(agent.agentId)}"`
+    : `data-activate-agent="${escapeHtml(agent.agentId)}"`;
+  const buttonLabel = activating
+    ? '正在唤醒…'
+    : conversationEnabled
+      ? resident ? '打开对话' : '激活并打开'
+      : resident ? '重新唤醒' : '激活常驻';
   return `
     <article class="agent-card ${tones[index % tones.length]}">
       <div class="agent-symbol">${escapeHtml(symbols[index % symbols.length])}</div>
@@ -1330,7 +1469,7 @@ function agentCard(agent, index, activatingAgentId) {
       <p>${escapeHtml(agent.description)}</p>
       <div class="agent-meta">
         <span class="runtime ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
-        <button class="agent-action" data-agent-id="${escapeHtml(agent.agentId)}" ${activating ? 'disabled' : ''}>${activating ? '正在唤醒…' : resident ? '打开对话' : '激活常驻'}</button>
+        <button class="agent-action" ${buttonAttribute} ${activating ? 'disabled' : ''}>${buttonLabel}</button>
       </div>
     </article>`;
 }

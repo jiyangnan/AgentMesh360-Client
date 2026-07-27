@@ -13,6 +13,7 @@ const {
 const { AgentMeshCoreClient } = require('./auth/core-client');
 const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
+const { AgentConversationController } = require('./conversation-controller');
 const { IdentityController } = require('./identity-controller');
 const { PackageController } = require('./package-controller');
 const { ProviderController } = require('./provider-controller');
@@ -29,6 +30,7 @@ const REGISTRATION_URL = 'https://agentmesh360.com/app/#register';
 
 let window = null;
 let controller = null;
+let conversations = null;
 let lastFocusCheck = 0;
 const loginItems = new LoginItemController({ app });
 const startupIntent = resolveStartupIntent({
@@ -65,13 +67,25 @@ async function boot() {
   });
   const host = new AcpHostClient();
   controller = new IdentityController({ core, tokenStore, host });
+  conversations = new AgentConversationController({
+    identity: controller,
+    host,
+    activateAgent: (agentId) => activateAgentAndEnableBackground({
+      identity: controller,
+      loginItems,
+      agentId,
+    }),
+  });
   const packages = new PackageController({ identity: controller, host });
   const providers = new ProviderController({ identity: controller, host });
 
-  registerIpc(controller, providers, packages, loginItems, host);
+  registerIpc(controller, providers, packages, conversations, loginItems, host);
   windows.onReady();
   controller.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('identity:state', state);
+  });
+  conversations.subscribe((state) => {
+    if (!window?.isDestroyed()) window.webContents.send('conversation:state', state);
   });
   powerMonitor.on('resume', () => controller.revalidate('resume').catch(() => {}));
   const initialState = await controller.start();
@@ -124,7 +138,7 @@ function createWindow() {
   return created;
 }
 
-function registerIpc(identity, providers, packages, loginItemController, host) {
+function registerIpc(identity, providers, packages, conversationController, loginItemController, host) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
     const email = typeof credentials?.email === 'string' ? credentials.email : '';
@@ -141,6 +155,14 @@ function registerIpc(identity, providers, packages, loginItemController, host) {
       agentId,
     });
   });
+  ipcMain.handle('conversation:get-snapshot', () => conversationController.getSnapshot());
+  ipcMain.handle('conversation:open', (_event, agentId) => {
+    return conversationController.open(agentId);
+  });
+  ipcMain.handle('conversation:send', (_event, text) => {
+    return conversationController.send(text);
+  });
+  ipcMain.handle('conversation:close', () => conversationController.close());
   ipcMain.handle('provider:get-snapshot', () => providers.getSnapshot());
   ipcMain.handle('provider:create-profile', (_event, { profile, apiKey } = {}) => {
     return providers.createProfile(profile, apiKey);
@@ -202,6 +224,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  conversations?.dispose();
   controller?.shutdown().catch(() => {});
 });
 

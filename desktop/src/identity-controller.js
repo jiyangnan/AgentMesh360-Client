@@ -137,7 +137,7 @@ class IdentityController {
         this.#publish({
           ...this.state,
           activatingAgentId: null,
-          activationError: error.message || 'Agent 激活失败',
+          activationError: publicActivationError(error),
         });
       }
       return this.state;
@@ -373,6 +373,14 @@ function publicAgents(agents) {
   }));
 }
 
+function publicActivationError(error) {
+  const code = String(error?.code || '');
+  if (code.includes('auth') || code.includes('subscription') || code.includes('access')) {
+    return '订阅验证已失效，请重新检查后再试';
+  }
+  return 'Agent 激活失败，请稍后重试';
+}
+
 function deepFreeze(value) {
   if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) deepFreeze(child);
@@ -383,6 +391,7 @@ module.exports = {
   IdentityController,
   DEFAULT_REVALIDATE_INTERVAL_MS,
   normalizeBootstrap,
+  publicActivationError,
   publicAgents,
   stripSecrets,
   validateCoreBootstrap,

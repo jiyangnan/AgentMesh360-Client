@@ -81,6 +81,14 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     const secondAccountJob = secondAccountList.agents.find((agent) => agent.agentId === 'job-agent');
     assert.equal(secondAccountJob.desiredState, 'inactive');
     assert.equal(secondAccountJob.mainSessionId, null);
+    const secondAccountActivation = await client.activateAgent('job-agent');
+    const secondAccountSessionId = secondAccountActivation.agent.mainSessionId;
+    const secondAccountWorkspace = secondAccountActivation.agent.workspaceDir;
+    assert.ok(secondAccountSessionId);
+    await client.loadSession({
+      sessionId: secondAccountSessionId,
+      cwd: secondAccountWorkspace,
+    });
     await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
@@ -95,6 +103,13 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     const restoredFirstAccount = await client.listAgents();
     const restoredJob = restoredFirstAccount.agents.find((agent) => agent.agentId === 'job-agent');
     assert.equal(restoredJob.mainSessionId, legacySessionId);
+    await assert.rejects(
+      client.loadSession({
+        sessionId: secondAccountSessionId,
+        cwd: secondAccountWorkspace,
+      }),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
 
     canEnter = false;
     const denied = await client.bootstrap('integration-access-token');
@@ -112,6 +127,13 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
         sessionId: legacySessionId,
         role: 'main',
         agentId: 'job-agent',
+      }),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
+      client.promptSession({
+        sessionId: secondAccountSessionId,
+        text: 'must fail before Provider routing',
       }),
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );

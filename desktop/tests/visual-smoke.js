@@ -12,6 +12,7 @@ let backgroundEnabled = true;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => fixtureState(phase));
+  ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
   ipcMain.handle('package:get-snapshot', () => packageFixture());
   ipcMain.handle('package:refresh-registry', () => ({
     registry: packageFixture().status.remoteRegistry,

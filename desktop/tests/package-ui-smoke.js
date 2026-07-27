@@ -13,6 +13,7 @@ let rollbackCalls = 0;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
+  ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
   ipcMain.handle('package:get-snapshot', () => {
     snapshotReads += 1;
     return packageSnapshot();

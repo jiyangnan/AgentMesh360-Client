@@ -105,6 +105,10 @@ test('persistent Grok Host survives desktop detach and restores the same product
     const jobAgent = list.agents.find((agent) => agent.agentId === 'job-agent');
 
     assert.equal(jobAgent.mainSessionId, sessionId);
+    await secondClient.loadSession({
+      sessionId,
+      cwd: jobAgent.workspaceDir,
+    });
     assert.equal(Number(fs.readFileSync(lockPath, 'utf8').trim()), leaderPid);
     assert.equal(secondClient.getRuntimeStatus().bridgeState, 'connected');
 
@@ -125,6 +129,10 @@ test('persistent Grok Host survives desktop detach and restores the same product
     const restored = await secondClient.listAgents();
     const restoredJob = restored.agents.find((agent) => agent.agentId === 'job-agent');
     assert.equal(restoredJob.mainSessionId, sessionId);
+    await secondClient.loadSession({
+      sessionId,
+      cwd: restoredJob.workspaceDir,
+    });
   } catch (error) {
     const leaderLogPath = path.join(home, '.grok', 'leader.log');
     const leaderLog = fs.existsSync(leaderLogPath)
