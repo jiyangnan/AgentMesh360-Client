@@ -1,8 +1,9 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
-状态：Cycle 56 的 P0 计划与 Cycle 57 的 P1 R6 本地基线已完成自主验证和本机
-Kimi 独立复核；R1-R6 仍未关闭，尚未进入 key ceremony、E1/E2 技术演练、内部
-canary 或生产候选
+状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线与 Cycle 58 的 P2
+无 authority ceremony 预检设计已完成自主验证和本机 Kimi 独立复核；P2 实际测试
+key 演练与 R1-R6 仍未关闭，尚未进入 key ceremony、E1/E2 技术演练、内部 canary
+或生产候选
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -38,7 +39,9 @@ Root/Publisher key，
 - R0 继续是“已满足（开发验证）”，不代替生产发布门；
 - R1-R6 仍未满足；
 - P1 已完成零生产 authority 的 R6 Schema、Runbook、证据模板和 E0 tabletop；
-- 下一步只进入 P2 ceremony 工具/清单设计；生成临时测试 key 前仍需精确批准；
+- P2 已完成不生成 key 的 ceremony Schema、默认 blocked 模板、静态验证器和清单
+  设计；这只建立 `rehearsal_ready` 前的本地预检，不满足 R1；
+- 下一步只能在测试 key 精确批准卡生效后执行 P2 E0 演练；生产 key 仍需另一张卡；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -415,7 +418,7 @@ flowchart TD
 | --- | --- | --- |
 | P0 当前态审计与计划 | 本文、蓝图/发布门/进展同步、文档验证、Kimi 四级清零 | 本轮已授权继续开发；不含外部动作 |
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
-| P2 R1 E0 | ceremony 工具/清单、临时测试 key、轮换/吊销演练 | 生成测试 key 前单独确认范围；生产 key 另行批准 |
+| P2 R1 E0 | **设计基线已完成，实际演练未开始**：ceremony Schema/模板/验证器/清单；临时测试 key、轮换/过期/吊销/恢复演练仍待执行 | 生成测试 key 前单独确认范围；生产 key 另行批准 |
 | P3 R2 E0 | 固定 commit 的双构建、provenance、外部测试签名与复验 | 不得使用生产 Publisher key |
 | P4 R3 E1 | 隔离 origin、对象存储/Registry、故障注入和清理 | 需要创建外部资源与 staging 凭据授权 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
@@ -423,8 +426,8 @@ flowchart TD
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
 
-P0/P1 完成后仍不能跳到 P4-P8。P2 的 ceremony 工具与清单设计是下一项最小切片；
-临时测试 key、轮换和吊销演练只有在测试 key 批准卡生效后才能执行，生产 key 仍需
+P0/P1 与 P2 无 authority 设计完成后仍不能跳到 P3-P8。临时测试 key、轮换、丢失、
+泄漏、过期、吊销与恢复演练只有在测试 key 批准卡生效后才能执行；生产 key 仍需
 另一张独立批准卡。
 
 ## 8. 明确批准卡
@@ -546,6 +549,48 @@ Blocker/High/Medium/Low 全部为零并给出 PASS。
 
 下一顺序：
 
-- P2 先实现不生成 key 的 ceremony 工具/清单设计；
-- 生成临时测试 key、执行轮换/吊销演练前必须获得第 8 节的测试 key 精确批准卡；
+- Cycle 58 已实现不生成 key 的 P2 ceremony 工具/清单设计；
+- 生成临时测试 key、执行轮换/丢失/泄漏/过期/吊销/恢复演练前必须获得第 8 节的
+  测试 key 精确批准卡；
 - P3-P8 与各自外部 authority 继续保持关闭，不能用本轮 PASS 推断已发布或已 canary。
+
+## 12. Cycle 58 P2 无 authority ceremony 预检检查点
+
+已经完成：
+
+- `agentmesh360-key-ceremony-preflight-v1` 严格 JSON Schema 与默认模板固定
+  `environment=e0`、`authority=none`、`approvalStatus=not_approved`、
+  `executionStatus=blocked` 和 `algorithm=ed25519`；
+- 模板只预留一个 Root 与两个 Publisher 的 planned key ID；private material 在
+  Repository、Client、普通 CI 和 evidence 中全部固定为 `false`；
+- custody 的备份份数、介质、保管角色、恢复窗口和销毁方式分别保持
+  `requires_approval`；批准卡的窗口与 receipt 继续保持未批准/不存在；
+- 16 个机器固定场景覆盖 Bundle expiry，Publisher/Root 的生成、丢失、泄漏、过期、
+  overlap rotation、retire/revoke/emergency revoke，以及测试材料销毁；
+- 无依赖 Node 验证器拒绝 symlink、非 regular/空/超 128 KiB/非 UTF-8/非法 JSON、
+  重复 object key、未知/缺失字段、ID 冲突/乱序、非单调 sequence 和任何 authority
+  升级；CLI 错误不输出绝对路径或文件内容；
+- 中文操作清单只描述获批后的顺序与停止条件，不包含 key-generation 命令。
+
+验证与复核：
+
+- P2 定向 Node 测试 10/10、与 P1 release-evidence 联合回归 28/28 通过；
+- 两个 P2 MJS `node --check`、默认模板 CLI 验证与 `git diff --check` 通过；
+- Kimi CLI session `session_987108f4-dbd2-4252-aa62-aa8c6876afa4` 首轮发现
+  1 Medium / 2 Low：机器清单缺 Root rotation/compromise 与 Bundle expiry，批准卡
+  缺版本映射，custody 待批准维度未逐项表达；
+- 修复并增加回归后，同一 session 重新读取完整 diff、执行 Node/CLI/diff 检查，
+  最终 Blocker/High/Medium/Low 全部为零并 PASS；
+- 同步 Cycle 58 进展、发布门、产品蓝图和桌面 README 后，同一 session 第三轮复核
+  最终 10 文件 diff，独立复跑 P2 10/10、联合 28/28、链接/fence/JSON、生产关闭
+  常量与根 `target/` 检查，仍为四级全零并 PASS；
+- Kimi 未编辑文件、运行 Cargo/npm/Electron、创建 `target`、读取 Keychain/
+  Provider、调用外部服务或执行任何 key 操作。
+
+边界与下一顺序：
+
+- 本检查点只关闭 P2 的无 authority 设计子项，不代表 key ceremony 已获批、key
+  已生成、E0 rehearsal 已通过或 R1 已满足；
+- 顶层状态必须继续是 `blocked`；不得把模板改写为真实批准 receipt；
+- 下一步只有在第 8 节测试 key ceremony 精确批准卡生效后，才执行 P2 E0 实际演练；
+  P3-P8、生产 key、外部资源、费用、Apple 凭据与 cohort 继续保持关闭。

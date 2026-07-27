@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "ceremonyId": "ceremony_e0_template_0001",
+  "environment": "e0",
+  "ceremonyClass": "test_key_rehearsal",
+  "authority": "none",
+  "approvalStatus": "not_approved",
+  "executionStatus": "blocked",
+  "algorithm": "ed25519",
+  "plannedKeyIds": {
+    "root": "agentmesh360-root-e0-replace",
+    "publishers": [
+      "agentmesh360-publisher-e0-a-replace",
+      "agentmesh360-publisher-e0-b-replace"
+    ]
+  },
+  "roleAliases": [
+    "build_operator",
+    "incident_owner",
+    "independent_witness",
+    "release_owner",
+    "signer_operator"
+  ],
+  "custody": {
+    "rootLocationClass": "offline_removable_media",
+    "publisherLocationClass": "external_signer",
+    "backupCopyCount": "requires_approval",
+    "backupMedia": "requires_approval",
+    "backupCustodianRoles": "requires_approval",
+    "recoveryWindow": "requires_approval",
+    "destructionMethod": "requires_approval",
+    "privateMaterialInRepository": false,
+    "privateMaterialInClient": false,
+    "privateMaterialInCi": false,
+    "privateMaterialInEvidence": false
+  },
+  "sequencePlan": {
+    "initialTrustSequence": 1,
+    "overlapTrustSequence": 2,
+    "retirementTrustSequence": 3,
+    "revocationTrustSequence": 4,
+    "monotonicIncreaseRequired": true,
+    "sameSequenceDifferentDocumentRejected": true
+  },
+  "approvalCard": {
+    "action": "generate_e0_test_root_and_publisher_keys",
+    "environment": "e0",
+    "releasePackageDesktopVersion": "not_applicable_use_ceremony_id",
+    "externalResources": "none",
+    "credentials": "new_test_keys_only",
+    "providerAndModel": "none",
+    "maximumRequests": 0,
+    "maximumCredits": 0,
+    "maximumCurrencyCost": 0,
+    "cohort": "none",
+    "startStopWindow": "requires_approval",
+    "rollbackTarget": "destroy_test_material_and_restore_empty_trust",
+    "abortOwnerRole": "incident_owner",
+    "evidenceRetentionClass": "access_controlled",
+    "approvalReceipt": "not_present"
+  },
+  "requiredScenarios": [
+    "bundle_expiry",
+    "publisher_a_generation",
+    "publisher_b_generation",
+    "publisher_compromise",
+    "publisher_expiry",
+    "publisher_loss_recovery",
+    "publisher_overlap_rotation",
+    "publisher_retirement",
+    "publisher_revocation",
+    "root_compromise",
+    "root_emergency_revocation",
+    "root_generation",
+    "root_loss_recovery",
+    "root_overlap_rotation",
+    "root_public_export",
+    "test_material_destruction"
+  ],
+  "stopConditions": [
+    "approval_missing",
+    "receipt_validation_failed",
+    "role_separation_missing",
+    "sequence_or_identity_mismatch",
+    "storage_boundary_unverified",
+    "unexpected_private_material_location"
+  ],
+  "evidencePolicy": {
+    "releaseEventSchemaVersion": 1,
+    "receiptStorageClass": "access_controlled",
+    "recordPrivateMaterial": false,
+    "recordPersonalIdentity": false,
+    "recordAbsolutePaths": false,
+    "recordRawCommands": false
+  }
+}

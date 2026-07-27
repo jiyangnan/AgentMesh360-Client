@@ -4,7 +4,8 @@
 安全只读工具活动、Workspace Artifact、通用 Project State、Harness 后台活动与
 Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也已完成自主验证与
 本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划，Cycle 57
-已关闭 P1 R6 本地基线；R1-R6 与所有生产发布能力仍保持关闭
+已关闭 P1 R6 本地基线，Cycle 58 已关闭 P2 无 authority ceremony 预检设计；
+P2 实际测试 key 演练、R1-R6 与所有生产发布能力仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -12,9 +13,10 @@ Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也�
 2. 哪些条件全部满足后，才可以单独决定是否启用生产 Agent Package 与桌面分发。
 
 Cycle 56 只审计和排定顺序；Cycle 57 只新增 Release Event、证据模板、静态验证器、
-事故 Runbook 与 E0 tabletop。两轮都没有生成生产 Root/Publisher key，不配置生产
-endpoint，不上传 Artifact，不发布 Registry，不签名或公证桌面安装包，也不写用户
-真实宿主目录。
+事故 Runbook 与 E0 tabletop；Cycle 58 只新增无 authority 的 key ceremony Schema、
+默认 blocked 模板、静态验证器与清单。三轮都没有生成任何测试/生产
+Root/Publisher key，不配置生产 endpoint，不上传 Artifact，不发布 Registry，不签名
+或公证桌面安装包，也不写用户真实宿主目录。
 R1-R6 的可执行工作包、三种 canary 与证据边界见
 [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
 
@@ -161,7 +163,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | 门 | 适用发布链 | 当前状态 | 启用前必须具备 |
 | --- | --- | --- | --- |
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
-| R1 Root 与 Publisher authority | Agent Package | 未满足 | 独立审查的 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；轮换、retire、revoke 流程演练 |
+| R1 Root 与 Publisher authority | Agent Package | 未满足（P2 无 authority 预检设计已完成） | 独立审查的 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足 | 可复现构建证据；H2d0 外部签名输入输出；Artifact/Envelope/Host bundles/Release/Registry 的发布者、摘要和版本可追溯 |
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
@@ -210,11 +212,13 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产准备计划（Cycle 56 P0、Cycle 57 P1 已完成）**：已经拆分 E0 本地演练、
-   E1 隔离 staging、E2 封闭生产候选与 E3 正式生产，并区分 Package、Desktop 和
-   Combined canary；P1 已建立 R6 Runbook、最小事件 Schema、证据模板、静态扫描和
-   E0 tabletop。下一步只进入 P2 的 ceremony 工具/清单设计；生成测试/生产 key、
-   外部服务、真实订阅/BYOK canary、签名、公证和 cohort 仍各自等待精确授权。
+6. **桌面与 Package 生产准备计划（Cycle 56 P0、Cycle 57 P1、Cycle 58 P2
+   无 authority 设计已完成）**：已经拆分 E0 本地演练、E1 隔离 staging、E2 封闭
+   生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
+   R6 Runbook、最小事件 Schema、证据模板、静态扫描和 E0 tabletop；P2 已建立
+   ceremony Schema、默认 blocked 模板、静态验证器和清单。下一步必须先取得测试 key
+   精确批准卡，才能执行 P2 E0 实际演练；生产 key、外部服务、真实订阅/BYOK
+   canary、签名、公证和 cohort 仍各自等待独立授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -407,3 +411,18 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   复核 Blocker/High/Medium/Low 全零并 PASS；
 - P1 只关闭 R6 本地基线，R1-R6 仍未满足。下一步是 P2 无 key ceremony
   工具/清单；任何临时测试 key 生成和轮换/吊销演练继续等待精确批准卡。
+
+## 17. 循环 58 P2 无 authority ceremony 预检检查点
+
+- 新增严格 `agentmesh360-key-ceremony-preflight-v1` Schema、默认 blocked 模板、
+  无依赖 Node 验证器与中文操作清单；
+- Schema 固定 E0、Ed25519、`authority=none`、`not_approved`、`blocked`，只允许
+  planned key ID 与公开状态，不允许 private material、真实 receipt 或调用方放行；
+- 16 个机器场景覆盖 R1 要求的 Root/Publisher 轮换、丢失、泄漏、过期、吊销与恢复；
+  custody 五个业务维度和批准卡窗口继续固定为 `requires_approval`；
+- 主 Agent P2 10/10、联合 28/28、CLI/check/diff 检查全部通过；Kimi session
+  `session_987108f4-dbd2-4252-aa62-aa8c6876afa4` 首轮 1 Medium / 2 Low 全部修复，
+  同会话复核 Blocker/High/Medium/Low 全零并 PASS；
+- P2 无 authority 设计只证明安全预检结构成立，不代表 key ceremony 已批准或执行；
+  P2/R1 仍未满足。下一步必须等待正式计划第 8 节测试 key ceremony 精确批准卡，
+  生产 key、P3-P8 与所有外部 authority 继续关闭。

@@ -32,12 +32,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0 计划与 P1 R6 本地基线已按原顺序完成；下一步只设计 P2 无 key ceremony 工具/清单，不自动启动 Scheduler、Agent 专属 UI、测试/生产 key、endpoint 或发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1 与 P2 无 authority 预检已按原顺序完成；下一步必须先取得测试 key ceremony 精确批准，不自动启动 Scheduler、Agent 专属 UI、测试/生产 key、endpoint 或发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；Cycle 57 已完成 P1 Release Event、证据模板、静态验证器、Runbook 与 E0 tabletop；生产 endpoint/root/bundle 仍为空 | P1 只关闭 R6 本地基线，R1-R6 仍未满足；下一步只设计 P2 ceremony 工具/清单，测试 key 与后续外部 authority 分别等待精确授权 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；Cycle 57 已完成 P1 R6 本地基线；Cycle 58 已完成 P2 无 authority ceremony Schema、blocked 模板、静态验证器和清单；生产 endpoint/root/bundle 仍为空 | P1/P2 都只关闭本地设计子项，R1-R6 仍未满足；下一步等待测试 key ceremony 精确批准，生产 key 与后续外部 authority 分别另行批准 |
 
 ## 开发循环记录
 
@@ -4114,3 +4114,69 @@ Kimi 独立复核：
 - R6 仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本和官方安装器恢复；
 - 下一轮按序进入 P2，但先只实现不生成 key 的 ceremony 工具与清单；临时测试 key
   生成、轮换和吊销演练必须等待精确批准卡，生产 key 另行批准。
+
+### 循环 58：P2 Root/Publisher 无 authority ceremony 预检
+
+状态：实现、自主验证与本机 Kimi 独立复核已完成；P2 实际演练与 R1 继续未满足
+
+计划校准：
+
+- 本轮开始先复核生产准备计划 P2、现有 Root/Publisher Trust、Authoring 与 Registry
+  契约，只实现不生成 key 的 ceremony 预检；
+- 没有修改 Rust/Package/Provider/Desktop 运行时代码，没有生成、导入、恢复、轮换、
+  吊销、签名或销毁任何 key，没有读取 Keychain、建立外部资源、调用 Provider 或
+  消耗费用；
+- `authority=none`、`not_approved` 与 `blocked` 是机器常量，不接受调用方或模板
+  把“继续开发”解释为测试/生产 key 授权。
+
+已经实现：
+
+1. `schemas/agentmesh360-key-ceremony-preflight-v1.schema.json` 与
+   `docs/templates/key-ceremony-preflight-v1.json` 固定 E0、Ed25519、无 authority
+   预检以及一个 Root/两个 Publisher planned ID；
+2. custody 将备份份数、介质、保管角色、恢复窗口和销毁方式逐项固定为
+   `requires_approval`，私有材料在仓库、客户端、普通 CI 与 evidence 中全部为
+   `false`；
+3. 批准卡完整映射生产计划第 8 节，并用
+   `releasePackageDesktopVersion=not_applicable_use_ceremony_id` 绑定顶层
+   `ceremonyId`；窗口与批准 receipt 继续未提供；
+4. 16 个 required scenario 覆盖 Bundle expiry、Publisher/Root 的生成、丢失、
+   泄漏、过期、overlap rotation、retire/revoke/emergency revoke 和材料销毁；
+5. `tools/key-ceremony/validate-key-ceremony-preflight.mjs` 提供 128 KiB、无依赖、
+   路径脱敏的 fail-closed CLI；拒绝 symlink、重复 JSON key、未知/缺失字段、ID
+   冲突/乱序、非单调 sequence 和任何 authority/approval/execution 升级；
+6. [`operations/KEY_CEREMONY_PREFLIGHT_V1.md`](operations/KEY_CEREMONY_PREFLIGHT_V1.md)
+   记录角色分离、custody、sequence、批准卡、未来演练顺序和停止条件，但不包含
+   key-generation 命令。
+
+自主验证：
+
+- `node --test tools/key-ceremony/validate-key-ceremony-preflight.test.mjs`：10/10；
+- 与 P1 release-evidence 联合回归：28/28；
+- 两个 P2 MJS `node --check`、默认模板 CLI 验证与 `git diff --check` 全部通过；
+- 新增 `pins every R1 rehearsal and unresolved approval dimension` 回归，直接钉住
+  R1 场景、批准卡版本映射和五个 custody 待批准维度；
+- 仓库根 `target/` 不存在；测试只使用 synthetic sentinel，不含真实 key material。
+
+Kimi 独立复核：
+
+- Kimi CLI session `session_987108f4-dbd2-4252-aa62-aa8c6876afa4` 只读检查完整五文件
+  diff、正式计划、Root/Publisher/Authoring/Registry 契约，并独立执行 Node、CLI 和
+  diff 检查；
+- 首轮发现机器场景缺 Root rotation/compromise 与 Bundle expiry 的 1 Medium、
+  批准卡版本映射与 custody 机器表达不完整的 2 Low；
+- 全部修复并增加回归后，同一 session 复核 28/28 通过，最终
+  Blocker/High/Medium/Low 全部为零并 PASS；
+- 同步 Cycle 58 五份状态文档后，同一 session 第三轮只读复核最终 10 文件 diff，
+  独立复跑 P2 10/10、联合 28/28、链接/fence/JSON、生产关闭常量与根 `target/`
+  检查，仍为四级全零并 PASS；
+- Kimi 未编辑文件、运行 Cargo/npm/Electron、创建 `target`、读取 Keychain/
+  Provider、调用外部服务或执行 key 操作。
+
+计划复盘与下一轮：
+
+- 本轮交付物与 P2“ceremony 工具/清单设计”一致，没有扩展到 P3、外部服务、真实
+  canary、生产 key 或桌面发布；
+- P2 整体仍未完成，R1 仍未满足；模板验证通过只表示安全阻断结构成立；
+- 下一步必须先取得正式计划第 8 节的测试 key ceremony 精确批准卡，才可执行 P2 E0
+  生成、轮换、丢失、泄漏、过期、吊销、恢复和销毁演练；生产 key 另行批准。

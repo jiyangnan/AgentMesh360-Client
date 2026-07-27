@@ -178,5 +178,7 @@ Host shutdown 仍是发布门槛；源码和开发 smoke 通过不等于生产�
 
 Cycle 57 已完成零生产 authority 的 P1 R6 本地基线：Release Event、证据模板、
 静态验证器、事故响应 Runbook 与 E0 tabletop。它不代表 R6、桌面分发或 canary
-已经通过；P2 及后续固定顺序、批准卡和证据边界见
+已经通过。Cycle 58 已完成 P2 无 authority ceremony Schema、默认 blocked 模板、
+静态验证器与清单，但没有生成任何测试/生产 key，也不代表 P2 或 R1 已满足；
+P2 实际演练及后续固定顺序、批准卡和证据边界见
 [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](../docs/architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。

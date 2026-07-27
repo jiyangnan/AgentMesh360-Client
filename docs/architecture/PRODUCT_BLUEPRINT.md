@@ -34,6 +34,8 @@ Cycle 56 的生产准备、三种内部 canary、R1-R6 证据与 P0-P8 顺序见
 Cycle 57 的 P1 Release Event 与事故响应基线分别见
 [`RELEASE_EVENT_SCHEMA_V1.md`](RELEASE_EVENT_SCHEMA_V1.md) 和
 [`../operations/RELEASE_INCIDENT_RESPONSE_RUNBOOK_V1.md`](../operations/RELEASE_INCIDENT_RESPONSE_RUNBOOK_V1.md)。
+Cycle 58 的 P2 无 authority ceremony 预检见
+[`../operations/KEY_CEREMONY_PREFLIGHT_V1.md`](../operations/KEY_CEREMONY_PREFLIGHT_V1.md)。
 当前实现证据、逐轮计划复盘和下一轮工作见
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
 
@@ -495,8 +497,8 @@ flowchart LR
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现** | 服务端 bootstrap、邮箱密码登录、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；OAuth 待实现 |
 | BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成自主验证与 Kimi 四级清零** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a 建立默认零费用契约 Harness，F0b 用 11/12 次授权短请求验证 Gemini Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop，增加类型化 thought signature 保真和精确 endpoint/model 隔离，并加入 `google-gemini` / `gemini-3.5-flash-lite` 官方预设 |
-| 动态 Agent Package | **H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；P1 R6 本地基线已完成** | H2d4 已在 Artifact/Envelope 前 bounded fetch Release Manifest，核对 Registry SHA、canonical strict 文档、Client/Host projection 与 H1 metadata。P1 已有 Release Event、证据模板、静态扫描、事故 Runbook 与 E0 tabletop；生产 Root、Publisher Bundle、endpoint、上传和发布仍关闭，生产启用前仍须关闭适用的 R0/R1/R2/R3/R5/R6 |
-| 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现；P1 R6 本地基线已完成** | 三个首方 Agent 已通过真实 detach/Leader 替换恢复；动态 Agent 只有本地通用化 fixture，生产 Registry 仍关闭。Artifact/Project State 使用通用 Manifest 与 Renderer 白名单；后台活动和 Session Plan 分别由 TerminalBackend 与 Main Session Resources 提供 authority，均不硬编码 Agent 类型。P2 下一步只设计无 key ceremony 工具/清单；Scheduler、Subagent、Agent 专属 UI、测试/生产 key 与生产 authority 不自动启动 |
+| 动态 Agent Package | **H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；P1 R6 本地基线与 P2 无 authority ceremony 预检设计已完成** | H2d4 已在 Artifact/Envelope 前 bounded fetch Release Manifest，核对 Registry SHA、canonical strict 文档、Client/Host projection 与 H1 metadata。P1 已有 Release Event、证据模板、静态扫描、事故 Runbook 与 E0 tabletop；P2 已有严格 ceremony Schema、blocked 模板、静态验证器与清单。生产 Root、Publisher Bundle、endpoint、上传和发布仍关闭，生产启用前仍须关闭适用的 R0/R1/R2/R3/R5/R6 |
+| 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现；P1/P2 本地安全基线已完成** | 三个首方 Agent 已通过真实 detach/Leader 替换恢复；动态 Agent 只有本地通用化 fixture，生产 Registry 仍关闭。Artifact/Project State 使用通用 Manifest 与 Renderer 白名单；后台活动和 Session Plan 分别由 TerminalBackend 与 Main Session Resources 提供 authority，均不硬编码 Agent 类型。P2 实际测试 key 演练需精确批准；Scheduler、Subagent、Agent 专属 UI、生产 key 与生产 authority 不自动启动 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
 
 Job Agent、LectureCast Agent 和 Deploy Agent 已从相同的 Manifest v1 载入，不再
@@ -558,8 +560,10 @@ content/四态；ACP Plan 仅作为刷新信号，Renderer 明确区分模型计
 通用工作区增量后的 Gemini F0b 已在用户明确授权下完成双方验证和 Kimi 四级清零，
 普通功能路线已走到生产准备门前。生产 Package 与桌面发布继续受独立 R0-R6
 安全门约束。Cycle 56 已把生产准备拆成 P0-P8，并区分 Package、Desktop 与
-Combined canary；Cycle 57 已完成零生产 authority 的 P1 R6 本地基线，但 R1-R6
-仍未关闭。下一步只设计 P2 ceremony 工具/清单；生成临时测试 key 前需精确批准。
+Combined canary；Cycle 57 已完成零生产 authority 的 P1 R6 本地基线，Cycle 58
+已完成 P2 无 authority ceremony Schema、blocked 模板、验证器与清单，但 P2 实际
+演练和 R1-R6 仍未关闭。下一步必须先取得测试 key ceremony 精确批准卡；生产 key
+与 P3-P8 继续关闭。
 完整结论见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
 与
