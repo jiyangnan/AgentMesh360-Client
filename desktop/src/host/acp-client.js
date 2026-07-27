@@ -100,6 +100,10 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/agents/artifacts/list', { agentId });
   }
 
+  async getWorkspaceProjectState(agentId) {
+    return this.#extension('x.agentmesh360/agents/project-state/get', { agentId });
+  }
+
   async loadSession({ sessionId, cwd }) {
     await this.start();
     return this.#request('session/load', {

@@ -52,6 +52,22 @@ const SAFE_ARTIFACT_KINDS = new Set([
 ]);
 const ARTIFACT_STATUS_READY = 'ready';
 const ARTIFACT_STATUS_UNAVAILABLE = 'unavailable';
+const MAX_PUBLIC_PROJECT_STEPS = 20;
+const PROJECT_STEP_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+const SAFE_PROJECT_STATUSES = new Set([
+  'active',
+  'waiting_for_user',
+  'blocked',
+  'completed',
+]);
+const SAFE_PROJECT_STEP_STATUSES = new Set([
+  'pending',
+  'in_progress',
+  'blocked',
+  'completed',
+]);
+const PROJECT_STATUS_READY = 'ready';
+const PROJECT_STATUS_UNAVAILABLE = 'unavailable';
 const SESSION_UPDATE_METHODS = new Set([
   'session/update',
   'x.ai/session/update',
@@ -81,6 +97,8 @@ class AgentConversationController {
     this.activityCounter = 0;
     this.artifacts = [];
     this.artifactStatus = ARTIFACT_STATUS_READY;
+    this.project = null;
+    this.projectStatus = PROJECT_STATUS_READY;
     this.openPromise = null;
     this.openAgentId = null;
     this.permissionInteraction = null;
@@ -152,6 +170,8 @@ class AgentConversationController {
       this.#cancelPermission();
       await this.#refreshArtifacts(authority);
       if (this.authority !== authority) return this.snapshot;
+      await this.#refreshProjectState(authority);
+      if (this.authority !== authority) return this.snapshot;
       this.#publish({
         ...this.#conversationBase(authority),
         phase: 'ready',
@@ -165,6 +185,7 @@ class AgentConversationController {
       if (error?.code === 'host_timeout') {
         this.#clearActivities();
         this.#clearArtifacts();
+        this.#clearProjectState();
         this.authority = null;
         this.#publish({
           ...this.#conversationBase(authority),
@@ -239,6 +260,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearArtifacts();
+    this.#clearProjectState();
     this.authority = null;
   }
 
@@ -249,6 +271,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearArtifacts();
+    this.#clearProjectState();
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;
@@ -261,6 +284,8 @@ class AgentConversationController {
       activities: [],
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
+      project: null,
+      projectStatus: PROJECT_STATUS_READY,
       streaming: false,
       transcriptTruncated: false,
       error: null,
@@ -293,6 +318,8 @@ class AgentConversationController {
       this.#requireReadyAccount(authority.accountId);
       await this.#refreshArtifacts(authority);
       if (this.authority !== authority) return this.snapshot;
+      await this.#refreshProjectState(authority);
+      if (this.authority !== authority) return this.snapshot;
       this.#publish({
         ...this.#conversationBase(authority),
         phase: 'ready',
@@ -310,6 +337,8 @@ class AgentConversationController {
         activities: this.#publicActivities(),
         artifacts: this.#publicArtifacts(),
         artifactStatus: this.artifactStatus,
+        project: this.#publicProject(),
+        projectStatus: this.projectStatus,
         streaming: false,
         transcriptTruncated: this.transcriptTruncated,
         error: safeConversationError(error, '暂时无法打开此 Agent 的主对话。'),
@@ -337,6 +366,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearArtifacts();
+    this.#clearProjectState();
     this.authority = null;
     this.#publish({
       phase: 'error',
@@ -346,6 +376,8 @@ class AgentConversationController {
       activities: [],
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
+      project: null,
+      projectStatus: PROJECT_STATUS_READY,
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: '后台连接已恢复，请重新打开对话以继续。',
@@ -358,6 +390,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearArtifacts();
+    this.#clearProjectState();
     this.authority = null;
     this.#publish({
       phase: 'error',
@@ -367,6 +400,8 @@ class AgentConversationController {
       activities: [],
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
+      project: null,
+      projectStatus: PROJECT_STATUS_READY,
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: 'Agent Host 已断开，请重新打开对话以继续。',
@@ -569,6 +604,8 @@ class AgentConversationController {
       activities: this.#publicActivities(),
       artifacts: this.#publicArtifacts(),
       artifactStatus: this.artifactStatus,
+      project: this.#publicProject(),
+      projectStatus: this.projectStatus,
       transcriptTruncated: this.transcriptTruncated,
       ...(this.permissionInteraction?.authority === authority
         ? { interaction: { ...this.permissionInteraction.public } }
@@ -586,6 +623,14 @@ class AgentConversationController {
 
   #publicArtifacts() {
     return this.artifacts.map((artifact) => ({ ...artifact }));
+  }
+
+  #publicProject() {
+    if (!this.project) return null;
+    return {
+      ...this.project,
+      steps: this.project.steps.map((step) => ({ ...step })),
+    };
   }
 
   async #refreshArtifacts(authority) {
@@ -615,6 +660,33 @@ class AgentConversationController {
     }
   }
 
+  async #refreshProjectState(authority) {
+    let response;
+    try {
+      response = await this.host.getWorkspaceProjectState(authority.agentId);
+    } catch {
+      if (this.authority !== authority) return;
+      this.project = null;
+      this.projectStatus = PROJECT_STATUS_UNAVAILABLE;
+      return;
+    }
+    if (this.authority !== authority) return;
+    try {
+      this.#requireReadyAccount(authority.accountId);
+    } catch (error) {
+      this.#clearProjectState();
+      throw error;
+    }
+    try {
+      this.project = projectWorkspaceProjectState(response);
+      this.projectStatus = PROJECT_STATUS_READY;
+    } catch {
+      if (this.authority !== authority) return;
+      this.project = null;
+      this.projectStatus = PROJECT_STATUS_UNAVAILABLE;
+    }
+  }
+
   #requireReadyAccount(expectedAccountId = null) {
     const state = this.identity.getState();
     if (
@@ -636,6 +708,7 @@ class AgentConversationController {
     this.transcriptTruncated = false;
     this.#clearActivities();
     this.#clearArtifacts();
+    this.#clearProjectState();
     this.#publish({ phase: 'idle' });
   }
 
@@ -647,6 +720,11 @@ class AgentConversationController {
   #clearArtifacts() {
     this.artifacts = [];
     this.artifactStatus = ARTIFACT_STATUS_READY;
+  }
+
+  #clearProjectState() {
+    this.project = null;
+    this.projectStatus = PROJECT_STATUS_READY;
   }
 
   #cancelPermission() {
@@ -706,6 +784,69 @@ function projectWorkspaceArtifacts(value) {
       sizeBytes: artifact.sizeBytes,
     };
   });
+}
+
+function projectWorkspaceProjectState(value) {
+  if (
+    value?.schemaVersion !== 1
+    || !Number.isSafeInteger(value?.revision)
+    || value.revision < 0
+    || (value.revision === 0 && value.project !== null)
+    || (value.revision > 0 && (!value.project || typeof value.project !== 'object'))
+  ) {
+    throw new Error('invalid Workspace Project State projection');
+  }
+  if (value.revision === 0) return null;
+
+  const title = safeProjectText(value.project.title, 120);
+  const summary = safeProjectText(value.project.summary, 500);
+  if (
+    !title
+    || !summary
+    || !SAFE_PROJECT_STATUSES.has(value.project.status)
+    || !Array.isArray(value.project.steps)
+    || value.project.steps.length > MAX_PUBLIC_PROJECT_STEPS
+  ) {
+    throw new Error('invalid Workspace Project State');
+  }
+  const stepIds = new Set();
+  const steps = value.project.steps.map((step) => {
+    const stepId = step?.stepId;
+    const label = safeProjectText(step?.label, 160);
+    if (
+      !PROJECT_STEP_ID_PATTERN.test(stepId || '')
+      || stepIds.has(stepId)
+      || !label
+      || !SAFE_PROJECT_STEP_STATUSES.has(step?.status)
+    ) {
+      throw new Error('invalid Workspace Project step');
+    }
+    stepIds.add(stepId);
+    return {
+      stepId,
+      label,
+      status: step.status,
+    };
+  });
+  return {
+    title,
+    status: value.project.status,
+    summary,
+    steps,
+  };
+}
+
+function safeProjectText(value, maxChars) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (
+    !text
+    || Array.from(text).length > maxChars
+    || /[\u0000-\u001F\u007F-\u009F]/.test(text)
+  ) {
+    return '';
+  }
+  return text;
 }
 
 function projectPermissionRequest(request, interactionCounter) {

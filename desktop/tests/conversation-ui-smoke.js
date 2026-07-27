@@ -190,6 +190,27 @@ app.whenReady().then(async () => {
         sizeBytes: 10,
       },
     ],
+    project: {
+      title: '产品岗位第 3 轮',
+      status: 'waiting_for_user',
+      summary: '请确认下一批重点岗位。',
+      privatePath: '/private/account-7/round.json',
+      nextCommand: 'jobagent round status',
+      steps: [
+        {
+          stepId: 'confirm-target',
+          label: '确认目标岗位',
+          status: 'completed',
+          privateEvidence: 'private-digest',
+        },
+        {
+          stepId: 'review-boss',
+          label: '审核 Boss 机会',
+          status: 'in_progress',
+        },
+      ],
+    },
+    projectStatus: 'ready',
     interaction: {
       interactionId: 'permission-1',
       kind: 'permission',
@@ -209,6 +230,8 @@ app.whenReady().then(async () => {
     body: document.body.innerText,
     activityCount: document.querySelectorAll('[data-activity-id]').length,
     artifactCount: document.querySelectorAll('[data-artifact-id]').length,
+    projectCount: document.querySelectorAll('.conversation-project').length,
+    projectStepCount: document.querySelectorAll('[data-project-step-id]').length,
     optionCount: document.querySelectorAll('[data-permission-option]').length,
     hasPermanentChoice: document.body.innerText.includes('永久允许'),
   })`);
@@ -221,14 +244,22 @@ app.whenReady().then(async () => {
   assert.equal(permissionDom.body.includes('课程音频'), true);
   assert.equal(permissionDom.body.includes('文档'), true);
   assert.equal(permissionDom.body.includes('音频'), true);
+  assert.equal(permissionDom.body.includes('产品岗位第 3 轮'), true);
+  assert.equal(permissionDom.body.includes('请确认下一批重点岗位。'), true);
+  assert.equal(permissionDom.body.includes('等待确认'), true);
+  assert.equal(permissionDom.body.includes('确认目标岗位'), true);
+  assert.equal(permissionDom.body.includes('审核 Boss 机会'), true);
   assert.equal(permissionDom.body.includes('/private/account-7'), false);
   assert.equal(permissionDom.body.includes('sk-private'), false);
   assert.equal(permissionDom.body.includes('rm -rf'), false);
   assert.equal(permissionDom.body.includes('private-digest'), false);
   assert.equal(permissionDom.body.includes('artifacts/private-report.pdf'), false);
+  assert.equal(permissionDom.body.includes('jobagent round status'), false);
   assert.equal(permissionDom.body.includes('Private'), false);
   assert.equal(permissionDom.activityCount, 2);
   assert.equal(permissionDom.artifactCount, 2);
+  assert.equal(permissionDom.projectCount, 1);
+  assert.equal(permissionDom.projectStepCount, 2);
   assert.equal(permissionDom.optionCount, 2);
   assert.equal(permissionDom.hasPermanentChoice, false);
   await window.webContents.executeJavaScript(`
@@ -327,6 +358,8 @@ function conversationState(agentId, messages) {
     messages,
     activities: [],
     artifacts: [],
+    project: null,
+    projectStatus: 'ready',
     streaming: false,
     transcriptTruncated: false,
     error: null,

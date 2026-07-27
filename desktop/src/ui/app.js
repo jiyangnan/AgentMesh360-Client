@@ -290,6 +290,8 @@ function conversationView() {
   const activities = safeConversationActivities(conversationUi.activities);
   const artifacts = safeConversationArtifacts(conversationUi.artifacts);
   const artifactUnavailable = conversationUi.artifactStatus === 'unavailable';
+  const project = safeConversationProject(conversationUi.project);
+  const projectUnavailable = conversationUi.projectStatus === 'unavailable';
   const loading = conversationUi.phase === 'loading';
   const sending = conversationUi.streaming === true;
   const displayName = conversationUi.displayName || 'Agent';
@@ -314,6 +316,9 @@ function conversationView() {
       <div class="conversation-gates">${gates}</div>
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
         ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
+        ${project || projectUnavailable
+    ? conversationProjectView(project, projectUnavailable)
+    : ''}
         ${activities.length ? conversationActivitiesView(activities) : ''}
         ${artifacts.length || artifactUnavailable
     ? conversationArtifactsView(artifacts, artifactUnavailable)
@@ -373,6 +378,112 @@ function conversationActivitiesView(activities) {
           </div>`).join('')}
       </div>
     </section>`;
+}
+
+function safeConversationProject(value) {
+  if (value === null || value === undefined) return null;
+  if (!value || typeof value !== 'object') return null;
+  const title = safeProjectText(value.title, 120);
+  const summary = safeProjectText(value.summary, 500);
+  const safeStatuses = new Set(['active', 'waiting_for_user', 'blocked', 'completed']);
+  const safeStepStatuses = new Set(['pending', 'in_progress', 'blocked', 'completed']);
+  if (
+    !title
+    || !summary
+    || !safeStatuses.has(value.status)
+    || !Array.isArray(value.steps)
+    || value.steps.length > 20
+  ) {
+    return null;
+  }
+  const seen = new Set();
+  const steps = [];
+  for (const step of value.steps) {
+    const stepId = typeof step?.stepId === 'string' ? step.stepId : '';
+    const label = safeProjectText(step?.label, 160);
+    if (
+      !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(stepId)
+      || seen.has(stepId)
+      || !label
+      || !safeStepStatuses.has(step?.status)
+    ) {
+      return null;
+    }
+    seen.add(stepId);
+    steps.push({ stepId, label, status: step.status });
+  }
+  return {
+    title,
+    status: value.status,
+    summary,
+    steps,
+  };
+}
+
+function safeProjectText(value, maxChars) {
+  if (typeof value !== 'string') return '';
+  const text = value.trim();
+  if (
+    !text
+    || Array.from(text).length > maxChars
+    || /[\u0000-\u001F\u007F-\u009F]/.test(text)
+  ) {
+    return '';
+  }
+  return text;
+}
+
+function conversationProjectView(project, unavailable) {
+  return `
+    <section class="conversation-project" aria-label="Agent 当前项目">
+      <header>
+        <div>
+          <p class="eyebrow">Workspace Project</p>
+          <h2>当前进度</h2>
+        </div>
+        <span>Agent 业务状态的只读摘要</span>
+      </header>
+      ${unavailable
+    ? '<p class="project-state-error">项目状态暂时不可用。</p>'
+    : `<div class="conversation-project-summary">
+          <div>
+            <strong>${escapeHtml(project.title)}</strong>
+            <span class="${escapeHtml(project.status)}">${escapeHtml(projectStatusLabel(project.status))}</span>
+          </div>
+          <p>${escapeHtml(project.summary)}</p>
+        </div>
+        ${project.steps.length
+    ? `<div class="conversation-project-steps">
+            ${project.steps.map((step) => `
+              <div
+                class="conversation-project-step ${escapeHtml(step.status)}"
+                data-project-step-id="${escapeHtml(step.stepId)}"
+              >
+                <i aria-hidden="true"></i>
+                <strong>${escapeHtml(step.label)}</strong>
+                <span>${escapeHtml(projectStepStatusLabel(step.status))}</span>
+              </div>`).join('')}
+          </div>`
+    : ''}`}
+    </section>`;
+}
+
+function projectStatusLabel(status) {
+  return {
+    active: '进行中',
+    waiting_for_user: '等待确认',
+    blocked: '已阻塞',
+    completed: '已完成',
+  }[status] || '进行中';
+}
+
+function projectStepStatusLabel(status) {
+  return {
+    pending: '待处理',
+    in_progress: '进行中',
+    blocked: '已阻塞',
+    completed: '已完成',
+  }[status] || '待处理';
 }
 
 function safeConversationArtifacts(value) {
@@ -635,6 +746,8 @@ async function openConversation(agentId) {
     activities: [],
     artifacts: [],
     artifactStatus: 'ready',
+    project: null,
+    projectStatus: 'ready',
     streaming: false,
     error: null,
   };

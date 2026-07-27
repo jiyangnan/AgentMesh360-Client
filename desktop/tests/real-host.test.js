@@ -69,6 +69,7 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       if (agentId === 'lecturecast-agent') artifactAgent = activated.agent;
     }
     writeArtifactManifest(artifactAgent.workspaceDir);
+    writeProjectStateManifest(artifactAgent.workspaceDir);
     const artifacts = await client.listWorkspaceArtifacts('lecturecast-agent');
     assert.deepEqual(artifacts, {
       schemaVersion: 1,
@@ -83,6 +84,24 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     const serializedArtifacts = JSON.stringify(artifacts);
     assert.equal(serializedArtifacts.includes('relativePath'), false);
     assert.equal(serializedArtifacts.includes(artifactAgent.workspaceDir), false);
+    const projectState = await client.getWorkspaceProjectState('lecturecast-agent');
+    assert.deepEqual(projectState, {
+      schemaVersion: 1,
+      revision: 3,
+      project: {
+        title: '函数课程',
+        status: 'active',
+        summary: '正在生成课程音频并校验证据。',
+        steps: [{
+          stepId: 'generate-audio',
+          label: '生成课程音频',
+          status: 'in_progress',
+        }],
+      },
+    });
+    const serializedProjectState = JSON.stringify(projectState);
+    assert.equal(serializedProjectState.includes('workspaceDir'), false);
+    assert.equal(serializedProjectState.includes('nextCommand'), false);
     const emptyBindingHistory = await client.getSessionBindingHistory({
       sessionId: legacySessionId,
       role: 'main',
@@ -123,6 +142,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
     );
     await assert.rejects(
+      client.getWorkspaceProjectState('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
+    );
+    await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
         role: 'main',
@@ -139,6 +162,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     assert.equal(
       (await client.listWorkspaceArtifacts('lecturecast-agent')).artifacts[0].artifactId,
       'lesson-audio',
+    );
+    assert.equal(
+      (await client.getWorkspaceProjectState('lecturecast-agent')).project.title,
+      '函数课程',
     );
     await assert.rejects(
       client.loadSession({
@@ -161,6 +188,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     );
     await assert.rejects(
       client.listWorkspaceArtifacts('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
+      client.getWorkspaceProjectState('lecturecast-agent'),
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );
     await assert.rejects(
@@ -199,6 +230,25 @@ function writeArtifactManifest(workspaceDir) {
       kind: 'audio',
       relativePath: 'artifacts/lesson.mp3',
     }],
+  }));
+}
+
+function writeProjectStateManifest(workspaceDir) {
+  const controlDir = path.join(workspaceDir, '.agentmesh360');
+  fs.mkdirSync(controlDir, { recursive: true });
+  fs.writeFileSync(path.join(controlDir, 'project-state-v1.json'), JSON.stringify({
+    schemaVersion: 1,
+    revision: 3,
+    project: {
+      title: '函数课程',
+      status: 'active',
+      summary: '正在生成课程音频并校验证据。',
+      steps: [{
+        stepId: 'generate-audio',
+        label: '生成课程音频',
+        status: 'in_progress',
+      }],
+    },
   }));
 }
 

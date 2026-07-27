@@ -325,6 +325,125 @@ test('conversation loads and refreshes a bounded Host-owned artifact projection'
   }
 });
 
+test('conversation loads and refreshes a bounded Workspace project read model', async () => {
+  const fixture = makeFixture();
+  let revision = 1;
+  fixture.host.projectStateImpl = async () => ({
+    schemaVersion: 1,
+    revision,
+    project: {
+      title: revision === 1 ? '产品岗位第 3 轮' : '产品岗位第 3 轮（继续）',
+      status: revision === 1 ? 'active' : 'waiting_for_user',
+      summary: '正在核对岗位与证据。',
+      canonicalStatePath: '/private/account-7/round.json',
+      nextCommand: 'jobagent round status',
+      steps: [{
+        stepId: 'review-boss',
+        label: '审核 Boss 机会',
+        status: revision === 1 ? 'in_progress' : 'completed',
+        privateEvidence: 'private-digest',
+      }],
+    },
+    sourcePath: '/private/account-7/job-agent',
+  });
+
+  const opened = await fixture.controller.open('job-agent');
+  assert.deepEqual(opened.project, {
+    title: '产品岗位第 3 轮',
+    status: 'active',
+    summary: '正在核对岗位与证据。',
+    steps: [{
+      stepId: 'review-boss',
+      label: '审核 Boss 机会',
+      status: 'in_progress',
+    }],
+  });
+  assert.deepEqual(fixture.host.projectStateCalls, ['job-agent']);
+
+  revision = 2;
+  const sent = await fixture.controller.send('继续');
+  assert.equal(sent.project.title, '产品岗位第 3 轮（继续）');
+  assert.equal(sent.project.status, 'waiting_for_user');
+  assert.equal(sent.project.steps[0].status, 'completed');
+  assert.deepEqual(fixture.host.projectStateCalls, ['job-agent', 'job-agent']);
+  const serialized = JSON.stringify(sent);
+  for (const forbidden of [
+    'canonicalStatePath',
+    'nextCommand',
+    'privateEvidence',
+    'sourcePath',
+    '/private/account-7',
+    'schemaVersion',
+    'revision',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation fails closed on malformed project state without closing chat', async () => {
+  const fixture = makeFixture();
+  fixture.host.projectStateImpl = async () => ({
+    schemaVersion: 1,
+    revision: 1,
+    project: {
+      title: 'Private\u0085Project',
+      status: 'future-status',
+      summary: '/private/account-7',
+      steps: [{
+        stepId: '../escape',
+        label: 'private',
+        status: 'future-step',
+      }],
+    },
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.equal(snapshot.phase, 'ready');
+  assert.equal(snapshot.project, null);
+  assert.equal(snapshot.projectStatus, 'unavailable');
+  assert.equal(JSON.stringify(snapshot).includes('Private'), false);
+  assert.equal(JSON.stringify(snapshot).includes('/private/account-7'), false);
+});
+
+test('conversation ignores stale project state and uses the same path for a future Agent', async () => {
+  const fixture = makeFixture();
+  let resolveProject;
+  fixture.host.projectStateImpl = () => new Promise((resolve) => {
+    resolveProject = resolve;
+  });
+
+  const opening = fixture.controller.open('job-agent');
+  await new Promise((resolve) => setImmediate(resolve));
+  fixture.identity.publish({ phase: 'blocked', account: { id: 7 } });
+  resolveProject({
+    schemaVersion: 1,
+    revision: 1,
+    project: {
+      title: '旧账号项目',
+      status: 'active',
+      summary: '不应出现',
+      steps: [],
+    },
+  });
+  assert.deepEqual(await opening, { phase: 'idle' });
+
+  fixture.identity.publish(readyIdentity());
+  fixture.host.projectStateImpl = async (agentId) => ({
+    schemaVersion: 1,
+    revision: 1,
+    project: {
+      title: `${agentId} current work`,
+      status: 'active',
+      summary: '通用状态',
+      steps: [],
+    },
+  });
+  const future = await fixture.controller.open('future-agent');
+  assert.equal(future.project.title, 'future-agent current work');
+  assert.equal(JSON.stringify(future).includes('旧账号项目'), false);
+});
+
 test('conversation fails closed on malformed artifact projections without closing chat', async () => {
   const fixture = makeFixture();
   fixture.host.artifactImpl = async () => ({
@@ -857,6 +976,7 @@ function makeFixture() {
     loadCalls: [],
     promptCalls: [],
     artifactCalls: [],
+    projectStateCalls: [],
     permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
@@ -864,6 +984,11 @@ function makeFixture() {
       schemaVersion: 1,
       revision: 0,
       artifacts: [],
+    }),
+    projectStateImpl: async () => ({
+      schemaVersion: 1,
+      revision: 0,
+      project: null,
     }),
     async listAgents() {
       return {
@@ -906,6 +1031,10 @@ function makeFixture() {
     async listWorkspaceArtifacts(agentId) {
       this.artifactCalls.push(agentId);
       return this.artifactImpl(agentId);
+    },
+    async getWorkspaceProjectState(agentId) {
+      this.projectStateCalls.push(agentId);
+      return this.projectStateImpl(agentId);
     },
     respondPermission(requestId, optionId) {
       this.permissionResponses.push({ requestId, optionId });
