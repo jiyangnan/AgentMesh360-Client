@@ -108,6 +108,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       await client.listAgentBackgroundActivities('lecturecast-agent'),
       { activities: [] },
     );
+    assert.deepEqual(
+      await client.getAgentSessionPlan('lecturecast-agent'),
+      { entries: [] },
+    );
     const emptyBindingHistory = await client.getSessionBindingHistory({
       sessionId: legacySessionId,
       role: 'main',
@@ -156,6 +160,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
     );
     await assert.rejects(
+      client.getAgentSessionPlan('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_extension_failed',
+    );
+    await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
         role: 'main',
@@ -180,6 +188,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
     assert.deepEqual(
       await client.listAgentBackgroundActivities('lecturecast-agent'),
       { activities: [] },
+    );
+    assert.deepEqual(
+      await client.getAgentSessionPlan('lecturecast-agent'),
+      { entries: [] },
     );
     await assert.rejects(
       client.loadSession({
@@ -213,6 +225,10 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
       (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
     );
     await assert.rejects(
+      client.getAgentSessionPlan('lecturecast-agent'),
+      (error) => error instanceof HostRequestError && error.code === 'host_request_failed',
+    );
+    await assert.rejects(
       client.getSessionBindingHistory({
         sessionId: legacySessionId,
         role: 'main',
@@ -233,7 +249,7 @@ test('real Grok Host enforces active and expired subscription states over ACP', 
   }
 });
 
-test('real Grok Host replay closes cold-start background tasks without exposing task authority', {
+test('real Grok Host restores canonical Session plan and closes cold-start background tasks safely', {
   skip: !hostBinary ? 'set AGENTMESH360_REAL_HOST_BIN to run the real Host background replay test' : false,
   timeout: 45000,
 }, async () => {
@@ -296,6 +312,23 @@ test('real Grok Host replay closes cold-start background tasks without exposing 
         },
       },
     })}\n`);
+    fs.writeFileSync(path.join(sessionDir, 'resources_state.json'), JSON.stringify({
+      state: {
+        'grok_build.Todo': {
+          todos: {
+            'private-real-todo-id': {
+              content: '核对恢复后的 Session 计划',
+              priority: 'high',
+              status: 'in_progress',
+              meta: {
+                apiKey: 'sk-private-plan',
+                workspaceDir: '/private/plan/workspace',
+              },
+            },
+          },
+        },
+      },
+    }));
 
     secondClient = new AcpHostClient({
       command: hostBinary,
@@ -335,10 +368,19 @@ test('real Grok Host replay closes cold-start background tasks without exposing 
       kind: 'command',
       status: 'stopped',
     }]);
+    assert.deepEqual(snapshot.planEntries, [{
+      planId: 'plan-1',
+      content: '核对恢复后的 Session 计划',
+      status: 'in_progress',
+    }]);
+    assert.equal(snapshot.planStatus, 'ready');
     const serialized = JSON.stringify(snapshot);
     for (const forbidden of [
       'private-real',
       'sk-private',
+      '/private/plan/workspace',
+      'priority',
+      'meta',
       'private.example',
       'session_restart',
       sessionId,

@@ -31,6 +31,7 @@ mod provider_profiles;
 mod providers;
 pub mod registry;
 mod session_bindings;
+mod session_plan;
 mod state;
 mod turn_routes;
 pub(crate) mod turn_submission;
@@ -57,6 +58,7 @@ pub const AGENT_ARTIFACTS_LIST_METHOD: &str = "x.agentmesh360/agents/artifacts/l
 pub const AGENT_BACKGROUND_ACTIVITIES_LIST_METHOD: &str =
     "x.agentmesh360/agents/background-activities/list";
 pub const AGENT_PROJECT_STATE_GET_METHOD: &str = "x.agentmesh360/agents/project-state/get";
+pub const AGENT_SESSION_PLAN_GET_METHOD: &str = "x.agentmesh360/agents/session-plan/get";
 pub const AGENT_PACKAGES_CATALOG_METHOD: &str = "x.agentmesh360/agent-packages/catalog";
 pub const AGENT_PACKAGES_STATUS_METHOD: &str = "x.agentmesh360/agent-packages/status";
 pub use package_management::{
@@ -469,6 +471,18 @@ pub(crate) async fn handle(
                 crate::extensions::parse_params(args)?;
             let owner_account_id = current_account_id(agent)?;
             background_activities::list(
+                agent,
+                agent.agentmesh360.registry(),
+                owner_account_id,
+                &request.agent_id,
+            )
+            .await
+            .and_then(|response| serde_json::to_value(response).map_err(Into::into))
+        }
+        AGENT_SESSION_PLAN_GET_METHOD => {
+            let request: session_plan::SessionPlanRequest = crate::extensions::parse_params(args)?;
+            let owner_account_id = current_account_id(agent)?;
+            session_plan::get(
                 agent,
                 agent.agentmesh360.registry(),
                 owner_account_id,

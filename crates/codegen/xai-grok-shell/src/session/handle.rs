@@ -257,6 +257,18 @@ impl SessionHandle {
         }
         rx.await.unwrap_or(None)
     }
+    /// Read the canonical model-authored Todo list from session Resources.
+    pub async fn list_session_plan(&self) -> Option<Vec<super::commands::SessionPlanItem>> {
+        let (tx, rx) = oneshot::channel();
+        if self
+            .cmd_tx
+            .send(SessionCommand::ListSessionPlan { respond_to: tx })
+            .is_err()
+        {
+            return None;
+        }
+        rx.await.ok()
+    }
     /// Get hooks list for the pager modal.
     pub async fn get_hooks_list(&self) -> Option<xai_hooks_plugins_types::HooksListResponse> {
         let (tx, rx) = oneshot::channel();

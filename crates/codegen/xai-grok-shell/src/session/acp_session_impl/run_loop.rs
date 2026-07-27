@@ -409,7 +409,14 @@ pub(super) async fn run_session(
                     .delete_scheduled_task(& task_id). await .map_err(| e | e.to_string()); let _
                     = respond_to.send(result); } SessionCommand::ListTasks { respond_to } => {
                     let result = session.agent.borrow().tool_bridge().list_tasks(). await; let _
-                    = respond_to.send(result); } SessionCommand::GetHooksList { respond_to } => {
+                    = respond_to.send(result); } SessionCommand::ListSessionPlan { respond_to } => {
+                    use crate::session::commands::SessionPlanItem; use crate::tools::todo::TodoState;
+                    use xai_grok_tools::types::resources::State;
+                    let result = session.agent.borrow().tool_bridge()
+                    .read_resource::<State<TodoState>>().await.map(| state | state.0
+                    .todo_items().map(| item | SessionPlanItem { content: item.content.clone(),
+                    status: item.status }).collect()).unwrap_or_default(); let _ = respond_to
+                    .send(result); } SessionCommand::GetHooksList { respond_to } => {
                     use crate ::extensions::hooks::hook_spec_to_info; let hooks = match &*
                     session.hook_registry.borrow() { Some(registry) => registry.all_hooks()
                     .iter().map(| spec | hook_spec_to_info(spec)).collect(), None => Vec::new(),

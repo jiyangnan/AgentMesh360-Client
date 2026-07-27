@@ -1923,6 +1923,18 @@ impl MvpAgent {
             None
         }
     }
+    /// Read the canonical model-authored Todo list for a resident session.
+    pub async fn list_session_plan(
+        &self,
+        session_id: &str,
+    ) -> Option<Vec<crate::session::commands::SessionPlanItem>> {
+        let sid = acp::SessionId::new(session_id);
+        if let Some(handle) = self.get_session_handle(&sid) {
+            handle.list_session_plan().await
+        } else {
+            None
+        }
+    }
     /// Flush a session's persistence buffer with a 5-second timeout.
     ///
     /// Sends `FlushComplete` to the session actor, which chains through to

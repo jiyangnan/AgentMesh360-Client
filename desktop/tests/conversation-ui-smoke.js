@@ -188,6 +188,27 @@ app.whenReady().then(async () => {
         status: 'failed',
       },
     ],
+    planEntries: [
+      {
+        planId: 'plan-1',
+        content: '核对岗位要求',
+        status: 'completed',
+        todoId: 'private-todo-id',
+        priority: 'high',
+        meta: { token: 'sk-private' },
+      },
+      {
+        planId: 'plan-2',
+        content: '运行交叉测试',
+        status: 'in_progress',
+      },
+      {
+        planId: 'private-plan-id',
+        content: 'Private invalid plan',
+        status: 'pending',
+      },
+    ],
+    planStatus: 'ready',
     artifacts: [
       {
         artifactId: 'role-fit-report',
@@ -251,6 +272,7 @@ app.whenReady().then(async () => {
     body: document.body.innerText,
     activityCount: document.querySelectorAll('[data-activity-id]').length,
     backgroundCount: document.querySelectorAll('[data-background-id]').length,
+    planEntryCount: document.querySelectorAll('[data-plan-id]').length,
     artifactCount: document.querySelectorAll('[data-artifact-id]').length,
     projectCount: document.querySelectorAll('.conversation-project').length,
     projectStepCount: document.querySelectorAll('[data-project-step-id]').length,
@@ -266,6 +288,10 @@ app.whenReady().then(async () => {
   assert.equal(permissionDom.body.includes('监控任务'), true);
   assert.equal(permissionDom.body.includes('运行中'), true);
   assert.equal(permissionDom.body.includes('已停止'), true);
+  assert.equal(permissionDom.body.includes('本轮计划'), true);
+  assert.equal(permissionDom.body.includes('模型工作计划，不等同于业务进度'), true);
+  assert.equal(permissionDom.body.includes('核对岗位要求'), true);
+  assert.equal(permissionDom.body.includes('运行交叉测试'), true);
   assert.equal(permissionDom.body.includes('岗位匹配报告'), true);
   assert.equal(permissionDom.body.includes('课程音频'), true);
   assert.equal(permissionDom.body.includes('文档'), true);
@@ -285,8 +311,11 @@ app.whenReady().then(async () => {
   assert.equal(permissionDom.body.includes('private monitor output'), false);
   assert.equal(permissionDom.body.includes('session_restart'), false);
   assert.equal(permissionDom.body.includes('private.example'), false);
+  assert.equal(permissionDom.body.includes('private-todo-id'), false);
+  assert.equal(permissionDom.body.includes('Private invalid plan'), false);
   assert.equal(permissionDom.activityCount, 2);
   assert.equal(permissionDom.backgroundCount, 2);
+  assert.equal(permissionDom.planEntryCount, 2);
   assert.equal(permissionDom.artifactCount, 2);
   assert.equal(permissionDom.projectCount, 1);
   assert.equal(permissionDom.projectStepCount, 2);
@@ -332,6 +361,23 @@ app.whenReady().then(async () => {
   ));
   assert.equal(await window.webContents.executeJavaScript(
     "document.body.innerText.includes('private unavailable command')",
+  ), false);
+
+  currentConversation = {
+    ...currentConversation,
+    planEntries: [{
+      planId: 'plan-unsafe',
+      content: 'private unavailable plan',
+      status: 'pending',
+    }],
+    planStatus: 'unavailable',
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.body.innerText.includes('本轮计划暂时不可用。')",
+  ));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.body.innerText.includes('private unavailable plan')",
   ), false);
 
   currentConversation = {
@@ -407,6 +453,8 @@ function conversationState(agentId, messages) {
     activities: [],
     backgroundTasks: [],
     backgroundStatus: 'ready',
+    planEntries: [],
+    planStatus: 'ready',
     artifacts: [],
     project: null,
     projectStatus: 'ready',

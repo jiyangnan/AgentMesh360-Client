@@ -9,6 +9,9 @@ const MAX_PUBLIC_MESSAGES = 200;
 const MAX_PUBLIC_TRANSCRIPT_CHARS = 200_000;
 const MAX_PUBLIC_ACTIVITIES = 50;
 const MAX_PUBLIC_BACKGROUND_TASKS = 50;
+const MAX_PUBLIC_PLAN_ENTRIES = 50;
+const MAX_PLAN_CONTENT_CHARS = 300;
+const MAX_PLAN_CONTENT_BYTES = 1_200;
 const MAX_PUBLIC_ARTIFACTS = 100;
 const MAX_PRIVATE_TOOL_CALL_ID_CHARS = 200;
 const MAX_PRIVATE_TASK_ID_CHARS = 200;
@@ -51,6 +54,14 @@ const SAFE_BACKGROUND_STATUSES = new Set([
 const TERMINAL_BACKGROUND_STATUSES = new Set(['completed', 'failed', 'stopped']);
 const BACKGROUND_STATUS_READY = 'ready';
 const BACKGROUND_STATUS_UNAVAILABLE = 'unavailable';
+const SAFE_PLAN_STATUSES = new Set([
+  'pending',
+  'in_progress',
+  'completed',
+  'cancelled',
+]);
+const PLAN_STATUS_READY = 'ready';
+const PLAN_STATUS_UNAVAILABLE = 'unavailable';
 const ARTIFACT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const SAFE_ARTIFACT_KINDS = new Set([
   'document',
@@ -111,6 +122,11 @@ class AgentConversationController {
     this.backgroundTaskByPrivateId = new Map();
     this.backgroundTaskCounter = 0;
     this.backgroundStatus = BACKGROUND_STATUS_READY;
+    this.planEntries = [];
+    this.planStatus = PLAN_STATUS_READY;
+    this.planRefreshGeneration = 0;
+    this.planRefreshPromise = null;
+    this.planRefreshQueued = false;
     this.artifacts = [];
     this.artifactStatus = ARTIFACT_STATUS_READY;
     this.project = null;
@@ -186,6 +202,8 @@ class AgentConversationController {
       this.#cancelPermission();
       await this.#refreshBackgroundTasks(authority);
       if (this.authority !== authority) return this.snapshot;
+      await this.#refreshSessionPlan(authority);
+      if (this.authority !== authority) return this.snapshot;
       await this.#refreshArtifacts(authority);
       if (this.authority !== authority) return this.snapshot;
       await this.#refreshProjectState(authority);
@@ -203,6 +221,7 @@ class AgentConversationController {
       if (error?.code === 'host_timeout') {
         this.#clearActivities();
         this.#clearBackgroundTasks();
+        this.#clearSessionPlan();
         this.#clearArtifacts();
         this.#clearProjectState();
         this.authority = null;
@@ -279,6 +298,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearBackgroundTasks();
+    this.#clearSessionPlan();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -291,6 +311,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearBackgroundTasks();
+    this.#clearSessionPlan();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -305,6 +326,8 @@ class AgentConversationController {
       activities: [],
       backgroundTasks: [],
       backgroundStatus: BACKGROUND_STATUS_READY,
+      planEntries: [],
+      planStatus: PLAN_STATUS_READY,
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
       project: null,
@@ -341,6 +364,8 @@ class AgentConversationController {
       this.#requireReadyAccount(authority.accountId);
       await this.#refreshBackgroundTasks(authority);
       if (this.authority !== authority) return this.snapshot;
+      await this.#refreshSessionPlan(authority);
+      if (this.authority !== authority) return this.snapshot;
       await this.#refreshArtifacts(authority);
       if (this.authority !== authority) return this.snapshot;
       await this.#refreshProjectState(authority);
@@ -362,6 +387,8 @@ class AgentConversationController {
         activities: this.#publicActivities(),
         backgroundTasks: this.#publicBackgroundTasks(),
         backgroundStatus: this.backgroundStatus,
+        planEntries: this.#publicSessionPlan(),
+        planStatus: this.planStatus,
         artifacts: this.#publicArtifacts(),
         artifactStatus: this.artifactStatus,
         project: this.#publicProject(),
@@ -393,6 +420,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearBackgroundTasks();
+    this.#clearSessionPlan();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -404,6 +432,8 @@ class AgentConversationController {
       activities: [],
       backgroundTasks: [],
       backgroundStatus: BACKGROUND_STATUS_READY,
+      planEntries: [],
+      planStatus: PLAN_STATUS_READY,
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
       project: null,
@@ -420,6 +450,7 @@ class AgentConversationController {
     this.#cancelPermission();
     this.#clearActivities();
     this.#clearBackgroundTasks();
+    this.#clearSessionPlan();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
@@ -431,6 +462,8 @@ class AgentConversationController {
       activities: [],
       backgroundTasks: [],
       backgroundStatus: BACKGROUND_STATUS_READY,
+      planEntries: [],
+      planStatus: PLAN_STATUS_READY,
       artifacts: [],
       artifactStatus: ARTIFACT_STATUS_READY,
       project: null,
@@ -514,6 +547,12 @@ class AgentConversationController {
       return;
     }
     if (!SESSION_UPDATE_METHODS.has(message?.method)) return;
+    if (update?.sessionUpdate === 'plan') {
+      if (message?.params?._meta?.isReplay !== true) {
+        this.#scheduleSessionPlanRefresh(authority);
+      }
+      return;
+    }
     if (update?.sessionUpdate === 'tool_call') {
       if (this.#recordToolCall(update)) this.#publishActivityState(authority);
       return;
@@ -681,6 +720,8 @@ class AgentConversationController {
       activities: this.#publicActivities(),
       backgroundTasks: this.#publicBackgroundTasks(),
       backgroundStatus: this.backgroundStatus,
+      planEntries: this.#publicSessionPlan(),
+      planStatus: this.planStatus,
       artifacts: this.#publicArtifacts(),
       artifactStatus: this.artifactStatus,
       project: this.#publicProject(),
@@ -702,6 +743,10 @@ class AgentConversationController {
 
   #publicBackgroundTasks() {
     return this.backgroundTasks.map((task) => ({ ...task.public }));
+  }
+
+  #publicSessionPlan() {
+    return this.planEntries.map((entry) => ({ ...entry }));
   }
 
   async #refreshBackgroundTasks(authority) {
@@ -800,6 +845,56 @@ class AgentConversationController {
     return task;
   }
 
+  async #refreshSessionPlan(authority) {
+    const generation = ++this.planRefreshGeneration;
+    let response;
+    try {
+      response = await this.host.getAgentSessionPlan(authority.agentId);
+    } catch {
+      if (this.authority !== authority || generation !== this.planRefreshGeneration) return;
+      this.planEntries = [];
+      this.planStatus = PLAN_STATUS_UNAVAILABLE;
+      return;
+    }
+    if (this.authority !== authority || generation !== this.planRefreshGeneration) return;
+    try {
+      this.#requireReadyAccount(authority.accountId);
+    } catch (error) {
+      this.#clearSessionPlan();
+      throw error;
+    }
+    try {
+      this.planEntries = projectSessionPlan(response);
+      this.planStatus = PLAN_STATUS_READY;
+    } catch {
+      if (this.authority !== authority || generation !== this.planRefreshGeneration) return;
+      this.planEntries = [];
+      this.planStatus = PLAN_STATUS_UNAVAILABLE;
+    }
+  }
+
+  #scheduleSessionPlanRefresh(authority) {
+    if (this.authority !== authority) return;
+    if (this.planRefreshPromise) {
+      this.planRefreshQueued = true;
+      return;
+    }
+    let refreshPromise;
+    const refresh = async () => {
+      do {
+        this.planRefreshQueued = false;
+        await this.#refreshSessionPlan(authority);
+      } while (this.planRefreshQueued && this.authority === authority);
+      if (this.authority === authority) this.#publishActivityState(authority);
+    };
+    refreshPromise = refresh()
+      .catch(() => {})
+      .finally(() => {
+        if (this.planRefreshPromise === refreshPromise) this.planRefreshPromise = null;
+      });
+    this.planRefreshPromise = refreshPromise;
+  }
+
   #publicArtifacts() {
     return this.artifacts.map((artifact) => ({ ...artifact }));
   }
@@ -887,6 +982,7 @@ class AgentConversationController {
     this.transcriptTruncated = false;
     this.#clearActivities();
     this.#clearBackgroundTasks();
+    this.#clearSessionPlan();
     this.#clearArtifacts();
     this.#clearProjectState();
     this.#publish({ phase: 'idle' });
@@ -901,6 +997,14 @@ class AgentConversationController {
     this.backgroundTasks = [];
     this.backgroundTaskByPrivateId.clear();
     this.backgroundStatus = BACKGROUND_STATUS_READY;
+  }
+
+  #clearSessionPlan() {
+    this.planRefreshGeneration += 1;
+    this.planRefreshPromise = null;
+    this.planRefreshQueued = false;
+    this.planEntries = [];
+    this.planStatus = PLAN_STATUS_READY;
   }
 
   #clearArtifacts() {
@@ -968,6 +1072,34 @@ function projectWorkspaceArtifacts(value) {
       title,
       kind: artifact.kind,
       sizeBytes: artifact.sizeBytes,
+    };
+  });
+}
+
+function projectSessionPlan(value) {
+  if (
+    !value
+    || typeof value !== 'object'
+    || !Array.isArray(value.entries)
+    || value.entries.length > MAX_PUBLIC_PLAN_ENTRIES
+  ) {
+    throw new Error('invalid Session plan projection');
+  }
+  return value.entries.map((entry, index) => {
+    const content = typeof entry?.content === 'string' ? entry.content.trim() : '';
+    if (
+      !content
+      || Array.from(content).length > MAX_PLAN_CONTENT_CHARS
+      || Buffer.byteLength(content, 'utf8') > MAX_PLAN_CONTENT_BYTES
+      || /[\u0000-\u001F\u007F-\u009F]/.test(content)
+      || !SAFE_PLAN_STATUSES.has(entry?.status)
+    ) {
+      throw new Error('invalid Session plan entry');
+    }
+    return {
+      planId: `plan-${index + 1}`,
+      content,
+      status: entry.status,
     };
   });
 }

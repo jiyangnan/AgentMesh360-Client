@@ -290,6 +290,8 @@ function conversationView() {
   const activities = safeConversationActivities(conversationUi.activities);
   const backgroundTasks = safeConversationBackgroundTasks(conversationUi.backgroundTasks);
   const backgroundUnavailable = conversationUi.backgroundStatus === 'unavailable';
+  const planEntries = safeConversationPlanEntries(conversationUi.planEntries);
+  const planUnavailable = conversationUi.planStatus === 'unavailable';
   const artifacts = safeConversationArtifacts(conversationUi.artifacts);
   const artifactUnavailable = conversationUi.artifactStatus === 'unavailable';
   const project = safeConversationProject(conversationUi.project);
@@ -320,6 +322,9 @@ function conversationView() {
         ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
         ${project || projectUnavailable
     ? conversationProjectView(project, projectUnavailable)
+    : ''}
+        ${planEntries.length || planUnavailable
+    ? conversationPlanView(planEntries, planUnavailable)
     : ''}
         ${backgroundTasks.length || backgroundUnavailable
     ? conversationBackgroundTasksView(backgroundTasks, backgroundUnavailable)
@@ -391,6 +396,68 @@ function conversationBackgroundTasksView(tasks, unavailable) {
           </div>`).join('')}
       </div>`}
     </section>`;
+}
+
+function safeConversationPlanEntries(value) {
+  if (!Array.isArray(value)) return [];
+  const safeStatuses = new Set(['pending', 'in_progress', 'completed', 'cancelled']);
+  const seen = new Set();
+  return value.slice(0, 50).flatMap((entry) => {
+    const planId = typeof entry?.planId === 'string' ? entry.planId : '';
+    const content = typeof entry?.content === 'string' ? entry.content.trim() : '';
+    if (
+      !/^plan-\d+$/.test(planId)
+      || seen.has(planId)
+      || !content
+      || Array.from(content).length > 300
+      || new TextEncoder().encode(content).length > 1_200
+      || /[\u0000-\u001F\u007F-\u009F]/.test(content)
+      || !safeStatuses.has(entry?.status)
+    ) {
+      return [];
+    }
+    seen.add(planId);
+    return [{
+      planId,
+      content,
+      status: entry.status,
+    }];
+  });
+}
+
+function conversationPlanView(entries, unavailable) {
+  return `
+    <section class="conversation-plan" aria-label="Agent 本轮计划">
+      <header>
+        <div>
+          <p class="eyebrow">Session Plan</p>
+          <h2>本轮计划</h2>
+        </div>
+        <span>模型工作计划，不等同于业务进度</span>
+      </header>
+      ${unavailable
+    ? '<p class="session-plan-error">本轮计划暂时不可用。</p>'
+    : `<div class="conversation-plan-list">
+        ${entries.map((entry) => `
+          <div
+            class="conversation-plan-entry ${escapeHtml(entry.status)}"
+            data-plan-id="${escapeHtml(entry.planId)}"
+          >
+            <i aria-hidden="true"></i>
+            <strong>${escapeHtml(entry.content)}</strong>
+            <span>${escapeHtml(planStatusLabel(entry.status))}</span>
+          </div>`).join('')}
+      </div>`}
+    </section>`;
+}
+
+function planStatusLabel(status) {
+  return {
+    pending: '待处理',
+    in_progress: '进行中',
+    completed: '已完成',
+    cancelled: '已取消',
+  }[status] || '待处理';
 }
 
 function safeConversationActivities(value) {
@@ -817,6 +884,8 @@ async function openConversation(agentId) {
     activities: [],
     backgroundTasks: [],
     backgroundStatus: 'ready',
+    planEntries: [],
+    planStatus: 'ready',
     artifacts: [],
     artifactStatus: 'ready',
     project: null,

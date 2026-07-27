@@ -1254,6 +1254,175 @@ test('conversation bounds background tasks, freezes terminal state, and clears t
   assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, []);
 });
 
+test('conversation reads the Host-owned canonical Session plan without exposing Todo authority', async () => {
+  const fixture = makeFixture();
+  fixture.host.sessionPlanImpl = async () => ({
+    entries: [
+      {
+        content: '核对岗位要求',
+        status: 'in_progress',
+        todoId: 'private-todo-id',
+        priority: 'high',
+        meta: { apiKey: 'sk-private' },
+      },
+      {
+        content: '输出岗位清单',
+        status: 'pending',
+      },
+    ],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.deepEqual(snapshot.planEntries, [
+    {
+      planId: 'plan-1',
+      content: '核对岗位要求',
+      status: 'in_progress',
+    },
+    {
+      planId: 'plan-2',
+      content: '输出岗位清单',
+      status: 'pending',
+    },
+  ]);
+  assert.deepEqual(fixture.host.sessionPlanCalls, ['job-agent']);
+  const serialized = JSON.stringify(snapshot);
+  for (const forbidden of ['private-todo-id', 'priority', 'meta', 'sk-private']) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation treats live ACP Plan as a refresh signal and ignores raw notification content', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.sessionPlanImpl = async () => ({
+    entries: [{
+      content: '运行交叉测试',
+      status: 'completed',
+    }],
+  });
+
+  fixture.host.emitSession('private-session-id', 'plan', null, {
+    entries: [{
+      content: '泄露 /private/account-7 和 sk-private',
+      priority: 'high',
+      status: 'in_progress',
+      meta: { todoId: 'private-plan-id' },
+    }],
+  });
+  await flushAsync();
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.deepEqual(snapshot.planEntries, [{
+    planId: 'plan-1',
+    content: '运行交叉测试',
+    status: 'completed',
+  }]);
+  assert.deepEqual(fixture.host.sessionPlanCalls, ['job-agent', 'job-agent']);
+  const serialized = JSON.stringify(snapshot);
+  for (const forbidden of ['/private/account-7', 'sk-private', 'private-plan-id', 'priority']) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+});
+
+test('conversation coalesces a burst of live Plan signals behind one queued canonical refresh', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let resolveFirstRefresh;
+  let refreshCount = 0;
+  fixture.host.sessionPlanImpl = async () => {
+    refreshCount += 1;
+    if (refreshCount === 1) {
+      return new Promise((resolve) => {
+        resolveFirstRefresh = resolve;
+      });
+    }
+    return {
+      entries: [{
+        content: '合并后的最终计划',
+        status: 'in_progress',
+      }],
+    };
+  };
+
+  for (let index = 0; index < 3; index += 1) {
+    fixture.host.emitSession('private-session-id', 'plan', null, {
+      entries: [{ content: `不可信通知 ${index}`, status: 'completed' }],
+    });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(refreshCount, 1);
+  resolveFirstRefresh({
+    entries: [{
+      content: '可能已过期的第一次刷新',
+      status: 'pending',
+    }],
+  });
+  await flushAsync();
+
+  assert.equal(refreshCount, 2);
+  assert.deepEqual(fixture.controller.getSnapshot().planEntries, [{
+    planId: 'plan-1',
+    content: '合并后的最终计划',
+    status: 'in_progress',
+  }]);
+  assert.equal(JSON.stringify(fixture.controller.getSnapshot()).includes('不可信通知'), false);
+});
+
+test('conversation ignores replay Plan payloads and reconciles once from canonical Resources', async () => {
+  const fixture = makeFixture();
+  fixture.host.loadImpl = async ({ sessionId }) => {
+    fixture.host.emitSessionMethod('session/update', sessionId, {
+      sessionUpdate: 'plan',
+      entries: [{
+        content: '历史 cosmetic completed',
+        priority: 'high',
+        status: 'completed',
+      }],
+    }, { isReplay: true });
+    return {};
+  };
+  fixture.host.sessionPlanImpl = async () => ({
+    entries: [{
+      content: '仍在执行的真实步骤',
+      status: 'in_progress',
+    }],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.deepEqual(snapshot.planEntries, [{
+    planId: 'plan-1',
+    content: '仍在执行的真实步骤',
+    status: 'in_progress',
+  }]);
+  assert.deepEqual(fixture.host.sessionPlanCalls, ['job-agent']);
+  assert.equal(JSON.stringify(snapshot).includes('cosmetic'), false);
+});
+
+test('conversation bounds and validates Session plan snapshots without closing text chat', async () => {
+  const fixture = makeFixture();
+  fixture.host.sessionPlanImpl = async () => ({
+    entries: [{
+      content: 'Private\u0085Plan',
+      status: 'pending',
+      todoId: 'private-invalid-plan',
+    }],
+  });
+
+  const snapshot = await fixture.controller.open('job-agent');
+
+  assert.equal(snapshot.phase, 'ready');
+  assert.equal(snapshot.planStatus, 'unavailable');
+  assert.deepEqual(snapshot.planEntries, []);
+  assert.equal(JSON.stringify(snapshot).includes('private-invalid-plan'), false);
+
+  fixture.host.emit('reconnected');
+  assert.deepEqual(fixture.controller.getSnapshot().planEntries, []);
+  assert.equal(fixture.controller.getSnapshot().planStatus, 'ready');
+});
+
 function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   return {
     requestId,
@@ -1290,6 +1459,7 @@ function makeFixture() {
     artifactCalls: [],
     projectStateCalls: [],
     backgroundActivityCalls: [],
+    sessionPlanCalls: [],
     permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
@@ -1304,6 +1474,7 @@ function makeFixture() {
       project: null,
     }),
     backgroundActivityImpl: async () => ({ activities: [] }),
+    sessionPlanImpl: async () => ({ entries: [] }),
     async listAgents() {
       return {
         agents: [
@@ -1354,6 +1525,10 @@ function makeFixture() {
       this.backgroundActivityCalls.push(agentId);
       return this.backgroundActivityImpl(agentId);
     },
+    async getAgentSessionPlan(agentId) {
+      this.sessionPlanCalls.push(agentId);
+      return this.sessionPlanImpl(agentId);
+    },
     respondPermission(requestId, optionId) {
       this.permissionResponses.push({ requestId, optionId });
       this.emit('permission-resolved', { requestId });
@@ -1393,6 +1568,11 @@ function makeFixture() {
     },
   });
   return fixture;
+}
+
+async function flushAsync() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 function readyIdentity() {

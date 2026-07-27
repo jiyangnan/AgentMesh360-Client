@@ -9,6 +9,11 @@ use crate::extensions::notification::SessionNotification;
 use crate::session::signals::TurnDeltaSnapshot;
 use agent_client_protocol as acp;
 use tokio::sync::oneshot;
+#[derive(Debug, Clone)]
+pub struct SessionPlanItem {
+    pub(crate) content: String,
+    pub(crate) status: crate::tools::todo::TodoStatus,
+}
 /// Structured context for a cancelled turn, replacing stringly-typed JSON.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
 pub struct CancellationContext {
@@ -463,6 +468,11 @@ pub enum SessionCommand {
     /// Routes through the ToolBridge's TerminalBackend.
     ListTasks {
         respond_to: oneshot::Sender<Option<Vec<xai_grok_tools::types::TaskSnapshot>>>,
+    },
+    /// Read the canonical model-authored Todo list from ToolBridge Resources.
+    /// Todo IDs and metadata stay inside the Harness.
+    ListSessionPlan {
+        respond_to: oneshot::Sender<Vec<SessionPlanItem>>,
     },
     /// Query whether the session has work in flight: a running turn
     /// (`running_task.is_some()`) **or** queued inputs

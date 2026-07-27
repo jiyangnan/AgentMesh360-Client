@@ -63,6 +63,16 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
         },
       };
     }
+    if (request.method === '_x.agentmesh360/agents/session-plan/get') {
+      return {
+        result: {
+          entries: [{
+            content: '核对岗位要求',
+            status: 'in_progress',
+          }],
+        },
+      };
+    }
     return { result: null, error: 'unsupported' };
     });
     return child;
@@ -80,12 +90,14 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   const artifacts = await client.listWorkspaceArtifacts('job-agent');
   const projectState = await client.getWorkspaceProjectState('job-agent');
   const background = await client.listAgentBackgroundActivities('job-agent');
+  const sessionPlan = await client.getAgentSessionPlan('job-agent');
 
   assert.equal(bootstrap.account.id, 7);
   assert.equal(list.agents[0].agentId, 'job-agent');
   assert.equal(artifacts.artifacts[0].artifactId, 'role-fit-report');
   assert.equal(projectState.project.title, '产品岗位第 3 轮');
   assert.equal(background.activities[0].taskId, 'private-host-task');
+  assert.equal(sessionPlan.entries[0].content, '核对岗位要求');
   assert.equal(received[0].method, 'initialize');
   assert.equal(received[0].params._meta.clientIdentifier, 'agentmesh360-desktop');
   assert.equal(received[1].method, '_x.agentmesh360/account/bootstrap');
@@ -96,6 +108,8 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.deepEqual(received[4].params, { agentId: 'job-agent' });
   assert.equal(received[5].method, '_x.agentmesh360/agents/background-activities/list');
   assert.deepEqual(received[5].params, { agentId: 'job-agent' });
+  assert.equal(received[6].method, '_x.agentmesh360/agents/session-plan/get');
+  assert.deepEqual(received[6].params, { agentId: 'job-agent' });
   assert.equal(client.getRuntimeStatus().bridgeState, 'connected');
 
   let reconnectEvents = 0;
