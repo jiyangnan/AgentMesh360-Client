@@ -206,6 +206,7 @@ class AgentConversationController {
     const state = this.#requireReadyAccount();
     const publicAgent = state.agents?.find((agent) => agent.agentId === agentId);
     if (!publicAgent) throw new Error('当前账号没有此 Agent');
+    this.#cancelPermission();
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;

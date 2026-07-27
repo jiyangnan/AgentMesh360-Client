@@ -347,6 +347,34 @@ test('conversation cancels permission when authority changes and rejects stale R
   );
 });
 
+test('conversation cancels the old permission before opening another Agent', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emit('permission-request', permissionRequest(
+    'job-switch-request',
+    'Job operation',
+  ));
+
+  await fixture.controller.open('deploy-agent');
+
+  assert.deepEqual(fixture.host.permissionResponses, [{
+    requestId: 'job-switch-request',
+    optionId: null,
+  }]);
+  fixture.host.emit('permission-request', permissionRequest(
+    'deploy-request',
+    'Deploy operation',
+    'private-deploy-session',
+  ));
+  const snapshot = fixture.controller.getSnapshot();
+  assert.equal(snapshot.agentId, 'deploy-agent');
+  assert.equal(snapshot.interaction.title, 'Deploy operation');
+  assert.equal(
+    fixture.host.permissionResponses.some(({ requestId }) => requestId === 'deploy-request'),
+    false,
+  );
+});
+
 test('conversation auto-cancels permission requests for another session or without safe options', async () => {
   const fixture = makeFixture();
   await fixture.controller.open('job-agent');
@@ -432,10 +460,10 @@ test('conversation reports an expired permission without exposing Host authority
   assert.equal(JSON.stringify(snapshot).includes('private-session-id'), false);
 });
 
-function permissionRequest(requestId, title) {
+function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   return {
     requestId,
-    sessionId: 'private-session-id',
+    sessionId,
     toolCall: {
       toolCallId: `call-${requestId}`,
       title,
