@@ -1,7 +1,7 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
-状态：2026-07-27 Job Agent 固定 Main Session 对话第一切片已通过自主验证和两轮
-本机 Kimi 独立交叉复核；所有生产发布能力保持关闭
+状态：2026-07-27 固定 Main Session 对话第一切片与多 Agent 恢复通路已通过自主验证
+和两轮本机 Kimi 独立交叉复核；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -30,7 +30,7 @@ EMBEDDED_PUBLISHER_TRUST_BUNDLE = None
 
 因此不能把 H2d4 后的下一步自动解释为“填入常量并上线”，也不自行命名 H2d5。
 
-### 1.2 产品主路径已推进：Job Agent 固定 Main Session 对话第一切片关闭
+### 1.2 产品主路径已推进：文本对话与多 Agent 恢复通路关闭
 
 产品蓝图的核心流程是：
 
@@ -47,17 +47,20 @@ flowchart LR
     RESTORE --> RESOLVE
 ```
 
-循环 43 已完成这一流程的 Job Agent 第一切片：
+循环 43/44 已完成这一流程的文本对话与多 Agent 通用化：
 
-- 用户从 Agent 卡片进入真实固定主对话，侧边栏“当前对话”可返回；
+- 用户从任意当前账号 Host Catalog Agent 卡片进入真实固定主对话；
 - Renderer 仍看不到 `mainSessionId` 与本机路径，只提交 `agentId` 和文本；
 - Electron 主进程通过独立 Controller 持有临时 Session authority；
 - `AcpHostClient` 复用标准 `session/load`、`session/prompt` 与 `session/update`；
-- 历史和 live update 只投影有界的用户/Agent 文本，订阅、账户、重连与超时均失败关闭。
+- 历史和 live update 只投影有界的用户/Agent 文本，订阅、账户、重连与超时均失败
+  关闭；
+- Renderer reload 可恢复安全 snapshot，三个首方 Agent 在真实 detach/Leader 替换
+  后保持各自唯一 Main Session。
 
-当前用户侧只开放 Job Agent。下一项按原计划把同一路径扩展到 LectureCast、Deploy 和
-动态 Agent，并完成窗口重建、账户切换与重连的用户可见恢复；这仍比启用生产 Package
-分发更靠前。
+动态 `future-agent` 的本地 fixture 证明用户层不需要 Agent 专属代码，但生产 Registry
+仍关闭，不能写成真实远端动态 Agent 已交付。下一项按原计划进入工作区增量，先关闭
+Harness 反向交互/权限审批的最小用户确认边界；这仍比启用生产 Package 分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -68,7 +71,7 @@ flowchart LR
 | BYOK | Provider Profile/Vault、Assignment、Binding、路由、设置页与 Probe 已实现 | 外部真实 Provider E2E 仍独立待验 |
 | Agent Package | H0/H1 至 H2d4 的本地信任、发布描述与消费门已通过双方测试 | 生产 authority 仍为空 |
 | Package Center | 发现、下载、批准、回滚、reconcile 的安全 UI/Host 接口已实现 | 因生产 Registry 关闭而无真实远端内容 |
-| 固定主对话 | Job Agent 已有桌面文本对话、历史 replay、live update 和安全重开通路 | 继续多 Agent 通用化与用户可见恢复；工具/交互审批仍后置 |
+| 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭；下一验收点是 Harness 交互/权限审批 |
 | 垂直工作区 | 活动、产物、审批、项目状态仍为目标 | 对话入口后分步实现 |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
@@ -89,8 +92,8 @@ flowchart LR
 5. 页面关闭、Bridge detach 或 Leader 重连后，重新打开仍指向同一个 Main Session；
 6. 只向 Renderer 投影对话所需的消息、流式状态和安全错误，不暴露 Token、Provider
    Key、路径、环境变量、原始 Host 错误或其他账户 Session；
-7. 当前先覆盖 Job Agent；LectureCast、Deploy 和动态 Agent 留在下一轮沿用同一
-   通用路径。
+7. Job、LectureCast、Deploy 和 Host Catalog 后续动态 Agent 使用同一通用路径；
+   动态 Agent 的生产远端交付仍受 Package 发布门约束。
 
 ### 本切片不包含
 
@@ -114,7 +117,7 @@ flowchart LR
 
 | 门 | 适用发布链 | 当前状态 | 启用前必须具备 |
 | --- | --- | --- | --- |
-| R0 产品可用性 | 共同 | 未满足 | Job Agent 文本对话第一切片已通过；仍须完成多 Agent 通用化、用户可见重启/重连恢复与 Harness 交互/审批边界，且订阅失效、重启与账户切换均不泄漏或丢失历史 |
+| R0 产品可用性 | 共同 | 未满足 | 文本对话、多 Agent 与用户可见 reload/重连恢复已通过；仍须完成 Harness 交互/审批边界，且订阅失效、重启与账户切换均不泄漏或丢失历史 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足 | 独立审查的 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足 | 可复现构建证据；H2d0 外部签名输入输出；Artifact/Envelope/Host bundles/Release/Registry 的发布者、摘要和版本可追溯 |
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
@@ -152,9 +155,10 @@ flowchart TD
 
 1. **固定 Main Session 对话入口第一切片（已完成）**：Job Agent 已完成首页到真实
    固定文本对话的最小闭环；
-2. **对话恢复与多 Agent 通用化（下一轮）**：重启、重连、账户切换、三个首方 Agent
+2. **对话恢复与多 Agent 通用化（已完成）**：重启、重连、账户切换、三个首方 Agent
    和动态 Agent 使用同一通路；
-3. **工作区增量**：再按产品价值加入活动、产物、审批和垂直状态，不一次铺满；
+3. **工作区增量（下一轮）**：先实现最小 Harness 交互/权限审批边界，再按产品价值
+   加入活动、产物和垂直状态，不一次铺满；
 4. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
 5. **桌面与 Package 生产发布计划**：只有 R0-R6 全部满足并获得单独授权后启动。
 
@@ -190,3 +194,15 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - Kimi session `session_c6129f01-8b1a-4f0c-9f51-c7e8a203244c` 首轮发现 3 项 Low，
   修复后第二轮 Blocker/High/Medium/Low 全部为零并给出无条件 PASS；
 - R0 继续保持未满足，下一轮只进入对话恢复与多 Agent 通用化，不启动生产发布。
+
+## 9. 循环 44 实施检查点
+
+- 功能提交：`271f99d feat: generalize persistent conversations across agents`；
+- 桌面 `npm test`：69 pass、0 fail、2 个真实 Host 环境门 skip；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 全部通过；
+- 真实 Host 2/2 通过，Job、LectureCast、Deploy 的 Main Session ID 唯一，并在
+  Bridge detach 与 Leader 替换后保持原 ID 且可重新加载；
+- Kimi CLI 可恢复 session `session_5f61347a-4131-4611-afc4-fb3f015e481e`
+  （报告内部审查 ID `7d082017-4814-481c-891d-98bcd7d27a56`）首轮发现 1 项
+  Medium、2 项 Low，全部修复后第二轮四级全零并无条件 PASS；
+- R0 继续保持未满足，下一轮只进入最小 Harness 交互/权限审批边界。

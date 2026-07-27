@@ -32,7 +32,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；Job Agent 固定 Main Session 文本对话第一切片已接入桌面 | 将同一恢复与安全投影通路扩展到 LectureCast、Deploy 和动态 Agent；签名安装包 Login Item E2E 仍是发布门 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话与恢复通路 | 按计划进入最小 Harness 交互/审批边界；签名安装包 Login Item E2E 仍是发布门 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -3293,3 +3293,68 @@ Kimi 独立交叉测试：
 - 下一轮按原计划进入“对话恢复与多 Agent 通用化”，先把同一 Controller 与安全
   投影扩展到 LectureCast、Deploy 和动态 Agent，并补窗口重建、账户切换和重连的
   用户可见恢复测试；不进入生产发布或新的 Provider/Package 切片。
+
+### 循环 44：对话恢复与多 Agent 通用化
+
+状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+
+本地功能提交：`271f99d feat: generalize persistent conversations across agents`
+
+计划校准：
+
+- 循环开始先复核循环 43、产品计划和现有 Controller，确认 Host/Main/Preload 通路
+  已经是通用 `agentId`，本轮只需关闭用户层泛化与恢复体验；
+- 验收范围限定为 Host 当前账号 Catalog 返回的全部产品 Agent、Renderer reload、
+  ready→ready 账号切换、重连/超时原页重开和三个首方 Agent 的真实 Host 恢复；
+- 动态 `future-agent` 只作为无硬编码 UI/Controller fixture；生产 Registry 仍关闭，
+  本轮不声称真实远端动态 Agent 已交付。
+
+已经实现：
+
+1. Job、LectureCast、Deploy 以及未来动态 Agent 卡片统一使用“激活并打开 / 打开对话”，
+   不再存在 activation-only 用户路径或按 Agent 名称分支；
+2. 对话标题、空状态、输入提示、流式状态与头像均从安全 `displayName` 派生；Agent
+   卡片头像也按名称首字符生成，不再按位置循环 `J/L/D`；
+3. Leader 重连或 Prompt 超时产生的 error snapshot 在当前对话显示“重新打开”，只把
+   安全 `agentId` 重新交给主进程，仍须通过格式、当前账号 Catalog 和订阅检查；
+4. Renderer reload 会从主进程读取有界安全 snapshot，恢复当前消息和视图；用户在
+   Agent、Provider 或 Package 页面时，后台 live chunk 不会抢回对话页面；
+5. ready→ready 账号切换会清空旧 snapshot/authority，旧 Session 的迟到 chunk 被
+   丢弃，不能被新账号恢复或继续发送；
+6. 真实 Host 测试激活 Job、LectureCast、Deploy，验证三者 Main Session ID 唯一；
+   Bridge detach 与 Leader 替换后，三个 Agent 都保持原 ID 并可重新 `session/load`。
+
+自主验证：
+
+- 失败优先 Electron 测试先确认 LectureCast、Deploy 和 `future-agent` 仍是
+  activation-only；实现后转绿；
+- `cd desktop && npm test`：71 项中 69 项通过、0 失败，2 项真实 Host 环境门 skip；
+- `npm run check`、`git diff --check` 与源码私有字段静态扫描通过；
+- Conversation、Package、Provider、Visual 四组真实 Electron smoke 全部通过；
+- 真实 Host `real-host.test.js` 与 `real-host-lifecycle.test.js`：2/2 通过，最终
+  复跑耗时约 19 秒；没有把默认 skip 当作通过。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI 可恢复 session `session_5f61347a-4131-4611-afc4-fb3f015e481e`
+  （报告内部审查 ID `7d082017-4814-481c-891d-98bcd7d27a56`）从基线 `715151d`
+  只读审查完整 diff、Controller/Main/Preload/Identity 边界，并独立执行
+  69 + 2 skip、四组 Electron smoke、真实 Host 2 项和 diff-check；
+- 首轮 Blocker/High 为零，发现 1 项 Medium 与 2 项 Low：动态 Agent 卡片按位置循环
+  `J/L/D`、登录引导只枚举三个首方 Agent、activation-only 死监听残留；
+- 三项全部关闭，并新增 `J/L/D/F` 头像可执行断言；自主全量复测后 Kimi 在同一
+  session 第二轮重新检查完整 diff 和测试矩阵；
+- 第二轮确认 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。Kimi 同时确认
+  保留但当前无 Renderer 调用方的 `agent:activate` IPC 仍有格式与订阅门禁，不作为
+  本轮缺陷。
+
+计划复盘：
+
+- 多 Agent 泛化没有把 Session ID、cwd、Provider 凭据或原始错误交给 Renderer；
+  动态集成继续以 Host Catalog 为唯一产品 Agent 来源，不新增客户端 Agent 白名单；
+- 三个首方 Agent 的真实恢复已验证，动态 fixture 只证明用户层无需特制代码；
+- R0 仍未满足：标准 ACP 客户端反向请求当前仍返回未实现，Harness 工具/权限交互
+  尚无用户确认边界，不能把“文本对话可用”写成完整 Agent 操作闭环；
+- 下一轮按原产品计划进入工作区增量的第一项：先审计并实现最小 Harness
+  `interaction_required` / 权限审批通路；不一次加入活动、产物、垂直工作区，也不
+  进入 Provider、OAuth、Package H2d5 或生产发布。
