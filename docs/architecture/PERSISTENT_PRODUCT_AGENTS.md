@@ -151,7 +151,7 @@ Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目�
 Host 与 Agent”，但签名、公证安装包中的 macOS Login Item 注册/批准/升级仍需发布
 验收，不能把开发 smoke 写成生产已验证。
 
-循环 43-52 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
+循环 43-54 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
 确认、安全只读工具活动、通用 Workspace Artifact/Project State，以及普通 Harness
 后台活动安全投影。Renderer
 继续只用 `agentId` 与文本，由主进程与 Host 解析账户绑定的 Main Session；标准 ACP
@@ -181,11 +181,15 @@ Subagent 四种 authority；循环 52 只实现普通后台命令和 Monitor：�
 Main Session 通知，并在 `session/load` 与成功 Prompt 后调用 Host-owned 安全快照
 对账，从而覆盖常驻 Session 在 Controller 订阅前完成冷启动恢复的时序缺口。私有
 task ID 仅存在于可信主进程，Renderer 只见本地 ID、固定类型与四态；不提供任务控制、
-日志、轮询或第二套持久化。完整契约见
+日志、轮询或第二套持久化。循环 53-54 又确认标准 ACP Plan 只是刷新信号：
+canonical authority 是 Main Session ToolBridge Resources 的 `State<TodoState>`；
+Host/主进程/Renderer 三层只投影最多 50 项 content 和四态，不暴露 Todo ID、
+priority、meta、Session 或路径，并明确“模型工作计划，不等同于业务进度”。完整契约见
 [`HARNESS_BACKGROUND_ACTIVITY_V1.md`](HARNESS_BACKGROUND_ACTIVITY_V1.md)。
 其他通用工作区契约见
 [`WORKSPACE_ARTIFACT_MANIFEST_V1.md`](WORKSPACE_ARTIFACT_MANIFEST_V1.md) 与
-[`WORKSPACE_PROJECT_STATE_V1.md`](WORKSPACE_PROJECT_STATE_V1.md)。生产
+[`WORKSPACE_PROJECT_STATE_V1.md`](WORKSPACE_PROJECT_STATE_V1.md)，Session Plan
+契约见 [`SESSION_PLAN_VIEW_V1.md`](SESSION_PLAN_VIEW_V1.md)。生产
 Package 与桌面发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 

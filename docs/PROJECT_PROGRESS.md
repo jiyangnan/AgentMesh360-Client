@@ -32,7 +32,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State 与 Harness 后台活动安全投影 | 下一轮只在独立契约中审计 ACP Plan/Todo 是否适合作为 Session 计划视图，不实现 Scheduler、Subagent 或 Agent 专属 UI；签名安装包 Login Item E2E 仍是发布门 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区增量已按计划闭环；下一产品步骤是凭据依赖的真实 Provider E2E，必须等待用户提供隔离测试凭据和费用授权；Scheduler、Subagent、Agent 专属 UI 与生产发布不自动启动 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -3797,4 +3797,111 @@ Kimi 独立交叉测试：
 - R0 仍只是开发验证，R1-R6、外部真实 Provider 和生产发布门不变；
 - 本轮 Kimi 已清零；推送后再按蓝图复核工作区剩余项。下一步只在独立契约中评估
   标准 ACP Plan/Todo 是否值得作为 Session 计划视图，不直接实现 Scheduler 控制、
+  Agent 专属 UI、Package H2d5 或生产发布。
+
+### 循环 53：ACP Plan/Todo authority 与恢复语义审计
+
+状态：审计与中文契约已完成，已按顺序进入循环 54 最小实现
+
+计划校准：
+
+- 复核 `todo_write`、标准 ACP `SessionUpdate::Plan`、turn-end cleanup、Session
+  Resources persistence/reload、旧 `plan.json` 与 Plan Mode；
+- 确认 Session Todo、Workspace Project State、Plan Mode、Goal、Scheduler 和
+  Subagent 是不同 authority，不建立统一“任务数据库”；
+- 本轮没有直接消费 ACP Plan 内容，也没有进入 Todo mutation、Plan Mode 控制、
+  Agent 专属页面、Provider、Package H2d5 或生产发布。
+
+审计结论：
+
+1. `todo_write` 的 canonical authority 是当前 Main Session ToolBridge Resources 中
+   的 `State<TodoState>`，每次工具完成后保存到 `resources_state.json`，Session
+   重建时由 Tool Registry 自动恢复；
+2. 标准 ACP Plan 是变化通知而不是 authority：真实 Todo 更新会持久化并 replay，
+   但 turn end 还会发不持久化的 cosmetic Plan，把 `in_progress` 临时映射为
+   `completed` 而不修改 TodoState；
+3. 因此 Renderer 不能直接消费 Plan content/priority/meta，也不能从最后一条 replay
+   推断当前状态；live Plan 只作为刷新信号，`session/load` 与成功 Prompt 后必须读取
+   Host-owned canonical 快照；
+4. 旧 `plan.json` / `PersistenceMsg::PlanState` 是迁移兼容路径，PlanModeTracker
+   管理的是模式和审批，两者都不是本视图 authority；
+5. 完整数据流、脱敏、恢复、竞态、生命周期和非目标见
+   [`architecture/SESSION_PLAN_VIEW_V1.md`](architecture/SESSION_PLAN_VIEW_V1.md)。
+
+计划复盘：
+
+- 该结论保留 Grok Harness 的真实 Resources authority，不复制 Todo 数据库；
+- v1 只显示最多 50 项 content 与四态，Todo ID、priority、meta、Session 和路径均
+  不进入 Renderer，并明确“模型工作计划不等同于业务进度”；
+- 循环 54 只实现 Host-owned 安全快照、Plan 刷新信号与通用只读 UI，继续使用失败
+  优先测试、真实 Host、四组 Electron smoke 和 Kimi 四级清零门。
+
+### 循环 54：通用 Session Plan 最小只读实现
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+已经实现：
+
+1. Rust Host 新增 `x.agentmesh360/agents/session-plan/get`，请求只接受
+   `agentId`；Host 根据当前有效订阅账户 Registry 解析已激活 Agent 与固定 Main
+   Session，再向 Session actor 读取 ToolBridge Resources 中的 canonical
+   `State<TodoState>`；
+2. Session actor 在 Harness 内丢弃 Todo ID、priority 和任意 meta，只跨 actor
+   传递 content/status；Host 最多投影 50 项、300 个 Unicode 字符/1200 bytes 与
+   `pending|in_progress|completed|cancelled`，控制字符、空内容、未知状态和超限数据
+   全部失败关闭；
+3. Controller 在 `session/load` 后和成功 Prompt 后读取 canonical 快照；live ACP
+   Plan 只作为刷新信号，突发信号最多保留一个排队刷新；replay 与 raw Plan
+   content/priority/meta 全部忽略，刷新序号和当前 authority 阻止旧响应回写；
+4. Renderer 只接收本地 `plan-N`、content 与四态，并执行第二层条数、ID、字符、
+   byte、控制字符和状态白名单；界面固定标注“模型工作计划，不等同于业务进度”，
+   不可用时只显示固定文案；
+5. 订阅、账户、Agent、关闭、重连、Host 退出和 Prompt 超时全部清空计划；非法或
+   不可用计划不关闭文本对话；实现没有引入 Todo mutation、Scheduler、Subagent、
+   Agent 专属分支、Provider 或 Package 生产能力。
+
+失败优先与自主验证：
+
+- 最初 Host Client/Controller 定向测试 49 项中 44 pass、5 fail；失败全部指向尚
+  不存在的 Host Client 方法与 Controller plan 状态，确认测试先于实现；
+- 实现后 Host Client/Controller 49/49 通过；增加突发 Plan 合并后 Controller
+  37/37 通过，并覆盖 raw live payload 忽略、replay 忽略、canonical 刷新、非法
+  C1 数据失败关闭和全部生命周期清理；
+- 新增 Rust 安全投影 3/3 通过；Workspace Artifact/Project State 回归 37/37；
+- `cd desktop && npm test`：104 项中 101 pass、0 fail、3 个真实 Host 默认 skip；
+  三个 skip 已用当前源码重新构建的真实 Host 显式运行 3/3，覆盖订阅/跨账户/失效
+  门、detach/Leader 替换，以及从 `resources_state.json` 冷启动恢复 TodoState；
+- `npm run check`、`cargo fmt --all --check`、`git diff --check` 通过；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 在真实 macOS
+  图形会话全部退出码 0；一次在普通 Node 下直接启动 Conversation smoke 的
+  `TypeError` 和一次受限图形环境的 `SIGABRT` 均未冒充通过，改用项目 Electron
+  与真实图形环境后才记录成功；
+- Rust 构建使用 `/tmp/agentmesh360-cycle54-target`，仓库根目录 `target/` 始终
+  不存在；最终提交前会删除临时 target。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI session `session_a33d91ed-5503-46d0-88f4-1018f3287abc` 在用户明确授权
+  下只读检查相对 `origin/main` 的完整 diff、两个未跟踪文件、中文 authority
+  契约、Controller/Renderer/真实 Host 测试，以及 TodoState 注册、Resources
+  serde、账户 Registry、Session residency 和 replay 标记支撑源码；
+- Kimi 独立执行 104 项 Node（101 pass、0 fail、3 个真实 Host 默认 skip）、
+  `npm run check`、Session Plan Rust 3/3、Workspace 回归 37/37、rustfmt 与
+  `git diff --check`；随后从当前源码重新构建 Host，显式真实 Host 3/3 通过；
+- Conversation、Package、Provider、Visual 四组测试均使用项目 Electron 运行并
+  退出码 0；Kimi 确认测试前后仓库根 `target/` 不存在，工作区文件集合未被测试
+  改变；
+- Kimi 逐项确认 canonical Resources authority、live/replay 边界、账户/Registry/
+  Main Session 解析、三层白名单、刷新竞态、生命周期、DOM 脱敏和真实 serde
+  fixture；最终 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。本循环正式关闭。
+
+计划复盘：
+
+- 循环 53 先审计再实现的顺序得到遵守；标准 ACP Plan 仍只是刷新信号，canonical
+  TodoState 没有复制成第二套数据库；
+- Session Plan 与 Workspace Project State 的 UI 和 authority 均保持分离，没有
+  把模型草稿冒充 Job round、LectureCast project 或 Deploy run；
+- 蓝图中的通用工作区增量已经按顺序覆盖活动、产物、业务状态、后台活动和 Session
+  Plan。下一产品步骤回到既定计划中的“凭据依赖的真实 Provider E2E”，但必须等待
+  用户提供隔离测试凭据并明确费用授权；在此之前不擅自实现 Scheduler、Subagent、
   Agent 专属 UI、Package H2d5 或生产发布。
