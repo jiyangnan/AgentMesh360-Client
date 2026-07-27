@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "rel_template",
+  "publicVersion": "0.0.0-template",
+  "rootKeyId": "REPLACE_ME",
+  "publisherKeyId": "REPLACE_ME",
+  "receiptId": "rcpt_template0002",
+  "signingRequestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "signatureResultSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "outcome": "blocked"
+}

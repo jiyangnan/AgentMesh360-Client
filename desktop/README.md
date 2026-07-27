@@ -175,3 +175,8 @@ npm run build:mac
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
 签名安装包中的 macOS Login Item 注册/批准/升级、Electron 主进程自身守护以及受控
 Host shutdown 仍是发布门槛；源码和开发 smoke 通过不等于生产安装链已验收。
+
+Cycle 57 已完成零生产 authority 的 P1 R6 本地基线：Release Event、证据模板、
+静态验证器、事故响应 Runbook 与 E0 tabletop。它不代表 R6、桌面分发或 canary
+已经通过；P2 及后续固定顺序、批准卡和证据边界见
+[`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](../docs/architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。

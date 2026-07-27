@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "rel_template",
+  "publicVersion": "0.0.0-template",
+  "environment": "e0",
+  "registryRevision": 1,
+  "trustSequence": 1,
+  "immutableObjectsVerified": false,
+  "boundedMetadataVerified": false,
+  "registryPublishedLast": false,
+  "lastKnownGoodVerified": false,
+  "outcome": "blocked"
+}

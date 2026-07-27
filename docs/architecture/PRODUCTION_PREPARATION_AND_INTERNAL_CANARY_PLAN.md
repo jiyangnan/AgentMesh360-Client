@@ -1,7 +1,8 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
-状态：Cycle 56 计划、自主静态验证与本机 Kimi 独立复核已完成；尚未进入演练、
-内部 canary 或生产候选
+状态：Cycle 56 的 P0 计划与 Cycle 57 的 P1 R6 本地基线已完成自主验证和本机
+Kimi 独立复核；R1-R6 仍未关闭，尚未进入 key ceremony、E1/E2 技术演练、内部
+canary 或生产候选
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -10,7 +11,8 @@
 1. Agent Package 的签名、分发、动态安装与宿主 Skill 投影；
 2. AgentMesh360 桌面客户端的签名、公证、升级、登录启动与卸载。
 
-本文不是发布授权，也不是 canary 通过报告。本轮没有生成任何 Root/Publisher key，
+本文不是发布授权，也不是 canary 通过报告。截至 P1 关闭仍未生成任何
+Root/Publisher key，
 没有配置生产或 staging endpoint，没有上传 Artifact、发布 Registry、签名或公证
 桌面安装包，也没有调用 Provider、消耗 credits 或写用户真实宿主目录。
 
@@ -35,7 +37,8 @@
 
 - R0 继续是“已满足（开发验证）”，不代替生产发布门；
 - R1-R6 仍未满足；
-- 当前只允许完成零生产 authority 的准备工作；
+- P1 已完成零生产 authority 的 R6 Schema、Runbook、证据模板和 E0 tabletop；
+- 下一步只进入 P2 ceremony 工具/清单设计；生成临时测试 key 前仍需精确批准；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -411,7 +414,7 @@ flowchart TD
 | 工作包 | 交付物 | 是否需要新授权 |
 | --- | --- | --- |
 | P0 当前态审计与计划 | 本文、蓝图/发布门/进展同步、文档验证、Kimi 四级清零 | 本轮已授权继续开发；不含外部动作 |
-| P1 R6 基线 | Runbook、最小事件 Schema、证据模板、静态 secret/content 检查 | 不创建外部资源时可作为独立代码/文档切片；实施前仍需复核 |
+| P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | ceremony 工具/清单、临时测试 key、轮换/吊销演练 | 生成测试 key 前单独确认范围；生产 key 另行批准 |
 | P3 R2 E0 | 固定 commit 的双构建、provenance、外部测试签名与复验 | 不得使用生产 Publisher key |
 | P4 R3 E1 | 隔离 origin、对象存储/Registry、故障注入和清理 | 需要创建外部资源与 staging 凭据授权 |
@@ -420,8 +423,9 @@ flowchart TD
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
 
-P0 完成后不能跳到 P4-P8。P1 是下一项最小可执行切片，但其实现、测试、Kimi 复核和
-提交必须作为新的开发循环单独关闭。
+P0/P1 完成后仍不能跳到 P4-P8。P2 的 ceremony 工具与清单设计是下一项最小切片；
+临时测试 key、轮换和吊销演练只有在测试 key 批准卡生效后才能执行，生产 key 仍需
+另一张独立批准卡。
 
 ## 8. 明确批准卡
 
@@ -472,7 +476,8 @@ release-evidence/<release-id>/
   07-go-no-go.md
 ```
 
-这里描述的是结构，不在 Cycle 56 创建真实证据目录。生产原始 receipt、凭据位置、
+这里描述的是结构。Cycle 57 只创建默认 `blocked` / `NO_GO` 的模板目录，不创建真实
+Release 证据。生产原始 receipt、凭据位置、
 完整日志和可能含内部身份的信息应放在受访问控制的发布系统；仓库只保存经过脱敏的
 摘要、Schema、Runbook 和可公开复验的 digest。
 
@@ -512,3 +517,35 @@ Blocker/High/Medium/Low 全部为零并给出 PASS。
 - 不调用真实 Provider，不消耗 credits 或费用；
 - 不构建、签名、公证、上传、安装或发布桌面/Package 候选；
 - 不把计划完成写成 rehearsal、canary 或生产完成。
+
+## 11. Cycle 57 P1 R6 本地基线检查点
+
+已经完成：
+
+- Release Event v1 严格 JSON Schema，固定 E0-E3、状态、R0-R6、事件类型与非秘密
+  字段；
+- 有界证据目录、默认 `blocked` / `NO_GO` 模板，以及跨 JSONL、JSON、Markdown 的
+  Release 身份绑定；
+- 无依赖 Node 验证器，拒绝未知字段、重复 JSON key、跨 Release、乱序、非法 UTC、
+  非 canonical SemVer、symlink、未知/缺失/超限/非 UTF-8 文件，以及 URL、绝对路径、
+  secret/content key/value；
+- 发布事故 Runbook，覆盖 Registry 异文、Publisher/Root compromise、Desktop
+  最低版本锁死、证据泄漏和 BYOK/订阅失控；
+- 一次无 key、无外部资源的 E0 release-integrity tabletop。该 tabletop 只关闭
+  P1 的本地子项，不能代替 R6 要求的 E1/E2 技术演练。
+
+验证与复核：
+
+- 主 Agent 的 Node 回归、CLI 模板/事件验证、JSON/JSONL 解析、文档链接、
+  `git diff --check` 与根 `target/` 检查全部通过；
+- Kimi CLI session `session_0b7c8012-f3fb-4f08-b4d0-d520b79605ec` 首轮发现
+  1 Medium / 5 Low，修复目录身份绑定、fs 错误脱敏、路径/URL 与 JSON key 扫描、
+  重复 JSON key 和 tabletop 时间后复核四级全零并 PASS；
+- Kimi 未运行 Cargo/npm/Electron，未读取 Keychain/Provider，未创建外部资源或
+  仓库根 `target`。
+
+下一顺序：
+
+- P2 先实现不生成 key 的 ceremony 工具/清单设计；
+- 生成临时测试 key、执行轮换/吊销演练前必须获得第 8 节的测试 key 精确批准卡；
+- P3-P8 与各自外部 authority 继续保持关闭，不能用本轮 PASS 推断已发布或已 canary。

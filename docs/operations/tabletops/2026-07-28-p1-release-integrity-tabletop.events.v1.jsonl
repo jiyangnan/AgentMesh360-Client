@@ -1,0 +1,2 @@
+{"schemaVersion":1,"eventId":"evt_p1tabletop001","releaseId":"rel_p1_tabletop","publicVersion":"0.0.0-tabletop","environment":"e0","stage":"rehearsal_ready","gate":"r6","eventType":"tabletop_started","outcome":"started","occurredAt":"2026-07-27T16:21:00Z"}
+{"schemaVersion":1,"eventId":"evt_p1tabletop002","releaseId":"rel_p1_tabletop","publicVersion":"0.0.0-tabletop","environment":"e0","stage":"rehearsal_passed","gate":"r6","eventType":"tabletop_completed","outcome":"succeeded","occurredAt":"2026-07-27T16:36:00Z","receiptId":"rcpt_p1tabletop001"}

@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-27
+最近更新：2026-07-28
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -32,12 +32,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Cycle 56 生产准备计划已按原顺序完成；下一步只进入 P1 R6 Runbook/事件 Schema，不自动启动 Scheduler、Agent 专属 UI、key、endpoint 或生产发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0 计划与 P1 R6 本地基线已按原顺序完成；下一步只设计 P2 无 key ceremony 工具/清单，不自动启动 Scheduler、Agent 专属 UI、测试/生产 key、endpoint 或发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；生产 endpoint/root/bundle 仍为空 | 当前只完成 P0 计划；P1 先建立 R6 Runbook/最小事件 Schema，R1-R5 外部 authority 分别等待精确授权 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；Cycle 57 已完成 P1 Release Event、证据模板、静态验证器、Runbook 与 E0 tabletop；生产 endpoint/root/bundle 仍为空 | P1 只关闭 R6 本地基线，R1-R6 仍未满足；下一步只设计 P2 ceremony 工具/清单，测试 key 与后续外部 authority 分别等待精确授权 |
 
 ## 开发循环记录
 
@@ -4050,3 +4050,67 @@ Kimi 独立复核：
 - 下一轮只进入 P1：R6 事故响应 Runbook、最小非秘密事件 Schema 和证据模板。任何
   测试/生产 key、外部 staging、真实订阅/BYOK 请求、Apple 签名/公证、Registry
   发布或 cohort 扩大继续等待各自精确授权。
+
+### 循环 57：P1 R6 Release Event 与事故响应本地基线
+
+状态：实现、自主验证与本机 Kimi 独立复核已完成；R1-R6 继续未满足
+
+计划校准：
+
+- 本轮开始先复核
+  [`architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](architecture/PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)
+  的 P0-P8 固定顺序，只执行 P1；
+- 没有修改 Package、Provider 或 Desktop 运行时代码，没有生成测试/生产 key，
+  没有建立外部服务、调用 Provider、消耗 credits、签名/公证或运行真实 canary；
+- P1 只关闭 R6 的本地 Schema/Runbook/tabletop 子项，不把 E0 文档演练写成 E1/E2
+  技术演练，也不把本地验证写成 staging、candidate 或 release。
+
+已经实现：
+
+1. [`architecture/RELEASE_EVENT_SCHEMA_V1.md`](architecture/RELEASE_EVENT_SCHEMA_V1.md)
+   与 `schemas/agentmesh360-release-event-v1.schema.json` 定义严格的非秘密
+   Release Event v1；
+2. `tools/release-evidence/validate-release-evidence.mjs` 提供无依赖 CLI，固定
+   1 MiB event/证据单文件、2,000 事件、16 文件与 8 MiB 总量边界；
+3. JSONL、01-05 JSON、00/06/07 Markdown 必须绑定同一 Release 身份；重复 JSON
+   object key、跨 Release/version、乱序、非法 UTC、非 canonical SemVer、symlink、
+   非 UTF-8、未知/缺失/超限文件全部失败关闭；
+4. JSON key/value 与 Markdown 扫描 URL、电子邮件、Bearer/Vault/JWT/Provider
+   sentinel、PEM、POSIX/Windows 绝对路径；CLI 的 fs 错误不输出绝对路径、内容或
+   堆栈；
+5. `docs/templates/release-evidence-v1/` 提供默认 `blocked` / `NO_GO` 的九文件模板，
+   验证通过只证明结构与已知敏感内容检查，不证明发布证据真实；
+6. [`operations/RELEASE_INCIDENT_RESPONSE_RUNBOOK_V1.md`](operations/RELEASE_INCIDENT_RESPONSE_RUNBOOK_V1.md)
+   覆盖 Registry 异文、Publisher/Root compromise、最低版本锁死、证据泄漏与
+   BYOK/订阅失控；
+7. `operations/tabletops/2026-07-28-p1-release-integrity-tabletop.md` 完成一次无
+   key、无外部资源的 E0 决策演练，保留真实已发生的 UTC 窗口和两条最小事件。
+
+自主验证：
+
+- `node --test tools/release-evidence/validate-release-evidence.test.mjs`：18/18 通过；
+- 两个 MJS `node --check` 通过；
+- 完整模板目录和 tabletop JSONL 分别通过 CLI 验证；
+- 8 个 JSON/JSONL 可解析，四份 P1 Markdown 相对链接均存在；
+- `git diff --check` 通过，仓库根 `target/` 不存在；
+- 测试中的 URL、credential、路径与 PEM 仅为 synthetic sentinel，本轮未读取或
+  保存真实秘密。
+
+Kimi 独立复核：
+
+- Kimi CLI session `session_0b7c8012-f3fb-4f08-b4d0-d520b79605ec` 只读检查完整
+  diff、正式计划、Schema、验证器、测试、模板、Runbook 与 tabletop，并独立执行
+  Node/CLI/diff 检查；
+- 首轮发现目录未跨文件绑定 Release 身份的 1 Medium，以及 fs 错误路径泄漏、
+  路径扫描、JSON key、重复 JSON key、未来 tabletop 时间的 5 Low；
+- 全部修复并增加回归后，同一 session 复核 Blocker/High/Medium/Low 全零并 PASS；
+  Kimi 没有运行 Cargo/npm/Electron、创建 `target`、读取 Keychain/Provider 或修改
+  工作区。
+
+计划复盘与下一轮：
+
+- P1 交付物与原计划完全一致，没有扩展到新 Agent、Provider、Scheduler、Subagent、
+  Agent 专属 UI 或生产发布；
+- R6 仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本和官方安装器恢复；
+- 下一轮按序进入 P2，但先只实现不生成 key 的 ceremony 工具与清单；临时测试 key
+  生成、轮换和吊销演练必须等待精确批准卡，生产 key 另行批准。

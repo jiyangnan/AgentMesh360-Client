@@ -3,16 +3,18 @@
 状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
 安全只读工具活动、Workspace Artifact、通用 Project State、Harness 后台活动与
 Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也已完成自主验证与
-本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划；所有生产
-发布能力保持关闭
+本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划，Cycle 57
+已关闭 P1 R6 本地基线；R1-R6 与所有生产发布能力仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
 1. 按既定产品蓝图，客户端下一项应开发什么；
 2. 哪些条件全部满足后，才可以单独决定是否启用生产 Agent Package 与桌面分发。
 
-Cycle 56 仍只审计和排定顺序，不生成生产 Root/Publisher key，不配置生产 endpoint，
-不上传 Artifact，不发布 Registry，不签名或公证桌面安装包，也不写用户真实宿主目录。
+Cycle 56 只审计和排定顺序；Cycle 57 只新增 Release Event、证据模板、静态验证器、
+事故 Runbook 与 E0 tabletop。两轮都没有生成生产 Root/Publisher key，不配置生产
+endpoint，不上传 Artifact，不发布 Registry，不签名或公证桌面安装包，也不写用户
+真实宿主目录。
 R1-R6 的可执行工作包、三种 canary 与证据边界见
 [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
 
@@ -164,7 +166,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
-| R6 可观测与响应 | 共同 | 未满足 | 不含秘密和用户内容的发布审计；版本撤回、密钥吊销、客户端最低版本与事故响应 Runbook |
+| R6 可观测与响应 | 共同 | 未满足（P1 本地基线已完成） | Release Event/证据模板/静态扫描/Runbook/E0 tabletop 已有；仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本与官方安装器恢复 |
 
 ## 5. 生产发布顺序约束
 
@@ -208,11 +210,11 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产准备计划（Cycle 56 已完成）**：已经拆分 E0 本地演练、
+6. **桌面与 Package 生产准备计划（Cycle 56 P0、Cycle 57 P1 已完成）**：已经拆分 E0 本地演练、
    E1 隔离 staging、E2 封闭生产候选与 E3 正式生产，并区分 Package、Desktop 和
-   Combined canary；下一步只能进入 P1 的 R6 Runbook/最小事件 Schema 独立切片。
-   测试/生产 key、外部服务、真实订阅/BYOK canary、签名、公证和 cohort 仍各自等待
-   精确授权。
+   Combined canary；P1 已建立 R6 Runbook、最小事件 Schema、证据模板、静态扫描和
+   E0 tabletop。下一步只进入 P2 的 ceremony 工具/清单设计；生成测试/生产 key、
+   外部服务、真实订阅/BYOK canary、签名、公证和 cohort 仍各自等待精确授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -391,3 +393,17 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   Provider，最终 Blocker/High/Medium/Low 全零并 PASS；
 - 完整结构化计划见
   [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
+
+## 16. 循环 57 P1 R6 本地基线检查点
+
+- 新增严格 Release Event v1 Schema 和无依赖 Node 验证器；目录只接受九个固定文件，
+  跨 JSONL、01-05 JSON 与 00/06/07 Markdown 绑定同一 Release 身份；
+- 验证器拒绝重复 JSON key、非法/乱序/跨 Release 事件、symlink、未知/缺失/超限/
+  非 UTF-8 文件，以及 URL、绝对路径、秘密字段和值；所有 CLI 错误保持路径脱敏；
+- 新增默认 `blocked` / `NO_GO` 证据模板、发布事故 Runbook 和一次 E0
+  release-integrity tabletop；
+- 主 Agent Node/CLI/文档/JSON/diff/`target` 检查全部通过；Kimi session
+  `session_0b7c8012-f3fb-4f08-b4d0-d520b79605ec` 首轮 1 Medium / 5 Low 全部修复，
+  复核 Blocker/High/Medium/Low 全零并 PASS；
+- P1 只关闭 R6 本地基线，R1-R6 仍未满足。下一步是 P2 无 key ceremony
+  工具/清单；任何临时测试 key 生成和轮换/吊销演练继续等待精确批准卡。

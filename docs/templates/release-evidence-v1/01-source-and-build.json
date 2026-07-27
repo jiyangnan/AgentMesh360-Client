@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "rel_template",
+  "publicVersion": "0.0.0-template",
+  "sourceRevision": "REPLACE_ME",
+  "buildRevision": "REPLACE_ME",
+  "toolchainRevision": "REPLACE_ME",
+  "artifactSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "releaseManifestSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "reproducibleBuilds": 0,
+  "outcome": "blocked"
+}

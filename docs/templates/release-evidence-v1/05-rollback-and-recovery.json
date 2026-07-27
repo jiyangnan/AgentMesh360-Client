@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "rel_template",
+  "publicVersion": "0.0.0-template",
+  "rollbackTarget": "REPLACE_ME",
+  "rollbackExecuted": false,
+  "lastKnownGoodRecovered": false,
+  "durableStateVerified": false,
+  "recoveryReceiptId": "rcpt_template0003",
+  "outcome": "blocked"
+}

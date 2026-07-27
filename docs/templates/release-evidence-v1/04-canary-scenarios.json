@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "rel_template",
+  "publicVersion": "0.0.0-template",
+  "environment": "e0",
+  "requestLimit": 0,
+  "creditLimit": 0,
+  "costLimit": 0,
+  "scenarios": [
+    {
+      "scenarioId": "template-not-run",
+      "outcome": "blocked",
+      "errorCode": "TEMPLATE_NOT_RUN"
+    }
+  ],
+  "outcome": "blocked"
+}

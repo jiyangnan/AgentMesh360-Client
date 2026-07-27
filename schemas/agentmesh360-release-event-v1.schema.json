@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/release-event-v1.json",
+  "title": "AgentMesh360 Release Event v1",
+  "description": "Non-secret, content-free event envelope for release readiness, canary, withdrawal, and incident evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "releaseId",
+    "publicVersion",
+    "environment",
+    "stage",
+    "gate",
+    "eventType",
+    "outcome",
+    "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "eventId": {
+      "type": "string",
+      "pattern": "^evt_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "releaseId": {
+      "type": "string",
+      "pattern": "^rel_[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+    },
+    "publicVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["e0", "e1", "e2", "e3"]
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "rehearsal_ready",
+        "rehearsal_passed",
+        "canary_authorized",
+        "canary_running",
+        "canary_passed",
+        "production_candidate",
+        "released",
+        "withdrawn",
+        "aborted"
+      ]
+    },
+    "gate": {
+      "type": "string",
+      "enum": ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "go_no_go"]
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "scope_approved",
+        "tabletop_started",
+        "tabletop_completed",
+        "technical_drill_started",
+        "technical_drill_completed",
+        "build_started",
+        "build_completed",
+        "signing_requested",
+        "signing_completed",
+        "content_uploaded",
+        "registry_published",
+        "registry_frozen",
+        "release_withdrawn",
+        "publisher_revoked",
+        "root_revoked",
+        "minimum_version_changed",
+        "canary_authorized",
+        "canary_started",
+        "canary_scenario_completed",
+        "canary_aborted",
+        "canary_completed",
+        "rollback_started",
+        "rollback_completed",
+        "incident_declared",
+        "incident_updated",
+        "incident_resolved",
+        "cohort_expansion_approved",
+        "go_decision_recorded"
+      ]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["started", "succeeded", "failed", "blocked", "aborted", "withdrawn"]
+    },
+    "occurredAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "packageId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "agentId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "registryRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "buildRevision": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{6,99}$"
+    },
+    "deviceAlias": {
+      "type": "string",
+      "pattern": "^device-[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "receiptId": {
+      "type": "string",
+      "pattern": "^rcpt_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "errorCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+    }
+  }
+}
