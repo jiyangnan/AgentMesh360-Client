@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     'conversation:send',
     String(text || '').slice(0, 16_001),
   ),
+  respondConversationPermission: (interactionId, optionId = null) => ipcRenderer.invoke(
+    'conversation:respond-permission',
+    String(interactionId || '').slice(0, 100),
+    optionId === null ? null : String(optionId || '').slice(0, 100),
+  ),
   closeAgentConversation: () => ipcRenderer.invoke('conversation:close'),
   getProviderSnapshot: () => ipcRenderer.invoke('provider:get-snapshot'),
   createProviderProfile: ({ profile, apiKey }) => ipcRenderer.invoke('provider:create-profile', {

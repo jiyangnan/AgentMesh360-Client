@@ -47,6 +47,7 @@ class AcpHostClient extends EventEmitter {
     requestTimeoutMs = 20000,
     sessionLoadTimeoutMs = 120000,
     sessionPromptTimeoutMs = 30 * 60 * 1000,
+    permissionRequestTimeoutMs = 5 * 60 * 1000,
   } = {}) {
     super();
     this.runtime = resolveHostRuntime({ env });
@@ -60,8 +61,10 @@ class AcpHostClient extends EventEmitter {
     this.requestTimeoutMs = requestTimeoutMs;
     this.sessionLoadTimeoutMs = sessionLoadTimeoutMs;
     this.sessionPromptTimeoutMs = sessionPromptTimeoutMs;
+    this.permissionRequestTimeoutMs = permissionRequestTimeoutMs;
     this.child = null;
     this.pending = new Map();
+    this.incomingPermissions = new Map();
     this.nextId = 1;
     this.startPromise = null;
   }
@@ -247,6 +250,7 @@ class AcpHostClient extends EventEmitter {
 
   async stop() {
     const child = this.child;
+    this.#cancelIncomingPermissions();
     this.child = null;
     this.startPromise = null;
     this.#rejectPending(new HostRequestError('host_stopped', 'Agent Host 已停止'));
@@ -258,6 +262,40 @@ class AcpHostClient extends EventEmitter {
 
   getRuntimeStatus() {
     return publicHostRuntime(this.runtime, Boolean(this.child));
+  }
+
+  respondPermission(requestId, optionId = null) {
+    return this.#resolvePermission(
+      requestId,
+      optionId,
+      optionId === null ? 'cancelled' : 'selected',
+    );
+  }
+
+  #resolvePermission(requestId, optionId, resolution) {
+    const pending = this.incomingPermissions.get(requestId);
+    if (!pending) throw new Error('权限请求已失效');
+    if (
+      optionId !== null
+      && !pending.options.some((option) => option.optionId === optionId)
+    ) {
+      throw new Error('权限选项无效');
+    }
+    this.incomingPermissions.delete(requestId);
+    clearTimeout(pending.timeout);
+    this.#write({
+      jsonrpc: '2.0',
+      id: requestId,
+      result: {
+        outcome: optionId === null
+          ? { outcome: 'cancelled' }
+          : { outcome: 'selected', optionId },
+      },
+    });
+    this.emit('permission-resolved', {
+      requestId,
+      outcome: resolution,
+    });
   }
 
   async #spawnAndInitialize() {
@@ -288,6 +326,7 @@ class AcpHostClient extends EventEmitter {
   #handleExit(child, error) {
     if (this.child !== child) return;
     this.child = null;
+    this.#clearIncomingPermissions();
     this.#rejectPending(error);
     this.emit('exit', error);
   }
@@ -312,6 +351,10 @@ class AcpHostClient extends EventEmitter {
       return;
     }
     if (Object.hasOwn(message, 'id') && message.method) {
+      if (message.method === 'session/request_permission') {
+        this.#handlePermissionRequest(message);
+        return;
+      }
       this.#write({
         jsonrpc: '2.0',
         id: message.id,
@@ -326,6 +369,62 @@ class AcpHostClient extends EventEmitter {
         this.emit('reconnected');
       }
       this.emit('notification', message);
+    }
+  }
+
+  #handlePermissionRequest(message) {
+    const params = message.params;
+    const options = Array.isArray(params?.options) ? params.options : [];
+    if (
+      (typeof message.id !== 'string' && typeof message.id !== 'number')
+      || typeof params?.sessionId !== 'string'
+      || !params.sessionId
+      || !params.toolCall
+      || typeof params.toolCall !== 'object'
+      || !options.length
+      || options.some((option) => (
+        !option
+        || typeof option !== 'object'
+        || typeof option.optionId !== 'string'
+        || !option.optionId
+      ))
+      || this.incomingPermissions.has(message.id)
+    ) {
+      this.#write({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32602, message: 'Invalid permission request' },
+      });
+      return;
+    }
+    const timeout = setTimeout(() => {
+      if (!this.incomingPermissions.has(message.id)) return;
+      try {
+        this.#resolvePermission(message.id, null, 'expired');
+      } catch {
+        this.#dropIncomingPermission(message.id);
+      }
+    }, this.permissionRequestTimeoutMs);
+    this.incomingPermissions.set(message.id, {
+      options: options.map((option) => ({ optionId: option.optionId })),
+      timeout,
+    });
+    if (this.listenerCount('permission-request') === 0) {
+      this.respondPermission(message.id, null);
+      return;
+    }
+    try {
+      this.emit('permission-request', {
+        requestId: message.id,
+        sessionId: params.sessionId,
+        toolCall: params.toolCall,
+        options,
+        _meta: params._meta,
+      });
+    } catch {
+      if (this.incomingPermissions.has(message.id)) {
+        this.respondPermission(message.id, null);
+      }
     }
   }
 
@@ -375,6 +474,33 @@ class AcpHostClient extends EventEmitter {
       pending.reject(error);
     }
     this.pending.clear();
+  }
+
+  #cancelIncomingPermissions() {
+    for (const requestId of [...this.incomingPermissions.keys()]) {
+      try {
+        this.respondPermission(requestId, null);
+      } catch {
+        this.#dropIncomingPermission(requestId);
+      }
+    }
+  }
+
+  #clearIncomingPermissions() {
+    for (const requestId of [...this.incomingPermissions.keys()]) {
+      this.#dropIncomingPermission(requestId);
+    }
+  }
+
+  #dropIncomingPermission(requestId) {
+    const pending = this.incomingPermissions.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    this.incomingPermissions.delete(requestId);
+    this.emit('permission-resolved', {
+      requestId,
+      outcome: 'transport_closed',
+    });
   }
 }
 

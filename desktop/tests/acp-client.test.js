@@ -470,6 +470,295 @@ test('ACP session methods keep Main Session authority private and forward stream
   await client.stop();
 });
 
+test('ACP client handles standard permission reverse requests without exposing arbitrary responses', async () => {
+  const received = [];
+  let child;
+  const spawnImpl = () => {
+    child = fakeChild((request) => {
+      received.push(request);
+      if (request.method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} };
+      if (request.method === 'session/prompt') {
+        child.stdout.write(`${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'host-permission-1',
+          method: 'session/request_permission',
+          params: {
+            sessionId: 'private-main-session',
+            toolCall: {
+              toolCallId: 'private-tool-call',
+              title: 'Run the verified deploy command',
+              kind: 'execute',
+              rawInput: { command: 'private command' },
+              locations: [{ path: '/private/workspace' }],
+              _meta: { secret: 'private metadata' },
+            },
+            options: [
+              { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+              { optionId: 'reject-once', name: 'Reject once', kind: 'reject_once' },
+            ],
+            _meta: { secret: 'private request metadata' },
+          },
+        })}\n`);
+        return { stopReason: 'end_turn' };
+      }
+      return {};
+    });
+    return child;
+  };
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+  const requests = [];
+  client.on('permission-request', (request) => {
+    requests.push(request);
+    client.respondPermission(request.requestId, 'allow-once');
+  });
+
+  const result = await client.promptSession({
+    sessionId: 'private-main-session',
+    text: 'deploy',
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(result.stopReason, 'end_turn');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].sessionId, 'private-main-session');
+  assert.deepEqual(received.find((message) => message.id === 'host-permission-1'), {
+    jsonrpc: '2.0',
+    id: 'host-permission-1',
+    result: {
+      outcome: {
+        outcome: 'selected',
+        optionId: 'allow-once',
+      },
+    },
+  });
+  assert.throws(
+    () => client.respondPermission('host-permission-1', 'not-offered'),
+    /权限请求已失效/,
+  );
+  await client.stop();
+});
+
+test('ACP client cancels unattended permission requests and rejects unsupported reverse methods', async () => {
+  const received = [];
+  let child;
+  const spawnImpl = () => {
+    child = fakeChild((request) => {
+      received.push(request);
+      if (request.method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} };
+      return {};
+    });
+    return child;
+  };
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+  await client.start();
+
+  child.stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 'host-permission-unattended',
+    method: 'session/request_permission',
+    params: {
+      sessionId: 'private-main-session',
+      toolCall: { toolCallId: 'call-1', title: 'Do work' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    },
+  })}\n`);
+  child.stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 'host-unknown-method',
+    method: 'x.ai/ask_user_question',
+    params: {},
+  })}\n`);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(received.find((message) => message.id === 'host-permission-unattended'), {
+    jsonrpc: '2.0',
+    id: 'host-permission-unattended',
+    result: {
+      outcome: { outcome: 'cancelled' },
+    },
+  });
+  assert.deepEqual(received.find((message) => message.id === 'host-unknown-method'), {
+    jsonrpc: '2.0',
+    id: 'host-unknown-method',
+    error: {
+      code: -32601,
+      message: 'Desktop client method not implemented',
+    },
+  });
+  await client.stop();
+});
+
+test('ACP client expires an unanswered permission request as cancelled', async () => {
+  const received = [];
+  let child;
+  const spawnImpl = () => {
+    child = fakeChild((request) => {
+      received.push(request);
+      if (request.method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} };
+      return {};
+    });
+    return child;
+  };
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+    permissionRequestTimeoutMs: 5,
+  });
+  const resolved = [];
+  client.on('permission-request', () => {});
+  client.on('permission-resolved', (event) => resolved.push(event));
+  await client.start();
+
+  child.stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 'host-permission-timeout',
+    method: 'session/request_permission',
+    params: {
+      sessionId: 'private-main-session',
+      toolCall: { toolCallId: 'call-timeout', title: 'Do time-bounded work' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    },
+  })}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.deepEqual(received.find((message) => message.id === 'host-permission-timeout'), {
+    jsonrpc: '2.0',
+    id: 'host-permission-timeout',
+    result: {
+      outcome: { outcome: 'cancelled' },
+    },
+  });
+  assert.deepEqual(resolved, [{
+    requestId: 'host-permission-timeout',
+    outcome: 'expired',
+  }]);
+  await client.stop();
+});
+
+test('ACP client cancels permissions before stop and reports transport closure on exit', async () => {
+  const first = permissionLifecycleFixture();
+  first.client.on('permission-request', () => {});
+  await first.client.start();
+  first.emitPermission('permission-before-stop');
+  await new Promise((resolve) => setImmediate(resolve));
+  await first.client.stop();
+  assert.deepEqual(first.received.find((message) => message.id === 'permission-before-stop'), {
+    jsonrpc: '2.0',
+    id: 'permission-before-stop',
+    result: { outcome: { outcome: 'cancelled' } },
+  });
+
+  const second = permissionLifecycleFixture();
+  const resolved = [];
+  second.client.on('permission-request', () => {});
+  second.client.on('permission-resolved', (event) => resolved.push(event));
+  await second.client.start();
+  second.emitPermission('permission-before-exit');
+  await new Promise((resolve) => setImmediate(resolve));
+  second.child.emit('exit', 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(resolved, [{
+    requestId: 'permission-before-exit',
+    outcome: 'transport_closed',
+  }]);
+  assert.equal(
+    second.received.some((message) => message.id === 'permission-before-exit'),
+    false,
+  );
+});
+
+test('ACP client rejects malformed and duplicate permission requests', async () => {
+  const fixture = permissionLifecycleFixture();
+  fixture.client.on('permission-request', () => {});
+  await fixture.client.start();
+  fixture.emitPermission('duplicate-permission');
+  fixture.emitPermission('duplicate-permission');
+  fixture.child.stdout.write(`${JSON.stringify({
+    jsonrpc: '2.0',
+    id: 'malformed-permission',
+    method: 'session/request_permission',
+    params: {
+      sessionId: 'private-main-session',
+      toolCall: { toolCallId: 'call-malformed', title: 'Malformed work' },
+      options: [],
+    },
+  })}\n`);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(
+    fixture.received.find((message) => (
+      message.id === 'duplicate-permission'
+      && message.error
+    )),
+    {
+      jsonrpc: '2.0',
+      id: 'duplicate-permission',
+      error: { code: -32602, message: 'Invalid permission request' },
+    },
+  );
+  assert.deepEqual(
+    fixture.received.find((message) => message.id === 'malformed-permission'),
+    {
+      jsonrpc: '2.0',
+      id: 'malformed-permission',
+      error: { code: -32602, message: 'Invalid permission request' },
+    },
+  );
+  await fixture.client.stop();
+});
+
+function permissionLifecycleFixture() {
+  const received = [];
+  let child;
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    requestTimeoutMs: 500,
+    spawnImpl: () => {
+      child = fakeChild((request) => {
+        received.push(request);
+        if (request.method === 'initialize') {
+          return { protocolVersion: 1, agentCapabilities: {} };
+        }
+        return {};
+      });
+      return child;
+    },
+  });
+  return {
+    client,
+    received,
+    get child() { return child; },
+    emitPermission(id) {
+      child.stdout.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        method: 'session/request_permission',
+        params: {
+          sessionId: 'private-main-session',
+          toolCall: { toolCallId: `call-${id}`, title: 'Lifecycle work' },
+          options: [
+            { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'reject-once', name: 'Reject once', kind: 'reject_once' },
+          ],
+        },
+      })}\n`);
+    },
+  };
+}
+
 function fakeChild(handler) {
   const child = new EventEmitter();
   child.stdout = new PassThrough();

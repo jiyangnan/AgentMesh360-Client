@@ -7,6 +7,22 @@ const MAX_PROMPT_CHARS = 16_000;
 const MAX_CHUNK_CHARS = 32_000;
 const MAX_PUBLIC_MESSAGES = 200;
 const MAX_PUBLIC_TRANSCRIPT_CHARS = 200_000;
+const MAX_PERMISSION_TITLE_CHARS = 300;
+const MAX_PERMISSION_OPTION_CHARS = 160;
+const MAX_PERMISSION_OPTION_ID_CHARS = 200;
+const SAFE_PERMISSION_OPTIONS = new Map([
+  ['allow-once', Object.freeze({ kind: 'allow_once', decision: 'allow' })],
+  ['reject-once', Object.freeze({ kind: 'reject_once', decision: 'reject' })],
+]);
+const SAFE_TOOL_KINDS = new Set([
+  'read',
+  'edit',
+  'delete',
+  'move',
+  'search',
+  'execute',
+  'fetch',
+]);
 const SESSION_UPDATE_METHODS = new Set([
   'session/update',
   'x.ai/session/update',
@@ -33,13 +49,21 @@ class AgentConversationController {
     this.transcriptTruncated = false;
     this.openPromise = null;
     this.openAgentId = null;
+    this.permissionInteraction = null;
+    this.interactionCounter = 0;
     this.snapshot = Object.freeze({ phase: 'idle' });
     this.handleIdentity = (state) => this.#handleIdentity(state);
     this.handleNotification = (message) => this.#handleNotification(message);
     this.handleReconnect = () => this.#handleReconnect();
+    this.handleHostExit = () => this.#handleHostExit();
+    this.handlePermissionRequest = (request) => this.#handlePermissionRequest(request);
+    this.handlePermissionResolved = (event) => this.#handlePermissionResolved(event);
     this.unsubscribeIdentity = this.identity.subscribe(this.handleIdentity);
     this.host.on?.('notification', this.handleNotification);
     this.host.on?.('reconnected', this.handleReconnect);
+    this.host.on?.('exit', this.handleHostExit);
+    this.host.on?.('permission-request', this.handlePermissionRequest);
+    this.host.on?.('permission-resolved', this.handlePermissionResolved);
   }
 
   getSnapshot() {
@@ -91,6 +115,7 @@ class AgentConversationController {
         text,
       });
       if (this.authority !== authority) return this.snapshot;
+      this.#cancelPermission();
       this.#publish({
         ...this.#conversationBase(authority),
         phase: 'ready',
@@ -100,6 +125,7 @@ class AgentConversationController {
       });
     } catch (error) {
       if (this.authority !== authority) return this.snapshot;
+      this.#cancelPermission();
       if (error?.code === 'host_timeout') {
         this.authority = null;
         this.#publish({
@@ -122,6 +148,43 @@ class AgentConversationController {
     return this.snapshot;
   }
 
+  respondToPermission(interactionId, optionId = null) {
+    const interaction = this.permissionInteraction;
+    if (
+      !interaction
+      || interaction.public.interactionId !== interactionId
+      || this.authority !== interaction.authority
+    ) {
+      throw new Error('权限请求已失效');
+    }
+    this.#requireReadyAccount(interaction.authority.accountId);
+    const privateOptionId = optionId === null
+      ? null
+      : interaction.options.get(optionId);
+    if (optionId !== null && !privateOptionId) throw new Error('权限选项无效');
+    this.permissionInteraction = null;
+    try {
+      this.host.respondPermission(interaction.hostRequestId, privateOptionId);
+    } catch {
+      this.#publish({
+        ...this.#conversationBase(interaction.authority),
+        phase: this.snapshot.phase,
+        streaming: this.snapshot.streaming === true,
+        error: '权限请求已失效，请让 Agent 重新发起。',
+        stopReason: null,
+      });
+      throw new Error('权限请求已失效');
+    }
+    this.#publish({
+      ...this.#conversationBase(interaction.authority),
+      phase: this.snapshot.phase,
+      streaming: this.snapshot.streaming === true,
+      error: null,
+      stopReason: null,
+    });
+    return this.snapshot;
+  }
+
   close() {
     this.#reset();
     return this.snapshot;
@@ -131,7 +194,11 @@ class AgentConversationController {
     this.unsubscribeIdentity?.();
     this.host.off?.('notification', this.handleNotification);
     this.host.off?.('reconnected', this.handleReconnect);
+    this.host.off?.('exit', this.handleHostExit);
+    this.host.off?.('permission-request', this.handlePermissionRequest);
+    this.host.off?.('permission-resolved', this.handlePermissionResolved);
     this.listeners.clear();
+    this.#cancelPermission();
     this.authority = null;
   }
 
@@ -216,6 +283,7 @@ class AgentConversationController {
   #handleReconnect() {
     const previous = this.authority;
     if (!previous) return;
+    this.#cancelPermission();
     this.authority = null;
     this.#publish({
       phase: 'error',
@@ -225,6 +293,75 @@ class AgentConversationController {
       streaming: false,
       transcriptTruncated: this.transcriptTruncated,
       error: '后台连接已恢复，请重新打开对话以继续。',
+    });
+  }
+
+  #handleHostExit() {
+    const previous = this.authority;
+    if (!previous) return;
+    this.#cancelPermission();
+    this.authority = null;
+    this.#publish({
+      phase: 'error',
+      agentId: previous.agentId,
+      displayName: previous.displayName,
+      messages: this.#publicMessages(),
+      streaming: false,
+      transcriptTruncated: this.transcriptTruncated,
+      error: 'Agent Host 已断开，请重新打开对话以继续。',
+    });
+  }
+
+  #handlePermissionRequest(request) {
+    const authority = this.authority;
+    if (
+      !authority
+      || request?.sessionId !== authority.sessionId
+      || this.identity.getState()?.phase !== 'ready'
+      || this.identity.getState()?.access?.canEnterClient !== true
+    ) {
+      this.#cancelHostPermission(request?.requestId);
+      return;
+    }
+    if (this.permissionInteraction) {
+      this.#cancelHostPermission(request?.requestId);
+      return;
+    }
+    const projected = projectPermissionRequest(request, ++this.interactionCounter);
+    if (!projected) {
+      this.#cancelHostPermission(request?.requestId);
+      return;
+    }
+    this.permissionInteraction = {
+      authority,
+      hostRequestId: request.requestId,
+      public: projected.public,
+      options: projected.options,
+    };
+    this.#publish({
+      ...this.#conversationBase(authority),
+      phase: this.snapshot.phase,
+      streaming: this.snapshot.streaming === true,
+      error: null,
+      stopReason: null,
+    });
+  }
+
+  #handlePermissionResolved(event) {
+    const interaction = this.permissionInteraction;
+    if (!interaction || interaction.hostRequestId !== event?.requestId) return;
+    this.permissionInteraction = null;
+    if (this.authority !== interaction.authority) return;
+    this.#publish({
+      ...this.#conversationBase(interaction.authority),
+      phase: this.snapshot.phase,
+      streaming: this.snapshot.streaming === true,
+      error: event?.outcome === 'transport_closed'
+        ? '权限请求已失效，请让 Agent 重新发起。'
+        : event?.outcome === 'expired'
+          ? '权限确认已超时，请让 Agent 重新发起。'
+          : null,
+      stopReason: null,
     });
   }
 
@@ -290,6 +427,9 @@ class AgentConversationController {
       displayName: authority.displayName,
       messages: this.#publicMessages(),
       transcriptTruncated: this.transcriptTruncated,
+      ...(this.permissionInteraction?.authority === authority
+        ? { interaction: { ...this.permissionInteraction.public } }
+        : {}),
     };
   }
 
@@ -311,6 +451,7 @@ class AgentConversationController {
   }
 
   #reset() {
+    this.#cancelPermission();
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;
@@ -318,10 +459,93 @@ class AgentConversationController {
     this.#publish({ phase: 'idle' });
   }
 
+  #cancelPermission() {
+    const interaction = this.permissionInteraction;
+    if (!interaction) return;
+    this.permissionInteraction = null;
+    this.#cancelHostPermission(interaction.hostRequestId);
+  }
+
+  #cancelHostPermission(requestId) {
+    if (requestId === undefined || requestId === null) return;
+    try {
+      this.host.respondPermission(requestId, null);
+    } catch {
+      // The Host may already have closed or expired the reverse request.
+    }
+  }
+
   #publish(value) {
     this.snapshot = deepFreeze(JSON.parse(JSON.stringify(value)));
     for (const listener of this.listeners) listener(this.snapshot);
   }
+}
+
+function projectPermissionRequest(request, interactionCounter) {
+  if (
+    (typeof request?.requestId !== 'string' && typeof request?.requestId !== 'number')
+    || !request.toolCall
+    || typeof request.toolCall !== 'object'
+    || !Array.isArray(request.options)
+  ) {
+    return null;
+  }
+  const title = safePermissionText(
+    request.toolCall.title,
+    MAX_PERMISSION_TITLE_CHARS,
+    'Agent 请求执行一项操作',
+  );
+  const toolKind = SAFE_TOOL_KINDS.has(request.toolCall.kind)
+    ? request.toolCall.kind
+    : 'other';
+  const options = new Map();
+  const publicOptions = [];
+  const privateIds = new Set();
+  for (const option of request.options) {
+    const supported = SAFE_PERMISSION_OPTIONS.get(option?.optionId);
+    if (
+      !option
+      || typeof option.optionId !== 'string'
+      || !option.optionId
+      || option.optionId.length > MAX_PERMISSION_OPTION_ID_CHARS
+      || !supported
+      || option.kind !== supported.kind
+      || privateIds.has(option.optionId)
+    ) {
+      continue;
+    }
+    privateIds.add(option.optionId);
+    const publicOptionId = `option-${publicOptions.length + 1}`;
+    const label = safePermissionText(
+      option.name,
+      MAX_PERMISSION_OPTION_CHARS,
+      supported.decision === 'allow' ? '仅本次允许' : '本次拒绝',
+    );
+    publicOptions.push({
+      optionId: publicOptionId,
+      label,
+      decision: supported.decision,
+    });
+    options.set(publicOptionId, option.optionId);
+  }
+  if (!publicOptions.length) return null;
+  return {
+    public: {
+      interactionId: `permission-${interactionCounter}`,
+      kind: 'permission',
+      title,
+      toolKind,
+      options: publicOptions,
+    },
+    options,
+  };
+}
+
+function safePermissionText(value, maxChars, fallback) {
+  const text = typeof value === 'string'
+    ? value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim()
+    : '';
+  return (text || fallback).slice(0, maxChars);
 }
 
 function validateAgentId(value) {

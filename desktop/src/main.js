@@ -162,6 +162,9 @@ function registerIpc(identity, providers, packages, conversationController, logi
   ipcMain.handle('conversation:send', (_event, text) => {
     return conversationController.send(text);
   });
+  ipcMain.handle('conversation:respond-permission', (_event, interactionId, optionId) => {
+    return conversationController.respondToPermission(interactionId, optionId);
+  });
   ipcMain.handle('conversation:close', () => conversationController.close());
   ipcMain.handle('provider:get-snapshot', () => providers.getSnapshot());
   ipcMain.handle('provider:create-profile', (_event, { profile, apiKey } = {}) => {

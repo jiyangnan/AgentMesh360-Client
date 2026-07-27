@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const opens = [];
 const prompts = [];
+const permissionResponses = [];
 let currentConversation = { phase: 'idle' };
 
 app.whenReady().then(async () => {
@@ -29,6 +30,13 @@ app.whenReady().then(async () => {
       { id: 'message-3', role: 'user', text },
       { id: 'message-4', role: 'assistant', text: '已继续分析。' },
     ]);
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  ipcMain.handle('conversation:respond-permission', (event, interactionId, optionId) => {
+    permissionResponses.push({ interactionId, optionId });
+    currentConversation = { ...currentConversation };
+    delete currentConversation.interaction;
     event.sender.send('conversation:state', currentConversation);
     return currentConversation;
   });
@@ -99,9 +107,11 @@ app.whenReady().then(async () => {
   const openedDom = await window.webContents.executeJavaScript(`({
     body: document.body.innerText,
     messages: document.querySelectorAll('.conversation-message').length,
+    emptyGatesDisplay: getComputedStyle(document.querySelector('.conversation-gates')).display,
   })`);
   assert.deepEqual(opens, ['future-agent', 'job-agent']);
   assert.equal(openedDom.messages, 2);
+  assert.equal(openedDom.emptyGatesDisplay, 'none');
   assert.equal(openedDom.body.includes('上次的 job-agent 工作还在吗？'), true);
   assert.equal(openedDom.body.includes('private-session-id'), false);
   assert.equal(openedDom.body.includes('/private/account-7'), false);
@@ -138,6 +148,48 @@ app.whenReady().then(async () => {
     "document.body.innerText.includes('已继续分析。')",
   ));
   assert.deepEqual(prompts, ['继续匹配这份 JD']);
+
+  currentConversation = {
+    ...currentConversation,
+    streaming: true,
+    interaction: {
+      interactionId: 'permission-1',
+      kind: 'permission',
+      title: 'Run the verified deploy command',
+      toolKind: 'execute',
+      options: [
+        { optionId: 'option-1', label: '仅本次允许', decision: 'allow' },
+        { optionId: 'option-2', label: '本次拒绝', decision: 'reject' },
+      ],
+    },
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-permission-option=\"option-1\"]') !== null",
+  ));
+  const permissionDom = await window.webContents.executeJavaScript(`({
+    body: document.body.innerText,
+    optionCount: document.querySelectorAll('[data-permission-option]').length,
+    hasPermanentChoice: document.body.innerText.includes('永久允许'),
+  })`);
+  assert.equal(permissionDom.body.includes('Run the verified deploy command'), true);
+  assert.equal(permissionDom.optionCount, 2);
+  assert.equal(permissionDom.hasPermanentChoice, false);
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const button = document.querySelector('[data-permission-option="option-1"]');
+      button.click();
+      button.click();
+    })()
+  `);
+  await waitFor(() => permissionResponses.length === 1);
+  assert.deepEqual(permissionResponses, [{
+    interactionId: 'permission-1',
+    optionId: 'option-1',
+  }]);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.body.innerText.includes('权限请求已失效')",
+  ), false);
 
   await window.reload();
   await waitFor(() => window.webContents.executeJavaScript(

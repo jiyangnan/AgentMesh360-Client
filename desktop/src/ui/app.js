@@ -30,6 +30,7 @@ let backgroundUi = {
   busy: false,
 };
 let conversationUi = { phase: 'idle' };
+let permissionResponseInFlight = null;
 
 bridge.onState(render);
 bridge.onConversationState((state) => {
@@ -74,6 +75,7 @@ function render(state) {
       busy: false,
     };
     conversationUi = { phase: 'idle' };
+    permissionResponseInFlight = null;
     restoreConversationSnapshot(readyAccountId);
   } else if (['signed_out', 'blocked', 'unavailable'].includes(currentState.phase)) {
     readyAccountId = null;
@@ -87,6 +89,7 @@ function render(state) {
     backgroundUi.snapshot = null;
     backgroundUi.phase = 'idle';
     conversationUi = { phase: 'idle' };
+    permissionResponseInFlight = null;
   }
   switch (currentState.phase) {
     case 'signed_out':
@@ -288,6 +291,12 @@ function conversationView() {
   const sending = conversationUi.streaming === true;
   const displayName = conversationUi.displayName || 'Agent';
   const canReopen = conversationUi.phase === 'error' && conversationUi.agentId;
+  const awaitingPermission = conversationUi.interaction?.kind === 'permission';
+  const gates = `${conversationUi.error ? `
+    <div class="conversation-error" role="alert">
+      <span>${escapeHtml(conversationUi.error)}</span>
+      ${canReopen ? `<button class="ghost" type="button" data-reopen-conversation="${escapeHtml(conversationUi.agentId)}">重新打开</button>` : ''}
+    </div>` : ''}${awaitingPermission ? permissionInteractionView(conversationUi.interaction) : ''}`;
   return `
     <section class="conversation-shell" aria-label="固定 Main Session 对话">
       <header class="conversation-header">
@@ -297,13 +306,9 @@ function conversationView() {
           <h1>${escapeHtml(displayName)}</h1>
           <p>${loading ? '正在由 Host 解析并加载固定主会话…' : '同一账号、同一 Agent、同一个持久主会话'}</p>
         </div>
-        <span class="conversation-state ${sending ? 'working' : ''}">${sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : '已连接'}</span>
+        <span class="conversation-state ${sending ? 'working' : ''}">${awaitingPermission ? '等待你的确认' : sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : '已连接'}</span>
       </header>
-      ${conversationUi.error ? `
-        <div class="conversation-error" role="alert">
-          <span>${escapeHtml(conversationUi.error)}</span>
-          ${canReopen ? `<button class="ghost" type="button" data-reopen-conversation="${escapeHtml(conversationUi.agentId)}">重新打开</button>` : ''}
-        </div>` : ''}
+      <div class="conversation-gates">${gates}</div>
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
         ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
         ${messages.length
@@ -319,6 +324,44 @@ function conversationView() {
         </div>
       </form>
     </section>`;
+}
+
+function permissionInteractionView(interaction) {
+  const options = Array.isArray(interaction?.options) ? interaction.options : [];
+  const responding = interaction?.responding === true;
+  return `
+    <section class="conversation-permission" aria-label="Agent 操作确认">
+      <div class="permission-operation">
+        <span>${escapeHtml(permissionToolKindLabel(interaction?.toolKind))}</span>
+        <div>
+          <p class="eyebrow">One-time Permission</p>
+          <h2>${escapeHtml(interaction?.title || 'Agent 请求执行一项操作')}</h2>
+          <p>请明确选择本次是否执行。客户端不会替你记住允许，也不会自动批准。</p>
+        </div>
+      </div>
+      <div class="conversation-permission-actions">
+        <button class="ghost cancel-conversation-permission" type="button" ${responding ? 'disabled' : ''}>${responding ? '正在提交…' : '暂不执行'}</button>
+        ${options.map((option) => `
+          <button
+            class="${option.decision === 'allow' ? 'secondary' : 'ghost danger-text'} conversation-permission-option"
+            type="button"
+            data-permission-option="${escapeHtml(option.optionId)}"
+            ${responding ? 'disabled' : ''}
+          >${escapeHtml(option.label)}</button>`).join('')}
+      </div>
+    </section>`;
+}
+
+function permissionToolKindLabel(kind) {
+  return {
+    read: '读取',
+    edit: '编辑',
+    delete: '删除',
+    move: '移动',
+    search: '搜索',
+    execute: '执行',
+    fetch: '联网',
+  }[kind] || '操作';
 }
 
 function conversationMessage(message) {
@@ -340,6 +383,14 @@ function wireConversation() {
   document.querySelector('[data-reopen-conversation]')?.addEventListener('click', (event) => {
     openConversation(event.currentTarget.dataset.reopenConversation);
   });
+  document.querySelector('.cancel-conversation-permission')?.addEventListener('click', () => {
+    respondConversationPermission(null);
+  });
+  for (const button of document.querySelectorAll('[data-permission-option]')) {
+    button.addEventListener('click', () => {
+      respondConversationPermission(button.dataset.permissionOption);
+    });
+  }
   const transcript = document.getElementById('conversation-transcript');
   if (transcript) transcript.scrollTop = transcript.scrollHeight;
   const form = document.getElementById('conversation-form');
@@ -360,6 +411,32 @@ function wireConversation() {
     }
     if (currentState.phase === 'ready') renderReady(currentState);
   });
+}
+
+async function respondConversationPermission(optionId) {
+  const interactionId = conversationUi.interaction?.interactionId;
+  if (!interactionId || permissionResponseInFlight) return;
+  permissionResponseInFlight = interactionId;
+  conversationUi = {
+    ...conversationUi,
+    interaction: {
+      ...conversationUi.interaction,
+      responding: true,
+    },
+  };
+  if (currentState.phase === 'ready') renderReady(currentState);
+  try {
+    conversationUi = await bridge.respondConversationPermission(interactionId, optionId);
+  } catch (error) {
+    conversationUi = {
+      ...conversationUi,
+      interaction: undefined,
+      error: publicError(error, '权限请求已失效'),
+    };
+  } finally {
+    if (permissionResponseInFlight === interactionId) permissionResponseInFlight = null;
+  }
+  if (currentState.phase === 'ready') renderReady(currentState);
 }
 
 async function openConversation(agentId) {

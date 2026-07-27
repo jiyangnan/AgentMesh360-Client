@@ -230,6 +230,224 @@ test('conversation projection is bounded while full history remains Host-owned',
   assert.equal(snapshot.messages.at(-1).text.startsWith('259:'), true);
 });
 
+test('conversation projects a one-time permission choice and keeps Host authority private', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let finishPrompt;
+  fixture.host.promptImpl = () => new Promise((resolve) => {
+    finishPrompt = resolve;
+  });
+
+  const sending = fixture.controller.send('执行部署');
+  await new Promise((resolve) => setImmediate(resolve));
+  fixture.host.emit('permission-request', {
+    requestId: 'host-private-request-id',
+    sessionId: 'private-session-id',
+    toolCall: {
+      toolCallId: 'private-tool-call-id',
+      title: 'Run the verified deploy command',
+      kind: 'execute',
+      rawInput: { command: 'rm private-file' },
+      locations: [{ path: '/private/account-7' }],
+      _meta: { apiKey: 'sk-private' },
+    },
+    options: [
+      { optionId: 'enable-always-approve', name: 'Enable global approval', kind: 'allow_once' },
+      { optionId: 'custom-one-time', name: 'Unknown allow-once semantic', kind: 'allow_once' },
+      { optionId: 'allow-once', name: '仅本次允许', kind: 'allow_once' },
+      { optionId: 'allow-always', name: '以后总是允许', kind: 'allow_always' },
+      { optionId: 'reject-once', name: '本次拒绝', kind: 'reject_once' },
+      { optionId: 'reject-always', name: '以后总是拒绝', kind: 'reject_always' },
+    ],
+    _meta: { private: true },
+  });
+
+  const pending = fixture.controller.getSnapshot();
+  assert.equal(pending.phase, 'sending');
+  assert.equal(pending.interaction.kind, 'permission');
+  assert.equal(pending.interaction.title, 'Run the verified deploy command');
+  assert.equal(pending.interaction.toolKind, 'execute');
+  assert.deepEqual(
+    pending.interaction.options.map(({ label, decision }) => ({ label, decision })),
+    [
+      { label: '仅本次允许', decision: 'allow' },
+      { label: '本次拒绝', decision: 'reject' },
+    ],
+  );
+  const serialized = JSON.stringify(pending);
+  for (const forbidden of [
+    'host-private-request-id',
+    'private-session-id',
+    'private-tool-call-id',
+    'enable-always-approve',
+    'custom-one-time',
+    'allow-always',
+    'reject-always',
+    'rm private-file',
+    '/private/account-7',
+    'sk-private',
+    'rawInput',
+    'locations',
+    '_meta',
+  ]) {
+    assert.equal(serialized.includes(forbidden), false);
+  }
+
+  const allowed = pending.interaction.options.find((option) => option.decision === 'allow');
+  const afterDecision = fixture.controller.respondToPermission(
+    pending.interaction.interactionId,
+    allowed.optionId,
+  );
+  assert.equal(afterDecision.interaction, undefined);
+  assert.deepEqual(fixture.host.permissionResponses, [{
+    requestId: 'host-private-request-id',
+    optionId: 'allow-once',
+  }]);
+  finishPrompt({ stopReason: 'end_turn' });
+  await sending;
+});
+
+test('conversation cancels permission when authority changes and rejects stale Renderer choices', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emit('permission-request', {
+    requestId: 'host-private-request-id',
+    sessionId: 'private-session-id',
+    toolCall: {
+      toolCallId: 'private-tool-call-id',
+      title: 'Edit a file',
+      kind: 'edit',
+    },
+    options: [
+      { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'reject-once', name: 'Reject once', kind: 'reject_once' },
+    ],
+  });
+  const interaction = fixture.controller.getSnapshot().interaction;
+  assert.throws(
+    () => fixture.controller.respondToPermission('forged-interaction', interaction.options[0].optionId),
+    /权限请求已失效/,
+  );
+  assert.throws(
+    () => fixture.controller.respondToPermission(interaction.interactionId, 'forged-option'),
+    /权限选项无效/,
+  );
+  assert.deepEqual(fixture.host.permissionResponses, []);
+
+  fixture.identity.publish({ phase: 'blocked', account: { id: 7 } });
+
+  assert.deepEqual(fixture.controller.getSnapshot(), { phase: 'idle' });
+  assert.deepEqual(fixture.host.permissionResponses, [{
+    requestId: 'host-private-request-id',
+    optionId: null,
+  }]);
+  assert.throws(
+    () => fixture.controller.respondToPermission(interaction.interactionId, interaction.options[0].optionId),
+    /权限请求已失效/,
+  );
+});
+
+test('conversation auto-cancels permission requests for another session or without safe options', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+
+  fixture.host.emit('permission-request', {
+    requestId: 'other-session-request',
+    sessionId: 'another-private-session',
+    toolCall: { toolCallId: 'call-other', title: 'Other account action', kind: 'execute' },
+    options: [{ optionId: 'allow-once', name: 'Allow', kind: 'allow_once' }],
+  });
+  fixture.host.emit('permission-request', {
+    requestId: 'persistent-only-request',
+    sessionId: 'private-session-id',
+    toolCall: { toolCallId: 'call-persistent', title: 'Remember forever', kind: 'execute' },
+    options: [{ optionId: 'always-allow', name: 'Always allow', kind: 'allow_always' }],
+  });
+
+  assert.equal(fixture.controller.getSnapshot().interaction, undefined);
+  assert.deepEqual(fixture.host.permissionResponses, [
+    { requestId: 'other-session-request', optionId: null },
+    { requestId: 'persistent-only-request', optionId: null },
+  ]);
+});
+
+test('conversation keeps the first permission and cancels a concurrent second request', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emit('permission-request', permissionRequest('first-request', 'First operation'));
+  fixture.host.emit('permission-request', permissionRequest('second-request', 'Second operation'));
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.equal(snapshot.interaction.title, 'First operation');
+  assert.deepEqual(fixture.host.permissionResponses, [{
+    requestId: 'second-request',
+    optionId: null,
+  }]);
+  fixture.controller.respondToPermission(
+    snapshot.interaction.interactionId,
+    snapshot.interaction.options.find((option) => option.decision === 'reject').optionId,
+  );
+  assert.deepEqual(fixture.host.permissionResponses.at(-1), {
+    requestId: 'first-request',
+    optionId: 'reject-once',
+  });
+});
+
+test('conversation cancels a pending permission and revokes authority on Host exit', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emit('permission-request', permissionRequest('exit-request', 'Exit operation'));
+
+  fixture.host.emit('exit', new Error('private host details'));
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.equal(snapshot.phase, 'error');
+  assert.match(snapshot.error, /Host 已断开/);
+  assert.equal(snapshot.interaction, undefined);
+  assert.equal(JSON.stringify(snapshot).includes('private host details'), false);
+  assert.deepEqual(fixture.host.permissionResponses, [{
+    requestId: 'exit-request',
+    optionId: null,
+  }]);
+  assert.throws(
+    () => fixture.controller.respondToPermission('permission-1', 'option-1'),
+    /权限请求已失效/,
+  );
+});
+
+test('conversation reports an expired permission without exposing Host authority', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emit('permission-request', permissionRequest('expired-request', 'Timed operation'));
+
+  fixture.host.emit('permission-resolved', {
+    requestId: 'expired-request',
+    outcome: 'expired',
+  });
+
+  const snapshot = fixture.controller.getSnapshot();
+  assert.equal(snapshot.interaction, undefined);
+  assert.match(snapshot.error, /确认已超时/);
+  assert.equal(JSON.stringify(snapshot).includes('expired-request'), false);
+  assert.equal(JSON.stringify(snapshot).includes('private-session-id'), false);
+});
+
+function permissionRequest(requestId, title) {
+  return {
+    requestId,
+    sessionId: 'private-session-id',
+    toolCall: {
+      toolCallId: `call-${requestId}`,
+      title,
+      kind: 'execute',
+    },
+    options: [
+      { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+      { optionId: 'reject-once', name: 'Reject once', kind: 'reject_once' },
+    ],
+  };
+}
+
 function makeFixture() {
   const identity = Object.assign(new EventEmitter(), {
     state: readyIdentity(),
@@ -247,6 +465,7 @@ function makeFixture() {
   const host = Object.assign(new EventEmitter(), {
     loadCalls: [],
     promptCalls: [],
+    permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
     async listAgents() {
@@ -286,6 +505,10 @@ function makeFixture() {
     async promptSession(request) {
       this.promptCalls.push(request);
       return this.promptImpl(request);
+    },
+    respondPermission(requestId, optionId) {
+      this.permissionResponses.push({ requestId, optionId });
+      this.emit('permission-resolved', { requestId });
     },
     emitSession(sessionId, sessionUpdate, text = null, extra = {}) {
       const update = {
