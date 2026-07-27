@@ -1,7 +1,7 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
-状态：2026-07-27 固定 Main Session 对话第一切片与多 Agent 恢复通路已通过自主验证
-和两轮本机 Kimi 独立交叉复核；所有生产发布能力保持关闭
+状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复与标准 ACP 单次权限审批已
+通过自主验证和本机 Kimi 最终独立交叉复核；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -30,7 +30,7 @@ EMBEDDED_PUBLISHER_TRUST_BUNDLE = None
 
 因此不能把 H2d4 后的下一步自动解释为“填入常量并上线”，也不自行命名 H2d5。
 
-### 1.2 产品主路径已推进：文本对话与多 Agent 恢复通路关闭
+### 1.2 产品主路径已推进：文本对话、多 Agent 恢复与单次权限边界关闭
 
 产品蓝图的核心流程是：
 
@@ -47,7 +47,7 @@ flowchart LR
     RESTORE --> RESOLVE
 ```
 
-循环 43/44 已完成这一流程的文本对话与多 Agent 通用化：
+循环 43-45 已完成这一流程的文本对话、多 Agent 通用化与最小权限确认：
 
 - 用户从任意当前账号 Host Catalog Agent 卡片进入真实固定主对话；
 - Renderer 仍看不到 `mainSessionId` 与本机路径，只提交 `agentId` 和文本；
@@ -57,10 +57,14 @@ flowchart LR
   关闭；
 - Renderer reload 可恢复安全 snapshot，三个首方 Agent 在真实 detach/Leader 替换
   后保持各自唯一 Main Session。
+- 标准 ACP `session/request_permission` 只向 Renderer 投影安全标题、工具类型与本地
+  生成的选项标识；原始 Request/Session/Tool/Option authority 留在主进程；
+- 用户只能“仅本次允许”“仅本次拒绝”或取消，永久选项与未知上游选项失败关闭；
+  订阅、账户、Agent、重连、Host 和超时生命周期都会撤销待处理权限。
 
 动态 `future-agent` 的本地 fixture 证明用户层不需要 Agent 专属代码，但生产 Registry
-仍关闭，不能写成真实远端动态 Agent 已交付。下一项按原计划进入工作区增量，先关闭
-Harness 反向交互/权限审批的最小用户确认边界；这仍比启用生产 Package 分发更靠前。
+仍关闭，不能写成真实远端动态 Agent 已交付。下一项按原计划继续工作区增量，先审计
+并实现安全、只读的 Harness 工具活动状态投影；这仍比启用生产 Package 分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -71,7 +75,8 @@ Harness 反向交互/权限审批的最小用户确认边界；这仍比启用�
 | BYOK | Provider Profile/Vault、Assignment、Binding、路由、设置页与 Probe 已实现 | 外部真实 Provider E2E 仍独立待验 |
 | Agent Package | H0/H1 至 H2d4 的本地信任、发布描述与消费门已通过双方测试 | 生产 authority 仍为空 |
 | Package Center | 发现、下载、批准、回滚、reconcile 的安全 UI/Host 接口已实现 | 因生产 Registry 关闭而无真实远端内容 |
-| 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭；下一验收点是 Harness 交互/权限审批 |
+| 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭 |
+| Harness 单次权限 | 标准 ACP `session/request_permission` 已接入 Main-owned authority，只投影一次性允许/拒绝与取消，生命周期失败关闭 | 最小用户确认边界已关闭；不是完整 Harness |
 | 垂直工作区 | 活动、产物、审批、项目状态仍为目标 | 对话入口后分步实现 |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
@@ -117,7 +122,7 @@ Harness 反向交互/权限审批的最小用户确认边界；这仍比启用�
 
 | 门 | 适用发布链 | 当前状态 | 启用前必须具备 |
 | --- | --- | --- | --- |
-| R0 产品可用性 | 共同 | 未满足 | 文本对话、多 Agent 与用户可见 reload/重连恢复已通过；仍须完成 Harness 交互/审批边界，且订阅失效、重启与账户切换均不泄漏或丢失历史 |
+| R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足 | 独立审查的 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足 | 可复现构建证据；H2d0 外部签名输入输出；Artifact/Envelope/Host bundles/Release/Registry 的发布者、摘要和版本可追溯 |
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
@@ -157,10 +162,12 @@ flowchart TD
    固定文本对话的最小闭环；
 2. **对话恢复与多 Agent 通用化（已完成）**：重启、重连、账户切换、三个首方 Agent
    和动态 Agent 使用同一通路；
-3. **工作区增量（下一轮）**：先实现最小 Harness 交互/权限审批边界，再按产品价值
-   加入活动、产物和垂直状态，不一次铺满；
-4. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
-5. **桌面与 Package 生产发布计划**：只有 R0-R6 全部满足并获得单独授权后启动。
+3. **最小 Harness 单次权限（已完成）**：接入标准 ACP 反向请求，由主进程持有
+   authority，只允许一次性选择并在全部身份/生命周期变化时失败关闭；
+4. **工作区增量（下一轮）**：先审计并实现安全、只读的工具活动状态投影，再按产品
+   价值加入产物和垂直状态，不一次铺满；
+5. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
+6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -206,3 +213,22 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   （报告内部审查 ID `7d082017-4814-481c-891d-98bcd7d27a56`）首轮发现 1 项
   Medium、2 项 Low，全部修复后第二轮四级全零并无条件 PASS；
 - R0 继续保持未满足，下一轮只进入最小 Harness 交互/权限审批边界。
+
+## 10. 循环 45 实施检查点
+
+- 功能提交：`cb5a8e9 feat: add one-time harness permission approval`；
+- 切换 Agent 修复提交：`c4610ae fix: cancel permission when switching agents`；
+- 桌面 `npm test`：81 pass、0 fail、2 个真实 Host 环境门 skip；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 全部通过；
+- 真实 Host 2/2 回归通过，但没有触发真实工具权限请求，不能据此声称权限工具循环
+  已完成真实 Host E2E；
+- Main 独占原始请求、Session、Tool 与 Option authority；Renderer 只见本地生成的
+  安全投影，且只接受上游当前一次性允许/拒绝的精确 ID + kind 组合；
+- Kimi session `session_09709815-0885-4f57-acab-4896184226fa` 首轮发现 5 项 Low，
+  全部修复后第二轮 Blocker/High/Medium/Low 全零并无条件 PASS；
+- 文档收口复核发现切换 Agent 未立即取消旧 Host 请求的 1 项 Medium，以及 3 项文档
+  精度 Low；代码、回归测试与措辞均已修复；最终复核独立运行 83 项 Node 测试、
+  四组 Electron smoke 和 Agent A→B 对抗脚本，Blocker/High/Medium/Low 全零并
+  无条件 PASS；
+- R0 按既定判定项更新为“已满足（开发验证）”，但 R1-R6 和完整 Harness/垂直工作区
+  不因此关闭；下一轮只进入安全、只读的 Harness 工具活动状态投影。

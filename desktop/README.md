@@ -38,9 +38,14 @@
   凭据和原始 Host 错误不进入页面；
 - Renderer 重建会恢复主进程中的有界安全对话 snapshot；账号切换清空旧 authority，
   Leader 重连或 Prompt 超时后可在原对话内显式重新打开。
+- 标准 ACP `session/request_permission` 由主进程持有原始请求、Session、Tool 和
+  Option authority；页面只显示安全工具摘要，并只能“仅本次允许”“仅本次拒绝”或
+  取消。永久/未知选项以及订阅、账号、Agent、重连、Host、Prompt 和超时变化均失败
+  关闭。
 
-当前尚未实现 OAuth、完整 Harness 交互/审批和垂直业务工作区；外部真实 Provider
-E2E 仍需要用户凭据与费用授权，动态 Agent Package 的生产发布也仍关闭。生产
+当前尚未实现 OAuth、Harness 问题/计划审批、只读工具活动、产物和垂直业务工作区；
+外部真实 Provider E2E 仍需要用户凭据与费用授权，动态 Agent Package 的生产发布也
+仍关闭。生产
 Registry 关闭意味着当前动态 Agent 泛化只有本地 fixture 证据，不代表用户已经能从
 远端取得新 Agent。这些能力按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。

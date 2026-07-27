@@ -32,7 +32,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话与恢复通路 | 按计划进入最小 Harness 交互/审批边界；签名安装包 Login Item E2E 仍是发布门 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路和标准 ACP 单次权限审批 | 下一轮只审计并实现安全、只读的 Harness 工具活动状态投影；签名安装包 Login Item E2E 仍是发布门 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -2911,7 +2911,7 @@ H2d2 下一切片（须等 H2d1 Kimi 交叉测试关闭后启动）：
 
 ### 循环 39：动态 Agent Package H2d2——跨渠道 Agent Release Manifest
 
-状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+状态：实现、自主验证与多轮本机 Kimi 独立交叉测试已完成
 
 计划复核：H2d1 已证明客户端 Artifact 和每个 Host bundle 来自同一 Publisher 授权
 plan，但 Registry 与官网仍缺少一个共同的 release 内容单元。如果后续分别拿 Artifact
@@ -3358,3 +3358,82 @@ Kimi 独立交叉测试：
 - 下一轮按原产品计划进入工作区增量的第一项：先审计并实现最小 Harness
   `interaction_required` / 权限审批通路；不一次加入活动、产物、垂直工作区，也不
   进入 Provider、OAuth、Package H2d5 或生产发布。
+
+### 循环 45：标准 ACP 单次权限审批边界
+
+状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+
+本地功能提交：`cb5a8e9 feat: add one-time harness permission approval`
+
+切换 Agent 修复提交：`c4610ae fix: cancel permission when switching agents`
+
+计划校准：
+
+- 循环开始先核对产品计划与上游 Grok Build ACP 通路，确认本轮只接标准
+  `session/request_permission` 客户端反向请求，不新增私有交互协议；
+- 用户选择严格限制为上游当前构造的 `allow-once`（kind `allow_once`）与
+  `reject-once`（kind `reject_once`）精确组合。永久允许、永久拒绝、自动批准和
+  未来未知选项全部失败关闭；
+- 本轮不加入 `session/request_input`、计划审批、工具活动、产物、垂直工作区，
+  也不进入 Provider、OAuth、Package H2d5 或生产发布。
+
+已经实现：
+
+1. `AcpHostClient` 接收标准 ACP `session/request_permission` 反向请求，只返回标准
+   `selected` 或 `cancelled` outcome；重复 ID、畸形参数与未知反向方法分别按标准
+   JSON-RPC 错误拒绝；
+2. 主进程独占原始 Request ID、Session ID、Tool Call、Option ID 与审批 authority；
+   Renderer 只收到本地生成的 `permission-N`、`option-N`、安全标题和工具类型；
+3. Controller 用 Option ID 与 kind 的精确组合白名单决定可见选项，不能由 Renderer
+   自报任意上游 Option ID；订阅失效、账号切换、切换 Agent、关闭对话、重连、
+   Host 退出、Prompt 完成和超时都会撤销待处理审批；
+4. 同一时刻只允许一个待处理审批；第二个请求失败关闭。审批五分钟超时后，本地安全
+   snapshot 显示“权限确认已超时，请让 Agent 重新发起”，但发给 Host 的标准 wire
+   outcome 仍是 `cancelled`；
+5. 对话页加入显式审批卡，只提供“仅本次允许”“仅本次拒绝”和“暂不执行”；响应中
+   禁用全部按钮并阻止双击重复提交，空 gates 容器不会占位。
+
+自主验证：
+
+- 最终 `cd desktop && npm test`：83 项中 81 项通过、0 失败，2 项真实 Host 环境门
+  skip；`npm run check` 与 `git diff --check` 通过；
+- Conversation、Package、Provider、Visual 四组真实 Electron smoke 全部退出码 0；
+- 使用临时 `CARGO_TARGET_DIR` 构建真实 Rust Host 后，
+  `real-host.test.js` 与 `real-host-lifecycle.test.js` 2/2 通过，证明早期实现没有
+  破坏订阅、Leader 与 Session 恢复；该测试没有触发真实工具权限请求，因此不把它
+  写成“真实 Host 权限循环已验证”；
+- 临时构建目录已删除；仓库原有约 54 GiB、全部被 Git 忽略且无跟踪文件的
+  `target/` 经核对与 dry-run 后使用 `git clean -fdX target` 清理，最终测试确认仓库
+  `target/` 不存在。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI 可恢复 session `session_09709815-0885-4f57-acab-4896184226fa` 只读检查
+  完整 diff、Host permission option 构造器、Main/Preload authority、Controller、
+  Renderer 和测试，并在功能基线独立运行检查、82 项 Node 测试与四组 Electron
+  smoke；
+- 首轮 Blocker/High/Medium 为零，发现 5 项 Low：双击时的误导错误、超时无用户可见
+  结果、生命周期测试缺口、空容器 CSS 失效、上游选项过滤仅按字面 ID；
+- 五项全部修复，并补充 stop/exit 生命周期、畸形与重复 ID、并发第二请求、伪造
+  IPC、白名单过滤和双击单发等回归用例；同一 session 第二轮重新检查完整 diff 与
+  测试矩阵，当轮 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。
+- 文档收口复核进一步发现 1 项 Medium：切换 Agent 只撤销页面 authority，旧请求会
+  残留并误取消新 Agent 的首个审批；以及 3 项 Low 文档精度问题。`c4610ae` 已在
+  `#open` 切换前取消旧审批，并增加“旧请求立即取消、新请求不受影响”的回归测试；
+  三处文档措辞也已校正；
+- 同一 Kimi session 最终重新读取代码提交与完整文档 diff，独立运行 83 项 Node
+  测试、四组 Electron smoke、检查与 Agent A→B 切换对抗脚本；确认旧请求立即
+  `cancelled`、新 Agent 首个请求可显示和应答，最终四级问题全零并无条件 PASS。
+
+计划复盘：
+
+- 权限请求仍走 Grok Build 标准 Harness/ACP，Main 仍是唯一审批 authority，没有建立
+  第二套 Agent Loop、审批数据库或 Renderer 可伪造的 Session/Option authority；
+- 按本文 R0 的既定定义，文本对话、多 Agent、reload/重连恢复、订阅/账号隔离与最小
+  Harness 审批边界已经完成开发验证，因此 R0 更新为“已满足（开发验证）”；这不等于
+  完整 Harness 或生产就绪，R1-R6 中适用的发布门仍须分别关闭；
+- 下一轮按产品计划进入工作区增量的下一项：先只读审计标准 ACP
+  `tool_call` / `tool_call_update`，再实现安全、只读的工具活动状态投影；
+- 循环 46 非目标是原始 `rawInput`、路径、命令、内容、工具控制、产物、垂直 UI、
+  问题/计划审批、Provider、Package 与生产发布。验收必须包含安全枚举、有界投影、
+  当前 Session/账号/订阅归属、重连清理、自主测试和 Kimi 四级问题清零。
