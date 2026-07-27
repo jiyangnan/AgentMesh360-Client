@@ -1,8 +1,8 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
 状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
-安全只读工具活动、Workspace Artifact 与通用 Project State 最小投影已通过自主验证
-和本机 Kimi 最终独立交叉复核；所有生产发布能力保持关闭
+安全只读工具活动、Workspace Artifact、通用 Project State 与 Harness 后台活动安全
+投影已通过自主验证和本机 Kimi 最终独立交叉复核；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -48,8 +48,8 @@ flowchart LR
     RESTORE --> RESOLVE
 ```
 
-循环 43-48 已完成这一流程的文本对话、多 Agent 通用化、最小权限确认、只读活动与
-通用产物索引：
+循环 43-52 已完成这一流程的文本对话、多 Agent 通用化、最小权限确认、只读活动、
+通用产物/项目状态与普通 Harness 后台活动：
 
 - 用户从任意当前账号 Host Catalog Agent 卡片进入真实固定主对话；
 - Renderer 仍看不到 `mainSessionId` 与本机路径，只提交 `agentId` 和文本；
@@ -71,14 +71,21 @@ flowchart LR
   严格验证清单和真实文件；
 - Renderer 最多只见 100 项 `artifactId/title/kind/sizeBytes`，不见路径、URL、摘要、
   账户、Session 或原始错误；清单失败不会关闭文本对话，但会显示固定的只读错误状态。
+- 普通后台命令和 Monitor 继续以当前 Main Session 的 TerminalBackend 为实时
+  authority；Main 消费 `task_backgrounded` / `task_completed`，并通过 Host-owned
+  安全快照补齐 bootstrap 提前恢复造成的通知时序缺口；
+- Renderer 最多只见 50 项本地 ID、`command|monitor` 与四态，不见私有 task ID、
+  命令、cwd、输出、路径、signal 或 exit code；Scheduler、ACP Plan/Todo 与
+  Subagent 没有混入该投影。
 
 动态 `future-agent` 的本地 fixture 证明用户层不需要 Agent 专属代码，但生产 Registry
 仍关闭，不能写成真实远端动态 Agent 已交付。循环 47 已先完成产物 authority 审计，
 循环 48 才进入通用最小只读实现，没有硬编码 Job/LectureCast/Deploy 类型。循环 49
 继续按原计划完成独立“项目状态”的 authority 与恢复语义审计：Agent 自有业务存储
 保持权威，Workspace 只保存通用安全 read model。循环 50 已实现固定公共状态卡，
-没有铺开 Agent 专属垂直 UI。下一项只审计蓝图中任务与后台活动的稳定 Harness
-authority；这仍比启用生产 Package 分发更靠前。
+没有铺开 Agent 专属垂直 UI。循环 51-52 又先审计并只实现普通后台进程最小投影；
+下一项只在独立契约中评估 ACP Plan/Todo 是否适合作为 Session 计划视图，不直接
+实现 Scheduler、Subagent 或 Agent 专属 UI；这仍比启用生产 Package 分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -92,8 +99,9 @@ authority；这仍比启用生产 Package 分发更靠前。
 | 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭 |
 | Harness 单次权限 | 标准 ACP `session/request_permission` 已接入 Main-owned authority，只投影一次性允许/拒绝与取消，生命周期失败关闭 | 最小用户确认边界已关闭；不是完整 Harness |
 | Harness 工具活动 | 标准 ACP ToolCall 只投影本地 ID、允许列表类别与四态状态；Host replay、50 项上限、终态冻结和生命周期清理已验证 | 安全只读可观察性已关闭；不含工具控制或产物 |
+| Harness 后台活动 | 当前 Main Session 通知与 Host-owned 安全快照共同对账，Renderer 只见最多 50 项本地 ID、固定类型与四态 | 普通后台命令/Monitor 最小可观察性已通过自主验证与 Kimi 复核；不含控制、日志、Scheduler、Plan/Todo 或 Subagent |
 | Workspace 产物 | 通用 Manifest v1、Host 账户/路径/文件验证、打开/Prompt 刷新、100 项安全 Renderer 投影与只读面板已实现 | 最小发现与展示链已通过自主验证与 Kimi 复核；不含打开、预览、导出、分享或删除 |
-| 垂直工作区 | 通用项目状态只读卡已实现；Agent 专属结构化界面仍为目标 | 下一轮只审计后台任务 authority；专属字段必须等待受签 Package 展示契约 |
+| 垂直工作区 | 通用项目状态只读卡已实现；Agent 专属结构化界面仍为目标 | 下一轮只审计 ACP Plan/Todo；专属字段必须等待受签 Package 展示契约 |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
 ## 3. 已关闭第一切片的边界
@@ -180,9 +188,10 @@ flowchart TD
    和动态 Agent 使用同一通路；
 3. **最小 Harness 单次权限（已完成）**：接入标准 ACP 反向请求，由主进程持有
    authority，只允许一次性选择并在全部身份/生命周期变化时失败关闭；
-4. **工作区增量（进行中）**：安全只读工具活动、通用 Workspace Artifact 与
-   Project State 最小投影已完成自主验证；下一轮只审计任务与后台活动的稳定
-   Harness authority、恢复和脱敏语义，不一次铺满，也不硬编码 Agent 专属页面；
+4. **工作区增量（进行中）**：安全只读工具活动、通用 Workspace Artifact、
+   Project State 与普通 Harness 后台活动最小投影已完成自主验证；下一轮只在独立
+   契约中评估 ACP Plan/Todo 是否适合作为 Session 计划视图，不实现 Scheduler、
+   Subagent、任务控制或 Agent 专属页面；
 5. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
 6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
 
@@ -291,3 +300,27 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   Blocker/High/Medium/Low 全部为零并 PASS；
 - R0 与 R1-R6 状态不变；下一轮只审计项目状态 authority，不启动 Package H2d5、
   生产 Root/endpoint、签名、公证或发布。
+
+## 13. 循环 49-52 项目状态与后台活动检查点
+
+- 循环 49 先确认 Job round、LectureCast project、Deploy run/status 等 Agent 自有
+  存储仍是业务 authority；Workspace 只允许保存安全派生的通用 Project State；
+- 循环 50 实现 `.agentmesh360/project-state-v1.json` 与
+  `x.agentmesh360/agents/project-state/get`，只投影标题、四态摘要和最多 20 个
+  固定步骤，不接受路径、任意 blocks、业务对象 ID 或 mutation；
+- 循环 51 区分普通后台进程、Scheduler、ACP Plan/Todo 与 Subagent，确认原始
+  `x.ai/task/list` 含命令、cwd、输出和路径，不能直接成为 Renderer 接口；
+- 循环 52 实现
+  `x.agentmesh360/agents/background-activities/list`：Host 根据有效账户与 Registry
+  解析固定 Main Session，只返回私有任务 ID、固定类型和四态；Main 再映射为本地 ID；
+- `task_backgrounded` / `task_completed` 与 Host-owned 安全快照共同对账，覆盖常驻
+  Main Session 在 Controller 订阅前完成冷启动恢复的时序；只对 replay 恢复且已从
+  实时快照消失的 running 任务收口，避免一次快照竞态误停新任务；
+- 自主验证已完成 99 项 Node（96 pass、0 fail、3 个默认 real-host skip）、新增
+  Rust 3/3、Workspace 回归 37/37、显式真实 Host 3/3、四组 Electron smoke 与
+  fmt/check/diff-check；默认 skip 未被写成真实 Host 执行；
+- Kimi session `session_66414c27-6bb2-4ee6-8040-b6fcae2482fd` 独立复跑同一验证
+  矩阵并核对 Host/Controller/Renderer authority，最终 Blocker/High/Medium/Low
+  全部为零、无条件 PASS；
+- 循环 52 已关闭；R0 与 R1-R6 状态不变，不启动 Scheduler、Subagent、Agent 专属
+  UI、Package H2d5 或生产发布。

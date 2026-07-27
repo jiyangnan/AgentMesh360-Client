@@ -32,7 +32,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批与安全只读工具活动投影 | 下一轮只审计产物与垂直状态的 Host/Package authority 来源，不直接实现新 UI；签名安装包 Login Item E2E 仍是发布门 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State 与 Harness 后台活动安全投影 | 下一轮只在独立契约中审计 ACP Plan/Todo 是否适合作为 Session 计划视图，不实现 Scheduler、Subagent 或 Agent 专属 UI；签名安装包 Login Item E2E 仍是发布门 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -3689,3 +3689,112 @@ Kimi 独立交叉测试：
 - 下一循环只审计蓝图中“任务与后台活动”的稳定 Harness authority、恢复和脱敏
   语义；在确认标准来源前不实现任务控制、后台调度数据库、Agent 专属 UI、Provider、
   Package H2d5 或生产发布。
+
+### 循环 51：Grok Harness 任务与后台活动 authority 审计
+
+状态：审计与中文契约已完成，已按顺序进入循环 52 最小实现
+
+计划校准：
+
+- 复核 Grok Build 的 `BackgroundTaskRegistry`、Session xAI 通知与 replay、冷启动
+  orphan reconcile、Scheduler Resources Persistence、标准 ACP Plan/Todo 和
+  subagent coordinator；
+- 确认普通后台进程、定时任务、模型计划草稿与临时 Worker 是四类不同 authority，
+  不能为了做一个“任务”面板而混成单一状态；
+- 现有 `x.ai/task/list` 返回原始 `TaskSnapshot`，包含 command、cwd、output、
+  output file、signal 等敏感字段，而且要求调用方提交 Session ID，不能直接成为
+  Renderer 接口。
+
+审计结论：
+
+1. 普通后台命令和 Monitor 的实时 authority 是当前 Session 的 TerminalBackend；
+   `task_backgrounded` / `task_completed` 是唯一适合恢复的事件源；
+2. 冷 Session 加载会把只有 backgrounded、没有 completed 的遗留记录补发为
+   `signal=session_restart`，但 AgentMesh360 订阅 bootstrap 会提前恢复常驻 Main
+   Session，收口通知可能早于对话 Controller 订阅；
+3. 因此 v1 必须同时使用 Harness 通知与一个 Host-owned 安全实时快照对账，不能只靠
+   replay，也不能在 Renderer 用 PID、命令或日志猜测；
+4. Scheduled Task 是未来调度配置，Todo/ACP Plan 是模型协作草稿，Subagent 是临时
+   Worker；三者均留待独立契约，不进入 v1；
+5. 完整 authority、时序、四态、脱敏、生命周期与非目标见
+   [`architecture/HARNESS_BACKGROUND_ACTIVITY_V1.md`](architecture/HARNESS_BACKGROUND_ACTIVITY_V1.md)。
+
+计划复盘：
+
+- v1 只实现普通后台命令与 Monitor 的只读状态，不提供 kill/cancel/restart、日志、
+  Scheduler、Todo/Plan、Goal 或 subagent；
+- 不建立第二套任务数据库，不修改 Job/LectureCast/Deploy 业务状态，也不进入
+  Provider、Package H2d5 或生产发布；
+- 审计确认存在可复用的稳定 Harness authority，因此循环 52 才进入最小实现。
+
+### 循环 52：Harness 后台活动安全投影与启动对账
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+已经实现：
+
+1. Rust Host 新增
+   `x.agentmesh360/agents/background-activities/list`，只接受 `agentId`；Host 根据
+   当前有效订阅账户 Registry 解析已激活 Agent 的固定 Main Session，再读取实时
+   TerminalBackend；
+2. Host 最多只向 Main 返回私有 `taskId`、`command|monitor` 与
+   `running|completed|failed|stopped`，不返回命令、说明、cwd、输出、日志路径、
+   时间、signal、exit code、Session、账户或 Workspace；
+3. Controller 接收当前 Main Session 的 `x.ai/task_backgrounded` /
+   `x.ai/task_completed` 和 xAI replay，只持有私有 task ID 映射，Renderer 只得到
+   本地 `background-N`、类型与四态，最多 50 项且终态冻结；
+4. `session/load` 后和成功 Prompt 后执行安全快照对账：快照补齐 Controller 错过的
+   live task；replay 中仍为 running、但实时快照不存在的任务收口为 stopped；非
+   replay 的并发新任务不会仅因一次快照缺失被误停；
+5. 快照异常清空任务并只显示固定“后台活动状态暂时不可用。”，文本对话继续；订阅、
+   账户、Agent、关闭、重连、Host 退出和 Prompt 超时全部清空，旧 authority 响应
+   不能进入新对话；
+6. Renderer 再次执行本地 ID、类型、四态、重复项与 50 项白名单，只渲染固定
+   “后台命令/监控任务”和状态文案，不使用 Host 文本。
+
+自主验证：
+
+- 第一组失败优先 Controller 测试为 0/3，三项都因后台投影尚不存在而失败；实现
+  通知投影后 3/3 通过；
+- 首次真实 Host 冷启动 E2E 为 1 pass / 1 fail：常驻 Session 在 bootstrap 提前
+  恢复后，Controller 最终仍看到 running。该失败暴露通知订阅时序缺口，随后增加
+  Host-owned 安全快照；对应 Host Client 与 Controller 失败优先测试先分别失败，
+  实现后通过；
+- 新增并通过 3 项 Rust 安全投影测试，覆盖字段脱敏、四态映射、重复/非法 ID 和
+  上限；Workspace Artifact/Project State 回归 `workspace_` 37/37；
+- `cd desktop && npm test`：99 项中 96 pass、0 fail、3 个真实 Host 默认 skip；
+  三个 skip 已通过显式真实 Host 运行 3/3，不能把默认 skip 冒充执行；
+- 最终真实 Host 3/3 覆盖订阅/跨账户/失效门、bootstrap 提前恢复后的遗留任务收口，
+  以及 detach、Leader 替换和三个首方 Agent Main Session 恢复；
+- `npm run check`、`cargo fmt --all --check`、`git diff --check` 通过；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 在真实 macOS
+  图形会话全部退出码 0；失败优先阶段受限 Electron 的 `SIGABRT` 没有被写成通过；
+- 所有 Rust 构建都使用 `/tmp/agentmesh360-cycle47-target`，仓库根目录 `target/`
+  不存在。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI session `session_66414c27-6bb2-4ee6-8040-b6fcae2482fd` 在用户明确授权
+  下只读审查相对 `origin/main` 的完整工作区 diff、两个未跟踪文件、相关本地路径、
+  Rust/Controller/Renderer/真实 Host 测试和中文计划文档；
+- Kimi 独立执行 99 项 Node（96 pass、0 fail、3 个默认 real-host skip）、
+  `npm run check`、`cargo fmt --all --check`、`git diff --check`、新增 Rust 3/3 与
+  Workspace 回归 37/37；三个默认 skip 与显式真实 Host 3/3 分开记录；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 首次误用普通 Node
+  均按预期不能启动 Electron；Kimi 改用项目 Electron 二进制后四组均退出码 0，没有
+  把错误启动写成测试通过；
+- Kimi 核对实际通知方法、`_meta.isReplay`、冷启动 `session_restart` 合成、
+  TerminalBackend 快照、当前账户/固定 Main Session authority、竞态与全部生命周期
+  清理，并确认 `desktop/src` 没有原始 `x.ai/task/list` 引用；
+- 最终 Blocker/High/Medium/Low 全部为零并给出无条件 PASS；测试前后仓库根目录
+  `target/` 均不存在，测试未修改工作区文件。
+
+计划复盘：
+
+- 循环 51 的“先区分 authority、再实现普通后台进程最小投影”顺序得到遵守；
+- v1 没有硬编码 Agent 类型，没有把 Scheduled Task、Todo/Plan、Goal 或 subagent
+  混入，也没有加入任务控制、日志、轮询或第二套持久化；
+- R0 仍只是开发验证，R1-R6、外部真实 Provider 和生产发布门不变；
+- 本轮 Kimi 已清零；推送后再按蓝图复核工作区剩余项。下一步只在独立契约中评估
+  标准 ACP Plan/Todo 是否值得作为 Session 计划视图，不直接实现 Scheduler 控制、
+  Agent 专属 UI、Package H2d5 或生产发布。

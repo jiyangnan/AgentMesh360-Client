@@ -1,6 +1,7 @@
 # 持久化产品 Agent 架构
 
-状态：基础实现完成，已接入 Host 订阅门禁、多 Agent 桌面对话恢复与通用只读产物索引
+状态：基础实现完成，已接入 Host 订阅门禁、多 Agent 桌面对话恢复、通用只读工作区
+与 Harness 后台活动安全投影
 建立日期：2026-07-21
 最近更新：2026-07-27
 
@@ -98,7 +99,11 @@ Last-Modified 只有在两份文档被 Trust Cache 接受后才更新。304 仍�
   不能提交 Session、Workspace 或 Manifest 路径；
 - `x.agentmesh360/agents/project-state/get`，请求
   `{ "agentId": "job-agent" }`。Host 只投影通用项目标题、状态、摘要和步骤，
-  Renderer 不能提交业务状态源或自由格式视图。
+  Renderer 不能提交业务状态源或自由格式视图；
+- `x.agentmesh360/agents/background-activities/list`，请求
+  `{ "agentId": "job-agent" }`。Host 根据当前账户 Registry 解析固定 Main Session，
+  只返回后台命令或 Monitor 的私有任务 ID、类型与四态；Renderer 不能提交 Session，
+  也不能读取命令、cwd、输出、日志路径、signal 或 exit code。
 
 bootstrap 成功响应会把 Core 的 snake_case 契约转换为 camelCase，并继续使用标准
 Extension Result envelope。JWT 只存在于本次请求内存和 HTTPS Authorization Header
@@ -146,8 +151,9 @@ Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目�
 Host 与 Agent”，但签名、公证安装包中的 macOS Login Item 注册/批准/升级仍需发布
 验收，不能把开发 smoke 写成生产已验证。
 
-循环 43-48 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
-确认、安全只读工具活动，以及通用 Workspace Artifact 索引。Renderer
+循环 43-52 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
+确认、安全只读工具活动、通用 Workspace Artifact/Project State，以及普通 Harness
+后台活动安全投影。Renderer
 继续只用 `agentId` 与文本，由主进程与 Host 解析账户绑定的 Main Session；标准 ACP
 replay / live update 只投影有界的用户与 Agent 文本，本机路径、Session authority、
 Provider 凭据、thought/tool/meta 和原始 Host 错误不暴露给页面。账户切换、订阅
@@ -170,8 +176,14 @@ replay/live update，主进程仅保留用于合并的私有 Tool Call ID，页�
 run/status 等 Agent 自有存储仍是业务 authority；Workspace 只保存安全派生摘要，
 Host 不从聊天或 ToolCall 推断状态。循环 50 只实现通用当前焦点、摘要与步骤卡，不
 铺开 Agent 专属垂直 UI。循环 50 已按该契约实现通用只读状态卡、三层白名单和完整
-生命周期清理；下一轮只审计 Harness 后台任务 authority，不直接加入任务控制。
-完整契约见
+生命周期清理。循环 51 随后区分普通后台进程、Scheduler、ACP Plan/Todo 与
+Subagent 四种 authority；循环 52 只实现普通后台命令和 Monitor：主进程消费当前
+Main Session 通知，并在 `session/load` 与成功 Prompt 后调用 Host-owned 安全快照
+对账，从而覆盖常驻 Session 在 Controller 订阅前完成冷启动恢复的时序缺口。私有
+task ID 仅存在于可信主进程，Renderer 只见本地 ID、固定类型与四态；不提供任务控制、
+日志、轮询或第二套持久化。完整契约见
+[`HARNESS_BACKGROUND_ACTIVITY_V1.md`](HARNESS_BACKGROUND_ACTIVITY_V1.md)。
+其他通用工作区契约见
 [`WORKSPACE_ARTIFACT_MANIFEST_V1.md`](WORKSPACE_ARTIFACT_MANIFEST_V1.md) 与
 [`WORKSPACE_PROJECT_STATE_V1.md`](WORKSPACE_PROJECT_STATE_V1.md)。生产
 Package 与桌面发布硬门见
