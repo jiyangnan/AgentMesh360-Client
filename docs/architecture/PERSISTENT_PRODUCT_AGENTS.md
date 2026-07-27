@@ -95,7 +95,10 @@ Last-Modified 只有在两份文档被 Trust Cache 接受后才更新。304 仍�
   `{ "agentId": "job-agent" }`；
 - `x.agentmesh360/agents/artifacts/list`，请求
   `{ "agentId": "job-agent" }`。Host 根据当前账户 Registry 解析 Workspace，Renderer
-  不能提交 Session、Workspace 或 Manifest 路径。
+  不能提交 Session、Workspace 或 Manifest 路径；
+- `x.agentmesh360/agents/project-state/get`，请求
+  `{ "agentId": "job-agent" }`。Host 只投影通用项目标题、状态、摘要和步骤，
+  Renderer 不能提交业务状态源或自由格式视图。
 
 bootstrap 成功响应会把 Core 的 snake_case 契约转换为 camelCase，并继续使用标准
 Extension Result envelope。JWT 只存在于本次请求内存和 HTTPS Authorization Header
@@ -162,10 +165,15 @@ replay/live update，主进程仅保留用于合并的私有 Tool Call ID，页�
 清单、100 项上限、相对路径、逐级非符号链接与真实普通文件，只向 Renderer 投影
 `artifactId/title/kind/sizeBytes`。Manifest 不存在返回空索引，无效清单失败关闭但
 不关闭文本对话；打开对话和成功 Prompt 后刷新，所有身份与 Host 生命周期变化清空。
-该能力不建立第二套产物数据库，也不开放文件、预览、导出、分享或删除。下一轮只
-审计通用“项目状态”是否需要独立于对话和产物的稳定 authority，不直接铺开 Agent
-专属垂直 UI。完整产物契约见
-[`WORKSPACE_ARTIFACT_MANIFEST_V1.md`](WORKSPACE_ARTIFACT_MANIFEST_V1.md)。生产
+该能力不建立第二套产物数据库，也不开放文件、预览、导出、分享或删除。循环 49
+已经确认项目状态需要独立 read model，但 Job round、LectureCast project 和 Deploy
+run/status 等 Agent 自有存储仍是业务 authority；Workspace 只保存安全派生摘要，
+Host 不从聊天或 ToolCall 推断状态。循环 50 只实现通用当前焦点、摘要与步骤卡，不
+铺开 Agent 专属垂直 UI。循环 50 已按该契约实现通用只读状态卡、三层白名单和完整
+生命周期清理；下一轮只审计 Harness 后台任务 authority，不直接加入任务控制。
+完整契约见
+[`WORKSPACE_ARTIFACT_MANIFEST_V1.md`](WORKSPACE_ARTIFACT_MANIFEST_V1.md) 与
+[`WORKSPACE_PROJECT_STATE_V1.md`](WORKSPACE_PROJECT_STATE_V1.md)。生产
 Package 与桌面发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 

@@ -3590,3 +3590,102 @@ Kimi 独立交叉测试：
 - 第二轮重新读取更新后完整 diff，独立执行 89 项 Node（87 pass、0 fail、2 个默认
   real-host skip）、6 项 Rust、重建后二进制的真实 Host 2/2、四组 Electron smoke、
   fmt/check/diff-check；最终 Blocker/High/Medium/Low 全部为零并给出 PASS。
+
+### 循环 49：通用项目状态 authority 与恢复语义审计
+
+状态：审计与契约已完成，已按顺序进入循环 50 最小实现
+
+计划校准：
+
+- 复核 Agent Package、Registry、Grok Session、Workspace Artifact，以及 Job Agent
+  round、LectureCast project、Deploy status/run 的实际状态模型；
+- 确认三类 Agent 都已有不同的业务状态与状态枚举，强行把这些原始对象塞进一个客户端
+  Schema 会破坏各自 authority，也会让未来 Agent 必须修改客户端；
+- 本轮没有直接进入 Agent 专属 UI、任意 JSON blocks、状态 mutation、Provider、
+  Package H2d5 或生产发布。
+
+审计结论：
+
+1. Session 继续只负责对话历史，Registry 只负责账户、生命周期、Main Session 与
+   Workspace 映射，Artifact Manifest 只负责已形成文件；
+2. Job round、LectureCast project、Deploy run/status 等 Agent 自有存储仍是业务
+   authority；客户端不能复制或取代它们；
+3. 每个账户隔离 Workspace 可以保存一个显式、派生、只读的公共状态 read model：
+   `.agentmesh360/project-state-v1.json`；
+4. v1 只包含当前焦点项目的标题、四态状态、摘要和最多 20 个四态步骤，不接收路径、
+   URL、命令、业务对象 ID、任意 blocks 或 Agent 专属字段；
+5. Host 负责订阅、账户、Workspace 和严格 Schema 投影，不背书 Agent 摘要的业务
+   真实性；Renderer 只渲染固定字段；
+6. 完整 authority、Schema、失败关闭、恢复语义和非目标见
+   [`architecture/WORKSPACE_PROJECT_STATE_V1.md`](architecture/WORKSPACE_PROJECT_STATE_V1.md)。
+
+计划复盘：
+
+- 该 read model 允许 Agent 自己的业务 Schema 独立演进，也让未来 Agent 在不添加
+  客户端分支的情况下进入公共工作区；
+- 需要专属结构或交互时，后续必须通过受签 Agent Package 声明版本化展示契约，不能
+  扩张 v1 为 Renderer 可执行的自由格式；
+- 循环 50 只实现契约中的通用只读状态卡及恢复边界，并沿用失败优先测试、真实 Host、
+  四组 Electron smoke 与 Kimi 四级问题清零门。
+
+### 循环 50：通用 Workspace Project State 最小只读实现
+
+状态：实现、自主验证与本机 Kimi 独立交叉测试已完成
+
+已经实现：
+
+1. Rust Host 新增 `x.agentmesh360/agents/project-state/get`，只接受 `agentId`，从当前
+   有效订阅、账户 Registry 与已激活 Agent 解析 Workspace；
+2. `.agentmesh360/project-state-v1.json` 限制为 32 KiB、strict schema v1、正的
+   JavaScript 安全 revision、固定项目四态与最多 20 个固定步骤四态；未知字段、
+   重复/非法 Step ID、空值、超长值和 C0/C1 控制字符全部失败关闭；
+3. Manifest 读取在 Unix 使用 `O_NOFOLLOW | O_CLOEXEC`，对打开前后 device/inode
+   复核，并执行打开前、打开后和 `MAX+1` 读取三重大小限制；Workspace、控制目录和
+   Manifest 符号链接均拒绝；
+4. Host 只返回 `title/status/summary/steps[stepId,label,status]`；Main 再移除
+   schema/revision 并做同等白名单，Renderer 第三次验证并只渲染固定通用状态卡；
+5. 打开对话和成功 Prompt 后刷新；订阅、账户、Agent、关闭、重连、Host 退出和
+   Prompt 超时清空，旧账户异步响应不会进入新对话；
+6. Manifest 缺失返回 `revision=0, project=null` 且不占 UI；非法或读取失败只显示
+   固定“项目状态暂时不可用。”，文本对话继续可用；
+7. 当前三个首方 Agent 和动态 `future-agent` 使用同一路径。该 Manifest 仍是 Agent
+   自有业务状态的派生 read model，不是第二套业务数据库。
+
+自主验证：
+
+- 失败优先定向测试先得到 35 pass / 4 fail，四项分别证明 Host Client 方法和
+  Controller Project State 通路尚不存在；实现后定向 39/39 通过；
+- `cd desktop && npm test`：92 项中 90 pass、0 fail、2 个真实 Host 默认 skip；
+  `npm run check`、`git diff --check` 与 `cargo fmt --all --check` 通过；
+- 新增 Rust `workspace_project_state` 5/5，通过包含 Workspace Artifact 回归的
+  `workspace_` 过滤测试 37/37；
+- 使用 `/tmp/agentmesh360-cycle47-target` 重建 Host 后，显式真实
+  `real-host.test.js` 与 `real-host-lifecycle.test.js` 2/2 通过，覆盖 Project State
+  安全投影、跨账户拒绝、订阅失效拒绝和持久 Agent 恢复；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 在受限环境统一
+  `SIGABRT`，转到真实 macOS 图形会话后全部退出码 0；没有把受限环境失败写成通过；
+- 仓库根目录 `target/` 始终不作为自主构建目录。Kimi 首次独立 cargo 命令误建约
+  1.4 GiB 忽略缓存后立即中止，并在 `git check-ignore`/`git ls-files` 核对后用
+  `cargo clean --target-dir target` 精确清理；最终仓库 `target/` 不存在。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI session `session_5743cc7a-8695-48e9-9bb7-411c6e5ec4a4` 只读审查完整
+  diff、两个未跟踪文件、Rust/Registry/ACP/Controller/Renderer authority、契约和
+  计划文档；
+- Kimi 独立运行 92 项 Node（90 pass、0 fail、2 个默认 real-host skip）和语法/
+  fmt/diff 检查，并改用临时 target 完成新 Rust 5/5；
+- 同一 session 显式运行重建 Host 的真实测试 2/2，四组 Electron smoke 均退出码
+  0，并确认测试脚本的断言失败路径会退出 1、Visual 截图只写 `/tmp`；
+- 最终确认 Blocker/High/Medium/Low 全部为零并给出无条件 PASS；默认 skip 没有被
+  计为真实 Host 通过。
+
+计划复盘：
+
+- 循环 49 的 authority 决策和 Cycle 50 最小范围得到遵守；没有从聊天、ToolCall
+  或目录扫描推断状态，没有添加 Agent 专属字段、状态 mutation 或自由格式 UI；
+- 产品工作区现在具备固定主对话、一次性审批、只读活动、项目摘要和产物索引这五个
+  公共面；R0 仍只是开发验证，R1-R6 与真实 Provider/生产发布门不变；
+- 下一循环只审计蓝图中“任务与后台活动”的稳定 Harness authority、恢复和脱敏
+  语义；在确认标准来源前不实现任务控制、后台调度数据库、Agent 专属 UI、Provider、
+  Package H2d5 或生产发布。

@@ -1,8 +1,8 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
 状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
-安全只读工具活动与 Workspace Artifact 最小投影已通过自主验证和本机 Kimi 最终
-独立交叉复核；所有生产发布能力保持关闭
+安全只读工具活动、Workspace Artifact 与通用 Project State 最小投影已通过自主验证
+和本机 Kimi 最终独立交叉复核；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -74,9 +74,11 @@ flowchart LR
 
 动态 `future-agent` 的本地 fixture 证明用户层不需要 Agent 专属代码，但生产 Registry
 仍关闭，不能写成真实远端动态 Agent 已交付。循环 47 已先完成产物 authority 审计，
-循环 48 才进入通用最小只读实现，没有硬编码 Job/LectureCast/Deploy 类型。下一项
-按原计划继续工作区增量，只审计独立“项目状态”的 authority 与恢复语义，不直接
-铺开 Agent 专属垂直 UI；这仍比启用生产 Package 分发更靠前。
+循环 48 才进入通用最小只读实现，没有硬编码 Job/LectureCast/Deploy 类型。循环 49
+继续按原计划完成独立“项目状态”的 authority 与恢复语义审计：Agent 自有业务存储
+保持权威，Workspace 只保存通用安全 read model。循环 50 已实现固定公共状态卡，
+没有铺开 Agent 专属垂直 UI。下一项只审计蓝图中任务与后台活动的稳定 Harness
+authority；这仍比启用生产 Package 分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -91,7 +93,7 @@ flowchart LR
 | Harness 单次权限 | 标准 ACP `session/request_permission` 已接入 Main-owned authority，只投影一次性允许/拒绝与取消，生命周期失败关闭 | 最小用户确认边界已关闭；不是完整 Harness |
 | Harness 工具活动 | 标准 ACP ToolCall 只投影本地 ID、允许列表类别与四态状态；Host replay、50 项上限、终态冻结和生命周期清理已验证 | 安全只读可观察性已关闭；不含工具控制或产物 |
 | Workspace 产物 | 通用 Manifest v1、Host 账户/路径/文件验证、打开/Prompt 刷新、100 项安全 Renderer 投影与只读面板已实现 | 最小发现与展示链已通过自主验证与 Kimi 复核；不含打开、预览、导出、分享或删除 |
-| 垂直工作区 | 项目状态和 Agent 专属结构化界面仍为目标 | 下一轮只审计项目状态 authority 与恢复来源，不直接铺开 Agent 专属 UI |
+| 垂直工作区 | 通用项目状态只读卡已实现；Agent 专属结构化界面仍为目标 | 下一轮只审计后台任务 authority；专属字段必须等待受签 Package 展示契约 |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
 ## 3. 已关闭第一切片的边界
@@ -178,9 +180,9 @@ flowchart TD
    和动态 Agent 使用同一通路；
 3. **最小 Harness 单次权限（已完成）**：接入标准 ACP 反向请求，由主进程持有
    authority，只允许一次性选择并在全部身份/生命周期变化时失败关闭；
-4. **工作区增量（进行中）**：安全只读工具活动与通用 Workspace Artifact 最小投影
-   已完成自主验证；下一轮只审计项目状态的 Host/Workspace authority、恢复语义和
-   脱敏边界，不一次铺满，也不硬编码 Agent 专属页面；
+4. **工作区增量（进行中）**：安全只读工具活动、通用 Workspace Artifact 与
+   Project State 最小投影已完成自主验证；下一轮只审计任务与后台活动的稳定
+   Harness authority、恢复和脱敏语义，不一次铺满，也不硬编码 Agent 专属页面；
 5. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
 6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
 
