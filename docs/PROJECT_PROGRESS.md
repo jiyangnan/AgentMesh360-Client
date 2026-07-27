@@ -3505,3 +3505,88 @@ Kimi 独立交叉测试：
 - 循环 47 非目标是读取或投影 `rawInput/rawOutput/content/locations`、建立第二套产物
   数据库、执行工具、修改 Package/Provider、启用 Registry 或生产发布。只有确认
   Host-owned ID、账户/Session 归属、恢复语义和 Renderer 白名单后，才排最小实现。
+
+### 循环 47：产物与垂直状态 authority 审计
+
+状态：审计与契约已完成，已按顺序进入循环 48 最小实现
+
+计划校准：
+
+- 标准 ACP ToolCall 的 `content/locations/rawInput/rawOutput` 是 Harness 遥测，可能
+  包含命令、路径、秘密和中间结果，不能成为稳定产品产物 authority；
+- Agent Package 负责 Agent 能力与版本，不应保存每个账户运行时产物；Grok Session
+  继续负责对话历史，也不应复制为第二份产物索引；
+- 每个持久 Agent 的账户隔离 Workspace 是唯一合理的本地 ownership root，但目录
+  扫描不能冒充显式产物索引。
+
+审计结论：
+
+1. 所有当前与未来 Agent 使用同一个
+   `.agentmesh360/artifacts-v1.json`，实际文件位于 `artifacts/`；
+2. Host 根据当前订阅、账户 Registry 与 `agentId` 解析 Workspace；Renderer 不能
+   提交 Session、Workspace、Manifest 或文件路径；
+3. Host 逐次验证严格清单与真实文件，只向 Renderer 投影通用安全元数据，不建立第二
+   套数据库；
+4. 契约、上限、失败关闭、生命周期与非目标已写入
+   [`architecture/WORKSPACE_ARTIFACT_MANIFEST_V1.md`](architecture/WORKSPACE_ARTIFACT_MANIFEST_V1.md)；
+5. 计划复盘确认最小实现可在不触碰 Provider、Package H2d5 或生产发布的前提下独立
+   进入下一循环，因此没有停在“只写文档”的中间状态。
+
+### 循环 48：通用 Workspace Artifact 最小只读实现
+
+状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+
+已经实现：
+
+1. Rust Host 新增 `x.agentmesh360/agents/artifacts/list`，只接受 `agentId`，从当前
+   账户 Registry 取得已激活 Workspace；订阅无效、其他账户或未激活 Agent 均失败；
+2. Manifest 限制为 UTF-8 JSON 64 KiB、schema v1、正 revision、最多 100 项，并对
+   未知字段、重复 ID/路径/真实文件、标题、类别、安全整数、`artifacts/` 相对路径、
+   Workspace/控制目录/中间目录/文件符号链接和最终普通文件逐项失败关闭；
+3. Host 输出只有 `schemaVersion/revision` 与
+   `artifactId/title/kind/sizeBytes`；Controller 再去除 schema/revision，并在打开
+   对话和成功 Prompt 后刷新；
+4. 清单不存在返回空索引；清单无效或读取失败不关闭文本对话，只投影
+   `unavailable` 语义状态，由 Renderer 显示固定“产物索引暂时不可用。”；订阅、
+   账户、Agent、重连、Host、关闭与 Prompt 超时均清空投影，旧账户迟到响应被忽略；
+5. Renderer 再执行 ID、标题、类别、大小和 100 项白名单，以通用只读卡片显示文档、
+   图片、音频、视频、归档、代码、数据或其他产物，不接收路径、URL、摘要或按钮。
+
+自主验证：
+
+- 失败优先 Node 测试先得到 31 pass / 3 fail，三项分别证明 Host Client、
+  Controller 与 Renderer 通路尚不存在；实现后定向 Controller 22/22 通过；
+- Rust `workspace_artifacts` 6/6 通过，覆盖空 Manifest、安全投影、严格解析、重复/
+  越界路径、同一真实文件别名、符号链接、未激活与跨账户边界；
+- `cd desktop && npm test`：89 项中 87 pass、0 fail、2 个真实 Host 默认 skip；
+  `npm run check`、`cargo fmt --all --check` 与 `git diff --check` 通过；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 全部退出码 0；
+- 使用临时 `/tmp/agentmesh360-cycle47-target` 构建真实 Grok Host，
+  `real-host.test.js` 与 `real-host-lifecycle.test.js` 2/2 通过，覆盖 Manifest 到
+  ACP 安全投影、跨账户拒绝、订阅失效拒绝和三个持久 Agent 恢复；仓库 `target/`
+  始终不存在。
+
+计划复盘：
+
+- 循环 47 的“先 authority、后最小实现”顺序得到遵守；循环 48 没有硬编码
+  Job/LectureCast/Deploy 类型，也没有把 ToolCall 或路径提升为产品状态；
+- 打开、预览、导出、分享、删除、文件 watcher、Agent 专属垂直 UI、Provider、
+  Package H2d5 与生产发布仍明确关闭；
+- Kimi 四级问题已经清零；下一循环只审计通用项目状态 authority 与恢复语义，不
+  直接进入 Agent 专属 UI。
+
+Kimi 独立交叉测试：
+
+- Kimi CLI 可恢复 session `session_27552d78-9fe0-45e4-acfc-a16cebe7a26e`，从基线
+  `279004e` 只读审查完整 diff、两个未跟踪文件、Rust/Controller/Renderer
+  authority、测试与计划文档；
+- 首轮独立执行 88 项 Node、5 项 Rust、显式真实 Host 2 项与四组 Electron smoke，
+  Blocker/High/Medium 为零，发现 4 项 Low：同一真实文件可通过路径别名重复、JS
+  未覆盖 C1 控制字符、Renderer 依赖 Controller 文案判断错误态，以及账户检查异常
+  被产物错误吞并；
+- 四项均已修复：Unix 使用 device/inode（其他平台 canonical path）去重文件目标，
+  双层 JS 白名单覆盖 C0/C1，快照改为 `ready/unavailable` 语义状态，账户检查失败
+  清空并向外传播；新增 hard-link、C1 Controller 与 Electron 回归；
+- 第二轮重新读取更新后完整 diff，独立执行 89 项 Node（87 pass、0 fail、2 个默认
+  real-host skip）、6 项 Rust、重建后二进制的真实 Host 2/2、四组 Electron smoke、
+  fmt/check/diff-check；最终 Blocker/High/Medium/Low 全部为零并给出 PASS。

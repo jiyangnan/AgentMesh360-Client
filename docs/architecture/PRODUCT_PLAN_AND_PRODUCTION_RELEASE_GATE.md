@@ -1,8 +1,8 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
-状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批与
-安全只读工具活动投影已通过自主验证和本机 Kimi 最终独立交叉复核；所有生产发布能力
-保持关闭
+状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
+安全只读工具活动与 Workspace Artifact 最小投影已通过自主验证和本机 Kimi 最终
+独立交叉复核；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -31,7 +31,7 @@ EMBEDDED_PUBLISHER_TRUST_BUNDLE = None
 
 因此不能把 H2d4 后的下一步自动解释为“填入常量并上线”，也不自行命名 H2d5。
 
-### 1.2 产品主路径已推进：文本对话、多 Agent 恢复与单次权限边界关闭
+### 1.2 产品主路径已推进：持久对话、Harness 边界与通用产物索引
 
 产品蓝图的核心流程是：
 
@@ -48,7 +48,8 @@ flowchart LR
     RESTORE --> RESOLVE
 ```
 
-循环 43-46 已完成这一流程的文本对话、多 Agent 通用化、最小权限确认与只读活动：
+循环 43-48 已完成这一流程的文本对话、多 Agent 通用化、最小权限确认、只读活动与
+通用产物索引：
 
 - 用户从任意当前账号 Host Catalog Agent 卡片进入真实固定主对话；
 - Renderer 仍看不到 `mainSessionId` 与本机路径，只提交 `agentId` 和文本；
@@ -65,11 +66,17 @@ flowchart LR
 - 标准 ACP `tool_call` / `tool_call_update` 只投影本地活动 ID、允许列表工具类别和
   四态状态；私有 Tool Call ID、标题、内容、原始输入输出、命令和路径不进入 Renderer；
   Host replay 是唯一历史来源，投影最多 50 项且终态冻结。
+- 原始 ToolCall 内容不作为产物来源；每个 Agent 使用同一
+  `.agentmesh360/artifacts-v1.json`，Host 从当前账户 Registry 解析 Workspace 并
+  严格验证清单和真实文件；
+- Renderer 最多只见 100 项 `artifactId/title/kind/sizeBytes`，不见路径、URL、摘要、
+  账户、Session 或原始错误；清单失败不会关闭文本对话，但会显示固定的只读错误状态。
 
 动态 `future-agent` 的本地 fixture 证明用户层不需要 Agent 专属代码，但生产 Registry
-仍关闭，不能写成真实远端动态 Agent 已交付。下一项按原计划继续工作区增量，但只先
-审计产物与垂直状态的 Host/Package authority 来源，不直接实现 UI；这仍比启用生产
-Package 分发更靠前。
+仍关闭，不能写成真实远端动态 Agent 已交付。循环 47 已先完成产物 authority 审计，
+循环 48 才进入通用最小只读实现，没有硬编码 Job/LectureCast/Deploy 类型。下一项
+按原计划继续工作区增量，只审计独立“项目状态”的 authority 与恢复语义，不直接
+铺开 Agent 专属垂直 UI；这仍比启用生产 Package 分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -83,7 +90,8 @@ Package 分发更靠前。
 | 固定主对话 | Host Catalog 全部当前账号 Agent 已复用桌面文本对话、历史 replay、live update、安全重开与 Renderer reload 恢复；三个首方 Agent 已通过真实 Host 恢复 | 文本通路已关闭 |
 | Harness 单次权限 | 标准 ACP `session/request_permission` 已接入 Main-owned authority，只投影一次性允许/拒绝与取消，生命周期失败关闭 | 最小用户确认边界已关闭；不是完整 Harness |
 | Harness 工具活动 | 标准 ACP ToolCall 只投影本地 ID、允许列表类别与四态状态；Host replay、50 项上限、终态冻结和生命周期清理已验证 | 安全只读可观察性已关闭；不含工具控制或产物 |
-| 垂直工作区 | 产物、项目状态和 Agent 专属结构化界面仍为目标 | 下一轮先审计 authority 与恢复来源，不直接铺开 UI |
+| Workspace 产物 | 通用 Manifest v1、Host 账户/路径/文件验证、打开/Prompt 刷新、100 项安全 Renderer 投影与只读面板已实现 | 最小发现与展示链已通过自主验证与 Kimi 复核；不含打开、预览、导出、分享或删除 |
+| 垂直工作区 | 项目状态和 Agent 专属结构化界面仍为目标 | 下一轮只审计项目状态 authority 与恢复来源，不直接铺开 Agent 专属 UI |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
 ## 3. 已关闭第一切片的边界
@@ -170,8 +178,9 @@ flowchart TD
    和动态 Agent 使用同一通路；
 3. **最小 Harness 单次权限（已完成）**：接入标准 ACP 反向请求，由主进程持有
    authority，只允许一次性选择并在全部身份/生命周期变化时失败关闭；
-4. **工作区增量（进行中）**：安全、只读的工具活动状态投影已完成；下一轮只审计
-   产物与垂直状态的 Host/Package authority、恢复语义和脱敏边界，不一次铺满；
+4. **工作区增量（进行中）**：安全只读工具活动与通用 Workspace Artifact 最小投影
+   已完成自主验证；下一轮只审计项目状态的 Host/Workspace authority、恢复语义和
+   脱敏边界，不一次铺满，也不硬编码 Agent 专属页面；
 5. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
 6. **桌面与 Package 生产发布计划**：只有相应 R0-R6 全部满足并获得单独授权后启动。
 
@@ -255,3 +264,28 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   工具活动；本轮没有重建已清理的 Rust target，也不把源码审计写成真实工具 E2E；
 - R0 仍是“已满足（开发验证）”，R1-R6 与生产门保持原状。下一轮只审计产物/垂直
   状态的 authority 和恢复来源，不启动 Package H2d5 或生产发布。
+
+## 12. 循环 47-48 产物检查点
+
+- 循环 47 先审计标准 ACP、Grok Session、Agent Package 与 Workspace，确认 ToolCall
+  原始字段只是 Harness 遥测，不能承担稳定产品产物 authority；结论固化为
+  [`WORKSPACE_ARTIFACT_MANIFEST_V1.md`](WORKSPACE_ARTIFACT_MANIFEST_V1.md)；
+- 循环 48 才实现 `x.agentmesh360/agents/artifacts/list`：Host 根据当前有效账户和
+  `agentId` 从 Registry 取得已激活 Workspace，不接受 Renderer 路径或 Session；
+- Manifest 为 64 KiB 严格 JSON、正 revision、最多 100 项；ID、标题、类别、相对
+  路径、重复项、同一真实文件别名、符号链接、中间目录、最终普通文件与安全整数大小
+  全部失败关闭；
+- Main Controller 在打开固定对话及每个成功 Prompt 后刷新，并在订阅、账户、Agent、
+  重连、Host 退出、关闭与 Prompt 超时时清空；无效清单只产生固定安全错误，不关闭
+  文本对话；
+- Renderer 二次白名单后只渲染只读 `artifactId/title/kind/sizeBytes` 卡片；C0/C1
+  控制字符失败关闭，索引错误只传 `ready/unavailable` 语义状态；路径、URL、摘要、
+  原始 ToolCall、打开/预览/导出/分享/删除均不在本切片；
+- 自主验证与 Kimi 第二轮复核均完成 6 项 Rust 边界测试、89 项 Node 测试
+  （87 pass、0 fail、2 个默认 real-host skip）、四组 Electron smoke，以及显式
+  真实 Host 2/2；
+- Kimi session `session_27552d78-9fe0-45e4-acfc-a16cebe7a26e` 首轮 4 项 Low
+  已以真实文件身份去重、C0/C1 双层白名单、语义状态和账户异常传播关闭；第二轮
+  Blocker/High/Medium/Low 全部为零并 PASS；
+- R0 与 R1-R6 状态不变；下一轮只审计项目状态 authority，不启动 Package H2d5、
+  生产 Root/endpoint、签名、公证或发布。

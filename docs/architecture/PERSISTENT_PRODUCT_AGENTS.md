@@ -1,6 +1,6 @@
 # 持久化产品 Agent 架构
 
-状态：基础实现完成，已接入 Host 订阅门禁和多 Agent 桌面对话恢复通路
+状态：基础实现完成，已接入 Host 订阅门禁、多 Agent 桌面对话恢复与通用只读产物索引
 建立日期：2026-07-21
 最近更新：2026-07-27
 
@@ -92,7 +92,10 @@ Last-Modified 只有在两份文档被 Trust Cache 接受后才更新。304 仍�
   `{ "accessToken": "<AgentMesh360 user JWT>" }`；
 - `x.agentmesh360/agents/list`；
 - `x.agentmesh360/agents/activate`，请求
-  `{ "agentId": "job-agent" }`。
+  `{ "agentId": "job-agent" }`；
+- `x.agentmesh360/agents/artifacts/list`，请求
+  `{ "agentId": "job-agent" }`。Host 根据当前账户 Registry 解析 Workspace，Renderer
+  不能提交 Session、Workspace 或 Manifest 路径。
 
 bootstrap 成功响应会把 Core 的 snake_case 契约转换为 camelCase，并继续使用标准
 Extension Result envelope。JWT 只存在于本次请求内存和 HTTPS Authorization Header
@@ -140,8 +143,8 @@ Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目�
 Host 与 Agent”，但签名、公证安装包中的 macOS Login Item 注册/批准/升级仍需发布
 验收，不能把开发 smoke 写成生产已验证。
 
-循环 43-46 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
-确认与安全只读工具活动。Renderer
+循环 43-48 已完成固定 Main Session 文本对话、多 Agent 通用化、标准 ACP 单次权限
+确认、安全只读工具活动，以及通用 Workspace Artifact 索引。Renderer
 继续只用 `agentId` 与文本，由主进程与 Host 解析账户绑定的 Main Session；标准 ACP
 replay / live update 只投影有界的用户与 Agent 文本，本机路径、Session authority、
 Provider 凭据、thought/tool/meta 和原始 Host 错误不暴露给页面。账户切换、订阅
@@ -153,8 +156,17 @@ Provider 凭据、thought/tool/meta 和原始 Host 错误不暴露给页面。�
 允许、拒绝或取消；身份和生命周期变化均失败关闭。工具活动继续来自标准 Host
 replay/live update，主进程仅保留用于合并的私有 Tool Call ID，页面只看到最多 50 项
 本地活动 ID、允许列表工具类别和四态状态；终态、账户、Session 与生命周期边界均
-失败关闭。下一轮只审计产物和垂直状态可采用的 Host/Package authority、恢复语义与
-脱敏边界，不直接建立第二套产物存储或 UI。生产 Package 与桌面发布硬门见
+失败关闭。循环 47 进一步确认原始 ACP `content/locations/rawInput/rawOutput` 不能
+成为产品产物 authority；循环 48 固化通用
+`.agentmesh360/artifacts-v1.json` 契约，由 Host 逐次验证账户、Workspace、64 KiB
+清单、100 项上限、相对路径、逐级非符号链接与真实普通文件，只向 Renderer 投影
+`artifactId/title/kind/sizeBytes`。Manifest 不存在返回空索引，无效清单失败关闭但
+不关闭文本对话；打开对话和成功 Prompt 后刷新，所有身份与 Host 生命周期变化清空。
+该能力不建立第二套产物数据库，也不开放文件、预览、导出、分享或删除。下一轮只
+审计通用“项目状态”是否需要独立于对话和产物的稳定 authority，不直接铺开 Agent
+专属垂直 UI。完整产物契约见
+[`WORKSPACE_ARTIFACT_MANIFEST_V1.md`](WORKSPACE_ARTIFACT_MANIFEST_V1.md)。生产
+Package 与桌面发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 
 ## 上游同步规则
