@@ -1,8 +1,8 @@
 # 持久化产品 Agent 架构
 
-状态：基础实现完成，已接入 Host 订阅门禁
+状态：基础实现完成，已接入 Host 订阅门禁和 Job Agent 桌面对话第一切片
 建立日期：2026-07-21
-最近更新：2026-07-24
+最近更新：2026-07-27
 
 相关的产品结构、流程、Package、Provider 与信任边界图见：
 [`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。CC Switch Provider 调研、Host Vault、
@@ -140,9 +140,13 @@ Session 恢复；失败不会沿用旧 Access Token。Grok Session Store 根目�
 Host 与 Agent”，但签名、公证安装包中的 macOS Login Item 注册/批准/升级仍需发布
 验收，不能把开发 smoke 写成生产已验证。
 
-H2d4 后的产品计划复核确认，下一项先补桌面固定 Main Session 对话入口。Renderer
-继续只用 `agentId`，由主进程与 Host 解析账户绑定的 Main Session，不把本机路径或
-可伪造的 Session authority 暴露给页面。生产 Package 与桌面发布硬门见
+循环 43 已完成 Job Agent 固定 Main Session 文本对话第一切片。Renderer 继续只用
+`agentId` 与文本，由主进程与 Host 解析账户绑定的 Main Session；标准 ACP replay /
+live update 只投影有界的用户与 Agent 文本，本机路径、Session authority、Provider
+凭据、thought/tool/meta 和原始 Host 错误不暴露给页面。账户切换、订阅失效、Host
+不可用、Leader 重连和 Prompt 超时都会撤销临时 authority，重新打开后再从 Host
+恢复同一持久 Session。当前用户侧只开放 Job Agent；下一轮按同一通路扩展到
+LectureCast、Deploy 和动态 Agent，并补用户可见恢复测试。生产 Package 与桌面发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 
 ## 上游同步规则

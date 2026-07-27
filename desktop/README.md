@@ -31,10 +31,14 @@
 - Renderer 已有 Agent Package Center，按 `packageId` 展示发现、下载、权限批准、
   reconcile 与 rollback；URL、digest、签名材料和本机路径仍只由 Host 持有；
 - H2d4 已补齐 Release Manifest 消费门，但生产 Root、Trust Bundle、Registry endpoint
-  和上传发布保持关闭，所以当前 Package Center 不会取得真实生产远端内容。
+  和上传发布保持关闭，所以当前 Package Center 不会取得真实生产远端内容；
+- Job Agent 已接入固定 Main Session 文本对话：Renderer 只提交 `agentId` 与文本，
+  主进程/Host 解析账户绑定的 Session，使用标准 ACP 加载历史、发送 Prompt 和接收
+  流式更新；Session ID、Workspace 路径、Provider 凭据和原始 Host 错误不进入页面。
 
-当前尚未实现 OAuth、固定 Main Session 对话界面和垂直业务工作区；外部真实 Provider
-E2E 仍需要用户凭据与费用授权，动态 Agent Package 的生产发布也仍关闭。这些能力按
+当前尚未实现 OAuth、LectureCast/Deploy/动态 Agent 的对话入口、完整 Harness
+交互/审批和垂直业务工作区；外部真实 Provider E2E 仍需要用户凭据与费用授权，动态
+Agent Package 的生产发布也仍关闭。这些能力按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。
 H2d4 后的顺序复核与发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](../docs/architecture/PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
@@ -101,6 +105,12 @@ npm run check
 npm audit
 ```
 
+验证 Job Agent 固定 Main Session 对话界面：
+
+```bash
+npm run test:conversation-ui
+```
+
 真实 Host 契约测试会启动本地临时 Core 和实际 Rust Host，验证有效订阅放行、
 三个 Agent 可见，以及订阅到期后的立即拒绝。相同命令还会验证持久 Leader 在第一个
 Bridge detach 后仍存活，第二个 Bridge 恢复同一个产品 Agent Main Session；测试
@@ -108,7 +118,7 @@ Leader 会在结束时主动清理：
 
 ```bash
 AGENTMESH360_REAL_HOST_BIN=../target/debug/xai-grok-pager \
-  node --test tests/real-host.test.js
+  node --test tests/real-host.test.js tests/real-host-lifecycle.test.js
 ```
 
 生成实际 Electron 渲染截图：

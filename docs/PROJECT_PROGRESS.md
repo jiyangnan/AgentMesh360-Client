@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-26
+最近更新：2026-07-27
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -32,7 +32,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码 | 固定 Main Session 桌面对话入口；签名安装包 Login Item E2E 仍是发布门 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；Job Agent 固定 Main Session 文本对话第一切片已接入桌面 | 将同一恢复与安全投影通路扩展到 LectureCast、Deploy 和动态 Agent；签名安装包 Login Item E2E 仍是发布门 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3 已完成；F0a 官方边界与零费用契约 Harness 已完成 | F0b：真实 Gemini 契约与 thought signature 保真 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -3219,3 +3219,77 @@ Kimi 独立交叉复核：
   两者一起开放才要求 R0-R6 全关；Kimi 第二轮确认集合、表格和跨文档文案一致；
 - 两轮都执行 `git diff --check`，第二轮同时核对相对链接、代码围栏与 Mermaid，
   最终 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。
+
+### 循环 43：Job Agent 固定 Main Session 对话入口第一切片
+
+状态：实现、自主验证与两轮本机 Kimi 独立交叉测试已完成
+
+本地功能提交：`818e98c feat: add persistent agent conversation entry`
+
+计划校准：
+
+- 循环开始先复核产品蓝图、循环 42 的发布门和当前源码，确认最靠前缺口仍是
+  “Agent 首页 → 固定 Main Session 历史与持续对话”；
+- 本轮只开放 Job Agent 的文本对话入口；底层 Controller 使用通用 `agentId`，但没有
+  提前开放 LectureCast、Deploy 或动态 Agent；
+- 没有启动 Package H2d5、生产 Root/endpoint/上传、Provider 扩展、OAuth、工具审批、
+  活动、产物或垂直工作区。
+
+已经实现：
+
+1. `AcpHostClient` 复用标准 ACP `session/load`、`session/prompt` 与
+   `session/update`，没有建立第二套聊天数据库或 Harness 协议；
+2. Renderer 只提交 `agentId` 与文本。主进程在订阅准入为严格 `true` 后激活 Agent，
+   再由 Host Registry 解析账户绑定的 Main Session 与 Workspace；Session ID、cwd、
+   Provider 凭据和原始 Host 错误不进入 Renderer；
+3. 新增主进程 `AgentConversationController`，负责历史 replay、live 文本 chunk 聚合、
+   200 条 / 20 万字符有界公开投影、跨 Session 过滤和安全错误；
+4. 账户切换、退出、订阅拦截、Host 不可用与 Leader 重连都会撤销临时 conversation
+   authority；重连后必须重新打开并从 Host 恢复同一 Main Session；
+5. Prompt 超时后也撤销临时 authority，忽略仍在到达的旧 turn chunk，防止与重发
+   交错；不同 Agent 的并发打开不会复用错误 Promise；
+6. Job Agent 卡片现在显示“激活并打开 / 打开对话”，侧边栏出现“当前对话”；其他
+   Agent 仍只执行激活。页面包含历史、流式状态、文本输入和明确的安全投影说明；
+7. 修复了 Agent 激活错误旁路，Renderer 不再收到 Host 原始错误、路径或秘密片段。
+
+自主验证：
+
+- `cd desktop && npm test`：69 项中 67 项通过、0 失败，2 项真实 Host 环境门默认
+  skip；新增测试覆盖安全投影、账户/重连撤权、不同 Agent 并发、Prompt 超时、严格
+  订阅门和有界历史；
+- `npm run check` 通过；
+- `npm run test:conversation-ui`、`npm run test:package-ui`、
+  `electron tests/provider-ui-smoke.js` 与 `electron tests/visual-smoke.js` 均在真实
+  Electron 窗口中通过；
+- 使用本轮构建的 `target/debug/xai-grok-pager` 运行
+  `real-host.test.js` 与 `real-host-lifecycle.test.js`：2/2 通过，验证跨账户
+  `session/load` 拒绝、订阅失效后 `session/prompt` 拒绝，以及 Bridge detach /
+  Leader 替换后同一 Main Session 仍可加载；
+- `git diff --check` 与源码秘密/私有路径静态扫描通过。沙箱内真实 Host 用例曾因
+  `listen EPERM 127.0.0.1` 失败，随后在本机权限下重跑通过，没有把环境失败或 skip
+  记作通过。
+
+Kimi 独立交叉测试：
+
+- Kimi session `session_c6129f01-8b1a-4f0c-9f51-c7e8a203244c` 获得用户对本仓库
+  完整 diff、未跟踪文件和相关本地路径的明确授权，只读检查 ACP Schema、Host 门禁、
+  replay/live 聚合、IPC 投影、建窗恢复与 Job-first 边界，并独立执行桌面、Electron
+  和真实 Host 测试；
+- 首轮 Blocker/High/Medium 为零，发现 3 项 Low：live chunk 会抢回当前页面、不同
+  Agent 并发打开会复用错误 Promise、Prompt 客户端超时后迟到 chunk 可能与重发交错；
+- 三项均在本轮关闭，并补充 `canEnterClient === true` 的严格失败关闭；自主复测后，
+  Kimi 在同一 session 第二轮重新读取完整 diff 并执行 `npm test`、`npm run check`、
+  对话 Electron smoke、真实 Host 2 项和 `git diff --check`；
+- 第二轮确认 Blocker/High/Medium/Low 全部为零，所有要求命令通过，给出无条件 PASS。
+
+计划复盘：
+
+- 本轮保持“Renderer 无 authority、Host 拥有 Main Session/Workspace、Grok 拥有完整
+  历史”的原定边界，没有把 Session ID 或 cwd 放回公开 Agent 投影；
+- Job Agent 现在完成的是文本对话第一切片，不代表工具调用审批、结构化交互、活动、
+  产物或垂直工作区已经完成；
+- R0 仍未满足：还需完成多 Agent 通用化、重启/重连的用户级恢复体验，以及 Harness
+  交互/审批边界后，才可评估产品对话闭环；
+- 下一轮按原计划进入“对话恢复与多 Agent 通用化”，先把同一 Controller 与安全
+  投影扩展到 LectureCast、Deploy 和动态 Agent，并补窗口重建、账户切换和重连的
+  用户可见恢复测试；不进入生产发布或新的 Provider/Package 切片。

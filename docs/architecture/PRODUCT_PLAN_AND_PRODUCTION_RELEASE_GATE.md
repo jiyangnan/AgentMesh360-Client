@@ -1,6 +1,7 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
-状态：2026-07-27 自主审计与两轮本机 Kimi 独立交叉复核已完成；所有生产发布能力保持关闭
+状态：2026-07-27 Job Agent 固定 Main Session 对话第一切片已通过自主验证和两轮
+本机 Kimi 独立交叉复核；所有生产发布能力保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -29,7 +30,7 @@ EMBEDDED_PUBLISHER_TRUST_BUNDLE = None
 
 因此不能把 H2d4 后的下一步自动解释为“填入常量并上线”，也不自行命名 H2d5。
 
-### 1.2 下一项回到产品主路径：固定 Main Session 对话入口
+### 1.2 产品主路径已推进：Job Agent 固定 Main Session 对话第一切片关闭
 
 产品蓝图的核心流程是：
 
@@ -46,17 +47,17 @@ flowchart LR
     RESTORE --> RESOLVE
 ```
 
-当前 Electron 页面已经显示“打开对话”，但该按钮仍只调用 Agent 激活接口：
+循环 43 已完成这一流程的 Job Agent 第一切片：
 
-- Renderer 没有对话视图；
-- `IdentityController` 的公开 Agent 投影有意移除了 `mainSessionId` 与本机路径；
-- Electron 主进程没有 Agent 对话 IPC；
-- `AcpHostClient` 没有封装标准 `session/load`、`session/prompt` 与
-  `session/update` 消费；
-- 侧边栏“会话”仍是禁用的“后续”入口。
+- 用户从 Agent 卡片进入真实固定主对话，侧边栏“当前对话”可返回；
+- Renderer 仍看不到 `mainSessionId` 与本机路径，只提交 `agentId` 和文本；
+- Electron 主进程通过独立 Controller 持有临时 Session authority；
+- `AcpHostClient` 复用标准 `session/load`、`session/prompt` 与 `session/update`；
+- 历史和 live update 只投影有界的用户/Agent 文本，订阅、账户、重连与超时均失败关闭。
 
-所以用户目前能激活常驻 Agent，却不能在客户端里真正进入它的固定主对话。按照最初
-产品目标，这是比开启生产 Package 分发更靠前的缺口。
+当前用户侧只开放 Job Agent。下一项按原计划把同一路径扩展到 LectureCast、Deploy 和
+动态 Agent，并完成窗口重建、账户切换与重连的用户可见恢复；这仍比启用生产 Package
+分发更靠前。
 
 ## 2. 当前能力核对
 
@@ -67,14 +68,14 @@ flowchart LR
 | BYOK | Provider Profile/Vault、Assignment、Binding、路由、设置页与 Probe 已实现 | 外部真实 Provider E2E 仍独立待验 |
 | Agent Package | H0/H1 至 H2d4 的本地信任、发布描述与消费门已通过双方测试 | 生产 authority 仍为空 |
 | Package Center | 发现、下载、批准、回滚、reconcile 的安全 UI/Host 接口已实现 | 因生产 Registry 关闭而无真实远端内容 |
-| 固定主对话 | Harness 和 Host 已有 Session 能力，桌面没有对话通路 | 下一产品关键项 |
+| 固定主对话 | Job Agent 已有桌面文本对话、历史 replay、live update 和安全重开通路 | 继续多 Agent 通用化与用户可见恢复；工具/交互审批仍后置 |
 | 垂直工作区 | 活动、产物、审批、项目状态仍为目标 | 对话入口后分步实现 |
 | 桌面正式分发 | 可构建本地 DMG/ZIP | 未签名、未公证、无自动更新发布链 |
 
-## 3. 下一开发项的边界
+## 3. 已关闭第一切片的边界
 
-下一项是“固定 Main Session 对话入口第一切片”，属于现有桌面产品外壳路线，不属于
-新的 Agent Package 阶段。
+循环 43 的“固定 Main Session 对话入口第一切片”属于现有桌面产品外壳路线，不属于
+新的 Agent Package 阶段；以下边界已经由源码、自主测试和 Kimi 交叉测试验证。
 
 ### 必须包含
 
@@ -88,7 +89,8 @@ flowchart LR
 5. 页面关闭、Bridge detach 或 Leader 重连后，重新打开仍指向同一个 Main Session；
 6. 只向 Renderer 投影对话所需的消息、流式状态和安全错误，不暴露 Token、Provider
    Key、路径、环境变量、原始 Host 错误或其他账户 Session；
-7. 先覆盖 Job Agent，再用同一通用路径覆盖 LectureCast、Deploy 和动态 Agent。
+7. 当前先覆盖 Job Agent；LectureCast、Deploy 和动态 Agent 留在下一轮沿用同一
+   通用路径。
 
 ### 本切片不包含
 
@@ -112,7 +114,7 @@ flowchart LR
 
 | 门 | 适用发布链 | 当前状态 | 启用前必须具备 |
 | --- | --- | --- | --- |
-| R0 产品可用性 | 共同 | 未满足 | 固定 Main Session 对话闭环可用；订阅失效、重启与账户切换均不泄漏或丢失历史 |
+| R0 产品可用性 | 共同 | 未满足 | Job Agent 文本对话第一切片已通过；仍须完成多 Agent 通用化、用户可见重启/重连恢复与 Harness 交互/审批边界，且订阅失效、重启与账户切换均不泄漏或丢失历史 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足 | 独立审查的 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足 | 可复现构建证据；H2d0 外部签名输入输出；Artifact/Envelope/Host bundles/Release/Registry 的发布者、摘要和版本可追溯 |
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
@@ -148,9 +150,10 @@ flowchart TD
 
 ## 6. 按原产品计划的后续顺序
 
-1. **固定 Main Session 对话入口第一切片**：完成 Agent 首页到真实固定对话的最小闭环；
-2. **对话恢复与多 Agent 通用化**：重启、重连、账户切换、三个首方 Agent 和动态
-   Agent 使用同一通路；
+1. **固定 Main Session 对话入口第一切片（已完成）**：Job Agent 已完成首页到真实
+   固定文本对话的最小闭环；
+2. **对话恢复与多 Agent 通用化（下一轮）**：重启、重连、账户切换、三个首方 Agent
+   和动态 Agent 使用同一通路；
 3. **工作区增量**：再按产品价值加入活动、产物、审批和垂直状态，不一次铺满；
 4. **凭据依赖的真实 Provider E2E**：在用户明确提供测试凭据和费用授权时执行；
 5. **桌面与 Package 生产发布计划**：只有 R0-R6 全部满足并获得单独授权后启动。
@@ -158,7 +161,7 @@ flowchart TD
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
 
-## 7. 本轮验收
+## 7. 循环 42 计划审计验收（历史）
 
 - 计划结论必须能由当前源码和既有文档直接支持；
 - 不修改任何生产常量、信任根、endpoint、签名配置或上传逻辑；
@@ -177,3 +180,13 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 修复后 §4 明确两条发布链及其适用集合，表格增加“适用发布链”列；进展文档与产品
 蓝图同步相同集合。Kimi 第二轮重新检查完整修复 diff、表格、链接、Mermaid 与
 `git diff --check`，最终 Blocker/High/Medium/Low 全部为零并给出无条件 PASS。
+
+## 8. 循环 43 实施检查点
+
+- 功能提交：`818e98c feat: add persistent agent conversation entry`；
+- 桌面 `npm test`：67 pass、0 fail、2 个真实 Host 环境门 skip；
+- Conversation、Package、Provider、Visual 四组 Electron smoke 全部通过；
+- 真实 Host `real-host.test.js` 与 `real-host-lifecycle.test.js`：2/2 通过；
+- Kimi session `session_c6129f01-8b1a-4f0c-9f51-c7e8a203244c` 首轮发现 3 项 Low，
+  修复后第二轮 Blocker/High/Medium/Low 全部为零并给出无条件 PASS；
+- R0 继续保持未满足，下一轮只进入对话恢复与多 Agent 通用化，不启动生产发布。
