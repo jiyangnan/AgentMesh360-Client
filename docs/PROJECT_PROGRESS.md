@@ -5106,3 +5106,30 @@ P4 仍等待 Registry 撤回和全部 E1 资源/秘密销毁
   27 个 Release 对象；
 - 之后销毁 Root/Publisher、Droplet、DNS、limited key、bucket 和本机秘密，
   完整清场前不进入 P5。
+
+### 循环 80：P4 R3 E1 Registry-first 清场执行器
+
+状态：对象撤回与临时签名材料销毁执行器完成本地验证；尚未执行外部删除
+
+已经实现：
+
+1. 只接受 frozen/clean executor、生产空常量、14/14 fault receipt 和完整
+   Registry-last publication state；
+2. 对 35 个对象逐项绑定 bucket class、object key、digest 与 receipt，要求
+   27 Release + 8 metadata 且 Registry 精确位于最后；
+3. 首先 DELETE Registry，再由 direct-to-approved-IP HTTPS Origin 验证 404；
+4. 其余 34 个对象逆序删除，每个由只读 Origin principal HEAD=404 复验；
+5. 删除过程先写 mode `0600` pending state，并允许在明确的同 executor state 上
+   幂等重跑，S3 transport 中断不会丢失 inventory；
+6. 对象全部 absent 后通过隔离 signer 覆盖并删除 Root 与 Publisher 私钥，再删除
+   整个 E1 Release boundary；
+7. publication/release/fault state 暂留到最终云资源复核后统一删除，避免清场中途
+   丢失非秘密恢复证据；
+8. 定向测试 10/10，实际 35-object inventory 预检通过，diff check 通过。
+
+计划复盘与下一轮：
+
+- 下一步冻结推送后执行 Registry-first 对象/私钥销毁；
+- 只有 35/35 absent 且两把私钥和 Release boundary 都销毁，才删除 DNS/Droplet、
+  key 与 bucket；
+- 生产资源、P5-P8 继续关闭。

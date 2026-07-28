@@ -709,3 +709,13 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 非秘密 receipt 固定 16 个逻辑请求、最多 64 次传输尝试；
 - Provider/credits/生产 mutation 为 0；
 - 下一步先撤 Registry，再清对象、key、DNS、Droplet、bucket；清场前 P5-P8 关闭。
+
+## 39. 循环 80 P4 R3 E1 Registry-first 清场执行器检查点
+
+- 绑定 clean executor、生产空常量、14/14 receipt 与 35-object inventory；
+- 先删 Registry 并经 Origin 验 404；
+- 其余 34 项逆序删，每项只读 HEAD=404；
+- mode `0600` pending state 支持同 executor 幂等恢复；
+- 全部 absent 后覆盖删除 Root/Publisher，再移除 Release boundary；
+- 定向 10/10、实际 inventory 预检通过；
+- 下一步冻结后执行，再清 DNS/Droplet/key/bucket，P5-P8 关闭。

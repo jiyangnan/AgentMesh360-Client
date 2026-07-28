@@ -1041,3 +1041,14 @@ live state、本地 config 与远端磁盘 config 一致；根因是幂等部署
 build、publication、fault matrix 已完成，但 cleanup 仍是 P4 验收的一部分。
 下一步先撤 Registry 并验证 404，再删除其余对象、临时 key 与全部 E1 云资源；
 P5-P8 继续关闭。
+
+## 34. Cycle 80 P4 R3 E1 Registry-first 清场执行器检查点
+
+清场执行器严格绑定 clean/frozen executor、生产空常量、14/14 fault receipt 和
+35-object Registry-last inventory。它先 DELETE Registry 并经 HTTPS Origin
+确认 404，再逆序删除其余 34 个对象，每项用只读 principal HEAD=404；pending
+state 支持同 executor 幂等恢复。
+
+对象全部 absent 后，隔离 signer 覆盖删除临时 Root/Publisher，再删除 Release
+boundary。定向 10/10，实际 inventory 预检通过。下一步冻结后执行；之后才允许
+删除 DNS/Droplet/limited key/bucket，P5-P8 关闭。

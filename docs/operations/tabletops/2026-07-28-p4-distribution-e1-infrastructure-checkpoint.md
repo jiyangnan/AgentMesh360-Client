@@ -201,3 +201,13 @@ baseline revision/sequence、16 个逻辑请求和 64 次最大 transport 尝试
 
 P4 仍未最终关闭。下一步严格撤 Registry 并验证公网 404，再清除其余对象、
 临时 Root/Publisher、DNS、Droplet、limited key、bucket 和本机秘密。
+
+## 9. Registry-first 清场执行器检查点
+
+执行器只接受完整 35-object inventory 和 14/14 fault receipt。顺序固定为：
+Registry DELETE → Origin 404 → 其余 34 对象逆序 DELETE/Reader HEAD 404 →
+隔离 signer 销毁 Root/Publisher → 删除 E1 Release boundary。mode `0600`
+pending state 允许同 executor 幂等恢复。
+
+本节只证明清场实现和实际 inventory 预检通过，尚未声称外部对象、key 或资源已
+删除。下一步冻结执行器后实际运行，再进入 DNS/Droplet/Spaces 清理。
