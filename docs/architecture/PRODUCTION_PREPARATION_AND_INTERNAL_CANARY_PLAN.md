@@ -2,8 +2,10 @@
 
 状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线、Cycle 58 的 P2
 无 authority preflight 与 Cycle 59 的 P2 E0 测试 key 技术演练均已完成自主验证和
-本机 Kimi 四级清零；生产 R1-R6 仍未关闭，尚未进入生产 key ceremony、P3、E1/E2、
-内部 canary 或生产候选
+本机 Kimi 四级清零；Cycle 60 的 P3 零新 key provenance preflight 也已完成双方
+验证与 Kimi 四级清零；
+生产 R1-R6 仍未关闭，尚未进入 P3 实际双构建/测试签名、生产 key ceremony、
+E1/E2、内部 canary 或生产候选
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -43,7 +45,8 @@ Provider、消耗 credits 或写用户真实宿主目录。
   sequence 1-5、六个失败关闭输入及私钥销毁均有 retention-safe receipt；
 - P2 的 E0 子项通过不满足生产 R1；真实 custody、双人生产 ceremony 和生产 key
   仍需另一张批准卡；
-- 下一步按固定顺序只能评估 P3 R2 E0，不能跳到 P4-P8；
+- P3 零新 key preflight 已机器固定 source/toolchain freeze、双构建、Agent 矩阵、
+  provenance 输出与 signer 批准边界；实际执行仍等待新 test-signing authority；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -421,7 +424,7 @@ flowchart TD
 | P0 当前态审计与计划 | 本文、蓝图/发布门/进展同步、文档验证、Kimi 四级清零 | 本轮已授权继续开发；不含外部动作 |
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
-| P3 R2 E0 | 固定 commit 的双构建、provenance、外部测试签名与复验 | 不得使用生产 Publisher key |
+| P3 R2 E0 | **零新 key preflight 已实现，实际演练未执行**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、十类输出与新 signer 批准边界 | 不得使用 P2 已销毁材料或生产 Publisher；实际测试签名前单独批准 |
 | P4 R3 E1 | 隔离 origin、对象存储/Registry、故障注入和清理 | 需要创建外部资源与 staging 凭据授权 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
@@ -648,3 +651,37 @@ Blocker/High/Medium/Low 全部为零并给出 PASS。
 - 下一步严格按序评估 P3 R2 E0，但生成任何新的测试 Publisher 或执行外部测试签名
   前必须取得与 P3 范围匹配的 authority；P4-P8、生产 key、外部资源、费用、Apple
   凭据与 cohort 继续关闭。
+
+## 14. Cycle 60 P3 零新 key provenance preflight 检查点
+
+已经实现：
+
+- strict `agentmesh360-release-provenance-preflight-v1` Schema、默认 blocked 模板、
+  无依赖 Node validator 与中文操作清单；
+- 顶层固定 `environment=e0`、`workPackage=p3_r2`、`authority=none`、
+  `not_approved` 与 `blocked`，不能填入 execution commit/digest/toolchain；
+- source freeze 固定 clean tree、`Cargo.lock` typed digest、Rust toolchain，
+  并逐项绑定 Rust 实现的 11 个数值 Schema version 与 2 个 canonical payload
+  ID，不使用不存在的聚合 Schema 名称；
+- 执行角色固定为相互分离的 `build_operator`、`test_signer_operator` 与
+  `independent_reviewer` 非个人 alias；
+- 两个仓库外隔离 build root、逐字节一致、仓库根 `target/` 禁止，以及 Artifact、
+  file manifest、signing request/result、Envelope、finalize receipt、Host
+  projection/bundles、Release Manifest、Registry record 十类输出；
+- `deploy-agent`、`job-agent`、`lecturecast-agent` 与既有 H2d1
+  `future-agent / com.agentmesh360.future-agent / 1.0.0` 四项矩阵，防止把“动态
+  Agent”退化成内置 Catalog 特例；
+- Ed25519 signer authority 继续为 none，P2 private material 不可复用，production
+  key 与 Repository/Builder/evidence 私钥全部禁止；
+- 新 P3 批准卡固定 source/version、一个新测试 Publisher、signer mode/存储/销毁、
+  窗口、零 Provider/requests/credits/费用和 rollback。
+
+当前验证与边界：
+
+- P3 preflight 定向 Node 12/12、模板 CLI、Node check、JSON 与 diff 已通过；
+- 本轮没有运行 Cargo、创建 build root/`target`、生成/读取 key、签名、finalize、
+  构造候选 Registry、上传、发布或调用外部服务；
+- P1/P2/P3 Node 联合回归 53/53；同一 Kimi session 两轮审查中，首轮 1 Medium /
+  2 Low 已修复，第二轮独立复跑和 10 类负向验证后四级 findings 全零并 PASS；
+- preflight 通过只建立 `rehearsal_ready` 前的阻断结构，不代表 P3/R2 已完成；
+- 实际 P3 仍等待新的 test-signing authority，P4-P8 继续关闭。

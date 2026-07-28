@@ -32,12 +32,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 preflight 与 P2 E0 技术执行已按原顺序推进；下一步只能评估 P3 R2 E0，不自动启动 Scheduler、Agent 专属 UI、新测试/生产 key、endpoint 或发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 E0 与 P3 零新 key preflight 已按原顺序推进；下一验收点是新的 P3 test-signing authority，不自动启动 Scheduler、Agent 专属 UI、测试/生产 key、endpoint 或发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；Cycle 57 已完成 P1 R6 本地基线；Cycle 58 已完成 P2 preflight；Cycle 59 已完成 P2 E0 测试 key 执行与销毁，生产 endpoint/root/bundle 仍为空 | P2 只关闭 E0 技术子项，R1-R6 仍未满足；下一步按序评估 P3，新的测试签名 authority、生产 key 与后续外部 authority 分别精确批准 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56-59 已完成 P0/P1/P2；Cycle 60 已实现 P3 零新 key provenance preflight，生产 endpoint/root/bundle 仍为空 | P3/R2 仍未满足；下一步只有在新的测试签名 authority 生效后执行固定 commit 双构建与测试签名，生产 key 与 P4-P8 分别批准 |
 
 ## 开发循环记录
 
@@ -4268,3 +4268,67 @@ Kimi 独立复核：
 - 测试私钥已经销毁，P3 不得复用；
 - 下一步按正式计划只能进入 P3 R2 E0；若需生成新的测试 Publisher 或外部测试签名，
   必须先取得匹配 P3 范围的精确 authority，P4-P8 继续关闭。
+
+### 循环 60：P3 R2 零新 key provenance preflight
+
+状态：零新 key preflight 已完成自主验证与本机 Kimi 四级清零；P3 实际执行仍关闭
+
+计划校准：
+
+- 先复核正式计划 R2 进入门、H2d0-H2d4 Authoring/Release 工具与历史构建证据；
+- 历史首方双构建只证明当时源码和测试 key，不能替代当前 commit/toolchain/lock
+  provenance；P2 key 已销毁，不能复用；
+- 本轮只表达 P3 的 `rehearsal_ready` 前置结构，不运行 Cargo、不生成 key、不签名、
+  不构造或发布 Registry，也不创建仓库根 `target/`。
+
+已经实现：
+
+1. `schemas/agentmesh360-release-provenance-preflight-v1.schema.json` 固定
+   `e0/p3_r2/authority=none/not_approved/blocked`；
+2. source freeze 要求未来执行记录 clean commit、`Cargo.lock` typed SHA-256、
+   Rust toolchain，并逐项绑定 Rust 实现的 11 个数值 Schema version 与 2 个
+   canonical payload ID，不使用不存在的聚合 Schema 名称；
+3. 执行角色固定为相互分离的 `build_operator`、`test_signer_operator` 与
+   `independent_reviewer` 非个人 alias；
+4. build plan 固定两个仓库外隔离 root、逐字节一致、根 `target/` 禁止与十类 R2
+   output；
+5. Agent matrix 固定 Deploy、Job、LectureCast 与既有 H2d1
+   `future-agent / com.agentmesh360.future-agent / 1.0.0` fixture，验证零 Adapter
+   和动态 Agent 都不依赖 Catalog 特判；
+6. signing boundary 固定 Ed25519、authority none、P2 material 不可复用、
+   production key 禁止，以及 Repository/Builder/evidence 私钥全部为 false；
+7. approval card 明确实际 P3 需要新的 test Publisher、signer mode/存储/销毁、
+   source/version、窗口、零 Provider/requests/credits/费用和 rollback；
+8. 无依赖 validator 拒绝 duplicate JSON key、symlink、非 UTF-8、超限、未知字段、
+   agent/output 漂移和任何 authority/approval/execution/freeze/signing 升级；
+9. [`operations/RELEASE_PROVENANCE_PREFLIGHT_V1.md`](operations/RELEASE_PROVENANCE_PREFLIGHT_V1.md)
+   记录历史证据不能复用、矩阵、输出、批准卡、停止条件与证据边界。
+
+自主验证：
+
+- P3 preflight 定向 Node：12/12；
+- 默认模板 CLI、Node check、Schema/template JSON 与 `git diff --check` 通过；
+- 没有运行 Cargo/npm/Electron、创建 build root/根 `target`、生成/读取 key、签名、
+  finalize、构造候选 Registry、访问外部服务或产生费用；
+- P1/P2/P3 Node 联合回归：53/53。
+
+Kimi 独立复核：
+
+- 使用同一 session `session_a09010bf-4411-4301-90bd-384fcc017310` 完成两轮
+  read-only 审查；
+- 第一轮发现 1 个 Medium、2 个 Low：不存在/错误的聚合 Schema 名称、动态 Agent
+  fixture ID 漂移，以及缺少 executor role；
+- 修复后第二轮逐项核对 11 个 Rust 数值 Schema version、2 个 canonical payload
+  ID、四组 Agent/package/version 与三类执行 role；
+- 独立复跑 53/53、P3/P2 CLI、Node check、JSON、link/fence、diff、根 `target/`、
+  生产 `None` 常量，以及 10 类 authority/contract/identity/symlink 负向输入；
+- 最终 Blocker/High/Medium/Low 全部为 0，结论 PASS。
+
+计划复盘与下一轮：
+
+- 本轮严格停在 P3 no-authority preflight，没有把 H2d0 历史摘要写成当前 provenance，
+  也没有把模板 PASS 写成双构建或 R2 完成；
+- 本轮只关闭 P3 no-authority preflight，不关闭 R2；
+- 下一步必须等待新的精确 test-signing authority，才能生成一个新 E0 测试
+  Publisher、执行固定 commit 双构建与测试签名；没有该批准时 P4-P8 和生产发布
+  继续关闭。

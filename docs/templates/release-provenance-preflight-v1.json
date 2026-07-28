@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "rehearsalId": "release_provenance_e0_template_0001",
+  "environment": "e0",
+  "workPackage": "p3_r2",
+  "authority": "none",
+  "approvalStatus": "not_approved",
+  "executionStatus": "blocked",
+  "sourceFreeze": {
+    "commit": "requires_execution_commit",
+    "cleanTreeRequired": true,
+    "cargoLockSha256": "requires_execution_digest",
+    "rustToolchain": "requires_execution_capture",
+    "contractVersions": {
+      "authoringSchemaVersion": 1,
+      "signingRequestSchemaVersion": 1,
+      "signatureResultSchemaVersion": 1,
+      "publicKeySchemaVersion": 1,
+      "hostSkillPlanSchemaVersion": 1,
+      "hostProjectionSchemaVersion": 1,
+      "packageSignatureSchemaVersion": 1,
+      "fileManifestSchemaVersion": 1,
+      "hostSkillExportSchemaVersion": 1,
+      "agentReleaseSchemaVersion": 1,
+      "registrySnapshotSchemaVersion": 2,
+      "packageSignatureCanonicalPayload": "agentmesh360-package-signature-v1",
+      "registryCanonicalPayload": "agentmesh360-package-registry-v2"
+    }
+  },
+  "executionRoles": {
+    "buildOperator": "build_operator",
+    "signerOperator": "test_signer_operator",
+    "independentReviewer": "independent_reviewer"
+  },
+  "buildPlan": {
+    "builderCount": 2,
+    "isolatedBuildRootsRequired": true,
+    "repositoryTargetForbidden": true,
+    "byteIdenticalRequired": true,
+    "digestAlgorithm": "sha256",
+    "outputClasses": [
+      "artifact",
+      "envelope",
+      "finalize_receipt",
+      "host_bundles",
+      "host_projection",
+      "package_file_manifest",
+      "registry_record",
+      "release_manifest",
+      "signature_result",
+      "signing_request"
+    ]
+  },
+  "agentMatrix": [
+    {
+      "agentId": "deploy-agent",
+      "packageId": "com.agentmesh360.deploy-agent",
+      "version": "0.1.1",
+      "sourceClass": "first_party",
+      "executionStatus": "blocked"
+    },
+    {
+      "agentId": "future-agent",
+      "packageId": "com.agentmesh360.future-agent",
+      "version": "1.0.0",
+      "sourceClass": "dynamic_fixture",
+      "executionStatus": "blocked"
+    },
+    {
+      "agentId": "job-agent",
+      "packageId": "com.agentmesh360.job-agent",
+      "version": "0.4.7",
+      "sourceClass": "first_party",
+      "executionStatus": "blocked"
+    },
+    {
+      "agentId": "lecturecast-agent",
+      "packageId": "com.agentmesh360.lecturecast-agent",
+      "version": "0.4.0",
+      "sourceClass": "first_party",
+      "executionStatus": "blocked"
+    }
+  ],
+  "signingBoundary": {
+    "algorithm": "ed25519",
+    "signerAuthority": "none",
+    "signerMode": "requires_approval",
+    "testPublisherKeyId": "requires_approval",
+    "p2PrivateMaterialReusable": false,
+    "productionKeyAllowed": false,
+    "privateMaterialInRepository": false,
+    "privateMaterialInBuilder": false,
+    "privateMaterialInEvidence": false
+  },
+  "approvalCard": {
+    "action": "execute_p3_r2_e0_dual_build_and_test_signing",
+    "environment": "e0",
+    "credentials": "new_test_publisher_only",
+    "externalResources": "none_unless_separately_approved",
+    "maximumRequests": 0,
+    "maximumCredits": 0,
+    "maximumCurrencyCost": 0,
+    "startStopWindow": "requires_approval",
+    "rollbackTarget": "destroy_test_signer_and_remove_build_roots",
+    "approvalReceipt": "not_present"
+  },
+  "stopConditions": [
+    "approval_missing",
+    "build_output_mismatch",
+    "dirty_source_tree",
+    "evidence_policy_violation",
+    "private_material_boundary_violation",
+    "repository_target_created",
+    "source_or_toolchain_drift"
+  ],
+  "evidencePolicy": {
+    "recordPrivateMaterial": false,
+    "recordRawPublicKeys": false,
+    "recordRawSignatures": false,
+    "recordAbsolutePaths": false,
+    "recordPersonalIdentity": false,
+    "recordRawCommands": false,
+    "typedDigestPrefix": "sha256:"
+  }
+}

@@ -6,7 +6,8 @@ Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也�
 本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划，Cycle 57
 已关闭 P1 R6 本地基线，Cycle 58 已关闭 P2 无 authority ceremony 预检设计；
 Cycle 59 已完成 P2 E0 测试 key 技术演练、自主验证与本机 Kimi 四级清零；生产
-R1-R6 与所有生产发布能力仍保持关闭
+R1-R6 与所有生产发布能力仍保持关闭；Cycle 60 已完成 P3 零新 key provenance
+preflight 的自主验证与本机 Kimi 四级清零，尚未执行双构建或测试签名
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -449,3 +450,17 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 同一 session 第二轮复核最终 Blocker/High/Medium/Low 全零并 PASS；
 - 本轮只关闭 P2 E0 技术子项，生产 R1 仍未满足。P3 如果需要新的测试 Publisher
   authority，必须另行精确批准；不得复用已销毁材料或跳到 P4-P8。
+
+## 19. 循环 60 P3 零新 key provenance preflight 检查点
+
+- 新增 strict Schema、默认 blocked 模板、Node validator 与中文清单；
+- 固定 clean commit/lock/toolchain capture、两个隔离 build root、根 `target/`
+  禁止、四 Agent 矩阵与十类 R2 provenance 输出；
+- signer 固定 `authority=none`，P2 私钥不可复用，production key 和
+  Repository/Builder/evidence 私钥全部禁止；
+- 模板把新 test Publisher、signer mode、存储/销毁和执行窗口留给独立 P3 批准卡；
+- 主 Agent P3 定向 12/12、P1/P2/P3 联合 53/53、CLI/check/JSON/diff 已通过；
+- 同一 Kimi session 首轮 1 Medium / 2 Low 已修复，第二轮独立复跑与 10 类负向
+  验证后 Blocker/High/Medium/Low 全零并 PASS；
+- 本轮不执行双构建、签名、finalize、Registry candidate、外部服务或发布；P3/R2
+  仍未满足，P4-P8 继续关闭。

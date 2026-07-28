@@ -1,0 +1,445 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/release-provenance-preflight-v1.json",
+  "title": "AgentMesh360 P3 R2 E0 Release Provenance Preflight v1",
+  "description": "No-authority preflight for a future fixed-commit dual build and external test-signing rehearsal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rehearsalId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "sourceFreeze",
+    "executionRoles",
+    "buildPlan",
+    "agentMatrix",
+    "signingBoundary",
+    "approvalCard",
+    "stopConditions",
+    "evidencePolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "rehearsalId": {
+      "type": "string",
+      "pattern": "^release_provenance_e0_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e0"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p3_r2"
+    },
+    "authority": {
+      "type": "string",
+      "const": "none"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "not_approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "blocked"
+    },
+    "sourceFreeze": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "cleanTreeRequired",
+        "cargoLockSha256",
+        "rustToolchain",
+        "contractVersions"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "const": "requires_execution_commit"
+        },
+        "cleanTreeRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "cargoLockSha256": {
+          "type": "string",
+          "const": "requires_execution_digest"
+        },
+        "rustToolchain": {
+          "type": "string",
+          "const": "requires_execution_capture"
+        },
+        "contractVersions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "authoringSchemaVersion",
+            "signingRequestSchemaVersion",
+            "signatureResultSchemaVersion",
+            "publicKeySchemaVersion",
+            "hostSkillPlanSchemaVersion",
+            "hostProjectionSchemaVersion",
+            "packageSignatureSchemaVersion",
+            "fileManifestSchemaVersion",
+            "hostSkillExportSchemaVersion",
+            "agentReleaseSchemaVersion",
+            "registrySnapshotSchemaVersion",
+            "packageSignatureCanonicalPayload",
+            "registryCanonicalPayload"
+          ],
+          "properties": {
+            "authoringSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "signingRequestSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "signatureResultSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "publicKeySchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "hostSkillPlanSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "hostProjectionSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "packageSignatureSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "fileManifestSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "hostSkillExportSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "agentReleaseSchemaVersion": {
+              "type": "integer",
+              "const": 1
+            },
+            "registrySnapshotSchemaVersion": {
+              "type": "integer",
+              "const": 2
+            },
+            "packageSignatureCanonicalPayload": {
+              "type": "string",
+              "const": "agentmesh360-package-signature-v1"
+            },
+            "registryCanonicalPayload": {
+              "type": "string",
+              "const": "agentmesh360-package-registry-v2"
+            }
+          }
+        }
+      }
+    },
+    "executionRoles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildOperator",
+        "signerOperator",
+        "independentReviewer"
+      ],
+      "properties": {
+        "buildOperator": {
+          "type": "string",
+          "const": "build_operator"
+        },
+        "signerOperator": {
+          "type": "string",
+          "const": "test_signer_operator"
+        },
+        "independentReviewer": {
+          "type": "string",
+          "const": "independent_reviewer"
+        }
+      }
+    },
+    "buildPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "builderCount",
+        "isolatedBuildRootsRequired",
+        "repositoryTargetForbidden",
+        "byteIdenticalRequired",
+        "digestAlgorithm",
+        "outputClasses"
+      ],
+      "properties": {
+        "builderCount": {
+          "type": "integer",
+          "const": 2
+        },
+        "isolatedBuildRootsRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "repositoryTargetForbidden": {
+          "type": "boolean",
+          "const": true
+        },
+        "byteIdenticalRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "digestAlgorithm": {
+          "type": "string",
+          "const": "sha256"
+        },
+        "outputClasses": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "prefixItems": [
+            {"type": "string", "const": "artifact"},
+            {"type": "string", "const": "envelope"},
+            {"type": "string", "const": "finalize_receipt"},
+            {"type": "string", "const": "host_bundles"},
+            {"type": "string", "const": "host_projection"},
+            {"type": "string", "const": "package_file_manifest"},
+            {"type": "string", "const": "registry_record"},
+            {"type": "string", "const": "release_manifest"},
+            {"type": "string", "const": "signature_result"},
+            {"type": "string", "const": "signing_request"}
+          ]
+        }
+      }
+    },
+    "agentMatrix": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agentId",
+          "packageId",
+          "version",
+          "sourceClass",
+          "executionStatus"
+        ],
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "enum": [
+              "deploy-agent",
+              "future-agent",
+              "job-agent",
+              "lecturecast-agent"
+            ]
+          },
+          "packageId": {
+            "type": "string",
+            "pattern": "^com\\.agentmesh360\\.[a-z0-9][a-z0-9.-]{1,79}$"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "sourceClass": {
+            "type": "string",
+            "enum": [
+              "dynamic_fixture",
+              "first_party"
+            ]
+          },
+          "executionStatus": {
+            "type": "string",
+            "const": "blocked"
+          }
+        }
+      }
+    },
+    "signingBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "signerAuthority",
+        "signerMode",
+        "testPublisherKeyId",
+        "p2PrivateMaterialReusable",
+        "productionKeyAllowed",
+        "privateMaterialInRepository",
+        "privateMaterialInBuilder",
+        "privateMaterialInEvidence"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "signerAuthority": {
+          "type": "string",
+          "const": "none"
+        },
+        "signerMode": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "testPublisherKeyId": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "p2PrivateMaterialReusable": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionKeyAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "privateMaterialInRepository": {
+          "type": "boolean",
+          "const": false
+        },
+        "privateMaterialInBuilder": {
+          "type": "boolean",
+          "const": false
+        },
+        "privateMaterialInEvidence": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "approvalCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "environment",
+        "credentials",
+        "externalResources",
+        "maximumRequests",
+        "maximumCredits",
+        "maximumCurrencyCost",
+        "startStopWindow",
+        "rollbackTarget",
+        "approvalReceipt"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "execute_p3_r2_e0_dual_build_and_test_signing"
+        },
+        "environment": {
+          "type": "string",
+          "const": "e0"
+        },
+        "credentials": {
+          "type": "string",
+          "const": "new_test_publisher_only"
+        },
+        "externalResources": {
+          "type": "string",
+          "const": "none_unless_separately_approved"
+        },
+        "maximumRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCurrencyCost": {
+          "type": "integer",
+          "const": 0
+        },
+        "startStopWindow": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "rollbackTarget": {
+          "type": "string",
+          "const": "destroy_test_signer_and_remove_build_roots"
+        },
+        "approvalReceipt": {
+          "type": "string",
+          "const": "not_present"
+        }
+      }
+    },
+    "stopConditions": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        {"type": "string", "const": "approval_missing"},
+        {"type": "string", "const": "build_output_mismatch"},
+        {"type": "string", "const": "dirty_source_tree"},
+        {"type": "string", "const": "evidence_policy_violation"},
+        {"type": "string", "const": "private_material_boundary_violation"},
+        {"type": "string", "const": "repository_target_created"},
+        {"type": "string", "const": "source_or_toolchain_drift"}
+      ]
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordPrivateMaterial",
+        "recordRawPublicKeys",
+        "recordRawSignatures",
+        "recordAbsolutePaths",
+        "recordPersonalIdentity",
+        "recordRawCommands",
+        "typedDigestPrefix"
+      ],
+      "properties": {
+        "recordPrivateMaterial": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawPublicKeys": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawSignatures": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAbsolutePaths": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordPersonalIdentity": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawCommands": {
+          "type": "boolean",
+          "const": false
+        },
+        "typedDigestPrefix": {
+          "type": "string",
+          "const": "sha256:"
+        }
+      }
+    }
+  }
+}
