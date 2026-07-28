@@ -655,3 +655,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 仅 E1 retain 路径从精确冻结 commit 创建 detached worktree，并对 worktree
   再做 commit/clean 复验；
 - 未生成 key/Release/upload；下一步冻结隔离修复后重试双构建。
+
+## 33. 循环 74 P4 R3 E1 Release Set 双构建检查点
+
+- 四 Agent 均完成 A/B build、8 次临时 Publisher 签名与复验；
+- 每个 Agent 十类发布输出逐字节一致；
+- 临时边界/state/key 分别为 `0700/0600/0600`；
+- source worktree、builder target 已移除，根 `target/` absent；
+- 用户 dirty 工作区未修改；
+- 尚无 Root/Trust/Registry/upload，R3/P5-P8 不变；下一步组装 E1 metadata。

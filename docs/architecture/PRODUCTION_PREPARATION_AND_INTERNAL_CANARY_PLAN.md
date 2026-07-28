@@ -16,6 +16,7 @@ Cycle 70 已为瞬时 SSH transport 与本机 TUN 下的 HTTPS health 固化有�
 Cycle 71 已通过隔离 Spaces-backed Origin、Caddy TLS 与公网 HTTPS health；
 Cycle 72 已完成 opt-in E1 可留存四 Agent 双构建执行器；
 Cycle 73 已隔离冻结源码 worktree 与用户现有 dirty 工作区；
+Cycle 74 已完成四 Agent A/B Release Set、8 次签名与十类逐字节复验；
 生产 R1-R6 仍未关闭，尚未完成 E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -975,3 +976,13 @@ live state 已记录 deployed/executor/Caddy-managed TLS；公网 health 返回�
 
 本轮未生成 key、Release Set 或 upload。下一步冻结修复后重试双构建；
 P4/R3/P5-P8 状态不变。
+
+## 28. Cycle 74 P4 R3 E1 Release Set 双构建检查点
+
+四 Agent A/B build 全部通过，单一临时 Publisher 完成 8 次签名和复验；每个
+Agent 的十类发布输出逐字节一致。临时 boundary/state/key 权限为
+`0700/0600/0600`，source worktree 和 builder target 已移除，根 `target/`
+不存在，用户 dirty 工作区未修改。
+
+Root/Trust/Registry 和上传尚未执行。下一步组装并本地验证 E1 metadata，再按
+Trust-first、immutable objects、Registry-last 发布；R3/P5-P8 继续关闭。

@@ -4939,3 +4939,29 @@ detached frozen-commit 隔离修复待冻结后重试
 - 不降低 candidate、executor、Cargo.lock、Package 输出或签名约束；
 - 下一步冻结推送修复后重试同一 E1 双构建，再进入 Root/Trust/上传；
 - 原产品顺序与生产边界不变。
+
+### 循环 74：P4 R3 E1 四 Agent Release Set 实际双构建
+
+状态：四个 Agent 的 E1 A/B 双构建、8 次临时 Publisher 签名和十类输出逐字节
+复验已通过；Release Set 与一个临时 Publisher 仅保留在本机临时边界
+
+实际结果：
+
+1. Cycle 73 commit `d99ffcf` 推送后执行；
+2. Deploy/Future/Job/Lecturecast 四 Agent 均为 buildCount=2、status=passed；
+3. 每个 Agent 的 Artifact、Envelope、finalize receipt、Host bundles、
+   Host projection、package file manifest、Registry record、Release Manifest、
+   signature result、signing request 共十类输出均逐字节一致；
+4. 临时 Publisher 只生成一次，完成 8 次签名与 8 次复验；
+5. Release state mode `0600`、完整边界 `0700`、Publisher 私钥 `0600`；
+6. candidate/source detached worktree 全部移除，builder target 全部移除，根
+   `target/` 不存在；
+7. 用户 `agentmesh-deploy` dirty 工作树未被修改；
+8. 尚未生成 Root、Trust、Registry snapshot，尚未上传任何 Release 对象。
+
+计划复盘与下一轮：
+
+- P4 Release Set build 子项通过，但不能单独视为 R2/R3 或外部分发通过；
+- 下一步生成本轮唯一临时 Root，使用已留存 Publisher 构造并验证 Trust bundle，
+  组装四记录 Registry snapshot 与故障 fixtures；
+- 发布仍须 Trust-first、immutable objects、Registry-last，之后执行消费者故障矩阵。
