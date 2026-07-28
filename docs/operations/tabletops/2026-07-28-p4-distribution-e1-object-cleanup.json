@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "distribution_service_e1_20260728_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "executorCommit": "cd1f2dfeb4efa10f33ceb206e2555ea1b86725cb",
+  "executionStatus": "objects_and_private_material_destroyed",
+  "registryWithdrawnFirst": true,
+  "deletedObjectCount": 35,
+  "verifiedAbsentObjectCount": 35,
+  "rootPrivateMaterialDestroyed": true,
+  "publisherPrivateMaterialDestroyed": true,
+  "releaseBoundaryRemoved": true,
+  "providerRequests": 0,
+  "creditsConsumed": 0,
+  "startedAt": "2026-07-28T16:37:22.004Z",
+  "lastUpdatedAt": "2026-07-28T16:43:57.240Z",
+  "completedAt": "2026-07-28T16:43:57.240Z"
+}

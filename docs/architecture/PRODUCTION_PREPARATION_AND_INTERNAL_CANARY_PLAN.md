@@ -1052,3 +1052,12 @@ state 支持同 executor 幂等恢复。
 对象全部 absent 后，隔离 signer 覆盖删除临时 Root/Publisher，再删除 Release
 boundary。定向 10/10，实际 inventory 预检通过。下一步冻结后执行；之后才允许
 删除 DNS/Droplet/limited key/bucket，P5-P8 关闭。
+
+## 35. Cycle 81 P4 R3 E1 对象与私钥实际清理检查点
+
+`cd1f2df` 推送后执行：Registry 先删且 Origin 404；35/35 对象均 DELETE 并由
+Reader HEAD=404；公网 Registry/Trust 为 404；临时 Root/Publisher 私钥由隔离
+signer 覆盖删除，Release boundary absent。非秘密 cleanup receipt 已固化。
+
+下一步删除 DNS、唯一 Droplet、两组 limited key、两个空 bucket 和不再需要的
+Spaces subscription，再清本机 secret state。全部完成前 P4/P5-P8 继续关闭。

@@ -5133,3 +5133,28 @@ P4 仍等待 Registry 撤回和全部 E1 资源/秘密销毁
 - 只有 35/35 absent 且两把私钥和 Release boundary 都销毁，才删除 DNS/Droplet、
   key 与 bucket；
 - 生产资源、P5-P8 继续关闭。
+
+### 循环 81：P4 R3 E1 Registry、对象与临时签名材料实际销毁
+
+状态：Registry-first 撤回、35/35 对象删除、Root/Publisher 私钥与 Release
+boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
+
+实际执行与复验：
+
+1. Cycle 80 commit `cd1f2df` 推送后才执行不可逆清理；
+2. Registry 首先删除，direct HTTPS Origin 立即复验为 404；
+3. 35/35 对象均由 Publisher DELETE，并由 Origin Reader HEAD=404；
+4. 公网 Registry 与 Trust 均为 404；
+5. 隔离 signer 覆盖并删除临时 Root、Publisher 私钥，两者路径均 absent；
+6. E1 Release boundary 已递归删除，builder/source worktree 仍 absent；
+7. cleanup state mode `0600`、`objects_and_private_material_destroyed`，只留非秘密
+   计数和时间；仓库固化同内容最小 JSON；
+8. Provider 请求、credits、生产 mutation 为 0。
+
+计划复盘与下一轮：
+
+- Package 公开面和私钥面已清空，但 Droplet/DNS/Spaces key/bucket 仍是 active
+  资源，因此 P4 尚未最终关闭；
+- 下一步删除 DNS，销毁唯一 E1 Droplet，再撤销两组 limited key、删除两个空
+  bucket，并取消不再需要的 Spaces subscription；
+- 最后删除本机 credentials/state，复验生产常量为空和根 `target/` absent。

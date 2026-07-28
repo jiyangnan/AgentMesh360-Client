@@ -719,3 +719,13 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 全部 absent 后覆盖删除 Root/Publisher，再移除 Release boundary；
 - 定向 10/10、实际 inventory 预检通过；
 - 下一步冻结后执行，再清 DNS/Droplet/key/bucket，P5-P8 关闭。
+
+## 40. 循环 81 P4 R3 E1 对象与私钥实际清理检查点
+
+- `cd1f2df` 推送后实际执行 Registry-first cleanup；
+- Registry 先删并经 Origin 404；
+- 35/35 对象 DELETE + Reader HEAD 404；
+- 公网 Registry/Trust 404；
+- Root/Publisher 私钥和 Release boundary absent；
+- 下一步清 DNS/Droplet/limited key/bucket/subscription 与本机秘密；
+- 完整清场前 P4/P5-P8 继续关闭。

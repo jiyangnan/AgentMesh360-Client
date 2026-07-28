@@ -211,3 +211,14 @@ pending state 允许同 executor 幂等恢复。
 
 本节只证明清场实现和实际 inventory 预检通过，尚未声称外部对象、key 或资源已
 删除。下一步冻结执行器后实际运行，再进入 DNS/Droplet/Spaces 清理。
+
+## 10. Registry、对象与临时签名材料实际销毁
+
+Cycle 80 commit `cd1f2df` 推送后执行。Registry 首先删除并经 direct HTTPS
+Origin 复验 404；35/35 对象由 Publisher DELETE、Origin Reader HEAD=404。
+公网 Registry/Trust 均为 404。临时 Root/Publisher 私钥由隔离 signer 覆盖删除，
+Release boundary、两条私钥路径均 absent。
+
+下一步只剩基础设施层：删除 staging DNS、唯一 E1 Droplet、两组 limited key、
+两个空 bucket、Spaces subscription 和本机临时 secret/state。完成前不写最终
+E1 PASS。
