@@ -4965,3 +4965,36 @@ detached frozen-commit 隔离修复待冻结后重试
 - 下一步生成本轮唯一临时 Root，使用已留存 Publisher 构造并验证 Trust bundle，
   组装四记录 Registry snapshot 与故障 fixtures；
 - 发布仍须 Trust-first、immutable objects、Registry-last，之后执行消费者故障矩阵。
+
+### 循环 75：P4 R3 E1 Trust/Registry 不可变发布执行器
+
+状态：临时 Root、Trust/Registry、Release objects、fault fixtures 与 readback 的
+执行器已完成本地验证；尚未生成 Root 或执行云端发布
+
+已经实现：
+
+1. 发布前要求精确 clean executor commit，并再次确认三个生产 Package 常量为空；
+2. 从已通过的四 Agent state 重读并复验 4×10 输出、Origin 绑定、Registry record
+   严格字段、URL、digest、Host bundle 和本地文件摘要；
+3. 仅在这些复验后生成本轮唯一临时 E1 Root，Root 与 Publisher 私钥都留在原
+   `0700` 临时边界、文件 mode `0600`；
+4. Trust 使用 Rust 同序 canonical payload、Root 签名、Node Ed25519 复验和既有
+   `verifyTrustBundle` 完整状态验证；
+5. Registry v2 使用 Rust 相同的 base64 字段序、package/host 排序和 canonical
+   payload，revision=2 为 rollback/equivocation 故障留出 revision=1；
+6. 上传顺序固定为 Trust、31 个 immutable Release objects、6 个签名 fault
+   fixtures、Registry last；
+7. 每个对象先 HEAD=404、再 Publisher PUT、最后 Origin Reader GET，并逐字节
+   SHA-256 回读；
+8. 在首个 PUT 前写 mode `0600` pending publication state，逐对象更新 receipt；
+   即使中途失败也保留完整 cleanup inventory，不会丢失撤回/删除路径；
+9. 生成 digest mismatch、signature mismatch、expired metadata、rollback、
+   same-revision equivocation、invalid/expired LKG 六类签名 fixture；其余 transport/
+   MIME/redirect/size/partial publication 由 Origin 固定路由提供。
+
+自主验证与计划复盘：
+
+- publisher/Trust/Registry/worker 定向 21/21；
+- 本轮未生成 Root、未上传对象、未修改生产常量；
+- 下一步冻结推送 executor 后实际发布并用公网 Origin 复验 Trust、Registry 与
+  全部 immutable objects；任何失败先按 pending inventory 清理，不进入 P5。

@@ -17,6 +17,7 @@ Cycle 71 已通过隔离 Spaces-backed Origin、Caddy TLS 与公网 HTTPS health
 Cycle 72 已完成 opt-in E1 可留存四 Agent 双构建执行器；
 Cycle 73 已隔离冻结源码 worktree 与用户现有 dirty 工作区；
 Cycle 74 已完成四 Agent A/B Release Set、8 次签名与十类逐字节复验；
+Cycle 75 已完成 Trust/Registry、不可变上传与 fault fixture 发布执行器；
 生产 R1-R6 仍未关闭，尚未完成 E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -986,3 +987,15 @@ Agent 的十类发布输出逐字节一致。临时 boundary/state/key 权限为
 
 Root/Trust/Registry 和上传尚未执行。下一步组装并本地验证 E1 metadata，再按
 Trust-first、immutable objects、Registry-last 发布；R3/P5-P8 继续关闭。
+
+## 29. Cycle 75 P4 R3 E1 发布执行器检查点
+
+执行器在生成 Root 前复验 clean commit、生产空常量、四 Agent state/bytes、
+Registry URLs/digests/Host bundles。Trust/Registry canonical payload 与 Rust
+同序，临时 Root 签名后由 Node 和既有 Trust verifier 双重复验。上传固定为
+Trust、31 immutable Release objects、6 fault fixtures、Registry last；每个对象
+执行 HEAD absence、Publisher PUT、Reader GET digest。首个 PUT 前写 pending
+cleanup inventory，允许半发布安全撤回。
+
+本轮未生成 Root 或上传。下一步冻结执行器后实际发布并公网复验；
+P4/R3/P5-P8 状态不变。

@@ -664,3 +664,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - source worktree、builder target 已移除，根 `target/` absent；
 - 用户 dirty 工作区未修改；
 - 尚无 Root/Trust/Registry/upload，R3/P5-P8 不变；下一步组装 E1 metadata。
+
+## 34. 循环 75 P4 R3 E1 发布执行器检查点
+
+- 发布前固定 clean executor 与生产空 Trust/Registry；
+- 严格复验四 Agent 本地 bytes、Registry URLs/digests/Host bundles；
+- 生成唯一临时 Root，Trust/Registry canonical payload 与 Rust 同序并本地验签；
+- 顺序固定 Trust → 31 immutable objects → 6 fault fixtures → Registry last；
+- 每对象 HEAD absence、PUT、Reader GET digest；首个 PUT 前留 pending inventory；
+- 本轮未生成 Root/upload；下一步冻结执行器后实际发布，R3/P5-P8 不变。
