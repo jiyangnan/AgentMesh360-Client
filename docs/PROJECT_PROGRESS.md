@@ -4539,3 +4539,57 @@ Release Set、上传和故障注入仍未获批、未执行
   上限、执行窗口、abort owner、撤回/清理目标和 evidence retention；
 - 继续保持生产 Trust/Registry 常量为空；P5-P8、Provider、credits、费用、Apple
   凭据与任何对外发布均不在本轮范围。
+
+### 循环 63：P4 R3 E1 精确执行授权与预算门禁
+
+状态：授权门禁已完成并通过加强自主复核；付费资源、E1 Trust、Release Set、上传、
+故障矩阵和清理尚未执行，生产 R3 继续关闭
+
+计划校准：
+
+- 用户精确批准 72 小时执行窗口、预计 `1.15 USD`、硬上限 `3.00 USD`，允许复用
+  DigitalOcean 账号、SGP1 区域与部署能力；
+- 仍禁止复用现有生产 Droplet 或其他产品 staging；不授权生产 key、生产 Trust/
+  Registry 常量、Provider、credits、P5-P8 或窗口自动延长；
+- 先冻结机器可校验的授权与执行器 commit，再创建付费资源；任何执行漂移都在云端
+  mutation 前 fail-close。
+
+已经实现：
+
+1. 新增 strict P4 E1 authorization Schema 和留存安全 JSON receipt；
+2. 固定 72 小时窗口、`0.00893 USD/hour` Droplet、`5 USD/month` Spaces 和
+   `1.14296 USD` 模型成本，预计值与 `3 USD` 硬上限不可漂移；
+3. 固定一个 SGP1 `s-1vcpu-1gb` Droplet、两个无 CDN Spaces bucket、Cloudflare
+   staging DNS、隔离 Caddy origin 和最多五项外部资源；
+4. 绑定真实 P3 receipt 字节摘要、冻结候选、Deploy/Future/Job/Lecturecast 四
+   Agent 版本与新 E1 A/B 双构建；
+5. 固定一个本机临时非生产 Root 和 Publisher、P2/P3/生产 key 禁止、云端私钥
+   禁止、E1 test-only Trust 注入与结束后生产空 Trust 复验；
+6. 固定 500 个外部网络请求上限、零 Provider 推理、零 credits、无备份/快照/CDN；
+7. validator 支持 strict local `$ref` 合并并拒绝未知字段、duplicate key、symlink、
+   超限文件、预算/窗口/资源/生产复用漂移，以及 URL、IP、本机路径和私钥进入 receipt；
+8. 中文授权记录明确最小凭据、不可变上传/回读、Trust-before-Registry、Registry
+   last、14 项故障矩阵和先撤回后销毁。
+
+只读基础设施核验：
+
+- DigitalOcean 账号 active、Droplet quota 足够、SGP1 可用目标 1 GiB 规格；
+- 现有 AgentMesh 生产、其他生产和其他产品 staging Droplet 均只读识别并排除；
+- 当前 Spaces key API 控制面返回不可用状态，不能据此伪造凭据完成；外部执行时需
+  使用已登录控制台完成相同的 bucket-scoped 最小权限，授权范围不扩大；
+- 尚未创建或计费任何 E1 资源，当前新增成本为 `0 USD`。
+
+自主验证：
+
+- authorization Node 13/13；
+- authorization CLI、实际 P3 receipt digest、精确 72 小时/预算公式和留存安全通过；
+- Kimi 按用户要求继续暂停，本轮由主 Agent 完成 Schema/receipt/validator/test
+  完整 diff、负向输入与计划一致性复核，不冒充 Kimi PASS。
+
+计划复盘与下一轮：
+
+- 当前只关闭 `approval_missing`，不关闭 E1 或生产 R3；
+- 下一步严格按 P4 顺序：冻结推送执行器 commit，创建隔离资源和最小凭据，重建并
+  签署四 Agent Release Set，执行上传回读与 14 项故障矩阵，随后完整销毁和留证；
+- 任一项遇到预算、登录、权限、对象不可变、Trust、Registry、故障矩阵或清理漂移，
+  必须停止并先清理，不跳到 P5。

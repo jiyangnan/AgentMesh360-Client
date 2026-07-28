@@ -1,0 +1,911 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/distribution-authorization-v1.json",
+  "title": "AgentMesh360 P4 R3 E1 Distribution Authorization v1",
+  "description": "Retention-safe authorization for one bounded DigitalOcean E1 distribution rehearsal. It does not prove execution or close production R3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorizationId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "approvalReceipt",
+    "authorizationWindow",
+    "budget",
+    "provenanceInput",
+    "releaseSet",
+    "trustPlan",
+    "infrastructurePlan",
+    "credentialsPlan",
+    "requestLimits",
+    "cleanupPlan",
+    "roleAliases",
+    "evidencePolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "authorizationId": {
+      "type": "string",
+      "const": "distribution_service_e1_20260728_0001"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e1"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p4_r3"
+    },
+    "authority": {
+      "type": "string",
+      "const": "direct_user_authority"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "authorized_not_started"
+    },
+    "approvalReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receiptId",
+        "authorizedScope",
+        "recordedAt",
+        "productionAuthorityGranted"
+      ],
+      "properties": {
+        "receiptId": {
+          "type": "string",
+          "const": "approval_p4_e1_20260728_0001"
+        },
+        "authorizedScope": {
+          "type": "string",
+          "const": "p4_r3_e1_isolated_digitalocean_distribution_rehearsal"
+        },
+        "recordedAt": {
+          "type": "string",
+          "const": "2026-07-28T14:03:19Z"
+        },
+        "productionAuthorityGranted": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "authorizationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startsAt",
+        "stopsAt",
+        "maximumHours",
+        "automaticExtensionAllowed"
+      ],
+      "properties": {
+        "startsAt": {
+          "type": "string",
+          "const": "2026-07-28T14:03:19Z"
+        },
+        "stopsAt": {
+          "type": "string",
+          "const": "2026-07-31T14:03:19Z"
+        },
+        "maximumHours": {
+          "type": "integer",
+          "const": 72
+        },
+        "automaticExtensionAllowed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "currency",
+        "expectedCost",
+        "hardCap",
+        "dropletHourlyRate",
+        "spacesMonthlyBase",
+        "spacesBillingProratedHourly",
+        "paidBackupAllowed",
+        "paidSnapshotAllowed",
+        "abortBeforeHardCap"
+      ],
+      "properties": {
+        "currency": {
+          "type": "string",
+          "const": "USD"
+        },
+        "expectedCost": {
+          "type": "number",
+          "const": 1.15
+        },
+        "hardCap": {
+          "type": "number",
+          "const": 3
+        },
+        "dropletHourlyRate": {
+          "type": "number",
+          "const": 0.00893
+        },
+        "spacesMonthlyBase": {
+          "type": "number",
+          "const": 5
+        },
+        "spacesBillingProratedHourly": {
+          "type": "boolean",
+          "const": true
+        },
+        "paidBackupAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "paidSnapshotAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "abortBeforeHardCap": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "provenanceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rehearsalId",
+        "receiptSha256",
+        "candidateCommit",
+        "p3ArtifactsRetained",
+        "productionR2Closed"
+      ],
+      "properties": {
+        "rehearsalId": {
+          "type": "string",
+          "const": "release_provenance_e0_20260728_0001"
+        },
+        "receiptSha256": {
+          "$ref": "#/$defs/p3ReceiptDigest"
+        },
+        "candidateCommit": {
+          "$ref": "#/$defs/candidateCommit"
+        },
+        "p3ArtifactsRetained": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionR2Closed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "releaseSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "candidateCommit",
+        "sourceInputs",
+        "packages",
+        "dualBuildRequired",
+        "uploadFromRetainedP3ArtifactsAllowed"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "const": "rebuild_frozen_p3_release_set"
+        },
+        "candidateCommit": {
+          "$ref": "#/$defs/candidateCommit"
+        },
+        "sourceInputs": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/deploySource"
+            },
+            {
+              "$ref": "#/$defs/futureSource"
+            },
+            {
+              "$ref": "#/$defs/jobSource"
+            },
+            {
+              "$ref": "#/$defs/lecturecastSource"
+            }
+          ],
+          "items": false
+        },
+        "packages": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/deployPackage"
+            },
+            {
+              "$ref": "#/$defs/futurePackage"
+            },
+            {
+              "$ref": "#/$defs/jobPackage"
+            },
+            {
+              "$ref": "#/$defs/lecturecastPackage"
+            }
+          ],
+          "items": false
+        },
+        "dualBuildRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "uploadFromRetainedP3ArtifactsAllowed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "trustPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "stagingRootKeyCount",
+        "stagingPublisherKeyCount",
+        "productionKeyAllowed",
+        "p2OrP3PrivateMaterialReusable",
+        "privateMaterialLocation",
+        "stagingClientInjection",
+        "destroyPrivateMaterialAtEnd",
+        "restoreProductionTrustEmpty"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "const": "ed25519"
+        },
+        "stagingRootKeyCount": {
+          "type": "integer",
+          "const": 1
+        },
+        "stagingPublisherKeyCount": {
+          "type": "integer",
+          "const": 1
+        },
+        "productionKeyAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "p2OrP3PrivateMaterialReusable": {
+          "type": "boolean",
+          "const": false
+        },
+        "privateMaterialLocation": {
+          "type": "string",
+          "const": "local_isolated_ephemeral_boundary"
+        },
+        "stagingClientInjection": {
+          "type": "string",
+          "const": "test_only_explicit_e1_harness"
+        },
+        "destroyPrivateMaterialAtEnd": {
+          "type": "boolean",
+          "const": true
+        },
+        "restoreProductionTrustEmpty": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "infrastructurePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "accountMode",
+        "region",
+        "existingProductionDropletReusable",
+        "stagingDroplet",
+        "objectStorage",
+        "origin",
+        "dns",
+        "externalResourcesMaximum",
+        "destroyAtEnd"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "const": "digitalocean"
+        },
+        "accountMode": {
+          "type": "string",
+          "const": "reuse_existing_account"
+        },
+        "region": {
+          "type": "string",
+          "const": "sgp1"
+        },
+        "existingProductionDropletReusable": {
+          "type": "boolean",
+          "const": false
+        },
+        "stagingDroplet": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alias",
+            "sizeSlug",
+            "memoryMiB",
+            "vcpus",
+            "diskGiB",
+            "backupsEnabled"
+          ],
+          "properties": {
+            "alias": {
+              "type": "string",
+              "const": "package-staging-e1-droplet"
+            },
+            "sizeSlug": {
+              "type": "string",
+              "const": "s-1vcpu-1gb"
+            },
+            "memoryMiB": {
+              "type": "integer",
+              "const": 1024
+            },
+            "vcpus": {
+              "type": "integer",
+              "const": 1
+            },
+            "diskGiB": {
+              "type": "integer",
+              "const": 25
+            },
+            "backupsEnabled": {
+              "type": "boolean",
+              "const": false
+            }
+          }
+        },
+        "objectStorage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "service",
+            "storageClass",
+            "bucketAliases",
+            "bucketCount",
+            "cdnEnabled"
+          ],
+          "properties": {
+            "service": {
+              "type": "string",
+              "const": "digitalocean_spaces"
+            },
+            "storageClass": {
+              "type": "string",
+              "const": "standard"
+            },
+            "bucketAliases": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "const": "package-staging-e1-releases"
+                },
+                {
+                  "type": "string",
+                  "const": "package-staging-e1-metadata"
+                }
+              ],
+              "items": false
+            },
+            "bucketCount": {
+              "type": "integer",
+              "const": 2
+            },
+            "cdnEnabled": {
+              "type": "boolean",
+              "const": false
+            }
+          }
+        },
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alias",
+            "runtime",
+            "tls",
+            "productionOriginMutable",
+            "faultInjectionAllowed"
+          ],
+          "properties": {
+            "alias": {
+              "type": "string",
+              "const": "package-staging-e1-origin"
+            },
+            "runtime": {
+              "type": "string",
+              "const": "isolated_droplet_caddy_and_origin_service"
+            },
+            "tls": {
+              "type": "string",
+              "const": "caddy_managed_lets_encrypt"
+            },
+            "productionOriginMutable": {
+              "type": "boolean",
+              "const": false
+            },
+            "faultInjectionAllowed": {
+              "type": "boolean",
+              "const": true
+            }
+          }
+        },
+        "dns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "zoneMode",
+            "recordAlias",
+            "productionRecordMutable"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "const": "cloudflare"
+            },
+            "zoneMode": {
+              "type": "string",
+              "const": "reuse_existing_zone"
+            },
+            "recordAlias": {
+              "type": "string",
+              "const": "package-staging-e1-dns"
+            },
+            "productionRecordMutable": {
+              "type": "boolean",
+              "const": false
+            }
+          }
+        },
+        "externalResourcesMaximum": {
+          "type": "integer",
+          "const": 5
+        },
+        "destroyAtEnd": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "credentialsPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digitalOceanApi",
+        "spacesPublisher",
+        "spacesOriginReader",
+        "rootOrPublisherPrivateKeyInCloud",
+        "recordSecretsInEvidence",
+        "revokeAtEnd"
+      ],
+      "properties": {
+        "digitalOceanApi": {
+          "type": "string",
+          "const": "existing_operator_context"
+        },
+        "spacesPublisher": {
+          "type": "string",
+          "const": "bucket_scoped_read_write_delete_local_keychain"
+        },
+        "spacesOriginReader": {
+          "type": "string",
+          "const": "bucket_scoped_read_only_remote_mode_0600"
+        },
+        "rootOrPublisherPrivateKeyInCloud": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordSecretsInEvidence": {
+          "type": "boolean",
+          "const": false
+        },
+        "revokeAtEnd": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "requestLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumExternalNetworkRequests",
+        "maximumProviderInferenceRequests",
+        "maximumCredits",
+        "maximumCurrencyCost"
+      ],
+      "properties": {
+        "maximumExternalNetworkRequests": {
+          "type": "integer",
+          "const": 500
+        },
+        "maximumProviderInferenceRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCurrencyCost": {
+          "type": "number",
+          "const": 3
+        }
+      }
+    },
+    "cleanupPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "withdrawRegistryFirst",
+        "destroyDroplet",
+        "destroyBuckets",
+        "removeDnsRecord",
+        "revokeSpacesKeys",
+        "destroyPrivateKeys",
+        "retainOnlyNonSecretEvidence",
+        "failureRequiresCleanupBeforeRetry"
+      ],
+      "properties": {
+        "withdrawRegistryFirst": {
+          "type": "boolean",
+          "const": true
+        },
+        "destroyDroplet": {
+          "type": "boolean",
+          "const": true
+        },
+        "destroyBuckets": {
+          "type": "boolean",
+          "const": true
+        },
+        "removeDnsRecord": {
+          "type": "boolean",
+          "const": true
+        },
+        "revokeSpacesKeys": {
+          "type": "boolean",
+          "const": true
+        },
+        "destroyPrivateKeys": {
+          "type": "boolean",
+          "const": true
+        },
+        "retainOnlyNonSecretEvidence": {
+          "type": "boolean",
+          "const": true
+        },
+        "failureRequiresCleanupBeforeRetry": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "roleAliases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "staging_operator"
+        },
+        {
+          "type": "string",
+          "const": "test_signer_operator"
+        },
+        {
+          "type": "string",
+          "const": "abort_owner"
+        }
+      ],
+      "items": false
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordCredentials",
+        "recordAuthorizationHeaders",
+        "recordRawTrustDocuments",
+        "recordRawRegistryDocuments",
+        "recordEndpointUrls",
+        "recordResourceIds",
+        "recordIpAddresses",
+        "recordAbsolutePaths",
+        "recordPersonalIdentity",
+        "recordUserOrProviderContent",
+        "typedDigestPrefix"
+      ],
+      "properties": {
+        "recordCredentials": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAuthorizationHeaders": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawTrustDocuments": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawRegistryDocuments": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordEndpointUrls": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordResourceIds": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordIpAddresses": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAbsolutePaths": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordPersonalIdentity": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordUserOrProviderContent": {
+          "type": "boolean",
+          "const": false
+        },
+        "typedDigestPrefix": {
+          "type": "string",
+          "const": "sha256:"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "candidateCommit": {
+      "type": "string",
+      "const": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c"
+    },
+    "p3ReceiptDigest": {
+      "type": "string",
+      "const": "sha256:946bd98a4279430493cd80fae357f2c95b7ab7de624bcbabe2424248eefc0940"
+    },
+    "deploySource": {
+      "$ref": "#/$defs/sourceBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "deploy-agent"
+        },
+        "sourceAlias": {
+          "type": "string",
+          "const": "deploy_source"
+        },
+        "commit": {
+          "type": "string",
+          "const": "781599f9b8ab1374f8a9b018da553d425cd23e13"
+        }
+      }
+    },
+    "futureSource": {
+      "$ref": "#/$defs/sourceBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "future-agent"
+        },
+        "sourceAlias": {
+          "type": "string",
+          "const": "executor_fixture"
+        },
+        "commit": {
+          "type": "string",
+          "const": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c"
+        }
+      }
+    },
+    "jobSource": {
+      "$ref": "#/$defs/sourceBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "job-agent"
+        },
+        "sourceAlias": {
+          "type": "string",
+          "const": "job_source"
+        },
+        "commit": {
+          "type": "string",
+          "const": "ed8f1c683d5d3bf8103de4c12f9f395e82251e9a"
+        }
+      }
+    },
+    "lecturecastSource": {
+      "$ref": "#/$defs/sourceBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "lecturecast-agent"
+        },
+        "sourceAlias": {
+          "type": "string",
+          "const": "lecturecast_source"
+        },
+        "commit": {
+          "type": "string",
+          "const": "688dd61ab1910fec03383f18bdfaee74ed67ecac"
+        }
+      }
+    },
+    "sourceBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "sourceAlias",
+        "commit"
+      ],
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "sourceAlias": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "deployPackage": {
+      "$ref": "#/$defs/packageBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "deploy-agent"
+        },
+        "packageId": {
+          "type": "string",
+          "const": "com.agentmesh360.deploy-agent"
+        },
+        "version": {
+          "type": "string",
+          "const": "0.1.1"
+        },
+        "hostBundleCount": {
+          "type": "integer",
+          "const": 0
+        }
+      }
+    },
+    "futurePackage": {
+      "$ref": "#/$defs/packageBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "future-agent"
+        },
+        "packageId": {
+          "type": "string",
+          "const": "com.agentmesh360.future-agent"
+        },
+        "version": {
+          "type": "string",
+          "const": "1.0.0"
+        },
+        "hostBundleCount": {
+          "type": "integer",
+          "const": 2
+        }
+      }
+    },
+    "jobPackage": {
+      "$ref": "#/$defs/packageBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "job-agent"
+        },
+        "packageId": {
+          "type": "string",
+          "const": "com.agentmesh360.job-agent"
+        },
+        "version": {
+          "type": "string",
+          "const": "0.4.7"
+        },
+        "hostBundleCount": {
+          "type": "integer",
+          "const": 2
+        }
+      }
+    },
+    "lecturecastPackage": {
+      "$ref": "#/$defs/packageBase",
+      "properties": {
+        "agentId": {
+          "type": "string",
+          "const": "lecturecast-agent"
+        },
+        "packageId": {
+          "type": "string",
+          "const": "com.agentmesh360.lecturecast-agent"
+        },
+        "version": {
+          "type": "string",
+          "const": "0.4.0"
+        },
+        "hostBundleCount": {
+          "type": "integer",
+          "const": 3
+        }
+      }
+    },
+    "packageBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agentId",
+        "packageId",
+        "version",
+        "hostBundleCount"
+      ],
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "packageId": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "hostBundleCount": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

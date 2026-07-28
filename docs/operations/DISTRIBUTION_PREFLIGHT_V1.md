@@ -203,3 +203,23 @@ node --test tools/distribution-preflight/*.test.mjs
 
 验证通过只说明 P4 的阻断边界和未来验收矩阵已被机器表达，不表示 E1 资源、Trust、
 Release Set、上传、Registry、故障注入或清理已经执行，也不关闭生产 R3 或开放 P5-P8。
+
+## 10. Cycle 63 精确 E1 授权检查点
+
+用户随后已给出独立 P4 E1 授权：72 小时执行窗口、预计 `1.15 USD`、硬上限
+`3.00 USD`，允许复用现有 DigitalOcean 账号与 SGP1 部署能力，但禁止复用现有
+生产或其他产品 staging Droplet。
+
+本次授权已由 strict Schema、机器 JSON、validator 和 13 项测试固定。它同时固定：
+
+- 一个 `s-1vcpu-1gb` 隔离 Droplet、两个无 CDN Spaces bucket 和最多五个外部资源；
+- 四个冻结 Agent 的新 E1 双构建 Release Set；
+- 一个本机临时非生产 Root 和一个 Publisher，P2/P3/生产私钥均不可复用；
+- 显式 E1 test harness Trust 注入，生产 Trust/Registry 常量继续为空；
+- 最多 500 个外部网络请求、零 Provider 请求、零 credits；
+- Registry 最后发布、完整 14 项故障矩阵、先撤回再销毁和只留非秘密 evidence。
+
+授权记录见
+[`tabletops/2026-07-28-p4-distribution-e1-authorization.md`](tabletops/2026-07-28-p4-distribution-e1-authorization.md)。
+该检查点只把 `approval_missing` 关闭，不表示付费资源已创建或 E1/R3 已通过。执行器
+commit 必须先冻结推送，之后才能进入外部资源创建。

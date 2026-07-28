@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "distribution_service_e1_20260728_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "authority": "direct_user_authority",
+  "approvalStatus": "approved",
+  "executionStatus": "authorized_not_started",
+  "approvalReceipt": {
+    "receiptId": "approval_p4_e1_20260728_0001",
+    "authorizedScope": "p4_r3_e1_isolated_digitalocean_distribution_rehearsal",
+    "recordedAt": "2026-07-28T14:03:19Z",
+    "productionAuthorityGranted": false
+  },
+  "authorizationWindow": {
+    "startsAt": "2026-07-28T14:03:19Z",
+    "stopsAt": "2026-07-31T14:03:19Z",
+    "maximumHours": 72,
+    "automaticExtensionAllowed": false
+  },
+  "budget": {
+    "currency": "USD",
+    "expectedCost": 1.15,
+    "hardCap": 3,
+    "dropletHourlyRate": 0.00893,
+    "spacesMonthlyBase": 5,
+    "spacesBillingProratedHourly": true,
+    "paidBackupAllowed": false,
+    "paidSnapshotAllowed": false,
+    "abortBeforeHardCap": true
+  },
+  "provenanceInput": {
+    "rehearsalId": "release_provenance_e0_20260728_0001",
+    "receiptSha256": "sha256:946bd98a4279430493cd80fae357f2c95b7ab7de624bcbabe2424248eefc0940",
+    "candidateCommit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c",
+    "p3ArtifactsRetained": false,
+    "productionR2Closed": false
+  },
+  "releaseSet": {
+    "mode": "rebuild_frozen_p3_release_set",
+    "candidateCommit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c",
+    "sourceInputs": [
+      {
+        "agentId": "deploy-agent",
+        "sourceAlias": "deploy_source",
+        "commit": "781599f9b8ab1374f8a9b018da553d425cd23e13"
+      },
+      {
+        "agentId": "future-agent",
+        "sourceAlias": "executor_fixture",
+        "commit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c"
+      },
+      {
+        "agentId": "job-agent",
+        "sourceAlias": "job_source",
+        "commit": "ed8f1c683d5d3bf8103de4c12f9f395e82251e9a"
+      },
+      {
+        "agentId": "lecturecast-agent",
+        "sourceAlias": "lecturecast_source",
+        "commit": "688dd61ab1910fec03383f18bdfaee74ed67ecac"
+      }
+    ],
+    "packages": [
+      {
+        "agentId": "deploy-agent",
+        "packageId": "com.agentmesh360.deploy-agent",
+        "version": "0.1.1",
+        "hostBundleCount": 0
+      },
+      {
+        "agentId": "future-agent",
+        "packageId": "com.agentmesh360.future-agent",
+        "version": "1.0.0",
+        "hostBundleCount": 2
+      },
+      {
+        "agentId": "job-agent",
+        "packageId": "com.agentmesh360.job-agent",
+        "version": "0.4.7",
+        "hostBundleCount": 2
+      },
+      {
+        "agentId": "lecturecast-agent",
+        "packageId": "com.agentmesh360.lecturecast-agent",
+        "version": "0.4.0",
+        "hostBundleCount": 3
+      }
+    ],
+    "dualBuildRequired": true,
+    "uploadFromRetainedP3ArtifactsAllowed": false
+  },
+  "trustPlan": {
+    "algorithm": "ed25519",
+    "stagingRootKeyCount": 1,
+    "stagingPublisherKeyCount": 1,
+    "productionKeyAllowed": false,
+    "p2OrP3PrivateMaterialReusable": false,
+    "privateMaterialLocation": "local_isolated_ephemeral_boundary",
+    "stagingClientInjection": "test_only_explicit_e1_harness",
+    "destroyPrivateMaterialAtEnd": true,
+    "restoreProductionTrustEmpty": true
+  },
+  "infrastructurePlan": {
+    "provider": "digitalocean",
+    "accountMode": "reuse_existing_account",
+    "region": "sgp1",
+    "existingProductionDropletReusable": false,
+    "stagingDroplet": {
+      "alias": "package-staging-e1-droplet",
+      "sizeSlug": "s-1vcpu-1gb",
+      "memoryMiB": 1024,
+      "vcpus": 1,
+      "diskGiB": 25,
+      "backupsEnabled": false
+    },
+    "objectStorage": {
+      "service": "digitalocean_spaces",
+      "storageClass": "standard",
+      "bucketAliases": [
+        "package-staging-e1-releases",
+        "package-staging-e1-metadata"
+      ],
+      "bucketCount": 2,
+      "cdnEnabled": false
+    },
+    "origin": {
+      "alias": "package-staging-e1-origin",
+      "runtime": "isolated_droplet_caddy_and_origin_service",
+      "tls": "caddy_managed_lets_encrypt",
+      "productionOriginMutable": false,
+      "faultInjectionAllowed": true
+    },
+    "dns": {
+      "provider": "cloudflare",
+      "zoneMode": "reuse_existing_zone",
+      "recordAlias": "package-staging-e1-dns",
+      "productionRecordMutable": false
+    },
+    "externalResourcesMaximum": 5,
+    "destroyAtEnd": true
+  },
+  "credentialsPlan": {
+    "digitalOceanApi": "existing_operator_context",
+    "spacesPublisher": "bucket_scoped_read_write_delete_local_keychain",
+    "spacesOriginReader": "bucket_scoped_read_only_remote_mode_0600",
+    "rootOrPublisherPrivateKeyInCloud": false,
+    "recordSecretsInEvidence": false,
+    "revokeAtEnd": true
+  },
+  "requestLimits": {
+    "maximumExternalNetworkRequests": 500,
+    "maximumProviderInferenceRequests": 0,
+    "maximumCredits": 0,
+    "maximumCurrencyCost": 3
+  },
+  "cleanupPlan": {
+    "withdrawRegistryFirst": true,
+    "destroyDroplet": true,
+    "destroyBuckets": true,
+    "removeDnsRecord": true,
+    "revokeSpacesKeys": true,
+    "destroyPrivateKeys": true,
+    "retainOnlyNonSecretEvidence": true,
+    "failureRequiresCleanupBeforeRetry": true
+  },
+  "roleAliases": [
+    "staging_operator",
+    "test_signer_operator",
+    "abort_owner"
+  ],
+  "evidencePolicy": {
+    "recordCredentials": false,
+    "recordAuthorizationHeaders": false,
+    "recordRawTrustDocuments": false,
+    "recordRawRegistryDocuments": false,
+    "recordEndpointUrls": false,
+    "recordResourceIds": false,
+    "recordIpAddresses": false,
+    "recordAbsolutePaths": false,
+    "recordPersonalIdentity": false,
+    "recordUserOrProviderContent": false,
+    "typedDigestPrefix": "sha256:"
+  }
+}

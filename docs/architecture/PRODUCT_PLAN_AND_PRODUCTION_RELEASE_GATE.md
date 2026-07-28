@@ -9,6 +9,7 @@ Cycle 59 已完成 P2 E0 测试 key 技术演练、自主验证与本机 Kimi �
 R1-R6 与所有生产发布能力仍保持关闭；Cycle 60 已完成 P3 零新 key provenance
 preflight，Cycle 61 已完成获批的 P3 R2 E0 四 Agent 双构建、测试签名、复验、
 销毁与非秘密 evidence；Cycle 62 已完成 P4 R3 E1 零外部资源阻断式 preflight；
+Cycle 63 已固定用户批准的 72 小时、`1.15 USD` 预计成本和 `3 USD` 硬上限；
 生产 R2/R3 与实际 E1 仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
@@ -169,7 +170,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足（P3 R2 E0 技术演练已完成） | 已有四 Agent 双构建、测试签名与十类输出可复验证据；仍需生产 Publisher authority、受控生产发布流水线及与 R3/R6 联动的生产证据 |
-| R3 分发服务 | Agent Package | 未满足（P4 no-authority preflight 已完成） | 已固定消费者契约、不可变顺序、14 项故障/LKG 矩阵和批准边界；仍需获批 E1 Release Set、非生产 Trust、隔离 origin/Registry、凭据、实际故障注入与清理证据 |
+| R3 分发服务 | Agent Package | 未满足（P4 preflight 与精确 E1 授权门禁已完成） | 已固定消费者契约、不可变顺序、14 项故障/LKG 矩阵、72 小时、预算和资源边界；仍需实际 E1 Release Set、非生产 Trust、隔离 origin/Registry、故障注入与完整清理证据 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
 | R6 可观测与响应 | 共同 | 未满足（P1 本地基线已完成） | Release Event/证据模板/静态扫描/Runbook/E0 tabletop 已有；仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本与官方安装器恢复 |
@@ -216,11 +217,11 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产准备计划（Cycle 56-62 的 P0-P4 已按门禁推进）**：
+6. **桌面与 Package 生产准备计划（Cycle 56-63 的 P0-P4 已按门禁推进）**：
    已经拆分 E0 本地演练、E1 隔离 staging、E2 封闭
    生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
-   R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成零外部资源 preflight。下一步必须
-   取得精确 P4 E1 批准卡，才能创建新 Release Set、非生产 Trust、隔离 origin、
+   R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 preflight，并已取得和机器固定
+   精确 E1 批准卡。下一步只按该卡创建新 Release Set、非生产 Trust、隔离 origin、
    对象存储/Registry 与最小凭据；生产 key、真实订阅/BYOK canary、签名、公证和
    cohort 仍各自等待独立授权。
 
@@ -530,3 +531,18 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本轮只关闭 P4 no-authority preflight，不关闭 E1 或生产 R3。实际 P4 必须另行
   批准 E1 Release Set、staging Trust、origin/DNS/TLS、对象存储/Registry、凭据、
   请求上限、执行/清理窗口和 evidence retention；P5-P8 继续关闭。
+
+## 22. 循环 63 P4 R3 E1 精确授权检查点
+
+- 用户已精确批准 72 小时、预计 `1.15 USD`、硬上限 `3 USD` 的 DigitalOcean
+  SGP1 隔离演练；不得自动延长、扩容或复用生产/其他 staging；
+- 新 strict authorization Schema/receipt 固定一个 1 GiB Droplet、两个 Spaces、
+  最多五项外部资源、500 个网络请求、零 Provider/credits；
+- Release Set 固定 P3 receipt 与四个冻结 Agent，要求 E1 A/B 双构建，不冒充已经
+  删除的 P3 Artifact；
+- Trust 固定一个本机临时非生产 Root/Publisher、test-only E1 注入、云端无私钥、
+  结束销毁并复验生产 Trust/Registry 为空；
+- validator 拒绝 budget/window/resource/production 漂移和 retention-unsafe 内容；
+  Node 13/13 与 CLI 通过；
+- 当前尚未创建付费资源或写 E1 PASS。下一步只在本 commit 冻结推送后执行批准的
+  隔离资源、构建签名、不可变发布、14 项故障矩阵和完整销毁；P5-P8 继续关闭。

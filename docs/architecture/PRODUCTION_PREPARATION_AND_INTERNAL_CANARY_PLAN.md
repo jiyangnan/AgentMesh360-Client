@@ -5,6 +5,7 @@
 P3 零新 key provenance preflight 均已完成；Cycle 61 的 P3 R2 E0 四 Agent
 双构建、测试签名、复验、销毁与非秘密 evidence 也已通过；Cycle 62 已完成 P4 R3
 E1 的零外部资源阻断式 preflight；
+Cycle 63 已固定精确 E1 执行窗口、预算、资源、Trust、Release Set 与清理授权；
 生产 R1-R6 仍未关闭，尚未创建 E1 资源或进入生产 key ceremony、内部 canary、
 E2 或生产候选
 
@@ -428,7 +429,7 @@ flowchart TD
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
-| P4 R3 E1 | **零外部资源 preflight 已完成，实际 E1 未执行**：P3 handoff、消费者契约、不可变顺序、14 项故障矩阵、LKG、日志/evidence 与批准卡 | 新 Release Set、非生产 Trust、origin/DNS/TLS、对象存储/Registry、最小凭据、请求上限与清理窗口均需独立批准 |
+| P4 R3 E1 | **preflight 与精确执行授权已完成，实际 E1 未执行**：P3 handoff、消费者契约、不可变顺序、14 项故障矩阵、LKG、72 小时、预算、资源、Trust、Release Set、请求和清理边界 | 本授权只允许一次 SGP1 隔离演练；生产 R3、P5 和任何扩容/延期仍需独立决定 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
@@ -803,3 +804,27 @@ Cycle 62 只关闭 P4 no-authority preflight，不关闭 E1 或生产 R3。下�
 精确 P4 批准卡，至少固定新的 E1 Release Set、非生产 Trust、隔离 origin/DNS/TLS、
 对象存储/Registry、最小凭据、网络请求上限、执行/清理窗口与 evidence retention。
 未获批前 P5-P8、生产 Trust/Registry 常量、Provider、credits、费用与发布保持关闭。
+
+## 17. Cycle 63 P4 R3 E1 精确授权与预算检查点
+
+用户已批准 72 小时执行窗口、预计 `1.15 USD`、硬上限 `3 USD`，并允许复用现有
+DigitalOcean 账号、SGP1 区域和部署能力。授权不允许复用现有生产或其他产品 staging
+Droplet，不允许生产 key、Provider、credits、CDN、备份、快照、扩容或自动延期。
+
+新增 strict Schema、机器 JSON、validator、13 项测试和中文授权记录，固定：
+
+- 一个 `s-1vcpu-1gb` Droplet、两个 Spaces bucket、一个 staging DNS 和隔离 origin，
+  外部资源最多五项；
+- P3 receipt 和 Deploy/Future/Job/Lecturecast 四 Agent 的冻结来源、版本及 E1
+  A/B 双构建；
+- 一个本机临时非生产 Root 和 Publisher，P2/P3/生产 key 不可复用，生产常量为空；
+- 最多 500 个外部网络请求、零 Provider 请求、零 credits；
+- Trust-before-Registry、Registry last、14 项故障矩阵、先撤回后销毁和非秘密留存。
+
+预算公式为 `0.00893 × 72 + 5 × 72 / 720 = 1.14296 USD`。validator 会拒绝窗口、
+预算、资源、生产复用或留存安全漂移。Node 13/13、CLI、P3 receipt 摘要绑定通过。
+Kimi 仍按用户要求暂停，由主 Agent 完成加强自主复核。
+
+当前只关闭 `approval_missing`：尚未创建付费资源、生成 E1 key、重建 Release Set、
+上传 Registry 或运行故障矩阵。下一步先冻结推送执行器 commit，再按授权完成资源、
+签名、发布、故障注入和销毁；任一失败必须先清理，不能跳到 P5。
