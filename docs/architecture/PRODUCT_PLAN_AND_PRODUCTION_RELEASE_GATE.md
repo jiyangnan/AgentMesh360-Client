@@ -749,3 +749,11 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - symlink、特殊文件、路径扩张全部 fail-close；
 - 结束要求 E1 temp count=0；定向 2/2、实际 inventory 7/7；
 - 下一步冻结后执行并全量回归，P5-P8 关闭。
+
+## 43. 循环 84 P4 R3 E1 finalizer 临时根修复检查点
+
+- 首次运行在任何删除前 fail-close，7 个 entry 均保留；
+- macOS `os.tmpdir()` 与批准的 `/private/tmp` 不同；
+- finalizer 显式固定 `/private/tmp`，不接受 TMPDIR 漂移；
+- direct-child/mode/symlink/精确 inventory 约束不变；
+- 定向 3/3；下一步冻结后重跑，P5-P8 关闭。

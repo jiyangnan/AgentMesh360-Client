@@ -5212,3 +5212,22 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 - 执行结果只固化非秘密计数，不保留 URL、路径、key、token、IP、signature；
 - 随后完成 P4 全量测试、Rust consumer 定向测试、生产空常量、根 `target/`、
   Git clean/main push 复验；P5 不在本轮范围。
+
+### 循环 84：P4 R3 E1 finalizer 临时根目录固定
+
+状态：首次 finalizer 在任何删除前 fail-close；根目录环境漂移已定位并修复
+
+实际根因与修复：
+
+- 当前 7 个 E1 entry 仍全部存在，没有发生部分删除；
+- finalizer 使用 `os.tmpdir()` 查 inventory；macOS 当前进程返回用户级
+  `/var/folders/.../T`，但本轮授权、执行器和全部实际 state 固定在
+  `/private/tmp`；
+- 0 项观测触发 exact-inventory 阻断，说明 fail-close 生效；
+- 修复显式固定 `APPROVED_TEMP_ROOT=/private/tmp`，并继续要求两个 boundary
+  的 realpath 是该目录直接子项；
+- 不接受 `TMPDIR` 环境变量改变根目录，不增加新路径；
+- 定向测试增至 3/3，实际 7-entry inventory 保持完整。
+
+下一步：冻结推送修复后重新执行一次 finalizer，再进入最终回归；产品顺序、
+权限和 P5 状态不变。

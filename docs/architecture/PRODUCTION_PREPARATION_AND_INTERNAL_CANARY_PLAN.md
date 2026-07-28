@@ -1080,3 +1080,10 @@ regular files 通过 `O_NOFOLLOW` 随机覆盖、fsync、unlink，symlink/特殊
 
 定向 2/2，实际 7/7 inventory 预检通过。下一步冻结后执行，再做完整回归；
 P5-P8 关闭。
+
+## 38. Cycle 84 P4 R3 E1 finalizer 临时根修复检查点
+
+首次执行在删除前因 inventory=0 fail-close；7 个实际 entry 均仍完整。macOS
+`os.tmpdir()` 指向用户级 `/var/folders/.../T`，与本轮批准并实际使用的
+`/private/tmp` 不同。finalizer 现显式固定批准根 `/private/tmp`，不允许 TMPDIR
+改写；boundary realpath/direct-child 约束不变。定向 3/3，下一步冻结后重跑。

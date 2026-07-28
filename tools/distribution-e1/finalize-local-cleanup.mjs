@@ -12,13 +12,13 @@ import {
   rmdir,
   unlink,
 } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(MODULE_DIRECTORY, '../..');
+const APPROVED_TEMP_ROOT = '/private/tmp';
 const AUTHORIZATION_ID = 'distribution_service_e1_20260728_0001';
 const EXPECTED_TEMP_NAMES = new Set([
   'agentmesh360-distribution-e1-cleanup-state.json',
@@ -96,7 +96,7 @@ async function readStrictJson(filePath, label, expectedMode) {
   }
 }
 
-async function matchingTempNames(temporaryRoot = os.tmpdir()) {
+async function matchingTempNames(temporaryRoot = APPROVED_TEMP_ROOT) {
   return (await readdir(temporaryRoot))
     .filter((name) => TEMP_PREFIXES.some((prefix) => name.startsWith(prefix)))
     .sort();
@@ -114,7 +114,7 @@ function strictTempInventory(names) {
 }
 
 async function validateDirectory(directory, expectedName) {
-  const temporaryRoot = await realpath(os.tmpdir());
+  const temporaryRoot = await realpath(APPROVED_TEMP_ROOT);
   const resolved = await realpath(directory);
   const stat = await lstat(directory);
   if (

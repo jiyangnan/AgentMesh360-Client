@@ -246,3 +246,10 @@ file 使用 `O_NOFOLLOW` 随机覆盖、fsync、unlink，任何 symlink、特殊
 
 本节仍是执行前检查点。冻结后实际销毁必须证明剩余 E1 temp entry=0，再进入最终
 回归和 P4 结论。
+
+## 13. finalizer 临时根 fail-close 与修复
+
+首次执行在删除前看到 0-entry 而停止，实际 7-entry inventory 仍完整。原因是
+macOS 进程 `os.tmpdir()` 指向用户级临时目录，而本轮所有批准路径固定为
+`/private/tmp`。finalizer 现显式锁定 `/private/tmp`，不允许 TMPDIR 改写；
+realpath、direct-child、mode、symlink 和 exact inventory 门禁不变。

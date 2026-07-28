@@ -28,6 +28,16 @@ test('requires the exact seven-entry local E1 cleanup inventory', () => {
   assert.throws(() => strictTempInventory(replaced));
 });
 
+test('pins the approved cleanup root to private tmp, not process TMPDIR', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) =>
+    readFile(
+      new URL('./finalize-local-cleanup.mjs', import.meta.url),
+      'utf8',
+    ));
+  assert.match(source, /const APPROVED_TEMP_ROOT = '\/private\/tmp';/u);
+  assert.doesNotMatch(source, /os\.tmpdir/u);
+});
+
 test('parses only a frozen executor and eight absolute finalizer boundaries', () => {
   const parsed = parseArguments([
     '--active-boundary',
