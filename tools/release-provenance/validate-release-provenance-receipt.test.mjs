@@ -19,6 +19,7 @@ import {
 } from './validate-release-provenance-receipt.mjs';
 import {
   CANDIDATE_COMMIT as RUNNER_CANDIDATE_COMMIT,
+  packageBuildArguments,
   parseArguments,
   sanitizedCommandDiagnostic,
   treeDigest,
@@ -418,5 +419,29 @@ test('runner keeps failure diagnostics bounded and path-redacted', () => {
   );
   assert.ok(
     sanitizedCommandDiagnostic(`Error: ${'x'.repeat(500)}`).length <= 320,
+  );
+});
+
+test('runner uses the actual Package Author build CLI contract', () => {
+  assert.deepEqual(
+    packageBuildArguments(
+      {
+        definition: '/tmp/definition',
+        source: '/tmp/source',
+      },
+      '/tmp/output',
+      'publisher-e0',
+    ),
+    [
+      'build',
+      '--definition',
+      '/tmp/definition',
+      '--source',
+      '/tmp/source',
+      '--key-id',
+      'publisher-e0',
+      '--output',
+      '/tmp/output',
+    ],
   );
 });

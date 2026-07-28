@@ -473,17 +473,7 @@ async function buildAgent(binary, label, agent, outputRoot, keyId) {
   const output = path.join(outputRoot, agent.agentId);
   const stdout = run(
     binary,
-    [
-      'build',
-      '--definition-dir',
-      agent.definition,
-      '--source-root',
-      agent.source,
-      '--key-id',
-      keyId,
-      '--output',
-      output,
-    ],
+    packageBuildArguments(agent, output, keyId),
     undefined,
     `${label} ${agent.agentId} Package build`,
   );
@@ -500,6 +490,20 @@ async function buildAgent(binary, label, agent, outputRoot, keyId) {
     }
   }
   return { output, receipt };
+}
+
+function packageBuildArguments(agent, output, keyId) {
+  return [
+    'build',
+    '--definition',
+    agent.definition,
+    '--source',
+    agent.source,
+    '--key-id',
+    keyId,
+    '--output',
+    output,
+  ];
 }
 
 async function signBuild(boundary, privateKeyPath, build, keyId) {
@@ -1186,6 +1190,7 @@ if (isMainModule()) {
 export {
   CANDIDATE_COMMIT,
   OUTPUT_CLASSES,
+  packageBuildArguments,
   parseArguments,
   sanitizedCommandDiagnostic,
   treeDigest,

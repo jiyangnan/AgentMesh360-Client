@@ -4425,6 +4425,17 @@ Kimi 独立复核：
   加入后 Node 联合回归 26/26；
 - 在诊断修复重新提交并冻结前不重跑；异常执行没有被写成 P3 PASS。
 
+第二次正式执行尝试：
+
+- bounded diagnostic 生效，两个 Cargo build 后再次在首个 Deploy Package build
+  fail-close，明确显示 Clap `try --help`；同样发生于 `generate` 前，累计 key
+  生成数仍为 0，boundary/worktree/build root/receipt 清理复验通过；
+- 根因是 runner 使用了旧文档式 `--definition-dir/--source-root`，真实
+  `agentmesh360-package-author build` CLI 合约为 `--definition/--source`；
+- 自主定级为 1 Medium：runner 与真实 CLI parser 的参数合约缺少直接回归。现修正
+  参数并导出纯函数断言完整 argv，Node 联合测试更新为 27/27；
+- 修复 commit 再次冻结前不启动下一次执行。
+
 计划复盘与下一轮：
 
 - 本检查点只补 P3 已批准范围内缺失的 Release assembly executor，不关闭 P3/R2；

@@ -744,3 +744,9 @@ authority。
 build root，且未写 receipt。该尝试暴露固定错误 label 无法诊断的 Low；修复后只
 返回最后一条、路径脱敏、320 字符上限的诊断，Node 回归更新为 26/26。必须先冻结
 修复后的 executor commit，再进行新的单次执行。
+
+第二次执行的 bounded diagnostic 将失败定位到 CLI 参数合约：runner 误用
+`--definition-dir/--source-root`，而正式 Build 子命令只接受
+`--definition/--source`。该 Medium 发生于 `generate` 前，清理结果再次通过且累计
+key 生成数仍为 0。修复后增加纯 argv 合约测试，Node 回归更新为 27/27；须再次冻结
+executor commit 后再执行。

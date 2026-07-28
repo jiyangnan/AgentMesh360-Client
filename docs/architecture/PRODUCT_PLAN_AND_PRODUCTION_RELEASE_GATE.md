@@ -493,3 +493,6 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   `generate` 前；boundary/worktree/build root 已清理且无 receipt。过度脱敏的固定
   error label 已改为 bounded/path-redacted 诊断并通过 Node 26/26，修复 commit
   冻结前不重跑。
+- 第二次执行用 bounded diagnostic 定位到 runner 的 Build argv 与真实 Clap 合约
+  不一致；在 `generate` 前再次 fail-close 并完整清理。现改用
+  `--definition/--source` 并新增纯参数合约测试，Node 更新为 27/27。
