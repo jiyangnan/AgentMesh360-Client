@@ -5378,3 +5378,39 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
   当前 commit、窗口、单 Mac、源 Key 存在性与正常 Package 零变更；
 - baseline 通过前不创建 DigitalOcean/Cloudflare 资源、不写 Keychain、不发起
   Provider 请求。
+
+### 循环 89：P5 E1 本机 baseline capture
+
+状态：工具与负向门禁已完成；等待 commit 推送后执行真实只读 capture
+
+已经实现：
+
+1. 新增 `capture-local-canary-baseline.mjs`，执行前必须确认当前 HEAD 与本地
+   `origin/main` 和显式 executor commit 三者一致，且工作区干净；
+2. 固定授权窗口仍有效、cohort 恰为 1 账号/1 Mac、运行平台是 macOS、已保存
+   `GEMINI_API_KEY` 满足基本凭据形态，但不记录值、片段或 digest；
+3. 产品 Keychain 在装配前必须为空；工具只有只读探测能力，没有写入 Keychain、
+   Provider 请求或网络能力；
+4. 正常 `state.db` 必须是非 symlink、16 MiB 内 regular file，并通过 SQLite
+   `immutable=1` / `query_only` 读取 schema、账号作用域计数、Provider Profile、
+   Package Registry、Trust Cache 和 Registry Fetch 计数；
+5. 正常 Package tree 只允许目录和 regular file，拒绝 symlink/特殊文件，读取
+   上限 64 MiB；receipt 只保留 entry/byte count 与 typed tree digest；
+6. capture 前后比较数据库 inode、size、mtime，任何变化立即阻断；正常状态目录和
+   DB 当前权限是否收紧只作为布尔安全观察，不在 P5 顺带修改；
+7. receipt 只能写到 `/private/tmp` 直接子文件，使用 exclusive create、`0600`、
+   fsync；不保留路径、真实账号/设备标识、secret 或原始 Package/Trust 文档；
+8. baseline 即使通过也固定 `cloudAssemblyAllowed=false`，下一道门仍是实时订阅
+   复验与隔离客户端装配。
+
+验证与计划复盘：
+
+- P5 baseline + authorization 定向 Node 18/18；
+- 全仓库 Node 在沙箱内 183/187，唯一 4 项旧 Origin 用例因禁止监听
+  `127.0.0.1` 返回 `EPERM`；仅放开本机 loopback、无外部服务复跑后 187/187；
+- 缺失源 Key、预存产品 Keychain 项、过期窗口、symlink 状态目录和秘密输出均
+  fail-close；
+- 本轮真实 Provider 请求、credits、Keychain 写入、Package mutation、外部资源和
+  费用仍为 0；
+- 下一步先完成全量 Node 回归、提交并推送；随后只在该冻结 commit 执行一次真实
+  baseline。成功后才规划隔离 state/临时 Keychain 装配，仍不跳过实时订阅门。
