@@ -5420,3 +5420,39 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
   本轮清场范围；
 - 下一步规划隔离 state/临时 Keychain 装配与实时订阅复验；该门通过前仍不创建
   DigitalOcean/Cloudflare 资源。
+
+### 循环 90：P5 E1 隔离客户端装配
+
+状态：代码与定向门禁完成；等待 commit 冻结推送后创建本轮唯一隔离 boundary
+
+已经实现：
+
+1. 新增桌面 `canary-runtime`，普通启动不改变 `userData`；只有精确
+   `AGENTMESH360_P5_E1_CANARY=1`、授权 ID、executor commit 和固定
+   `/private/tmp/agentmesh360-p5-e1-client` 同时匹配才启用；
+2. boundary、`state`、`user-data` 必须是 `0700` real directory，marker 必须是
+   4 KiB 内 `0600` regular file；symlink、group/other 权限或路径漂移均阻断；
+3. marker 必须固定 `productionAuthorityGranted=false`、
+   `normalStateReadable=false`、`keychainWritePerformed=false`、
+   `networkRequestPerformed=false`、`packageMutationPerformed=false`；
+4. 通过后仅在 Electron `app.whenReady` 前把 `userData` 切到隔离目录，同时
+   `AGENTMESH360_HOME` 已被要求固定到 boundary 内 state；正常用户状态不会被
+   canary Host 读取；
+5. 新增 `prepare-isolated-client.mjs`，逐字节绑定 authorization 与已通过的
+   baseline receipt，要求 HEAD/origin/main/executor 三者一致和 clean tree；
+6. assembler 只创建一个 boundary、两个私有子目录和一个非秘密 marker，失败会
+   删除本次部分装配；它不具备网络、Keychain、Provider 或 secret 能力；
+7. 当前本机 Electron refresh-token 不存在，账号环境变量也不存在；管理控制面
+   虽有登录态，但测试筛选没有证明已有且唯一的专用账号，因此禁止退化使用管理员
+   个人账号，也不创建账号或修改订阅。
+
+验证与计划复盘：
+
+- P5 authorization/baseline/assembler 定向 Node 22/22；
+- 全仓库 Node 在仅放开本机 loopback、无外部服务的复跑中 191/191；
+- Desktop 105/105，另 3 项真实 Host 契约按既有环境门跳过；syntax check 通过；
+- 本轮外部请求、Provider 请求、credits、Keychain 写入、Package mutation、云资源
+  和费用仍为 0；
+- 下一步先全量回归、提交并推送，再执行一次真实 boundary 装配；
+- 装配后构建隔离真实 Host 并启动本地客户端登录页；实时订阅仍需专用内部测试账号
+  登录态，未取得前不创建 E1 云资源，也不使用管理员个人账号替代。

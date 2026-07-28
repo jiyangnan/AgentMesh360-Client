@@ -1132,6 +1132,15 @@ Cycle 89 增加留存安全的本机 baseline capture。它要求执行器已推
 `a236a84...` 上的真实 capture 已 PASS：源测试 Key存在、产品 Keychain 为空、
 正常 Package/Profile/Trust 均为 0 且读取前后未变化；脱敏 receipt 已入库。
 
+Cycle 90 新增 P5 专用隔离客户端 runtime/assembler。普通桌面启动完全不变；只有
+固定 flag、授权 ID、executor commit、`0700` boundary/state/userData 和 `0600`
+零 mutation marker 同时匹配，Electron 才会在读取 identity/启动 Host 前切换到
+隔离 `userData`，Host state 也被固定在同一 boundary 内。assembler 不具备网络、
+Keychain 或 Provider 能力，异常删除部分装配。当前尚未找到专用测试账号的客户端
+refresh-token/本地凭据，管理端登录不能替代专用账号，因此实时订阅门继续关闭，
+云资源仍为 0。定向 Node 22/22、Desktop 105/105（3 项真实 Host 条件跳过）、
+全仓库 Node 191/191。
+
 定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
 未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读
 验证账号、credential ref、Mac 与 Package baseline；通过后才允许进入 E1 资源。

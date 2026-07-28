@@ -17,6 +17,7 @@ const { AgentConversationController } = require('./conversation-controller');
 const { IdentityController } = require('./identity-controller');
 const { PackageController } = require('./package-controller');
 const { ProviderController } = require('./provider-controller');
+const { configureP5CanaryRuntime } = require('./canary-runtime');
 const {
   LoginItemController,
   WindowLifecycle,
@@ -32,6 +33,7 @@ let window = null;
 let controller = null;
 let conversations = null;
 let lastFocusCheck = 0;
+const canaryRuntime = configureP5CanaryRuntime({ app });
 const loginItems = new LoginItemController({ app });
 const startupIntent = resolveStartupIntent({
   argv: process.argv,
