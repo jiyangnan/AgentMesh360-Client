@@ -1,13 +1,14 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
-状态：P0/P1 基线、P2 key ceremony E0、P3 四 Agent provenance E0 与 P4
-分发服务 E1 隔离演练均已完成。Cycle 63-85 在精确 72 小时、`3 USD` 硬上限授权
+状态：P0/P1 基线、P2 key ceremony E0、P3 四 Agent provenance E0、P4
+分发服务 E1 隔离演练与 P5 no-authority preflight 均已完成。Cycle 63-85 在精确 72 小时、`3 USD` 硬上限授权
 内完成隔离 Spaces/Origin、四 Agent 双构建、Trust/Registry-last 发布、14 项
 故障矩阵、Registry-first 撤回、Root/Publisher 与全部云端/本机资源销毁。
 
 P4 E1 状态为 `isolated_distribution_rehearsal_passed`；生产 R1-R6 仍未关闭，
-生产 Trust/Registry 常量保持为空。P5 Package canary、E2、生产候选、真实订阅/
-BYOK/cohort 与 Apple 签名公证均未授权。
+生产 Trust/Registry 常量保持为空。Cycle 86 只把 P5 前置门、21 项场景和批准卡
+固化为默认 blocked 契约；真实 Package canary、E2、生产候选、订阅/BYOK/cohort
+与 Apple 签名公证均未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -430,7 +431,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
+| P5 Package canary | **阻断式预检已完成**：P4 receipt、R1/R2/R3/R6 前置证据、现有 consumer 契约、21 项场景和批准卡已机器固定；真实执行仍为 blocked | 需要补齐本次 E1 release chain 的适用证据，并取得真实订阅、Provider 请求/费用和 cohort 独立授权；生产门保持关闭 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1086,3 +1087,19 @@ Cache 8/8、Registry Snapshot 7/7、Registry Fetcher/LKG 4/4。隔离 Cargo targ
 P4 E1 结论为隔离分发演练 PASS，不是生产 R3。下一项按计划为 P5 Package canary，
 但专用账号、真实订阅、BYOK Provider/费用、cohort 和停止窗口尚无独立授权；
 因此 P5-P8 保持关闭。
+
+## 40. Cycle 86 P5 no-authority preflight
+
+新增 strict P5 Schema、默认 blocked 模板、中文清单和无依赖 validator/CLI。模板绑定
+P4 acceptance 的真实字节摘要，同时固定当前只有 R1/R2 E0 演练、R3 E1 演练、
+R6 本地基线，P4 资源/私钥未保留且生产常量为空；它不把 E1 预检升级成 E2 或
+生产门关闭。
+
+预检固定现有 Package delivery 的订阅/账户二次检查、600 秒一次性权限批准、
+权限扩张确认、rollback/reconcile、LKG 和稳定 Main Session 契约；21 项
+Subscription、Provider、预算、Package、Trust/Registry 与恢复场景全部保持
+`blocked`。P5 定向 18/18、全仓库 Node 169/169、JSON/secret/diff 检查通过。
+
+本轮 network、Provider、credits、Keychain、外部资源和费用均为 0。真实 P5 必须
+先提供针对本次 E1 release chain 的适用 R1/R2/R3/R6 证据，再取得专用账号、有效订阅、BYOK Provider/模型、
+四类预算、cohort、窗口、rollback、Abort Owner 和清场的独立批准；P6-P8 不变。

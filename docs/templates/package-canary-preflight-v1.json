@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "preflightId": "package_canary_e1_template_0001",
+  "environment": "e1",
+  "workPackage": "p5_package_canary",
+  "authority": "none",
+  "approvalStatus": "not_approved",
+  "executionStatus": "blocked",
+  "evidenceInput": {
+    "p4AuthorizationId": "distribution_service_e1_20260728_0001",
+    "p4AcceptanceSha256": "sha256:4d2a7f530bd988ef0ac1bb5f9b38d44e3ee8f0f246f627678380c1b6205a7a74",
+    "p4ExecutionStatus": "isolated_distribution_rehearsal_passed",
+    "p4ProductionR3Closed": false,
+    "p4ResourcesRetained": false,
+    "p4PrivateMaterialRetained": false,
+    "p4ProductionConstantsEmpty": true,
+    "p5Authorized": false
+  },
+  "prerequisiteGates": {
+    "r1AuthorityEvidence": "e0_rehearsal_only",
+    "r2ProvenanceEvidence": "e0_rehearsal_only",
+    "r3DistributionEvidence": "e1_rehearsal_only",
+    "r6OperationalReadiness": "local_baseline_only",
+    "requiredBeforeCanary": true,
+    "applicableReleaseChainReady": false,
+    "productionGatesClosed": false
+  },
+  "consumerContract": {
+    "activeSubscriptionRequired": true,
+    "accountRevalidatedBeforeMutation": true,
+    "approvalBoundToAccount": true,
+    "approvalOneTime": true,
+    "approvalTtlSeconds": 600,
+    "maxPendingApprovals": 32,
+    "permissionExpansionRequiresApproval": true,
+    "samePermissionUpdateNoPrompt": true,
+    "downgradeRequiresRollback": true,
+    "rollbackRequiresActiveSubscription": true,
+    "stableMainSessionRequired": true,
+    "lkgPreservedOnInvalidRemote": true,
+    "silentProviderFallbackAllowed": false,
+    "productionEndpointsConfigured": false,
+    "embeddedPublisherTrustConfigured": false
+  },
+  "scenarioMatrix": [
+    {
+      "scenario": "active_subscription",
+      "executionStatus": "blocked",
+      "expectedOutcome": "admit_exact_account"
+    },
+    {
+      "scenario": "inactive_subscription",
+      "executionStatus": "blocked",
+      "expectedOutcome": "deny_before_package_or_provider"
+    },
+    {
+      "scenario": "account_switch",
+      "executionStatus": "blocked",
+      "expectedOutcome": "abort_before_mutation"
+    },
+    {
+      "scenario": "byok_selected_route",
+      "executionStatus": "blocked",
+      "expectedOutcome": "use_only_selected_provider_model"
+    },
+    {
+      "scenario": "provider_auth_failure",
+      "executionStatus": "blocked",
+      "expectedOutcome": "fail_without_secret_leak_or_fallback"
+    },
+    {
+      "scenario": "provider_transient_failure",
+      "executionStatus": "blocked",
+      "expectedOutcome": "bounded_user_retry_only"
+    },
+    {
+      "scenario": "provider_capability_mismatch",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_before_request"
+    },
+    {
+      "scenario": "budget_limit_reached",
+      "executionStatus": "blocked",
+      "expectedOutcome": "stop_canary"
+    },
+    {
+      "scenario": "new_agent_install",
+      "executionStatus": "blocked",
+      "expectedOutcome": "verified_atomic_activation"
+    },
+    {
+      "scenario": "same_permission_update",
+      "executionStatus": "blocked",
+      "expectedOutcome": "preserve_identity_and_main_session"
+    },
+    {
+      "scenario": "permission_expansion_rejected",
+      "executionStatus": "blocked",
+      "expectedOutcome": "preserve_old_active"
+    },
+    {
+      "scenario": "permission_expansion_approved",
+      "executionStatus": "blocked",
+      "expectedOutcome": "apply_exact_one_time_plan"
+    },
+    {
+      "scenario": "artifact_or_metadata_tamper",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_before_install"
+    },
+    {
+      "scenario": "registry_rollback_or_equivocation",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "trust_expiry_or_publisher_revocation",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_new_install_preserve_user_data"
+    },
+    {
+      "scenario": "interrupted_install",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reconcile_old_or_complete_new"
+    },
+    {
+      "scenario": "package_rollback",
+      "executionStatus": "blocked",
+      "expectedOutcome": "restore_verified_previous_and_state"
+    },
+    {
+      "scenario": "host_skill_projection",
+      "executionStatus": "blocked",
+      "expectedOutcome": "match_release_reference_version_digest"
+    },
+    {
+      "scenario": "root_rotation",
+      "executionStatus": "blocked",
+      "expectedOutcome": "accept_only_monotonic_trusted_root"
+    },
+    {
+      "scenario": "publisher_rotation_or_revocation",
+      "executionStatus": "blocked",
+      "expectedOutcome": "enforce_new_trust_state"
+    },
+    {
+      "scenario": "registry_withdrawal",
+      "executionStatus": "blocked",
+      "expectedOutcome": "undiscoverable_without_deleting_local_user_data"
+    }
+  ],
+  "approvalCard": {
+    "action": "execute_p5_e1_package_canary",
+    "environment": "e1",
+    "releaseId": "requires_approval",
+    "packageSet": "requires_approval",
+    "dedicatedAccount": "requires_approval",
+    "subscription": "requires_approval",
+    "byokCredential": "requires_approval",
+    "providerAndModel": "requires_approval",
+    "maximumNetworkRequests": 0,
+    "maximumProviderRequests": 0,
+    "maximumCredits": 0,
+    "maximumCurrencyCost": 0,
+    "cohort": "requires_approval",
+    "startStopWindow": "requires_approval",
+    "rollbackTarget": "requires_approval",
+    "abortOwnerRole": "requires_approval",
+    "evidenceRetention": "requires_approval",
+    "approvalReceipt": "not_present"
+  },
+  "networkBoundary": {
+    "externalNetworkAllowed": false,
+    "subscriptionRequestsAllowed": false,
+    "providerRequestsAllowed": false,
+    "packageOriginRequestsAllowed": false,
+    "keychainReadsAllowed": false,
+    "externalResourcesMayBeCreated": false,
+    "productionConstantsMutable": false
+  },
+  "evidencePolicy": {
+    "recordAccountIds": false,
+    "recordEmail": false,
+    "recordCredentials": false,
+    "recordAuthorizationHeaders": false,
+    "recordByok": false,
+    "recordPrompts": false,
+    "recordResponses": false,
+    "recordToolContent": false,
+    "recordEndpointUrls": false,
+    "recordAbsolutePaths": false,
+    "recordRawTrustDocuments": false,
+    "recordRawRegistryDocuments": false,
+    "roleAliasOnly": true,
+    "typedDigestPrefix": "sha256:"
+  },
+  "stopConditions": [
+    "approval_missing",
+    "prerequisite_gate_incomplete",
+    "dedicated_account_unapproved",
+    "subscription_unapproved_or_inactive",
+    "byok_provider_or_model_unapproved",
+    "request_credit_or_cost_cap_missing",
+    "cohort_or_window_unapproved",
+    "rollback_target_unapproved",
+    "abort_owner_unapproved",
+    "evidence_retention_unapproved",
+    "release_set_or_trust_unavailable",
+    "production_constant_mutation",
+    "cross_account_visibility_or_mutation",
+    "permission_approval_mismatch",
+    "duplicate_irreversible_mutation",
+    "silent_provider_fallback",
+    "approved_budget_exceeded",
+    "secret_or_user_content_in_evidence",
+    "scenario_matrix_incomplete",
+    "rollback_recovery_or_cleanup_failure"
+  ],
+  "nextAction": "provide_applicable_release_chain_evidence_then_obtain_separate_p5_authorization"
+}

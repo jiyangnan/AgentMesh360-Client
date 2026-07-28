@@ -219,12 +219,14 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产准备计划（Cycle 56-85 的 P0-P4 已按门禁推进）**：
+6. **桌面与 Package 生产准备计划（Cycle 56-86 已按门禁推进）**：
    已经拆分 E0 本地演练、E1 隔离 staging、E2 封闭
    生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
    R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 E1 隔离 Release Set、非生产
-   Trust、Registry-last、14 项故障矩阵和完整清场。下一步是仍未授权的 P5 Package
-   canary；生产 key、真实订阅/BYOK、cohort、签名和公证仍各自等待独立授权。
+   Trust、Registry-last、14 项故障矩阵和完整清场；P5 已完成零权限阻断式
+   preflight。下一步只有在本次 E1 release chain 的适用 R1/R2/R3/R6 证据齐备并
+   取得独立批准后才执行真实 Package canary；这不关闭生产门，生产 key、
+   订阅/BYOK、cohort、签名和公证仍各自等待授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -769,3 +771,16 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 生产 Trust/Registry 常量为空，Provider/credits/生产 mutation 为 0；
 - P4 E1 隔离演练 PASS，但生产 R3 未关闭；
 - P5 需要专用账号、真实订阅、BYOK/费用、cohort 与停止窗口独立批准，本轮不启动。
+
+## 45. 循环 86 P5 Package Canary 阻断式预检
+
+- 新增 strict P5 Schema、默认 blocked 模板、中文清单和无依赖 CLI；
+- 绑定 P4 acceptance receipt，固定当前只有 R1/R2 E0、R3 E1 和 R6 本地演练
+  证据，且生产门未关闭；
+- 固定订阅/账户二次校验、一次性权限批准、rollback/reconcile、LKG 和稳定
+  Main Session consumer 契约；
+- 固定 21 项 Subscription、BYOK/Provider、预算、Package、Trust/Registry 和恢复
+  场景，全部为 `blocked`；
+- P5 定向 18/18、全仓库 Node 169/169；
+- network、Provider、credits、Keychain、外部资源和费用均为 0；
+- 本轮不关闭生产门、不写 canary 状态；真实 P5 仍需前置门证据和独立批准。

@@ -1,0 +1,490 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/package-canary-preflight-v1.json",
+  "title": "AgentMesh360 P5 E1 Package Canary Preflight v1",
+  "description": "No-authority preflight for a future isolated E1 Agent Package canary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "preflightId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "evidenceInput",
+    "prerequisiteGates",
+    "consumerContract",
+    "scenarioMatrix",
+    "approvalCard",
+    "networkBoundary",
+    "evidencePolicy",
+    "stopConditions",
+    "nextAction"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "preflightId": {
+      "type": "string",
+      "pattern": "^package_canary_e1_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e1"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p5_package_canary"
+    },
+    "authority": {
+      "type": "string",
+      "const": "none"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "not_approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "blocked"
+    },
+    "evidenceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p4AuthorizationId",
+        "p4AcceptanceSha256",
+        "p4ExecutionStatus",
+        "p4ProductionR3Closed",
+        "p4ResourcesRetained",
+        "p4PrivateMaterialRetained",
+        "p4ProductionConstantsEmpty",
+        "p5Authorized"
+      ],
+      "properties": {
+        "p4AuthorizationId": {
+          "type": "string",
+          "const": "distribution_service_e1_20260728_0001"
+        },
+        "p4AcceptanceSha256": {
+          "type": "string",
+          "const": "sha256:4d2a7f530bd988ef0ac1bb5f9b38d44e3ee8f0f246f627678380c1b6205a7a74"
+        },
+        "p4ExecutionStatus": {
+          "type": "string",
+          "const": "isolated_distribution_rehearsal_passed"
+        },
+        "p4ProductionR3Closed": {
+          "type": "boolean",
+          "const": false
+        },
+        "p4ResourcesRetained": {
+          "type": "boolean",
+          "const": false
+        },
+        "p4PrivateMaterialRetained": {
+          "type": "boolean",
+          "const": false
+        },
+        "p4ProductionConstantsEmpty": {
+          "type": "boolean",
+          "const": true
+        },
+        "p5Authorized": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "prerequisiteGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "r1AuthorityEvidence",
+        "r2ProvenanceEvidence",
+        "r3DistributionEvidence",
+        "r6OperationalReadiness",
+        "requiredBeforeCanary",
+        "applicableReleaseChainReady",
+        "productionGatesClosed"
+      ],
+      "properties": {
+        "r1AuthorityEvidence": {
+          "type": "string",
+          "const": "e0_rehearsal_only"
+        },
+        "r2ProvenanceEvidence": {
+          "type": "string",
+          "const": "e0_rehearsal_only"
+        },
+        "r3DistributionEvidence": {
+          "type": "string",
+          "const": "e1_rehearsal_only"
+        },
+        "r6OperationalReadiness": {
+          "type": "string",
+          "const": "local_baseline_only"
+        },
+        "requiredBeforeCanary": {
+          "type": "boolean",
+          "const": true
+        },
+        "applicableReleaseChainReady": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionGatesClosed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "consumerContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "activeSubscriptionRequired",
+        "accountRevalidatedBeforeMutation",
+        "approvalBoundToAccount",
+        "approvalOneTime",
+        "approvalTtlSeconds",
+        "maxPendingApprovals",
+        "permissionExpansionRequiresApproval",
+        "samePermissionUpdateNoPrompt",
+        "downgradeRequiresRollback",
+        "rollbackRequiresActiveSubscription",
+        "stableMainSessionRequired",
+        "lkgPreservedOnInvalidRemote",
+        "silentProviderFallbackAllowed",
+        "productionEndpointsConfigured",
+        "embeddedPublisherTrustConfigured"
+      ],
+      "properties": {
+        "activeSubscriptionRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "accountRevalidatedBeforeMutation": {
+          "type": "boolean",
+          "const": true
+        },
+        "approvalBoundToAccount": {
+          "type": "boolean",
+          "const": true
+        },
+        "approvalOneTime": {
+          "type": "boolean",
+          "const": true
+        },
+        "approvalTtlSeconds": {
+          "type": "integer",
+          "const": 600
+        },
+        "maxPendingApprovals": {
+          "type": "integer",
+          "const": 32
+        },
+        "permissionExpansionRequiresApproval": {
+          "type": "boolean",
+          "const": true
+        },
+        "samePermissionUpdateNoPrompt": {
+          "type": "boolean",
+          "const": true
+        },
+        "downgradeRequiresRollback": {
+          "type": "boolean",
+          "const": true
+        },
+        "rollbackRequiresActiveSubscription": {
+          "type": "boolean",
+          "const": true
+        },
+        "stableMainSessionRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "lkgPreservedOnInvalidRemote": {
+          "type": "boolean",
+          "const": true
+        },
+        "silentProviderFallbackAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionEndpointsConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "embeddedPublisherTrustConfigured": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "scenarioMatrix": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 21,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "executionStatus",
+          "expectedOutcome"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "executionStatus": {
+            "type": "string",
+            "const": "blocked"
+          },
+          "expectedOutcome": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,95}$"
+          }
+        }
+      }
+    },
+    "approvalCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "environment",
+        "releaseId",
+        "packageSet",
+        "dedicatedAccount",
+        "subscription",
+        "byokCredential",
+        "providerAndModel",
+        "maximumNetworkRequests",
+        "maximumProviderRequests",
+        "maximumCredits",
+        "maximumCurrencyCost",
+        "cohort",
+        "startStopWindow",
+        "rollbackTarget",
+        "abortOwnerRole",
+        "evidenceRetention",
+        "approvalReceipt"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "execute_p5_e1_package_canary"
+        },
+        "environment": {
+          "type": "string",
+          "const": "e1"
+        },
+        "releaseId": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "packageSet": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "dedicatedAccount": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "subscription": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "byokCredential": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "providerAndModel": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "maximumNetworkRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumProviderRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCurrencyCost": {
+          "type": "integer",
+          "const": 0
+        },
+        "cohort": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "startStopWindow": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "rollbackTarget": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "abortOwnerRole": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "evidenceRetention": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "approvalReceipt": {
+          "type": "string",
+          "const": "not_present"
+        }
+      }
+    },
+    "networkBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "externalNetworkAllowed",
+        "subscriptionRequestsAllowed",
+        "providerRequestsAllowed",
+        "packageOriginRequestsAllowed",
+        "keychainReadsAllowed",
+        "externalResourcesMayBeCreated",
+        "productionConstantsMutable"
+      ],
+      "properties": {
+        "externalNetworkAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "subscriptionRequestsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "providerRequestsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "packageOriginRequestsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "keychainReadsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "externalResourcesMayBeCreated": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionConstantsMutable": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordAccountIds",
+        "recordEmail",
+        "recordCredentials",
+        "recordAuthorizationHeaders",
+        "recordByok",
+        "recordPrompts",
+        "recordResponses",
+        "recordToolContent",
+        "recordEndpointUrls",
+        "recordAbsolutePaths",
+        "recordRawTrustDocuments",
+        "recordRawRegistryDocuments",
+        "roleAliasOnly",
+        "typedDigestPrefix"
+      ],
+      "properties": {
+        "recordAccountIds": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordEmail": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordCredentials": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAuthorizationHeaders": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordByok": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordPrompts": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordResponses": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordToolContent": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordEndpointUrls": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAbsolutePaths": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawTrustDocuments": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawRegistryDocuments": {
+          "type": "boolean",
+          "const": false
+        },
+        "roleAliasOnly": {
+          "type": "boolean",
+          "const": true
+        },
+        "typedDigestPrefix": {
+          "type": "string",
+          "const": "sha256:"
+        }
+      }
+    },
+    "stopConditions": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{2,63}$"
+      }
+    },
+    "nextAction": {
+      "type": "string",
+      "const": "provide_applicable_release_chain_evidence_then_obtain_separate_p5_authorization"
+    }
+  }
+}

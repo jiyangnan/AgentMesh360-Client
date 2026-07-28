@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；下一验收点是仍未授权的 P5 Package canary，不自动使用真实订阅、BYOK Provider、credits、cohort 或生产凭据 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、Package P0-P4 与 P5 no-authority preflight 已按原顺序推进；下一验收点是真实 P5 的独立批准卡，不自动使用订阅、BYOK Provider、credits、cohort 或生产凭据 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P3 与 P4 R3 E1 隔离演练已完成；四 Agent 双构建、Registry-last、14 项故障矩阵、Registry-first 撤回和全部 E1 云端/本机资源清场均通过，生产 endpoint/root/bundle 仍为空 | 生产 R2/R3 仍未满足；P5 Package canary 需要专用内部账号、真实有效订阅、BYOK/费用、cohort 和停止窗口的独立精确批准，P5-P8 继续关闭 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；预检固定 P4 evidence、当前仅有技术演练的 R1/R2/R3/R6、现有 Package consumer 契约、21 项 canary 场景和零权限边界，生产 endpoint/root/bundle 仍为空 | 真实 P5 需要针对本次 E1 release chain 补齐适用前置证据，并取得专用内部账号、有效订阅、BYOK/费用、cohort、回滚和停止窗口的独立精确批准；生产门仍关闭，P5-P8 继续关闭 |
 
 ## 开发循环记录
 
@@ -5264,3 +5264,46 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 - 按原计划下一项是 P5 Package canary，但它需要专用内部账号、真实有效订阅、
   BYOK Provider/费用、cohort 和停止窗口的独立精确批准；
 - 本轮不启动 P5，不启动 Apple 签名/公证 P6，不修改生产常量。
+
+### 循环 86：P5 Package Canary 零权限阻断式预检
+
+状态：P5 no-authority preflight 已完成；真实 P5 canary 未授权、未执行
+
+已经实现：
+
+1. 新增 strict `agentmesh360-package-canary-preflight-v1` Schema、默认
+   `authority=none` / `executionStatus=blocked` 模板和中文检查清单；
+2. 模板逐字节绑定 P4 最终验收 receipt，同时固定 P4 没有关闭生产 R3、没有保留
+   Root/Publisher/云资源或生产常量；
+3. 固定当前只有 R1/R2 E0、R3 E1 技术演练和 R6 本地基线，禁止把技术演练伪造成
+   本次 canary release chain 已 ready，也禁止把 E1 偷换成 E2 或生产门通过；
+4. 固定现有客户端订阅与账户二次校验、600 秒一次性权限批准、32 pending 上限、
+   权限扩张确认、显式 rollback、LKG 和稳定 Main Session 契约；
+5. 固定 21 项订阅、账户、BYOK/Provider、预算、Package、Trust、Registry 与
+   rollback/reconcile 场景；全部保持 `blocked`；
+6. 批准卡要求 Release/Package Set、专用内部账号、有效订阅、BYOK Provider/模型、
+   四类预算、cohort、窗口、rollback、Abort Owner 与 evidence retention；
+7. 无新批准时 network、subscription、Provider、Package Origin、Keychain、外部
+   资源和生产常量 mutation 全部为 false/0；
+8. 无依赖 CLI 拒绝 unknown/duplicate key、symlink、非法 UTF-8、超限输入、门禁
+   伪造、场景缺失/重排和证据敏感字段。
+
+验证证据：
+
+- P5 定向 Node：18/18；
+- 全仓库 Node tools：169/169；
+- 首次沙箱全量运行中 4 项旧 Origin 测试因禁止监听 `127.0.0.1` 返回 `EPERM`；
+  在仅放开本机 loopback、无外部服务的非沙箱复跑中全部通过；
+- JSON 3/3、秘密标记扫描和 `git diff --check` 通过；
+- Validator 静态证明不导入 network/Keychain/Provider/subprocess capability；
+- Provider 请求、credits、Keychain 读取、外部资源和费用均为 0；
+- Kimi 继续按用户要求暂停，本轮为主 Agent 加强自主复核，不冒充 Kimi PASS。
+
+计划复盘与后续边界：
+
+- 本轮只完成 P5 的机器阻断式准备，不关闭 R1/R2/R3/R6，不写
+  `canary_authorized`、`canary_running` 或 `canary_passed`；
+- 真实 P5 前必须先提供针对本次 E1 release chain 的适用前置证据，并另行精确批准专用账号、订阅、BYOK、
+  Provider/模型、请求/credits/费用、cohort、窗口、rollback 和清场；
+- P6-P8、Apple Developer ID、公证、生产 Trust/Registry 与外部 cohort 不在本轮
+  范围。
