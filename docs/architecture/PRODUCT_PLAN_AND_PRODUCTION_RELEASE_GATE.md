@@ -8,7 +8,8 @@ Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也�
 Cycle 59 已完成 P2 E0 测试 key 技术演练、自主验证与本机 Kimi 四级清零；生产
 R1-R6 与所有生产发布能力仍保持关闭；Cycle 60 已完成 P3 零新 key provenance
 preflight，Cycle 61 已完成获批的 P3 R2 E0 四 Agent 双构建、测试签名、复验、
-销毁与非秘密 evidence；该 E0 PASS 不关闭生产 R2
+销毁与非秘密 evidence；Cycle 62 已完成 P4 R3 E1 零外部资源阻断式 preflight；
+生产 R2/R3 与实际 E1 仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -168,7 +169,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足（P3 R2 E0 技术演练已完成） | 已有四 Agent 双构建、测试签名与十类输出可复验证据；仍需生产 Publisher authority、受控生产发布流水线及与 R3/R6 联动的生产证据 |
-| R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
+| R3 分发服务 | Agent Package | 未满足（P4 no-authority preflight 已完成） | 已固定消费者契约、不可变顺序、14 项故障/LKG 矩阵和批准边界；仍需获批 E1 Release Set、非生产 Trust、隔离 origin/Registry、凭据、实际故障注入与清理证据 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
 | R6 可观测与响应 | 共同 | 未满足（P1 本地基线已完成） | Release Event/证据模板/静态扫描/Runbook/E0 tabletop 已有；仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本与官方安装器恢复 |
@@ -215,13 +216,13 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产准备计划（Cycle 56 P0、Cycle 57 P1、Cycle 58 P2
-   无 authority 设计已完成）**：已经拆分 E0 本地演练、E1 隔离 staging、E2 封闭
+6. **桌面与 Package 生产准备计划（Cycle 56-62 的 P0-P4 已按门禁推进）**：
+   已经拆分 E0 本地演练、E1 隔离 staging、E2 封闭
    生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
-   R6 Runbook、最小事件 Schema、证据模板、静态扫描和 E0 tabletop；P2 已建立
-   ceremony Schema、默认 blocked 模板、静态验证器和清单。下一步必须先取得测试 key
-   精确批准卡，才能执行 P2 E0 实际演练；生产 key、外部服务、真实订阅/BYOK
-   canary、签名、公证和 cohort 仍各自等待独立授权。
+   R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成零外部资源 preflight。下一步必须
+   取得精确 P4 E1 批准卡，才能创建新 Release Set、非生产 Trust、隔离 origin、
+   对象存储/Registry 与最小凭据；生产 key、真实订阅/BYOK canary、签名、公证和
+   cohort 仍各自等待独立授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -508,3 +509,24 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本轮只关闭 P3 R2 E0 技术演练，生产 R2 仍未满足。下一步按序评估 P4 R3 E1，
   但任何隔离 origin、对象存储、Registry、staging 凭据或外部资源必须另行批准；
   P4-P8 继续关闭。
+
+## 21. 循环 62 P4 R3 E1 零外部资源 preflight 检查点
+
+- 新增 strict P4 Schema、默认 blocked 模板、validator 与中文 Runbook；
+- P3 receipt/commit 只作为来源 evidence，明确 P3 Artifact 与测试私钥均未保留；
+  E1 必须使用另行批准的新 Release Set 和非生产 Trust；
+- 固定现有 Rust 消费者的 HTTPS exact-origin、无 redirect、无 URL credential/
+  query/fragment、trusted time、response size、MIME、timeout 和 LKG 契约；
+- 固定五类不可变对象、上传后回读摘要验证、Trust Bundle 先于 Registry，以及
+  Registry 最后原子发布、禁止原地覆盖；
+- 固定 14 项 404/timeout/truncation/size/MIME/redirect/digest/signature/expiry/
+  rollback/equivocation/LKG/半发布故障矩阵；
+- 日志和 evidence 禁止账号、BYOK、Prompt、响应、凭据、endpoint URL、原始
+  Trust/Registry 与本机路径；
+- 自主复核发现并修正 `application/x-zstd` MIME 漏项和 expired remote metadata
+  的 LKG 预期，并补充真实 P3 receipt 字节摘要与 candidate/executor commit 绑定；
+  P4 CLI、Node 17/17、syntax、JSON 与 diff check 通过；
+- Kimi 按用户要求继续暂停，本轮使用加强自主复核，不冒充 Kimi PASS；
+- 本轮只关闭 P4 no-authority preflight，不关闭 E1 或生产 R3。实际 P4 必须另行
+  批准 E1 Release Set、staging Trust、origin/DNS/TLS、对象存储/Registry、凭据、
+  请求上限、执行/清理窗口和 evidence retention；P5-P8 继续关闭。

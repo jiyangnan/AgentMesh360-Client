@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 E0 与 P3 R2 E0 技术演练已按原顺序推进；下一验收点是 P4 R3 E1 的设计与 authority 评估，不自动创建外部资源、staging 凭据、生产 key、endpoint 或发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 E0、P3 R2 E0 与 P4 no-authority preflight 已按原顺序推进；下一验收点是独立的 P4 R3 E1 authority，不自动创建外部资源、staging 凭据、生产 key、endpoint 或发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、Cycle 56-60 的 P0/P1/P2/P3 preflight 与 Cycle 61 的 P3 R2 E0 技术演练均已完成；四 Agent 双构建、一个临时测试 Publisher、8 次签名、十类输出复验与销毁证据通过，生产 endpoint/root/bundle 仍为空 | 只关闭 P3 E0 技术子项，生产 R2 仍未满足；下一步按序评估 P4 R3 E1，任何外部 origin、对象存储、Registry、staging 凭据或生产 authority 都需另行批准 |
+| 动态 Agent Package | H0/H1 至 H2d4、Cycle 56-61 的 P0-P3 与 Cycle 62 的 P4 R3 E1 阻断式 preflight 已完成；已机器固定 P3 evidence 交接、现有消费者契约、不可变发布顺序、14 项故障矩阵、LKG 与证据边界，生产 endpoint/root/bundle 仍为空 | 生产 R2/R3 仍未满足；实际 P4 必须另行批准新的 E1 Release Set、非生产 Trust、origin/对象存储/Registry、最小凭据、请求上限与清理窗口，P5-P8 继续关闭 |
 
 ## 开发循环记录
 
@@ -4478,3 +4478,64 @@ R2 与 P4-P8 继续关闭
   与对应 JSON receipt；
 - 本轮最终复核遵循用户最新要求，不调用额度已用尽的 Kimi；由主 Agent 完成完整
   diff、负向测试、receipt 对账、秘密扫描与清理复验，不冒充 Kimi PASS。
+
+### 循环 62：P4 R3 E1 零外部资源分发服务 preflight
+
+状态：no-authority preflight 已实现并通过加强自主复核；E1 外部资源、Trust、
+Release Set、上传和故障注入仍未获批、未执行
+
+计划校准：
+
+- 严格按 P0-P8 顺序进入 P4，不跳到 Package canary、桌面分发或生产启用；
+- P3 只保留非秘密 receipt，Artifact、Envelope、Host bundles、Release Manifest
+  与 Registry candidate 已随临时边界删除，P3 测试 Publisher 也已销毁；
+- 因此 P4 不能把 P3 digest 当成可上传文件，也不能复用 P2/P3 私钥；未来 E1 必须
+  独立批准并重建新的 staging Release Set 与非生产 Trust；
+- 本轮只允许本机静态 Schema、blocked 模板、validator、测试和文档，不创建
+  origin、DNS/TLS、对象存储、Registry、账号或凭据，不发网络请求。
+
+已经实现：
+
+1. 新增 strict P4 preflight Schema 与默认 blocked 模板，固定
+   `environment=e1`、`workPackage=p4_r3`、`authority=none`、
+   `approvalStatus=not_approved`、`executionStatus=blocked`；
+2. 绑定 P3 rehearsal ID、receipt typed digest、candidate/executor commit，同时
+   固定 `productionR2Closed=false`、`p3ArtifactsRetained=false` 和
+   `e1ReleaseSet=requires_approval`；
+3. 固定 P2/P3 私钥不可复用、production key 禁止、staging Root/Publisher/Client
+   Trust 注入均需新批准，且生产 Trust/Registry 常量不可修改；
+4. 直接对照 Rust 消费者固定 HTTPS 精确 origin、禁止 redirect 和
+   credentials/query/fragment、trusted server time、五类响应大小、四种 Artifact
+   MIME 与 metadata/artifact timeout；
+5. 固定 Artifact、Envelope、Host bundles、Host projection、Release Manifest
+   的不可变命名、上传 receipt、回读摘要核对和 Registry 最后原子发布；
+6. 固定 14 项 R3 故障矩阵：404、timeout、截断、超限、错误 MIME、redirect、
+   digest/signature mismatch、过期 metadata、rollback、same-revision
+   equivocation、有效/无效 LKG 与半发布不可发现；
+7. 固定撤回不删除用户本地数据、不允许未签名 fallback，以及日志/evidence 不记录
+   账号、BYOK、Prompt、响应、凭据、endpoint URL、原始 Trust/Registry 或本机路径；
+8. 中文 Runbook 给出未来批准卡、停止条件、发布顺序和清理边界。
+
+自主验证与加强复核：
+
+- P4 template CLI validator 通过；
+- P4 定向 Node 17/17；覆盖 strict Schema、P3 receipt 字节摘要与 handoff、真实
+  Rust 常量、authority/
+  resource/trust escalation、consumer drift、mutable overwrite、Registry 提前发布、
+  故障矩阵遗漏、LKG、日志/evidence、symlink、duplicate key、UTF-8、size 与 CLI
+  路径脱敏；
+- Node syntax、Schema/template JSON parse 与 `git diff --check` 通过；
+- 首轮自主复核发现 Artifact MIME 漏记 `application/x-zstd`，以及过期远端
+  metadata 的 LKG 预期表述错误；最终审计又补充真实 P3 receipt 字节摘要与
+  candidate/executor commit 绑定，修正后复跑 17/17；
+- Kimi 仍按用户要求暂停，本轮结论来自完整 diff、源码契约对照与负向测试，不冒充
+  Kimi 独立 PASS。
+
+计划复盘与下一轮：
+
+- 本轮只关闭 P4 no-authority preflight，不关闭 E1 演练或生产 R3；
+- 真实 P4 前必须取得精确批准：新的 E1 Release Set、非生产 Root/Publisher 与
+  Client Trust 注入、隔离 origin/DNS/TLS/对象存储/Registry、最小凭据、网络请求
+  上限、执行窗口、abort owner、撤回/清理目标和 evidence retention；
+- 继续保持生产 Trust/Registry 常量为空；P5-P8、Provider、credits、费用、Apple
+  凭据与任何对外发布均不在本轮范围。

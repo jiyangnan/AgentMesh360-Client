@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "rehearsalId": "distribution_service_e1_template_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "authority": "none",
+  "approvalStatus": "not_approved",
+  "executionStatus": "blocked",
+  "provenanceInput": {
+    "rehearsalId": "release_provenance_e0_20260728_0001",
+    "receiptSha256": "sha256:946bd98a4279430493cd80fae357f2c95b7ab7de624bcbabe2424248eefc0940",
+    "candidateCommit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c",
+    "executorCommit": "5d97f0bf4c48de6e2ac40a3ed4066b5455361294",
+    "technicalRehearsalPassed": true,
+    "productionR2Closed": false,
+    "p3ArtifactsRetained": false,
+    "e1ReleaseSet": "requires_approval"
+  },
+  "trustBoundary": {
+    "p2PrivateMaterialReusable": false,
+    "p3PrivateMaterialReusable": false,
+    "productionKeyAllowed": false,
+    "stagingRootAuthority": "requires_approval",
+    "stagingPublisherAuthority": "requires_approval",
+    "stagingClientTrustInjection": "requires_approval",
+    "productionConstantsMutable": false
+  },
+  "consumerContract": {
+    "productionOriginHost": "packages.agentmesh360.com",
+    "productionEndpointsConfigured": false,
+    "embeddedPublisherTrustConfigured": false,
+    "exactOriginRequired": true,
+    "redirectPolicy": "none",
+    "credentialInUrlAllowed": false,
+    "queryAllowed": false,
+    "fragmentAllowed": false,
+    "trustedServerTimeRequired": true,
+    "metadataContentType": "application/json",
+    "trustBundleResponseLimitBytes": 65536,
+    "registryResponseLimitBytes": 1048576,
+    "releaseManifestResponseLimitBytes": 1048576,
+    "envelopeResponseLimitBytes": 65536,
+    "artifactResponseLimitBytes": 33554432,
+    "artifactContentTypes": [
+      "application/vnd.agentmesh.package",
+      "application/zstd",
+      "application/x-zstd",
+      "application/octet-stream"
+    ],
+    "metadataConnectTimeoutSeconds": 5,
+    "metadataTotalTimeoutSeconds": 15,
+    "artifactConnectTimeoutSeconds": 10,
+    "artifactTotalTimeoutSeconds": 90
+  },
+  "infrastructurePlan": {
+    "externalResourcesAllowed": false,
+    "origin": "requires_approval",
+    "tlsCertificate": "requires_approval",
+    "objectStorage": "requires_approval",
+    "registryStore": "requires_approval",
+    "credentialScope": "requires_approval",
+    "ownerRole": "requires_approval",
+    "abortOwnerRole": "requires_approval",
+    "cleanupWindow": "requires_approval"
+  },
+  "publicationPlan": {
+    "digestAlgorithm": "sha256",
+    "immutableObjectClasses": [
+      "artifact",
+      "envelope",
+      "host_bundles",
+      "host_projection",
+      "release_manifest"
+    ],
+    "immutableNamesRequired": true,
+    "overwriteAllowed": false,
+    "uploadReceiptRequired": true,
+    "byteVerificationBeforeRegistry": true,
+    "trustBundlePublishedBeforeRegistry": true,
+    "registryPublishedLast": true,
+    "registryAtomicPublishRequired": true,
+    "registryInPlaceMutationAllowed": false,
+    "withdrawalDeletesUserData": false,
+    "withdrawalAllowsUnsignedFallback": false,
+    "executionStatus": "blocked"
+  },
+  "faultMatrix": [
+    {
+      "scenario": "not_found",
+      "executionStatus": "blocked",
+      "expectedOutcome": "lkg_or_unavailable"
+    },
+    {
+      "scenario": "timeout",
+      "executionStatus": "blocked",
+      "expectedOutcome": "lkg_or_unavailable"
+    },
+    {
+      "scenario": "truncated_response",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "response_too_large",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "wrong_content_type",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "redirect",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "digest_mismatch",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "signature_mismatch",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "expired_metadata",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "registry_rollback",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_newer_lkg"
+    },
+    {
+      "scenario": "same_revision_equivocation",
+      "executionStatus": "blocked",
+      "expectedOutcome": "reject_and_preserve_lkg"
+    },
+    {
+      "scenario": "valid_lkg_transport_failure",
+      "executionStatus": "blocked",
+      "expectedOutcome": "serve_valid_lkg"
+    },
+    {
+      "scenario": "invalid_or_expired_lkg",
+      "executionStatus": "blocked",
+      "expectedOutcome": "unavailable_fail_closed"
+    },
+    {
+      "scenario": "partial_publication_before_registry",
+      "executionStatus": "blocked",
+      "expectedOutcome": "undiscoverable"
+    }
+  ],
+  "loggingBoundary": {
+    "releaseIdentifiersOnly": true,
+    "recordAccountIds": false,
+    "recordByok": false,
+    "recordPrompts": false,
+    "recordResponses": false,
+    "recordLocalPaths": false
+  },
+  "approvalCard": {
+    "action": "execute_p4_r3_e1_isolated_distribution_rehearsal",
+    "environment": "e1",
+    "releaseSet": "requires_approval",
+    "stagingTrust": "requires_approval",
+    "externalResources": "requires_approval",
+    "credentials": "requires_approval",
+    "maximumNetworkRequests": 0,
+    "maximumProviderRequests": 0,
+    "maximumCredits": 0,
+    "maximumCurrencyCost": 0,
+    "startStopWindow": "requires_approval",
+    "rollbackTarget": "requires_approval",
+    "evidenceRetention": "requires_approval",
+    "approvalReceipt": "not_present"
+  },
+  "stopConditions": [
+    "approval_missing",
+    "p4_release_set_unapproved",
+    "staging_trust_unapproved",
+    "external_resource_unapproved",
+    "credential_scope_unapproved",
+    "origin_or_tls_drift",
+    "immutable_object_mismatch",
+    "object_overwrite_possible",
+    "registry_publish_order_violation",
+    "fault_matrix_incomplete",
+    "lkg_semantics_violation",
+    "evidence_policy_violation",
+    "cleanup_failure"
+  ],
+  "evidencePolicy": {
+    "recordCredentials": false,
+    "recordAuthorizationHeaders": false,
+    "recordRawTrustDocuments": false,
+    "recordRawRegistryDocuments": false,
+    "recordEndpointUrls": false,
+    "recordAbsolutePaths": false,
+    "recordPersonalIdentity": false,
+    "recordUserOrProviderContent": false,
+    "roleAliasOnly": true,
+    "typedDigestPrefix": "sha256:"
+  }
+}

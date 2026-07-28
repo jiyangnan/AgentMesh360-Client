@@ -3,8 +3,10 @@
 状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线、Cycle 58 的 P2
 无 authority preflight、Cycle 59 的 P2 E0 测试 key 技术演练与 Cycle 60 的
 P3 零新 key provenance preflight 均已完成；Cycle 61 的 P3 R2 E0 四 Agent
-双构建、测试签名、复验、销毁与非秘密 evidence 也已通过；
-生产 R1-R6 仍未关闭，尚未进入生产 key ceremony、E1/E2、内部 canary 或生产候选
+双构建、测试签名、复验、销毁与非秘密 evidence 也已通过；Cycle 62 已完成 P4 R3
+E1 的零外部资源阻断式 preflight；
+生产 R1-R6 仍未关闭，尚未创建 E1 资源或进入生产 key ceremony、内部 canary、
+E2 或生产候选
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -46,6 +48,8 @@ Provider、消耗 credits 或写用户真实宿主目录。
   仍需另一张批准卡；
 - P3 已在精确批准下完成 E0 四 Agent 双构建、一个临时测试 Publisher、8 次签名、
   十类输出逐字节复验、销毁与 retention-safe receipt；该 E0 PASS 不关闭生产 R2；
+- P4 已机器固定 P3 evidence 交接、现有消费者契约、不可变发布顺序、14 项故障矩阵、
+  LKG、日志/evidence 边界与精确批准卡；实际 E1 资源和生产 R3 仍未开放；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -424,7 +428,7 @@ flowchart TD
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
-| P4 R3 E1 | 隔离 origin、对象存储/Registry、故障注入和清理 | 需要创建外部资源与 staging 凭据授权 |
+| P4 R3 E1 | **零外部资源 preflight 已完成，实际 E1 未执行**：P3 handoff、消费者契约、不可变顺序、14 项故障矩阵、LKG、日志/evidence 与批准卡 | 新 Release Set、非生产 Trust、origin/DNS/TLS、对象存储/Registry、最小凭据、请求上限与清理窗口均需独立批准 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
@@ -768,3 +772,34 @@ executor commit 后再执行。
 Cycle 61 只关闭 P3 R2 E0 技术演练，生产 R2 仍未满足。下一步按序评估 P4 R3 E1；
 创建隔离 HTTPS origin、对象存储、Registry 或 staging 凭据属于新的外部 authority，
 没有精确批准不得执行。P4-P8、生产 key、Provider、credits、费用与发布继续关闭。
+
+## 16. Cycle 62 P4 R3 E1 零外部资源 preflight 检查点
+
+本轮没有把“继续开发”解释为创建外部基础设施。新增 strict Schema、默认 blocked
+模板、validator、16 项负向/契约测试与中文 Runbook：
+
+- P4 固定 `authority=none`、`approvalStatus=not_approved`、
+  `executionStatus=blocked`、`externalResourcesAllowed=false`；
+- P3 receipt/commit 被绑定为来源证据，但明确 `p3ArtifactsRetained=false`、
+  `productionR2Closed=false`；未来 E1 必须新建获批 Release Set；
+- P2/P3 私钥不可复用，production key 禁止，staging Root/Publisher/Client Trust
+  注入与所有外部资源均为 `requires_approval`；
+- 现有 Rust 消费者的 origin、redirect、URL、response limit、MIME、timeout、
+  trusted time 与 LKG 契约被直接源码测试固定，不另建宽松协议；
+- 五类 Release 对象必须不可变、上传后回读核对，Trust Bundle 在 Registry 前，
+  Registry 必须最后原子发布且不可原地覆盖；
+- 14 项故障矩阵覆盖 404、timeout、截断、超限、错误 MIME、redirect、摘要/签名、
+  expiry、rollback、equivocation、LKG 与半发布不可发现；
+- 撤回不删除用户本地数据、不允许 unsigned fallback；日志/evidence 不记录账号、
+  BYOK、Prompt、响应、凭据、endpoint URL、原始 Trust/Registry 或本机路径。
+
+自主验证中首先发现 Artifact MIME 少记录 `application/x-zstd`，以及 expired
+remote metadata 的 LKG 预期表述错误；最终审计又补充真实 P3 receipt 字节摘要与
+candidate/executor commit 绑定。修复后 P4 CLI、Node 17/17、syntax、
+Schema/template JSON 与 diff check 全部通过。Kimi 仍按用户要求暂停，本轮使用
+加强自主复核，不声明 Kimi PASS。
+
+Cycle 62 只关闭 P4 no-authority preflight，不关闭 E1 或生产 R3。下一步必须等待
+精确 P4 批准卡，至少固定新的 E1 Release Set、非生产 Trust、隔离 origin/DNS/TLS、
+对象存储/Registry、最小凭据、网络请求上限、执行/清理窗口与 evidence retention。
+未获批前 P5-P8、生产 Trust/Registry 常量、Provider、credits、费用与发布保持关闭。

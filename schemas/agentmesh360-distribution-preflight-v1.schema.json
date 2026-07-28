@@ -1,0 +1,707 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/distribution-preflight-v1.json",
+  "title": "AgentMesh360 P4 R3 E1 Distribution Service Preflight v1",
+  "description": "No-authority preflight for a future isolated E1 Agent Package distribution rehearsal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rehearsalId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "provenanceInput",
+    "trustBoundary",
+    "consumerContract",
+    "infrastructurePlan",
+    "publicationPlan",
+    "faultMatrix",
+    "loggingBoundary",
+    "approvalCard",
+    "stopConditions",
+    "evidencePolicy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "rehearsalId": {
+      "type": "string",
+      "pattern": "^distribution_service_e1_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e1"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p4_r3"
+    },
+    "authority": {
+      "type": "string",
+      "const": "none"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "not_approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "blocked"
+    },
+    "provenanceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rehearsalId",
+        "receiptSha256",
+        "candidateCommit",
+        "executorCommit",
+        "technicalRehearsalPassed",
+        "productionR2Closed",
+        "p3ArtifactsRetained",
+        "e1ReleaseSet"
+      ],
+      "properties": {
+        "rehearsalId": {
+          "type": "string",
+          "const": "release_provenance_e0_20260728_0001"
+        },
+        "receiptSha256": {
+          "type": "string",
+          "const": "sha256:946bd98a4279430493cd80fae357f2c95b7ab7de624bcbabe2424248eefc0940"
+        },
+        "candidateCommit": {
+          "type": "string",
+          "const": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c"
+        },
+        "executorCommit": {
+          "type": "string",
+          "const": "5d97f0bf4c48de6e2ac40a3ed4066b5455361294"
+        },
+        "technicalRehearsalPassed": {
+          "type": "boolean",
+          "const": true
+        },
+        "productionR2Closed": {
+          "type": "boolean",
+          "const": false
+        },
+        "p3ArtifactsRetained": {
+          "type": "boolean",
+          "const": false
+        },
+        "e1ReleaseSet": {
+          "type": "string",
+          "const": "requires_approval"
+        }
+      }
+    },
+    "trustBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p2PrivateMaterialReusable",
+        "p3PrivateMaterialReusable",
+        "productionKeyAllowed",
+        "stagingRootAuthority",
+        "stagingPublisherAuthority",
+        "stagingClientTrustInjection",
+        "productionConstantsMutable"
+      ],
+      "properties": {
+        "p2PrivateMaterialReusable": {
+          "type": "boolean",
+          "const": false
+        },
+        "p3PrivateMaterialReusable": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionKeyAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "stagingRootAuthority": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "stagingPublisherAuthority": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "stagingClientTrustInjection": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "productionConstantsMutable": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "consumerContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionOriginHost",
+        "productionEndpointsConfigured",
+        "embeddedPublisherTrustConfigured",
+        "exactOriginRequired",
+        "redirectPolicy",
+        "credentialInUrlAllowed",
+        "queryAllowed",
+        "fragmentAllowed",
+        "trustedServerTimeRequired",
+        "metadataContentType",
+        "trustBundleResponseLimitBytes",
+        "registryResponseLimitBytes",
+        "releaseManifestResponseLimitBytes",
+        "envelopeResponseLimitBytes",
+        "artifactResponseLimitBytes",
+        "artifactContentTypes",
+        "metadataConnectTimeoutSeconds",
+        "metadataTotalTimeoutSeconds",
+        "artifactConnectTimeoutSeconds",
+        "artifactTotalTimeoutSeconds"
+      ],
+      "properties": {
+        "productionOriginHost": {
+          "type": "string",
+          "const": "packages.agentmesh360.com"
+        },
+        "productionEndpointsConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "embeddedPublisherTrustConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "exactOriginRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "redirectPolicy": {
+          "type": "string",
+          "const": "none"
+        },
+        "credentialInUrlAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "queryAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "fragmentAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "trustedServerTimeRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "metadataContentType": {
+          "type": "string",
+          "const": "application/json"
+        },
+        "trustBundleResponseLimitBytes": {
+          "type": "integer",
+          "const": 65536
+        },
+        "registryResponseLimitBytes": {
+          "type": "integer",
+          "const": 1048576
+        },
+        "releaseManifestResponseLimitBytes": {
+          "type": "integer",
+          "const": 1048576
+        },
+        "envelopeResponseLimitBytes": {
+          "type": "integer",
+          "const": 65536
+        },
+        "artifactResponseLimitBytes": {
+          "type": "integer",
+          "const": 33554432
+        },
+        "artifactContentTypes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "application/vnd.agentmesh.package"
+            },
+            {
+              "type": "string",
+              "const": "application/zstd"
+            },
+            {
+              "type": "string",
+              "const": "application/x-zstd"
+            },
+            {
+              "type": "string",
+              "const": "application/octet-stream"
+            }
+          ]
+        },
+        "metadataConnectTimeoutSeconds": {
+          "type": "integer",
+          "const": 5
+        },
+        "metadataTotalTimeoutSeconds": {
+          "type": "integer",
+          "const": 15
+        },
+        "artifactConnectTimeoutSeconds": {
+          "type": "integer",
+          "const": 10
+        },
+        "artifactTotalTimeoutSeconds": {
+          "type": "integer",
+          "const": 90
+        }
+      }
+    },
+    "infrastructurePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "externalResourcesAllowed",
+        "origin",
+        "tlsCertificate",
+        "objectStorage",
+        "registryStore",
+        "credentialScope",
+        "ownerRole",
+        "abortOwnerRole",
+        "cleanupWindow"
+      ],
+      "properties": {
+        "externalResourcesAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "origin": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "tlsCertificate": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "objectStorage": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "registryStore": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "credentialScope": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "ownerRole": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "abortOwnerRole": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "cleanupWindow": {
+          "type": "string",
+          "const": "requires_approval"
+        }
+      }
+    },
+    "publicationPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digestAlgorithm",
+        "immutableObjectClasses",
+        "immutableNamesRequired",
+        "overwriteAllowed",
+        "uploadReceiptRequired",
+        "byteVerificationBeforeRegistry",
+        "trustBundlePublishedBeforeRegistry",
+        "registryPublishedLast",
+        "registryAtomicPublishRequired",
+        "registryInPlaceMutationAllowed",
+        "withdrawalDeletesUserData",
+        "withdrawalAllowsUnsignedFallback",
+        "executionStatus"
+      ],
+      "properties": {
+        "digestAlgorithm": {
+          "type": "string",
+          "const": "sha256"
+        },
+        "immutableObjectClasses": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "artifact"
+            },
+            {
+              "type": "string",
+              "const": "envelope"
+            },
+            {
+              "type": "string",
+              "const": "host_bundles"
+            },
+            {
+              "type": "string",
+              "const": "host_projection"
+            },
+            {
+              "type": "string",
+              "const": "release_manifest"
+            }
+          ]
+        },
+        "immutableNamesRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "overwriteAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "uploadReceiptRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "byteVerificationBeforeRegistry": {
+          "type": "boolean",
+          "const": true
+        },
+        "trustBundlePublishedBeforeRegistry": {
+          "type": "boolean",
+          "const": true
+        },
+        "registryPublishedLast": {
+          "type": "boolean",
+          "const": true
+        },
+        "registryAtomicPublishRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "registryInPlaceMutationAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "withdrawalDeletesUserData": {
+          "type": "boolean",
+          "const": false
+        },
+        "withdrawalAllowsUnsignedFallback": {
+          "type": "boolean",
+          "const": false
+        },
+        "executionStatus": {
+          "type": "string",
+          "const": "blocked"
+        }
+      }
+    },
+    "faultMatrix": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "executionStatus",
+          "expectedOutcome"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "enum": [
+              "not_found",
+              "timeout",
+              "truncated_response",
+              "response_too_large",
+              "wrong_content_type",
+              "redirect",
+              "digest_mismatch",
+              "signature_mismatch",
+              "expired_metadata",
+              "registry_rollback",
+              "same_revision_equivocation",
+              "valid_lkg_transport_failure",
+              "invalid_or_expired_lkg",
+              "partial_publication_before_registry"
+            ]
+          },
+          "executionStatus": {
+            "type": "string",
+            "const": "blocked"
+          },
+          "expectedOutcome": {
+            "type": "string",
+            "enum": [
+              "lkg_or_unavailable",
+              "reject_and_preserve_lkg",
+              "reject_and_preserve_newer_lkg",
+              "serve_valid_lkg",
+              "unavailable_fail_closed",
+              "undiscoverable"
+            ]
+          }
+        }
+      }
+    },
+    "loggingBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "releaseIdentifiersOnly",
+        "recordAccountIds",
+        "recordByok",
+        "recordPrompts",
+        "recordResponses",
+        "recordLocalPaths"
+      ],
+      "properties": {
+        "releaseIdentifiersOnly": {
+          "type": "boolean",
+          "const": true
+        },
+        "recordAccountIds": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordByok": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordPrompts": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordResponses": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordLocalPaths": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "approvalCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "environment",
+        "releaseSet",
+        "stagingTrust",
+        "externalResources",
+        "credentials",
+        "maximumNetworkRequests",
+        "maximumProviderRequests",
+        "maximumCredits",
+        "maximumCurrencyCost",
+        "startStopWindow",
+        "rollbackTarget",
+        "evidenceRetention",
+        "approvalReceipt"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "execute_p4_r3_e1_isolated_distribution_rehearsal"
+        },
+        "environment": {
+          "type": "string",
+          "const": "e1"
+        },
+        "releaseSet": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "stagingTrust": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "externalResources": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "credentials": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "maximumNetworkRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumProviderRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCurrencyCost": {
+          "type": "integer",
+          "const": 0
+        },
+        "startStopWindow": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "rollbackTarget": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "evidenceRetention": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "approvalReceipt": {
+          "type": "string",
+          "const": "not_present"
+        }
+      }
+    },
+    "stopConditions": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "approval_missing"
+        },
+        {
+          "type": "string",
+          "const": "p4_release_set_unapproved"
+        },
+        {
+          "type": "string",
+          "const": "staging_trust_unapproved"
+        },
+        {
+          "type": "string",
+          "const": "external_resource_unapproved"
+        },
+        {
+          "type": "string",
+          "const": "credential_scope_unapproved"
+        },
+        {
+          "type": "string",
+          "const": "origin_or_tls_drift"
+        },
+        {
+          "type": "string",
+          "const": "immutable_object_mismatch"
+        },
+        {
+          "type": "string",
+          "const": "object_overwrite_possible"
+        },
+        {
+          "type": "string",
+          "const": "registry_publish_order_violation"
+        },
+        {
+          "type": "string",
+          "const": "fault_matrix_incomplete"
+        },
+        {
+          "type": "string",
+          "const": "lkg_semantics_violation"
+        },
+        {
+          "type": "string",
+          "const": "evidence_policy_violation"
+        },
+        {
+          "type": "string",
+          "const": "cleanup_failure"
+        }
+      ]
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordCredentials",
+        "recordAuthorizationHeaders",
+        "recordRawTrustDocuments",
+        "recordRawRegistryDocuments",
+        "recordEndpointUrls",
+        "recordAbsolutePaths",
+        "recordPersonalIdentity",
+        "recordUserOrProviderContent",
+        "roleAliasOnly",
+        "typedDigestPrefix"
+      ],
+      "properties": {
+        "recordCredentials": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAuthorizationHeaders": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawTrustDocuments": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawRegistryDocuments": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordEndpointUrls": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAbsolutePaths": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordPersonalIdentity": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordUserOrProviderContent": {
+          "type": "boolean",
+          "const": false
+        },
+        "roleAliasOnly": {
+          "type": "boolean",
+          "const": true
+        },
+        "typedDigestPrefix": {
+          "type": "string",
+          "const": "sha256:"
+        }
+      }
+    }
+  }
+}
