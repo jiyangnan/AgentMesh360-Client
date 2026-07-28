@@ -190,3 +190,14 @@ Root/Publisher、Trust-first/Registry-last 和 14 项故障矩阵；生产 R3 �
 部署器现固定 daemon-reload、enable、无条件 restart Origin，并在正常 health
 之后用 curl stdin token 直连批准 IP 执行受保护 fault probe。修复冻结后只重部署
 同一实例，不增加资源或权限；probe 通过后完整矩阵必须从第 1 项重新执行。
+
+## 8. 十四场景真实矩阵结果
+
+Cycle 78 commit `4dbb6ea` 推送后，同一 Origin 幂等重部署成功；Origin/Caddy
+active、正常 health 和受保护 token probe 同时通过。矩阵从第 1 项重新执行，
+14/14 passed。非秘密 receipt 保存在同目录 JSON，包含场景、evidence code、
+baseline revision/sequence、16 个逻辑请求和 64 次最大 transport 尝试，不含
+任何 hostname、URL、IP、bucket、token、key 或 signature。
+
+P4 仍未最终关闭。下一步严格撤 Registry 并验证公网 404，再清除其余对象、
+临时 Root/Publisher、DNS、Droplet、limited key、bucket 和本机秘密。

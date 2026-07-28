@@ -5080,3 +5080,29 @@ detached frozen-commit 隔离修复待冻结后重试
 - 下一步冻结推送后幂等重部署同一 Origin，要求 health 与受保护 fault probe 同时
   通过，再从第 1 项重新执行完整 14 场景；
 - 不接受从第 3 项续跑，也不进入 P5。
+
+### 循环 79：P4 R3 E1 十四场景真实故障矩阵通过
+
+状态：修复后同一 Origin 幂等重部署成功，完整故障矩阵从头重跑并 14/14 通过；
+P4 仍等待 Registry 撤回和全部 E1 资源/秘密销毁
+
+实际证据：
+
+1. Cycle 78 commit `4dbb6ea` 推送后才重部署同一实例，没有新增 Droplet、bucket、
+   key、DNS、权限或费用类型；
+2. Origin/Caddy active、正常 HTTPS health 和 direct fault-token probe 同时通过；
+3. 第一次失败没有 receipt；修复后从 not-found 重新开始，不复用部分结果；
+4. 14 场景全部通过：404、timeout、截断、超限、错误 MIME、redirect、digest、
+   signature、expiry、rollback、同 revision equivocation、有效 LKG transport
+   failure、失效 LKG、Registry-before partial publication；
+5. receipt mode `0600`，14/14 passed，16 个逻辑 HTTPS 请求、最多 64 次传输尝试；
+6. Provider 请求、credits、生产 mutation 均为 0；
+7. 仓库只留去秘密 JSON：无 hostname、URL、IP、bucket、token、key 或 signature。
+
+计划复盘与下一轮：
+
+- P4 的 build、publication 和 fault matrix 已完成，但 cleanup 是同一验收的一部分；
+- 下一步严格先删除 Registry 并从公网验证 404，再删除 Trust、fault fixtures 和
+  27 个 Release 对象；
+- 之后销毁 Root/Publisher、Droplet、DNS、limited key、bucket 和本机秘密，
+  完整清场前不进入 P5。

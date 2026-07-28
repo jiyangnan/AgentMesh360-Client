@@ -1031,3 +1031,13 @@ live state、本地 config 与远端磁盘 config 一致；根因是幂等部署
 修复改为 daemon-reload、enable、无条件 restart Origin，并在正常 HTTPS health
 之后增加 direct-to-approved-IP 的受保护 fault probe；token 仅经 curl stdin，
 不进 argv。定向 20/20。下一步冻结后幂等重部署，再从头重跑 14/14；P5-P8 关闭。
+
+## 33. Cycle 79 P4 R3 E1 真实故障矩阵检查点
+
+`4dbb6ea` 推送后，同一 Origin 幂等重部署并同时通过 service active、正常 health
+和受保护 token probe。完整矩阵从第 1 项重新运行，14/14 全部通过；非秘密 receipt
+固定 16 个逻辑 HTTPS 请求、最多 64 次 transport 尝试，Provider/credits 为 0。
+
+build、publication、fault matrix 已完成，但 cleanup 仍是 P4 验收的一部分。
+下一步先撤 Registry 并验证 404，再删除其余对象、临时 key 与全部 E1 云资源；
+P5-P8 继续关闭。

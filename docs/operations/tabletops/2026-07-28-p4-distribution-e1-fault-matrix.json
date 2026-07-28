@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "distribution_service_e1_20260728_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "executorCommit": "4dbb6ea2bc07a20517d559c84726cc9536e4e08b",
+  "executionStatus": "fault_matrix_passed",
+  "scenarioCount": 14,
+  "results": [
+    {
+      "scenario": "not_found",
+      "evidenceCode": "http_404_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "timeout",
+      "evidenceCode": "bounded_timeout_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "truncated_response",
+      "evidenceCode": "truncated_body_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "response_too_large",
+      "evidenceCode": "response_limit_enforced",
+      "status": "passed"
+    },
+    {
+      "scenario": "wrong_content_type",
+      "evidenceCode": "mime_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "redirect",
+      "evidenceCode": "redirect_not_followed",
+      "status": "passed"
+    },
+    {
+      "scenario": "digest_mismatch",
+      "evidenceCode": "signed_wrong_digest_detected",
+      "status": "passed"
+    },
+    {
+      "scenario": "signature_mismatch",
+      "evidenceCode": "root_signature_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "expired_metadata",
+      "evidenceCode": "expiry_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "registry_rollback",
+      "evidenceCode": "lower_revision_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "same_revision_equivocation",
+      "evidenceCode": "same_revision_digest_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "valid_lkg_transport_failure",
+      "evidenceCode": "verified_unexpired_lkg_retained",
+      "status": "passed"
+    },
+    {
+      "scenario": "invalid_or_expired_lkg",
+      "evidenceCode": "expired_rollback_lkg_rejected",
+      "status": "passed"
+    },
+    {
+      "scenario": "partial_publication_before_registry",
+      "evidenceCode": "objects_undiscoverable_without_registry",
+      "status": "passed"
+    }
+  ],
+  "validBaseline": {
+    "trustSequence": 1,
+    "registryRevision": 2,
+    "packageCount": 4
+  },
+  "logicalRequestCount": 16,
+  "maximumCurlAttempts": 64,
+  "providerRequests": 0,
+  "creditsConsumed": 0,
+  "completedAt": "2026-07-28T16:31:29.592Z"
+}

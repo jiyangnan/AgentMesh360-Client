@@ -700,3 +700,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - HTTPS health 后新增绕过代理、直连批准 IP 的受保护 fault probe；
 - token 仍只经 curl stdin；定向 20/20；
 - 下一步冻结后重部署并从头重跑 14/14，P5-P8 继续关闭。
+
+## 38. 循环 79 P4 R3 E1 真实故障矩阵检查点
+
+- `4dbb6ea` 推送后只重部署同一 Origin，无新增资源或权限；
+- Origin/Caddy active、正常 health、受保护 token probe 同时通过；
+- 14 场景从头执行并 14/14 通过；
+- 非秘密 receipt 固定 16 个逻辑请求、最多 64 次传输尝试；
+- Provider/credits/生产 mutation 为 0；
+- 下一步先撤 Registry，再清对象、key、DNS、Droplet、bucket；清场前 P5-P8 关闭。
