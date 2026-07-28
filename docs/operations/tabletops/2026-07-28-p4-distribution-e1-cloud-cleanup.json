@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "distribution_service_e1_20260728_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "executionStatus": "cloud_resources_withdrawn",
+  "dnsRecordAbsent": true,
+  "exactDropletCount": 0,
+  "operatorPrivateKeyAbsent": true,
+  "limitedAccessKeyCount": 0,
+  "bucketDeletionScheduledCount": 2,
+  "bucketObjectCount": 0,
+  "billableBucketCount": 0,
+  "productionMutationCount": 0,
+  "providerRequests": 0,
+  "creditsConsumed": 0,
+  "estimatedRuntimeCostUsdUpperBound": 0.05,
+  "invoiceFinal": false,
+  "approvedBudgetHardCapUsd": 3,
+  "completedAt": "2026-07-28T16:54:22.000Z"
+}

@@ -729,3 +729,13 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - Root/Publisher 私钥和 Release boundary absent；
 - 下一步清 DNS/Droplet/limited key/bucket/subscription 与本机秘密；
 - 完整清场前 P4/P5-P8 继续关闭。
+
+## 41. 循环 82 P4 R3 E1 云基础设施实际清场检查点
+
+- Cloudflare E1 DNS record absent；
+- 精确 E1 Droplet count=0，operator 私钥 absent；
+- 两组 limited key count=0；
+- 两个 0-item bucket 已排队永久删除并停止计费；
+- 账户无其他 Spaces bucket，生产/其他 staging 未修改；
+- 保守运行成本上界 `0.05 USD`，final invoice 未结算；
+- 下一步只清本机 secret/state 并全量回归，P5-P8 关闭。

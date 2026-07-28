@@ -1061,3 +1061,12 @@ signer 覆盖删除，Release boundary absent。非秘密 cleanup receipt 已固
 
 下一步删除 DNS、唯一 Droplet、两组 limited key、两个空 bucket 和不再需要的
 Spaces subscription，再清本机 secret state。全部完成前 P4/P5-P8 继续关闭。
+
+## 36. Cycle 82 P4 R3 E1 云基础设施实际清场检查点
+
+Cloudflare E1 record absent；精确 E1 Droplet count=0 且 operator 私钥 absent；
+两组 limited key absent；两个 0-item bucket 均进入永久删除队列，Provider 明确
+标注不再计费且操作 link/menu absent。账户没有其他 Spaces bucket，未触碰无关资源。
+
+含首台短命 Droplet的保守运行成本上界 `0.05 USD`，最终 invoice 尚未结算。
+下一步只销毁本机临时 credential/state/boundary，再做全量回归；P5-P8 关闭。

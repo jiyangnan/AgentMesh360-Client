@@ -5158,3 +5158,31 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 - 下一步删除 DNS，销毁唯一 E1 Droplet，再撤销两组 limited key、删除两个空
   bucket，并取消不再需要的 Spaces subscription；
 - 最后删除本机 credentials/state，复验生产常量为空和根 `target/` absent。
+
+### 循环 82：P4 R3 E1 云基础设施实际清场
+
+状态：staging DNS、E1 Droplet、limited key 和 billable bucket 均已撤回；两个
+空 bucket 进入 Provider 永久删除队列且明确停止计费，本机临时 secret/state
+尚待最终销毁
+
+实际执行与复验：
+
+1. Cloudflare 精确 E1 A record 已删除，页面匹配计数为 0；
+2. 唯一替代 Droplet 经批准 destroy runner 销毁；doctl 对精确 ID/名称复验为 0；
+3. operator SSH 私钥由 destroy runner 覆盖删除；
+4. Origin Reader 与 Publisher 两组 limited key 永久删除，Access Keys 页面精确
+   名称均 absent、操作菜单计数为 0；
+5. 两个 bucket 删除前均为 0 Bytes / 0 items，删除后均进入永久删除队列；
+6. Provider 页面明确标注两个 bucket 不再计费，可操作 link/menu absent；
+7. 账户不存在其他 Spaces bucket，因此没有删除无关 bucket；DigitalOcean 对最后
+   bucket 使用删除排队即停止计费，没有独立 subscription cancel 动作；
+8. 从资源创建到撤回不足 2.2 小时，包含首台短命 Droplet 的保守运行成本上界
+   `0.05 USD`，远低于 `3 USD` 硬上限；最终账单尚未结算，不冒充 invoice。
+
+计划复盘与下一轮：
+
+- 外部可访问面、计算、凭据与 billable storage 已全部撤回；
+- 下一步实现并冻结本机 finalizer，验证上述非秘密 receipts 后覆盖删除 Spaces
+  credential、Origin token/state、publication/release/fault/cleanup temp state
+  和两段 Droplet boundary；
+- 随后做全量回归、生产空 Trust/Registry、根 `target/`、GitHub main 同步复验。

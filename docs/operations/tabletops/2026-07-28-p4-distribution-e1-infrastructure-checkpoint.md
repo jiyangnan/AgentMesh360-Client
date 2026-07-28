@@ -222,3 +222,17 @@ Release boundary、两条私钥路径均 absent。
 下一步只剩基础设施层：删除 staging DNS、唯一 E1 Droplet、两组 limited key、
 两个空 bucket、Spaces subscription 和本机临时 secret/state。完成前不写最终
 E1 PASS。
+
+## 11. 云基础设施实际清场
+
+- Cloudflare E1 A record：absent；
+- 精确 E1 Droplet：0；
+- operator SSH private key：absent；
+- E1 limited Spaces key：0；
+- 两个 bucket：删除前 0 Bytes/0 items，现已排队永久删除；
+- billable bucket：0，Provider 页面明确“不再计费”；
+- 其他 Spaces bucket：0，没有删除无关资源；
+- 生产 mutation：0。
+
+运行窗口不足 2.2 小时，含首台短命 Droplet 的保守成本上界为 `0.05 USD`；
+最终账单未结算。下一步只销毁本机临时 secret/state/boundary，再完成全量回归。
