@@ -170,7 +170,11 @@
         "presetId",
         "modelId",
         "credentialSource",
+        "sourceEnvironmentVariable",
+        "environmentSecretReadAllowed",
         "keychainReadAllowed",
+        "temporaryKeychainWriteAllowed",
+        "temporaryKeychainCredentialRequired",
         "secretExportAllowed",
         "maximumInferenceRequests",
         "maximumAgentMeshCredits",
@@ -178,7 +182,8 @@
         "silentFallbackAllowed",
         "temporaryCanaryBindingsRequired",
         "removeTemporaryBindingsAtEnd",
-        "deleteExistingCredentialAtEnd"
+        "deleteTemporaryKeychainCredentialAtEnd",
+        "preserveSavedSourceCredential"
       ],
       "properties": {
         "presetId": { "type": "string", "const": "google-gemini" },
@@ -188,9 +193,19 @@
         },
         "credentialSource": {
           "type": "string",
-          "const": "existing_keychain_gemini_test_key"
+          "const": "existing_process_environment_gemini_test_key"
         },
+        "sourceEnvironmentVariable": {
+          "type": "string",
+          "const": "GEMINI_API_KEY"
+        },
+        "environmentSecretReadAllowed": { "type": "boolean", "const": true },
         "keychainReadAllowed": { "type": "boolean", "const": true },
+        "temporaryKeychainWriteAllowed": { "type": "boolean", "const": true },
+        "temporaryKeychainCredentialRequired": {
+          "type": "boolean",
+          "const": true
+        },
         "secretExportAllowed": { "type": "boolean", "const": false },
         "maximumInferenceRequests": { "type": "integer", "const": 12 },
         "maximumAgentMeshCredits": { "type": "integer", "const": 0 },
@@ -198,7 +213,11 @@
         "silentFallbackAllowed": { "type": "boolean", "const": false },
         "temporaryCanaryBindingsRequired": { "type": "boolean", "const": true },
         "removeTemporaryBindingsAtEnd": { "type": "boolean", "const": true },
-        "deleteExistingCredentialAtEnd": { "type": "boolean", "const": false }
+        "deleteTemporaryKeychainCredentialAtEnd": {
+          "type": "boolean",
+          "const": true
+        },
+        "preserveSavedSourceCredential": { "type": "boolean", "const": true }
       }
     },
     "infrastructurePlan": {
@@ -384,7 +403,8 @@
         "destroyEphemeralSigningKeys",
         "removeTemporaryProviderBindings",
         "destroyIsolatedCanaryState",
-        "preserveExistingKeychainCredential",
+        "deleteTemporaryKeychainCredential",
+        "preserveSavedSourceCredential",
         "retainOnlyNonSecretEvidence",
         "failureRequiresRollbackAndCleanupBeforeRetry"
       ],
@@ -397,7 +417,11 @@
         "destroyEphemeralSigningKeys": { "type": "boolean", "const": true },
         "removeTemporaryProviderBindings": { "type": "boolean", "const": true },
         "destroyIsolatedCanaryState": { "type": "boolean", "const": true },
-        "preserveExistingKeychainCredential": { "type": "boolean", "const": true },
+        "deleteTemporaryKeychainCredential": {
+          "type": "boolean",
+          "const": true
+        },
+        "preserveSavedSourceCredential": { "type": "boolean", "const": true },
         "retainOnlyNonSecretEvidence": { "type": "boolean", "const": true },
         "failureRequiresRollbackAndCleanupBeforeRetry": {
           "type": "boolean",

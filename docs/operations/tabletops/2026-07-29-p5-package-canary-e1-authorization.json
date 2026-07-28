@@ -43,8 +43,12 @@
   "providerPlan": {
     "presetId": "google-gemini",
     "modelId": "gemini-3.5-flash-lite",
-    "credentialSource": "existing_keychain_gemini_test_key",
+    "credentialSource": "existing_process_environment_gemini_test_key",
+    "sourceEnvironmentVariable": "GEMINI_API_KEY",
+    "environmentSecretReadAllowed": true,
     "keychainReadAllowed": true,
+    "temporaryKeychainWriteAllowed": true,
+    "temporaryKeychainCredentialRequired": true,
     "secretExportAllowed": false,
     "maximumInferenceRequests": 12,
     "maximumAgentMeshCredits": 0,
@@ -52,7 +56,8 @@
     "silentFallbackAllowed": false,
     "temporaryCanaryBindingsRequired": true,
     "removeTemporaryBindingsAtEnd": true,
-    "deleteExistingCredentialAtEnd": false
+    "deleteTemporaryKeychainCredentialAtEnd": true,
+    "preserveSavedSourceCredential": true
   },
   "infrastructurePlan": {
     "provider": "digitalocean",
@@ -119,7 +124,8 @@
     "destroyEphemeralSigningKeys": true,
     "removeTemporaryProviderBindings": true,
     "destroyIsolatedCanaryState": true,
-    "preserveExistingKeychainCredential": true,
+    "deleteTemporaryKeychainCredential": true,
+    "preserveSavedSourceCredential": true,
     "retainOnlyNonSecretEvidence": true,
     "failureRequiresRollbackAndCleanupBeforeRetry": true
   },

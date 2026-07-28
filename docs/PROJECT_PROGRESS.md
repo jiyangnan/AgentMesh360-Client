@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4、P5 阻断式预检与 P5 E1 精确授权已完成；授权固定 1 账号、1 Mac、Gemini 12 请求、0 credits、Provider `$1`、基础设施 `$3`、72 小时、隔离 state 与完整回滚/清场，生产 endpoint/root/bundle 仍为空 | 冻结推送授权后只检查专用账号、Keychain 引用和 Package 基线；通过才重建非生产 E1 release chain 并执行 21 项矩阵，任一失败先回滚和清场 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4、P5 阻断式预检与 P5 E1 精确授权已完成；授权固定 1 账号、1 Mac、Gemini 12 请求、0 credits、Provider `$1`、基础设施 `$3`、72 小时、隔离 state 与完整回滚/清场，生产 endpoint/root/bundle 仍为空 | 已发现测试 Key 实际由受控进程环境保存、产品 Keychain 为空；先冻结推送凭据来源纠正，再检查专用账号、临时 Keychain 装配边界和 Package 基线，通过才重建非生产 E1 release chain |
 
 ## 开发循环记录
 
@@ -5317,7 +5317,7 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 1. 新增 strict `agentmesh360-package-canary-authorization-v1` Schema、留存安全
    authorization receipt 和无依赖 validator/CLI；
 2. 固定 1 个专用内部账号、1 台 Mac、`72h` 窗口且禁止自动延长；
-3. 固定现有 Keychain Gemini 测试 Key、`google-gemini` /
+3. 固定已保存在受控进程环境中的 Gemini 测试 Key、`google-gemini` /
    `gemini-3.5-flash-lite`、最多 12 次推理、0 AgentMesh credits、Provider
    `$1` 硬上限且禁止静默 fallback；
 4. 固定复用 DigitalOcean 账号能力但不复用生产 Droplet：SGP1 唯一 1 GiB
@@ -5329,7 +5329,8 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 7. 所有 Package mutation 必须在隔离 canary state home 进行，正常用户状态只做
    前后摘要比对；未知 mutation 不自动重试；
 8. 结束时 Registry-first，删除 DNS/Droplet/bucket、撤销 Spaces key、销毁临时
-   signing key、provider binding 和隔离 state；保留用户现有 Keychain credential。
+   signing key、provider binding、临时 Keychain credential 和隔离 state；保留
+   已保存的源测试 Key。
 
 验证证据：
 
@@ -5349,3 +5350,31 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 - 下一步先冻结推送本 authorization，再只读确认专用账号订阅、Gemini credential
   ref、当前 Mac 和 Package baseline；
 - 只有四项同时满足且仍在授权窗口/预算内，才允许创建 E1 资源；否则不产生费用。
+
+### 循环 88：P5 E1 凭据来源只读纠正
+
+状态：授权范围不变；外部执行仍未开始，等待纠正 commit 冻结推送
+
+只读基线事实与修正：
+
+1. 已推送授权 commit `bb5dfd9` 后检查默认 `~/.agentmesh360/state.db`，schema
+   v10 可用，但账号作用域、Gemini Profile、Package Registry、Trust Cache 均为
+   0；没有改写正常用户状态；
+2. 产品 Keychain service `com.agentmesh360.client.provider` 不存在凭据项，而当前
+   受控执行环境中的 `GEMINI_API_KEY` 存在；全过程没有读取、输出或落盘 secret；
+3. 因此授权工件把凭据来源纠正为已保存的进程环境测试 Key，并固定只允许创建一个
+   临时 canary Keychain credential 供客户端 Vault 使用；
+4. 清场必须删除临时 Keychain credential、临时 binding 和隔离 state，同时保留
+   源测试 Key；12 次、0 credits、Provider `$1`、基础设施 `$3`、1 账号、1 Mac、
+   72 小时与禁止生产 authority 均未改变；
+5. 正常状态库当前目录/文件权限为 `0755/0644`，记录为安全观察项；P5 不顺带修改
+   用户正常状态，前后只比较 Package 摘要。
+
+验证与下一步：
+
+- 修正后的 authorization 定向 Node 13/13、CLI、JSON 和 `git diff --check`
+  必须通过后冻结推送；
+- 下一轮实现只输出计数、布尔值和 typed digest 的本机 baseline capture，校验
+  当前 commit、窗口、单 Mac、源 Key 存在性与正常 Package 零变更；
+- baseline 通过前不创建 DigitalOcean/Cloudflare 资源、不写 Keychain、不发起
+  Provider 请求。

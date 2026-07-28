@@ -111,13 +111,17 @@ test('pins one account, one Mac, 72 hours, and no production authority', () => {
   assert.equal(authorization.cohort.externalCohortAllowed, false);
 });
 
-test('pins the existing Gemini Keychain reference and approved limits', () => {
+test('pins the saved Gemini secret, temporary Keychain copy, and approved limits', () => {
   const authorization = validAuthorization();
   assert.deepEqual(authorization.providerPlan, {
     presetId: 'google-gemini',
     modelId: 'gemini-3.5-flash-lite',
-    credentialSource: 'existing_keychain_gemini_test_key',
+    credentialSource: 'existing_process_environment_gemini_test_key',
+    sourceEnvironmentVariable: 'GEMINI_API_KEY',
+    environmentSecretReadAllowed: true,
     keychainReadAllowed: true,
+    temporaryKeychainWriteAllowed: true,
+    temporaryKeychainCredentialRequired: true,
     secretExportAllowed: false,
     maximumInferenceRequests: 12,
     maximumAgentMeshCredits: 0,
@@ -125,7 +129,8 @@ test('pins the existing Gemini Keychain reference and approved limits', () => {
     silentFallbackAllowed: false,
     temporaryCanaryBindingsRequired: true,
     removeTemporaryBindingsAtEnd: true,
-    deleteExistingCredentialAtEnd: false,
+    deleteTemporaryKeychainCredentialAtEnd: true,
+    preserveSavedSourceCredential: true,
   });
   assert.equal(authorization.requestLimits.maximumAgentMeshCredits, 0);
   assert.equal(authorization.requestLimits.maximumInfrastructureCostUsd, 3);
@@ -203,6 +208,12 @@ test('rejects Provider, credits, cost, or fallback escalation', () => {
     (value) => {
       value.providerPlan.secretExportAllowed = true;
     },
+    (value) => {
+      value.providerPlan.temporaryKeychainWriteAllowed = false;
+    },
+    (value) => {
+      value.providerPlan.deleteTemporaryKeychainCredentialAtEnd = false;
+    },
   ]) {
     const authorization = validAuthorization();
     mutate(authorization);
@@ -252,7 +263,10 @@ test('rejects rollback, cleanup, or evidence weakening', () => {
       value.cleanupPlan.withdrawRegistryFirst = false;
     },
     (value) => {
-      value.cleanupPlan.preserveExistingKeychainCredential = false;
+      value.cleanupPlan.preserveSavedSourceCredential = false;
+    },
+    (value) => {
+      value.cleanupPlan.deleteTemporaryKeychainCredential = false;
     },
     (value) => {
       value.cleanupPlan.destroyIsolatedCanaryState = false;

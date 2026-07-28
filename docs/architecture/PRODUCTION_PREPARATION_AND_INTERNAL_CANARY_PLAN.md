@@ -1108,14 +1108,20 @@ Subscription、Provider、预算、Package、Trust/Registry 与恢复场景全�
 ## 41. Cycle 87 P5 E1 精确授权
 
 新增 strict authorization Schema、留存安全 receipt 和 validator/CLI。授权固定
-1 个专用内部账号、1 台 Mac、72 小时；现有 Keychain Gemini 测试 Key、
+1 个专用内部账号、1 台 Mac、72 小时；已保存在受控进程环境中的 Gemini 测试 Key，
 `gemini-3.5-flash-lite` 最多 12 次、0 AgentMesh credits、Provider `$1`；
 DigitalOcean SGP1 隔离基础设施预计 `$1.15`、硬上限 `$3`。
 
 Release chain 重新构建 P4 frozen 四 Agent 并增加 Job Agent 同权限/权限扩张 canary
 版本；使用全新 2 Root/2 Publisher，生产 key 和 P4 私钥不可复用。Package mutation
 仅能发生在隔离 state home；结束 Registry-first 并销毁云端资源、临时 key、
-binding 和 canary state，用户已有 Keychain credential 不删除。
+binding、临时 Keychain credential 和 canary state，已保存的源测试 Key不删除。
+
+Cycle 88 的只读基线确认产品 Keychain 当前为空，测试 Key 实际通过
+`GEMINI_API_KEY` 注入当前受控执行环境。授权工件因此纠正为：客户端只可把该值
+临时写入一个 canary Keychain 项，清场必须删除临时项并保留源 Key。请求、费用、
+账号、设备、窗口和生产权限边界均不变；纠正 commit 推送且本机 baseline 通过前，
+不创建 E1 资源。
 
 定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
 未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读
