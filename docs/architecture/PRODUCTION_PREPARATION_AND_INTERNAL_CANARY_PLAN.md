@@ -1,9 +1,9 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
-状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线与 Cycle 58 的 P2
-无 authority ceremony 预检设计已完成自主验证和本机 Kimi 独立复核；P2 实际测试
-key 演练与 R1-R6 仍未关闭，尚未进入 key ceremony、E1/E2 技术演练、内部 canary
-或生产候选
+状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线、Cycle 58 的 P2
+无 authority preflight 与 Cycle 59 的 P2 E0 测试 key 技术演练均已完成自主验证和
+本机 Kimi 四级清零；生产 R1-R6 仍未关闭，尚未进入生产 key ceremony、P3、E1/E2、
+内部 canary 或生产候选
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -12,10 +12,10 @@ key 演练与 R1-R6 仍未关闭，尚未进入 key ceremony、E1/E2 技术演�
 1. Agent Package 的签名、分发、动态安装与宿主 Skill 投影；
 2. AgentMesh360 桌面客户端的签名、公证、升级、登录启动与卸载。
 
-本文不是发布授权，也不是 canary 通过报告。截至 P1 关闭仍未生成任何
-Root/Publisher key，
-没有配置生产或 staging endpoint，没有上传 Artifact、发布 Registry、签名或公证
-桌面安装包，也没有调用 Provider、消耗 credits 或写用户真实宿主目录。
+本文不是发布授权，也不是 canary 通过报告。Cycle 59 只在本机隔离临时目录生成并
+销毁 E0 测试 Root/Publisher；没有生成或保留生产 key，没有配置 production/staging
+endpoint，没有上传 Artifact、发布 Registry、签名或公证桌面安装包，也没有调用
+Provider、消耗 credits 或写用户真实宿主目录。
 
 ## 1. 当前基线与计划结论
 
@@ -39,9 +39,11 @@ Root/Publisher key，
 - R0 继续是“已满足（开发验证）”，不代替生产发布门；
 - R1-R6 仍未满足；
 - P1 已完成零生产 authority 的 R6 Schema、Runbook、证据模板和 E0 tabletop；
-- P2 已完成不生成 key 的 ceremony Schema、默认 blocked 模板、静态验证器和清单
-  设计；这只建立 `rehearsal_ready` 前的本地预检，不满足 R1；
-- 下一步只能在测试 key 精确批准卡生效后执行 P2 E0 演练；生产 key 仍需另一张卡；
+- P2 已完成无 authority preflight 与获批的 E0 测试 key 技术演练；16 个场景、
+  sequence 1-5、六个失败关闭输入及私钥销毁均有 retention-safe receipt；
+- P2 的 E0 子项通过不满足生产 R1；真实 custody、双人生产 ceremony 和生产 key
+  仍需另一张批准卡；
+- 下一步按固定顺序只能评估 P3 R2 E0，不能跳到 P4-P8；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -418,7 +420,7 @@ flowchart TD
 | --- | --- | --- |
 | P0 当前态审计与计划 | 本文、蓝图/发布门/进展同步、文档验证、Kimi 四级清零 | 本轮已授权继续开发；不含外部动作 |
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
-| P2 R1 E0 | **设计基线已完成，实际演练未开始**：ceremony Schema/模板/验证器/清单；临时测试 key、轮换/过期/吊销/恢复演练仍待执行 | 生成测试 key 前单独确认范围；生产 key 另行批准 |
+| P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | 固定 commit 的双构建、provenance、外部测试签名与复验 | 不得使用生产 Publisher key |
 | P4 R3 E1 | 隔离 origin、对象存储/Registry、故障注入和清理 | 需要创建外部资源与 staging 凭据授权 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
@@ -426,9 +428,8 @@ flowchart TD
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
 
-P0/P1 与 P2 无 authority 设计完成后仍不能跳到 P3-P8。临时测试 key、轮换、丢失、
-泄漏、过期、吊销与恢复演练只有在测试 key 批准卡生效后才能执行；生产 key 仍需
-另一张独立批准卡。
+P0/P1 与 P2 E0 完成后仍不能跳到 P4-P8。P3 只能使用重新批准的 E0 测试签名
+authority，不能复用已销毁的 P2 私钥或生成生产 key；生产 key 仍需另一张独立批准卡。
 
 ## 8. 明确批准卡
 
@@ -594,3 +595,56 @@ Blocker/High/Medium/Low 全部为零并给出 PASS。
 - 顶层状态必须继续是 `blocked`；不得把模板改写为真实批准 receipt；
 - 下一步只有在第 8 节测试 key ceremony 精确批准卡生效后，才执行 P2 E0 实际演练；
   P3-P8、生产 key、外部资源、费用、Apple 凭据与 cohort 继续保持关闭。
+
+## 13. Cycle 59 P2 E0 测试 key 技术演练检查点
+
+实际执行：
+
+- 用户批准 `approval_p2_e0_20260728_0001`，范围只包含本机隔离临时目录中的测试
+  Root/Publisher 生成、轮换、丢失、泄漏、过期、吊销、恢复与销毁；
+- runner 绑定 source commit
+  `c68c2d133a8ab3fa30cc57f783fbaa8311eee5ec`，不调用外部服务、Provider，不消耗
+  requests、credits 或费用；
+- 初始一个 Root 和 Publisher A/B 之外，只为 Root rotation 在同一窗口生成一个
+  transient successor Root；四份私钥均在 receipt 写入前销毁；
+- sequence 1-4 复用当前 Rust canonical Trust payload 和 Publisher
+  active/overlap/retired/revoked 契约；sequence 5 验证继任 Root 接棒；
+- 过期 active Publisher、过期 Bundle、revoked Publisher、sequence rollback、
+  same-sequence equivocation 和 unknown Root 均失败关闭；
+- Publisher A 与初始 Root 都完成备份、删除、恢复、重新签名与独立验签；
+- 第一次启动在生成 key 前被 scanner 自指 PEM marker 误报中止；修复与回归确认
+  没有临时目录、receipt 或 key 后，才执行唯一一次真实 key 生成。
+
+保留证据与验证：
+
+- 新增 strict `agentmesh360-key-ceremony-receipt-v1` Schema、无依赖验证器、隔离
+  key worker、E0 runner 与 retention 扫描器；
+- 机器 receipt：
+  [`../operations/tabletops/2026-07-28-p2-key-ceremony-e0.json`](../operations/tabletops/2026-07-28-p2-key-ceremony-e0.json)；
+- 可读报告：
+  [`../operations/tabletops/2026-07-28-p2-key-ceremony-e0.md`](../operations/tabletops/2026-07-28-p2-key-ceremony-e0.md)；
+- receipt 不含私钥、公钥/签名原文、个人身份、绝对路径或原始命令；只保留 ID、
+  类型化 `sha256:` digest、sequence、结果码与清理证明；digest 输入与场景发生性
+  明确不是 receipt 的 standalone proof，必须结合获审计 runner 和独立复核；
+- worker 执行覆盖、fsync、unlink，runner 再删除并验证整个临时目录；由于
+  APFS/SSD 限制，不声称 forensic secure erase；
+- Kimi 首轮提出的 worker symlink-parent、bare 64-hex、场景自证、PEM 覆盖、
+  locale 排序、宽松时间与 Ed25519 点校验均已进入代码/测试闭环；
+- 生产 Root Store、Bundle 与 Registry URL 常量保持空，Trust 恢复为空；
+- 主 Agent 与 Kimi 均独立通过 receipt/runner 13/13、preflight 10/10 与 P1
+  release-evidence 18/18，联合 41/41；
+- Kimi CLI session `session_e8117ef9-14a9-4879-bb86-58fdf529830d` 首轮报告
+  3 Medium / 4 Low：worker symlink-parent/测试缺口、hex digest 信任限制、场景
+  自证，以及 PEM、排序、时间与 Ed25519 点校验；
+- 全部落入代码、测试和机器可读 review limitations 后，同一 session 第二轮独立
+  复跑 41/41、receipt/preflight CLI、JSON、link/fence、diff、生产 `None` 常量、
+  临时目录、根 `target/` 和泄漏扫描，最终 Blocker/High/Medium/Low 全零并 PASS。
+
+边界与下一顺序：
+
+- 本检查点只关闭 P2 E0 测试密钥技术执行，不关闭生产 R1；
+- 本机 role alias 与 Kimi 交叉复核不能冒充生产双人 custody ceremony；
+- P2 测试私钥已全部销毁，不能在 P3 复用；
+- 下一步严格按序评估 P3 R2 E0，但生成任何新的测试 Publisher 或执行外部测试签名
+  前必须取得与 P3 范围匹配的 authority；P4-P8、生产 key、外部资源、费用、Apple
+  凭据与 cohort 继续关闭。

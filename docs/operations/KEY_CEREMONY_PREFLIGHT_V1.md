@@ -1,10 +1,11 @@
 # AgentMesh360 E0 Key Ceremony Preflight v1
 
-状态：Cycle 58 P2 设计基线；只完成无 key、无 authority 的 preflight，执行仍被阻断
+状态：Cycle 58 P2 无 authority 设计基线继续保留；Cycle 59 已完成独立批准的 E0
+测试 key 技术演练，但生产 R1 与生产 key ceremony 继续关闭
 
-本文为未来 E0 测试 Root/Publisher key ceremony 固定职责、存储边界、sequence、
-停止条件、批准卡和证据要求。它不会生成、导入、恢复、轮换、吊销或销毁任何 key，
-也不是批准 receipt。
+本文固定 E0 测试 Root/Publisher key ceremony 的职责、存储边界、sequence、停止
+条件、批准卡和证据要求。Preflight 模板本身不会生成、导入、恢复、轮换、吊销或
+销毁任何 key，也不是批准 receipt；Cycle 59 的实际 receipt 作为独立证据保存。
 
 机器可读 Schema：
 [`../../schemas/agentmesh360-key-ceremony-preflight-v1.schema.json`](../../schemas/agentmesh360-key-ceremony-preflight-v1.schema.json)
@@ -14,6 +15,11 @@
 
 本地验证器：
 [`../../tools/key-ceremony/validate-key-ceremony-preflight.mjs`](../../tools/key-ceremony/validate-key-ceremony-preflight.mjs)
+
+Cycle 59 非秘密 receipt 与可读报告：
+
+- [`../operations/tabletops/2026-07-28-p2-key-ceremony-e0.json`](tabletops/2026-07-28-p2-key-ceremony-e0.json)
+- [`../operations/tabletops/2026-07-28-p2-key-ceremony-e0.md`](tabletops/2026-07-28-p2-key-ceremony-e0.md)
 
 ## 1. 当前源码事实
 
@@ -120,9 +126,9 @@ Approved by / approved at: explicit receipt
 `releasePackageDesktopVersion = not_applicable_use_ceremony_id` 表示本次 E0 不绑定
 产品版本，第 8 节卡片中的“explicit rehearsal ID”必须与顶层 `ceremonyId` 一致。
 
-## 7. 获批后的未来演练清单
+## 7. 获批后的演练清单
 
-以下步骤只描述顺序，本轮不执行，也不包含 key-generation 命令：
+以下步骤继续作为每次 E0 演练的固定顺序，不包含可复制的 key-generation 命令：
 
 1. 核对批准卡、role separation、E0 隔离目录和材料清单；
 2. 记录 `scope_approved` 事件和非秘密批准 receipt；
@@ -170,11 +176,28 @@ node tools/key-ceremony/validate-key-ceremony-preflight.mjs \
 
 ## 10. P2 当前退出边界
 
-Cycle 58 只能关闭 P2 的“ceremony 工具/清单设计”子项。P2 与 R1 继续未满足，直到：
+Cycle 59 已在独立批准窗口内真实完成 E0 临时测试 key、备份、轮换、retire、revoke、
+丢失、泄漏、过期、恢复与销毁，并生成 retention-safe receipt。该技术演练只满足
+P2 的 E0 子项，不关闭生产 R1，因为：
 
-- 用户提供精确测试 key 批准卡；
-- E0 临时测试 key、备份、轮换、retire、revoke、丢失、泄漏与销毁被真实演练；
-- 独立 witness 和本机 Kimi 对实际非秘密证据复核四级全零；
-- 私有材料未进入仓库、客户端、普通 CI、日志或证据摘要。
+- E0 使用的是本机临时目录与测试 key，不是批准的 offline removable media 或
+  external signer；
+- `release_authorizer`、`rehearsal_operator` 与本机 Kimi 只能形成技术演练的职责
+  交叉，不能冒充生产双人 ceremony；
+- 测试 Root/Publisher 及其备份已经销毁，Trust 已恢复为空；
+- 生产常量、endpoint、Registry、canary 和发布能力仍全部关闭。
 
 生产 Root/Publisher ceremony 仍是另一张批准卡，不能沿用 E0 测试授权。
+
+## 11. Receipt 证据限制
+
+Cycle 59 receipt v1 固定两个不能上调的限制：
+
+- `digestInputsIndependentlyVerifiable=false`：销毁原文后，审查者不能只靠摘要重新
+  计算其输入；
+- `scenarioOccurrenceStandaloneProof=false`：receipt 是获审计 runner 的完成
+  attestation，不是脱离源码与独立复核即可证明发生性的密码学证明。
+
+因此 digest 统一使用 `sha256:` 类型前缀并拒绝 bare 64-hex；未来 runner 也必须在
+每个实际 checkpoint 完成后登记 scenario/negative check，缺项时禁止写 receipt。
+这些限制不会把测试 key、原始 public key/signature 或临时文档重新带入证据。

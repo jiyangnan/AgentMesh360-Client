@@ -32,12 +32,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1 与 P2 无 authority 预检已按原顺序完成；下一步必须先取得测试 key ceremony 精确批准，不自动启动 Scheduler、Agent 专属 UI、测试/生产 key、endpoint 或发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 preflight 与 P2 E0 技术执行已按原顺序推进；下一步只能评估 P3 R2 E0，不自动启动 Scheduler、Agent 专属 UI、新测试/生产 key、endpoint 或发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；Cycle 57 已完成 P1 R6 本地基线；Cycle 58 已完成 P2 无 authority ceremony Schema、blocked 模板、静态验证器和清单；生产 endpoint/root/bundle 仍为空 | P1/P2 都只关闭本地设计子项，R1-R6 仍未满足；下一步等待测试 key ceremony 精确批准，生产 key 与后续外部 authority 分别另行批准 |
+| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56 已拆分 Package/Desktop/Combined canary 与 P0-P8；Cycle 57 已完成 P1 R6 本地基线；Cycle 58 已完成 P2 preflight；Cycle 59 已完成 P2 E0 测试 key 执行与销毁，生产 endpoint/root/bundle 仍为空 | P2 只关闭 E0 技术子项，R1-R6 仍未满足；下一步按序评估 P3，新的测试签名 authority、生产 key 与后续外部 authority 分别精确批准 |
 
 ## 开发循环记录
 
@@ -4180,3 +4180,91 @@ Kimi 独立复核：
 - P2 整体仍未完成，R1 仍未满足；模板验证通过只表示安全阻断结构成立；
 - 下一步必须先取得正式计划第 8 节的测试 key ceremony 精确批准卡，才可执行 P2 E0
   生成、轮换、丢失、泄漏、过期、吊销、恢复和销毁演练；生产 key 另行批准。
+
+### 循环 59：P2 E0 测试 Root/Publisher 技术演练
+
+状态：实际执行、私钥销毁、自主验证与本机 Kimi 两轮独立 gate 已完成并四级清零
+
+计划校准：
+
+- 本轮开始先复核生产准备计划 P2、Cycle 58 preflight、现有 Rust Root/Publisher
+  Trust canonical payload、sequence、状态与异文拒绝契约；
+- 用户精确批准只允许本机隔离临时目录中的一个初始 Root、两个 Publisher，以及
+  Root rotation 所需的 transient successor Root；不包含任何生产 key、外部服务、
+  Provider、credits、费用、E1/E2 或 canary；
+- P2 材料必须在同一窗口销毁并恢复空 Trust；P3-P8 不因本轮批准自动开放。
+
+已经实现：
+
+1. `schemas/agentmesh360-key-ceremony-receipt-v1.schema.json` 固定 E0/test_keys、
+   approved receipt、四份角色化 inventory、sequence 1-5、16 个场景、六个失败检查、
+   清理证明与 `productionR1Closed=false`；
+2. `tools/key-ceremony/e0-key-worker.mjs` 在短生命周期子进程中生成、读取、签名、
+   备份、恢复和销毁 PKCS#8 私钥；target 只允许 ceremony 临时目录内的 `.pk8`；
+3. `tools/key-ceremony/run-e0-key-ceremony.mjs` 复用 Rust 当前的 Ed25519 canonical
+   Trust payload，验证 A/B overlap、retire/revoke、Root 接棒、rollback、异文、
+   unknown Root 和 expiry；
+4. `tools/key-ceremony/validate-key-ceremony-receipt.mjs` 拒绝 symlink、duplicate JSON
+   key、unknown field、私钥/公钥/签名原文、绝对路径、个人身份和不完整清理；
+5. 非秘密 receipt 与中文报告保存在
+   `docs/operations/tabletops/2026-07-28-p2-key-ceremony-e0.{json,md}`；
+6. worker 对材料执行覆盖、fsync、unlink，runner 删除并确认整个临时目录不存在；
+   receipt 明确不保证 APFS/SSD forensic secure erase。
+7. Kimi 首轮后补齐 worker realpath/symlink-parent 遏制与无破坏负测试、全类 PEM
+   marker、Rust 码元序、严格 UTC 毫秒时间、Ed25519 压缩点校验、bare 64-hex
+   拒绝和逐 checkpoint 场景登记；
+8. receipt 明确 `digestInputsIndependentlyVerifiable=false` 与
+   `scenarioOccurrenceStandaloneProof=false`，避免把 runner attestation 写成
+   standalone 密码学证明。
+
+实际执行：
+
+- 第一次 runner 启动在生成任何 key 前，被仓库扫描器对自身 PEM marker 字面量的
+  自指误报阻断；没有临时目录、receipt 或测试 key；
+- marker 改为非自指构造并增加回归后，receipt/runner 13/13 与 preflight 10/10
+  通过，且确认不存在遗留 ceremony 临时目录；
+- 实际 ceremony 生成一个初始 Root、Publisher A/B 和一个 transient successor
+  Root；完成 Publisher/Root 备份、删除、恢复、重新签名与独立验签；
+- sequence 1-5、16 个正向场景和六个失败关闭检查全部通过；
+- 四份私钥及备份在 receipt 写入前销毁，临时目录消失、Trust 恢复为空；
+- receipt validator、retention 扫描与三个生产关闭常量复核通过；没有外部请求、
+  credits 或费用。
+
+自主验证：
+
+- receipt/runner 测试：13/13；
+- preflight 回归：10/10；
+- 实际 receipt CLI 验证：valid and retention-safe；
+- ceremony 临时目录计数为零；保留证据没有 PEM/private key、公钥/签名原文、个人
+  身份或绝对路径；
+- `EMBEDDED_PUBLISHER_TRUST_BUNDLE`、`PRODUCTION_TRUST_BUNDLE_URL` 与
+  `PRODUCTION_REGISTRY_URL` 保持 `None`；
+- P1 release-evidence 18/18，联合回归 41/41；
+- receipt/preflight CLI、Node check、JSON、Markdown link/fence、`git diff --check`、
+  生产 `None` 常量、临时目录、根 `target/` 与泄漏扫描全部通过。
+
+Kimi 独立复核：
+
+- Kimi CLI session `session_e8117ef9-14a9-4879-bb86-58fdf529830d` 只读检查完整
+  diff、未跟踪文件、Rust Trust/Cache 契约、receipt 和全部同步文档；没有修改文件、
+  执行 ceremony/key worker 成功动作、生成/读取 key、访问 Keychain/Provider、
+  运行 Cargo/npm/Electron 或创建根 `target/`；
+- 首轮自主运行 receipt 10/10 与 preflight 10/10 后报告 3 Medium / 4 Low：
+  worker 中间 symlink/无负测试、hex digest 不可审计、场景结果自证，以及 PEM 类型、
+  locale 排序、宽松时间与 Ed25519 点校验；
+- 主 Agent 没有豁免或降级，逐项补齐 realpath 与无破坏 sentinel 测试、typed
+  `sha256:` 与 bare-hex 拒绝、机器可读 review limitations、checkpoint binding、
+  全 PEM regex、码元序、严格 UTC 和 RFC 8032 压缩点验证；
+- 同一 Kimi session 第二轮独立复跑联合 41/41、receipt/preflight CLI、JSON、
+  link/fence、diff、生产 `None` 常量、临时目录、根 `target/`、PEM/路径泄漏和
+  Ed25519 public-only 探针，最终 Blocker/High/Medium/Low 全部为零并 PASS。
+
+计划复盘与下一轮：
+
+- 实际交付严格停在 P2 E0，没有修改 Rust/Desktop/Provider/Package 生产运行时，
+  没有配置 endpoint、上传、发布、签名、公证或 canary；
+- 本轮只能关闭 P2 E0 测试密钥技术子项，不能关闭生产 R1；本机 role alias 与 Kimi
+  也不能替代生产双人 custody ceremony；
+- 测试私钥已经销毁，P3 不得复用；
+- 下一步按正式计划只能进入 P3 R2 E0；若需生成新的测试 Publisher 或外部测试签名，
+  必须先取得匹配 P3 范围的精确 authority，P4-P8 继续关闭。

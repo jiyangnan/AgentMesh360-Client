@@ -5,7 +5,8 @@
 Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也已完成自主验证与
 本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划，Cycle 57
 已关闭 P1 R6 本地基线，Cycle 58 已关闭 P2 无 authority ceremony 预检设计；
-P2 实际测试 key 演练、R1-R6 与所有生产发布能力仍保持关闭
+Cycle 59 已完成 P2 E0 测试 key 技术演练、自主验证与本机 Kimi 四级清零；生产
+R1-R6 与所有生产发布能力仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -14,9 +15,9 @@ P2 实际测试 key 演练、R1-R6 与所有生产发布能力仍保持关闭
 
 Cycle 56 只审计和排定顺序；Cycle 57 只新增 Release Event、证据模板、静态验证器、
 事故 Runbook 与 E0 tabletop；Cycle 58 只新增无 authority 的 key ceremony Schema、
-默认 blocked 模板、静态验证器与清单。三轮都没有生成任何测试/生产
-Root/Publisher key，不配置生产 endpoint，不上传 Artifact，不发布 Registry，不签名
-或公证桌面安装包，也不写用户真实宿主目录。
+默认 blocked 模板、静态验证器与清单；Cycle 59 在独立批准下生成并销毁本机 E0
+测试 Root/Publisher。没有生成或保留生产 key，不配置生产 endpoint，不上传
+Artifact，不发布 Registry，不签名或公证桌面安装包，也不写用户真实宿主目录。
 R1-R6 的可执行工作包、三种 canary 与证据边界见
 [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
 
@@ -163,7 +164,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | 门 | 适用发布链 | 当前状态 | 启用前必须具备 |
 | --- | --- | --- | --- |
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
-| R1 Root 与 Publisher authority | Agent Package | 未满足（P2 无 authority 预检设计已完成） | 独立审查的 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；轮换、retire、revoke 流程演练 |
+| R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足 | 可复现构建证据；H2d0 外部签名输入输出；Artifact/Envelope/Host bundles/Release/Registry 的发布者、摘要和版本可追溯 |
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
@@ -426,3 +427,25 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - P2 无 authority 设计只证明安全预检结构成立，不代表 key ceremony 已批准或执行；
   P2/R1 仍未满足。下一步必须等待正式计划第 8 节测试 key ceremony 精确批准卡，
   生产 key、P3-P8 与所有外部 authority 继续关闭。
+
+## 18. 循环 59 P2 E0 测试 key 技术演练检查点
+
+- 精确批准 `approval_p2_e0_20260728_0001` 只授权 E0 本机测试 key、零外部服务、
+  零 Provider、零 credits/费用，并要求销毁私钥与恢复空 Trust；
+- 新增 receipt Schema/validator、隔离 key worker 与 E0 runner；主进程只接触公开
+  key/signature 的短生命周期值，仓库 receipt 只保留 SHA-256 和状态；
+- 一个初始 Root、两个 Publisher 与一个只用于 Root overlap 的 transient successor
+  Root 完成 sequence 1-5、备份/丢失恢复、retire/revoke、expiry、compromise 与
+  emergency revocation；
+- rollback、same-sequence equivocation、unknown Root、过期 Bundle/Publisher 和
+  revoked Publisher 六个失败输入全部拒绝；
+- 四份私钥及备份先覆盖/fsync/unlink，再删除并验证整个临时目录；空 Trust 和三个
+  生产关闭常量再次确认；
+- 主 Agent 与 Kimi 均通过 receipt/runner 13/13、preflight 10/10 与 P1
+  release-evidence 18/18，联合 41/41；
+- Kimi session `session_e8117ef9-14a9-4879-bb86-58fdf529830d` 首轮
+  3 Medium / 4 Low 全部进入 worker realpath/负测试、typed digest/review
+  limitations、checkpoint binding、PEM/排序/时间/Ed25519 点校验闭环；
+- 同一 session 第二轮复核最终 Blocker/High/Medium/Low 全零并 PASS；
+- 本轮只关闭 P2 E0 技术子项，生产 R1 仍未满足。P3 如果需要新的测试 Publisher
+  authority，必须另行精确批准；不得复用已销毁材料或跳到 P4-P8。

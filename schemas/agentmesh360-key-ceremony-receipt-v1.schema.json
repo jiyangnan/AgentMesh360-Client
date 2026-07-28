@@ -1,0 +1,438 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/key-ceremony-receipt-v1.json",
+  "title": "AgentMesh360 E0 Key Ceremony Receipt v1",
+  "description": "Structurally retention-safe, audited-runner-attested evidence for one approved local E0 test-key rehearsal. Digest inputs and scenario occurrence are not standalone proofs, and it cannot close production R1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "ceremonyId",
+    "environment",
+    "ceremonyClass",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "algorithm",
+    "approvalReceipt",
+    "sourceCommit",
+    "roleAliases",
+    "keyInventory",
+    "trustSequenceEvidence",
+    "scenarioResults",
+    "negativeChecks",
+    "cleanup",
+    "productionBoundary",
+    "evidencePolicy",
+    "reviewLimitations",
+    "completedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "ceremonyId": {
+      "type": "string",
+      "pattern": "^ceremony_e0_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e0"
+    },
+    "ceremonyClass": {
+      "type": "string",
+      "const": "test_key_rehearsal"
+    },
+    "authority": {
+      "type": "string",
+      "const": "test_keys"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "technical_rehearsal_passed"
+    },
+    "algorithm": {
+      "type": "string",
+      "const": "ed25519"
+    },
+    "approvalReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receiptId",
+        "authorizedScope",
+        "authorizedWindow",
+        "externalServicesUsed",
+        "providerRequests",
+        "creditsConsumed",
+        "currencyCost"
+      ],
+      "properties": {
+        "receiptId": {
+          "type": "string",
+          "pattern": "^approval_p2_e0_[a-z0-9][a-z0-9_-]{7,63}$"
+        },
+        "authorizedScope": {
+          "type": "string",
+          "const": "p2_e0_local_test_key_rehearsal"
+        },
+        "authorizedWindow": {
+          "type": "string",
+          "const": "current_development_cycle_only"
+        },
+        "externalServicesUsed": {
+          "type": "boolean",
+          "const": false
+        },
+        "providerRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "creditsConsumed": {
+          "type": "integer",
+          "const": 0
+        },
+        "currencyCost": {
+          "type": "integer",
+          "const": 0
+        }
+      }
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "roleAliases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "independent_reviewer"
+        },
+        {
+          "type": "string",
+          "const": "release_authorizer"
+        },
+        {
+          "type": "string",
+          "const": "rehearsal_operator"
+        }
+      ]
+    },
+    "keyInventory": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/publisherA"
+        },
+        {
+          "$ref": "#/$defs/publisherB"
+        },
+        {
+          "$ref": "#/$defs/rootInitial"
+        },
+        {
+          "$ref": "#/$defs/rootSuccessor"
+        }
+      ]
+    },
+    "trustSequenceEvidence": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/trustSequence"
+      }
+    },
+    "scenarioResults": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/scenarioResult"
+      }
+    },
+    "negativeChecks": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "$ref": "#/$defs/negativeCheck"
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "temporaryDirectoryRemoved",
+        "privateFilesRemaining",
+        "repositoryPrivateMaterialDetected",
+        "restoredTrustState",
+        "productionConstantsEmpty",
+        "forensicSecureEraseGuaranteed",
+        "cleanupMethod"
+      ],
+      "properties": {
+        "temporaryDirectoryRemoved": {
+          "type": "boolean",
+          "const": true
+        },
+        "privateFilesRemaining": {
+          "type": "integer",
+          "const": 0
+        },
+        "repositoryPrivateMaterialDetected": {
+          "type": "boolean",
+          "const": false
+        },
+        "restoredTrustState": {
+          "type": "string",
+          "const": "empty"
+        },
+        "productionConstantsEmpty": {
+          "type": "boolean",
+          "const": true
+        },
+        "forensicSecureEraseGuaranteed": {
+          "type": "boolean",
+          "const": false
+        },
+        "cleanupMethod": {
+          "type": "string",
+          "const": "overwrite_fsync_unlink_then_recursive_remove"
+        }
+      }
+    },
+    "productionBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionR1Closed",
+        "productionCustodyClaimed",
+        "productionKeysCreated",
+        "externalAuthorityUsed"
+      ],
+      "properties": {
+        "productionR1Closed": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionCustodyClaimed": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionKeysCreated": {
+          "type": "boolean",
+          "const": false
+        },
+        "externalAuthorityUsed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containsPrivateMaterial",
+        "containsRawPublicKeys",
+        "containsRawSignatures",
+        "containsAbsolutePaths",
+        "containsPersonalIdentity",
+        "containsRawCommands"
+      ],
+      "properties": {
+        "containsPrivateMaterial": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsRawPublicKeys": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsRawSignatures": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsAbsolutePaths": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsPersonalIdentity": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsRawCommands": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "reviewLimitations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digestInputsIndependentlyVerifiable",
+        "scenarioOccurrenceStandaloneProof",
+        "trustedProducer"
+      ],
+      "properties": {
+        "digestInputsIndependentlyVerifiable": {
+          "type": "boolean",
+          "const": false
+        },
+        "scenarioOccurrenceStandaloneProof": {
+          "type": "boolean",
+          "const": false
+        },
+        "trustedProducer": {
+          "type": "string",
+          "const": "audited_local_runner"
+        }
+      }
+    },
+    "completedAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    }
+  },
+  "$defs": {
+    "inventoryBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alias",
+        "keyId",
+        "role",
+        "publicKeySha256",
+        "transientSuccessor",
+        "privateMaterialPersisted",
+        "destroyed"
+      ],
+      "properties": {
+        "alias": {
+          "type": "string"
+        },
+        "keyId": {
+          "type": "string",
+          "pattern": "^agentmesh360-(root|publisher)-e0-[a-z0-9][a-z0-9-]{0,63}$"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "publisher",
+            "root"
+          ]
+        },
+        "publicKeySha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "transientSuccessor": {
+          "type": "boolean"
+        },
+        "privateMaterialPersisted": {
+          "type": "boolean",
+          "const": false
+        },
+        "destroyed": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "publisherA": {
+      "$ref": "#/$defs/inventoryBase"
+    },
+    "publisherB": {
+      "$ref": "#/$defs/inventoryBase"
+    },
+    "rootInitial": {
+      "$ref": "#/$defs/inventoryBase"
+    },
+    "rootSuccessor": {
+      "$ref": "#/$defs/inventoryBase"
+    },
+    "trustSequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "signerRootAlias",
+        "documentSha256",
+        "signatureVerified"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "signerRootAlias": {
+          "type": "string",
+          "enum": [
+            "root_initial",
+            "root_successor_transient"
+          ]
+        },
+        "documentSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "signatureVerified": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "scenarioResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario",
+        "status",
+        "evidenceCode"
+      ],
+      "properties": {
+        "scenario": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "passed"
+        },
+        "evidenceCode": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_]{7,95}$"
+        }
+      }
+    },
+    "negativeCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check",
+        "status"
+      ],
+      "properties": {
+        "check": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "passed"
+        }
+      }
+    }
+  }
+}

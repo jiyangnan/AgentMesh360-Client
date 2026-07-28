@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "ceremonyId": "ceremony_e0_20260728_0001",
+  "environment": "e0",
+  "ceremonyClass": "test_key_rehearsal",
+  "authority": "test_keys",
+  "approvalStatus": "approved",
+  "executionStatus": "technical_rehearsal_passed",
+  "algorithm": "ed25519",
+  "approvalReceipt": {
+    "receiptId": "approval_p2_e0_20260728_0001",
+    "authorizedScope": "p2_e0_local_test_key_rehearsal",
+    "authorizedWindow": "current_development_cycle_only",
+    "externalServicesUsed": false,
+    "providerRequests": 0,
+    "creditsConsumed": 0,
+    "currencyCost": 0
+  },
+  "sourceCommit": "c68c2d133a8ab3fa30cc57f783fbaa8311eee5ec",
+  "roleAliases": [
+    "independent_reviewer",
+    "release_authorizer",
+    "rehearsal_operator"
+  ],
+  "keyInventory": [
+    {
+      "alias": "publisher_a",
+      "keyId": "agentmesh360-publisher-e0-20260728-a",
+      "role": "publisher",
+      "publicKeySha256": "sha256:1e7d7b10c979f09ef29e0f5e89d59d8c6eae5e6e5ea7886c4fe502c853739880",
+      "transientSuccessor": false,
+      "privateMaterialPersisted": false,
+      "destroyed": true
+    },
+    {
+      "alias": "publisher_b",
+      "keyId": "agentmesh360-publisher-e0-20260728-b",
+      "role": "publisher",
+      "publicKeySha256": "sha256:99830aa7d975a73c5e58da772a022a60379f68a95b217b4ee783e76ccc86e5f2",
+      "transientSuccessor": false,
+      "privateMaterialPersisted": false,
+      "destroyed": true
+    },
+    {
+      "alias": "root_initial",
+      "keyId": "agentmesh360-root-e0-20260728-a",
+      "role": "root",
+      "publicKeySha256": "sha256:8b118eb5bcc1b64ae66bf1b7eafbd83e8fc4b8236f6292ec3e2977a8f73df954",
+      "transientSuccessor": false,
+      "privateMaterialPersisted": false,
+      "destroyed": true
+    },
+    {
+      "alias": "root_successor_transient",
+      "keyId": "agentmesh360-root-e0-20260728-b",
+      "role": "root",
+      "publicKeySha256": "sha256:0cda9ec2d358499e34274dcff3bad5d3a2fcccc86cff51d11e6c5850ad4a153e",
+      "transientSuccessor": true,
+      "privateMaterialPersisted": false,
+      "destroyed": true
+    }
+  ],
+  "trustSequenceEvidence": [
+    {
+      "sequence": 1,
+      "signerRootAlias": "root_initial",
+      "documentSha256": "sha256:ff390e3d126da5ffc29054e2e39af38cc3ddb6a0e5575e802606b48cd65e7ae1",
+      "signatureVerified": true
+    },
+    {
+      "sequence": 2,
+      "signerRootAlias": "root_initial",
+      "documentSha256": "sha256:6ed6e29e2a227abd18027b9dc1f6309352028d1ab9a84b2b1b220fdd98e9ea29",
+      "signatureVerified": true
+    },
+    {
+      "sequence": 3,
+      "signerRootAlias": "root_initial",
+      "documentSha256": "sha256:52e362e9242b7e9ce7552100f9618e1ad1df3531c25701878a697841f6b3b510",
+      "signatureVerified": true
+    },
+    {
+      "sequence": 4,
+      "signerRootAlias": "root_initial",
+      "documentSha256": "sha256:eb773185574db3c3842a92cb16a5adf594564118dfc8d45046ec00821e01a77b",
+      "signatureVerified": true
+    },
+    {
+      "sequence": 5,
+      "signerRootAlias": "root_successor_transient",
+      "documentSha256": "sha256:84b95095220948f6448be52aa51b6560d1310cd287004ca7769826e7c5331365",
+      "signatureVerified": true
+    }
+  ],
+  "scenarioResults": [
+    {
+      "scenario": "bundle_expiry",
+      "status": "passed",
+      "evidenceCode": "bundle_expiry_verified"
+    },
+    {
+      "scenario": "publisher_a_generation",
+      "status": "passed",
+      "evidenceCode": "publisher_a_generation_verified"
+    },
+    {
+      "scenario": "publisher_b_generation",
+      "status": "passed",
+      "evidenceCode": "publisher_b_generation_verified"
+    },
+    {
+      "scenario": "publisher_compromise",
+      "status": "passed",
+      "evidenceCode": "publisher_compromise_verified"
+    },
+    {
+      "scenario": "publisher_expiry",
+      "status": "passed",
+      "evidenceCode": "publisher_expiry_verified"
+    },
+    {
+      "scenario": "publisher_loss_recovery",
+      "status": "passed",
+      "evidenceCode": "publisher_loss_recovery_verified"
+    },
+    {
+      "scenario": "publisher_overlap_rotation",
+      "status": "passed",
+      "evidenceCode": "publisher_overlap_rotation_verified"
+    },
+    {
+      "scenario": "publisher_retirement",
+      "status": "passed",
+      "evidenceCode": "publisher_retirement_verified"
+    },
+    {
+      "scenario": "publisher_revocation",
+      "status": "passed",
+      "evidenceCode": "publisher_revocation_verified"
+    },
+    {
+      "scenario": "root_compromise",
+      "status": "passed",
+      "evidenceCode": "root_compromise_verified"
+    },
+    {
+      "scenario": "root_emergency_revocation",
+      "status": "passed",
+      "evidenceCode": "root_emergency_revocation_verified"
+    },
+    {
+      "scenario": "root_generation",
+      "status": "passed",
+      "evidenceCode": "root_generation_verified"
+    },
+    {
+      "scenario": "root_loss_recovery",
+      "status": "passed",
+      "evidenceCode": "root_loss_recovery_verified"
+    },
+    {
+      "scenario": "root_overlap_rotation",
+      "status": "passed",
+      "evidenceCode": "root_overlap_rotation_verified"
+    },
+    {
+      "scenario": "root_public_export",
+      "status": "passed",
+      "evidenceCode": "root_public_export_verified"
+    },
+    {
+      "scenario": "test_material_destruction",
+      "status": "passed",
+      "evidenceCode": "test_material_destruction_verified"
+    }
+  ],
+  "negativeChecks": [
+    {
+      "check": "expired_active_publisher_rejected",
+      "status": "passed"
+    },
+    {
+      "check": "expired_bundle_rejected",
+      "status": "passed"
+    },
+    {
+      "check": "revoked_publisher_not_active",
+      "status": "passed"
+    },
+    {
+      "check": "rollback_sequence_rejected",
+      "status": "passed"
+    },
+    {
+      "check": "same_sequence_equivocation_rejected",
+      "status": "passed"
+    },
+    {
+      "check": "unknown_root_rejected",
+      "status": "passed"
+    }
+  ],
+  "cleanup": {
+    "temporaryDirectoryRemoved": true,
+    "privateFilesRemaining": 0,
+    "repositoryPrivateMaterialDetected": false,
+    "restoredTrustState": "empty",
+    "productionConstantsEmpty": true,
+    "forensicSecureEraseGuaranteed": false,
+    "cleanupMethod": "overwrite_fsync_unlink_then_recursive_remove"
+  },
+  "productionBoundary": {
+    "productionR1Closed": false,
+    "productionCustodyClaimed": false,
+    "productionKeysCreated": false,
+    "externalAuthorityUsed": false
+  },
+  "evidencePolicy": {
+    "containsPrivateMaterial": false,
+    "containsRawPublicKeys": false,
+    "containsRawSignatures": false,
+    "containsAbsolutePaths": false,
+    "containsPersonalIdentity": false,
+    "containsRawCommands": false
+  },
+  "reviewLimitations": {
+    "digestInputsIndependentlyVerifiable": false,
+    "scenarioOccurrenceStandaloneProof": false,
+    "trustedProducer": "audited_local_runner"
+  },
+  "completedAt": "2026-07-28T02:58:58.895Z"
+}
