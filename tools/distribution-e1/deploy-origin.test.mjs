@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   caddyfile,
+  checkHttpsHealth,
   isFakeIpAddress,
+  isTransientSshFailure,
   originDirectoryCommands,
   originConfig,
   parseArguments,
@@ -14,6 +16,7 @@ import {
   systemdUnit,
   validateLiveState,
   waitForDns,
+  waitForHttps,
 } from './deploy-origin.mjs';
 
 const COMMIT = 'a'.repeat(40);
@@ -274,5 +277,64 @@ test('bounded DNS wait stops immediately on success and fails closed', async () 
       sleep: async () => {},
     }),
     /did not resolve/u,
+  );
+});
+
+test('retries only recognized transient SSH transport failures', () => {
+  assert.equal(isTransientSshFailure({
+    stderr: 'Connection closed by 203.0.113.10 port 22',
+  }), true);
+  assert.equal(isTransientSshFailure({
+    stderr: 'kex_exchange_identification: read: Connection reset by peer',
+  }), true);
+  assert.equal(isTransientSshFailure({
+    error: { code: 'ETIMEDOUT' },
+  }), true);
+  assert.equal(isTransientSshFailure({
+    stderr: 'Permission denied (publickey).',
+  }), false);
+  assert.equal(isTransientSshFailure({
+    stderr: 'sudo: a password is required',
+  }), false);
+});
+
+test('HTTPS health uses curl without redirects and validates exact output', () => {
+  const hostname = 'packages-e1-1234abcd.agentmesh360.com';
+  const healthy = checkHttpsHealth(hostname, (command, args, options) => {
+    assert.equal(command, 'curl');
+    assert.equal(args[args.indexOf('--max-redirs') + 1], '0');
+    assert.equal(args.at(-1), `https://${hostname}/healthz`);
+    assert.equal(options.maxBuffer, 64 * 1024);
+    return {
+      status: 0,
+      stdout: '{"environment":"e1","status":"ok"}\n200\napplication/json',
+    };
+  });
+  assert.equal(healthy, true);
+  assert.equal(checkHttpsHealth(hostname, () => ({
+    status: 0,
+    stdout: '{"environment":"e1","status":"ok"}\n302\napplication/json',
+  })), false);
+  assert.throws(() => checkHttpsHealth('packages.agentmesh360.com'));
+});
+
+test('bounded HTTPS wait retries and fails closed', async () => {
+  let calls = 0;
+  await waitForHttps('packages-e1-1234abcd.agentmesh360.com', {
+    attempts: 3,
+    check: () => {
+      calls += 1;
+      return calls === 2;
+    },
+    sleep: async () => {},
+  });
+  assert.equal(calls, 2);
+  await assert.rejects(
+    waitForHttps('packages-e1-1234abcd.agentmesh360.com', {
+      attempts: 2,
+      check: () => false,
+      sleep: async () => {},
+    }),
+    /did not become ready/u,
   );
 });

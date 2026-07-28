@@ -621,3 +621,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 修复固定代码目录 `0755 root:root`、配置目录 `0750 root:agentmesh-e1`，配置
   文件仍 `0600`，service user 无写权限；
 - HTTPS health/deployed state 尚未通过，R3 不变；下一步冻结修复并幂等重跑。
+
+## 29. 循环 70 P4 R3 E1 Transport/health 检查点
+
+- operator 只读探针成功，但短 SSH 会话出现可恢复 connection closed；
+- 仅对明确 transport closed/reset/refused、kex reset、timeout 最多重试 3 次；
+- publickey、sudo 和远端命令错误不重试；
+- 公网 health 改为 HTTPS-only、no redirect、有界 curl，并要求精确
+  200/JSON/body；
+- 资源、权限和产品顺序不变；Origin 尚未 PASS，R3/P5-P8 继续关闭。

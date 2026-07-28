@@ -12,6 +12,7 @@ Cycle 66 已修复本机 TUN/Fake-IP 导致的 DNS 预检误判并通过 HTTPS D
 Cycle 67 已销毁 root 首次改密阻断的空载 Droplet并完成独立 SSH operator 修复；
 Cycle 68 已重建唯一替代 Droplet、切换同一 staging DNS 并通过 HTTPS DNS 复验；
 Cycle 69 已定位非特权 Origin 父目录不可穿越并固化最小权限修复；
+Cycle 70 已为瞬时 SSH transport 与本机 TUN 下的 HTTPS health 固化有界适配；
 生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -931,3 +932,13 @@ deployed state 均未通过。
 部署器现于 service user 创建后固定代码目录 `0755 root:root`、配置目录
 `0750 root:agentmesh-e1`；配置文件继续 `0600`，目录不可由服务用户写入，
 systemd hardening 不变。下一步冻结修复并幂等重跑 Origin，P4/R3/P5-P8 不变。
+
+## 24. Cycle 70 P4 R3 E1 Transport/health 检查点
+
+operator 身份探针正常，但多个短 SSH 连接中出现瞬时 connection closed。部署器
+现在只对明确的 transport closed/reset/refused、kex reset、timeout 最多重试
+3 次；认证、sudo 或远端命令错误不重试。公网 health 使用 HTTPS-only、
+no redirect、有界 curl，并只接受精确 200/JSON/body。
+
+本轮不增加资源或权限，Origin 仍未 PASS。下一步冻结修复并幂等重跑，成功后才
+进入四 Agent Release Set；P4/R3/P5-P8 状态不变。

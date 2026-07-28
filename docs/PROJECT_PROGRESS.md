@@ -4821,3 +4821,34 @@ hostname 已切换并通过 HTTPS DNS 精确匹配；origin 部署等待本 comm
 4. 修复冻结后重跑幂等部署，再要求 origin/Caddy active 和公网 HTTPS health
    同时通过；
 5. 下一步仍是关闭 Origin 子项，未进入 Release Set/P5。
+
+### 循环 70：P4 R3 E1 瞬时 SSH 与本机 HTTPS 传输适配
+
+状态：目录修复重跑时出现可恢复的 SSH transport 断开；有界重试与 curl HTTPS
+health 已完成本地验证，等待冻结后继续同一幂等部署
+
+偏差与边界：
+
+- operator 身份只读探针始终成功，但多次短 SSH 连接中两次收到 connection
+  closed；这不是公钥、sudo、PAM 或 UFW 永久失效；
+- 已成功执行的 apt/install/systemd 操作都是幂等步骤，live state 仍未声明
+  origin deployed；
+- 本机 Node `fetch` 同样受 TUN/Fake-IP 传输影响，不能用它作为最终公网 TLS
+  health 的唯一观测路径。
+
+已经实现：
+
+1. SSH/SCP 只对 connection closed/reset/refused、kex reset、timeout 等明确
+   transport 错误最多重试 3 次，每次间隔 1 秒；
+2. publickey denied、sudo 需密码或远端命令失败不重试，继续 fail-close；
+3. HTTPS health 改用 curl，固定 HTTPS-only、no redirect、10 秒连接/15 秒总
+   超时、64 KiB 输出上限；
+4. 只接受 200、`application/json` 和精确 health body，其他结果继续重试后失败；
+5. 故障重试不增加资源、权限、Provider、credits 或生产 mutation。
+
+计划复盘与下一轮：
+
+- origin deploy boundary 增至 14/14；
+- 下一步冻结本修复并再次幂等部署；只有 systemd origin/Caddy 和 HTTPS health
+  全部通过才更新 infrastructure checkpoint 为 Origin PASS；
+- Release Set、Trust、Registry、故障矩阵和最终清理顺序不变。

@@ -42,20 +42,42 @@ function sanitizedDiagnostic(stderr) {
     .slice(0, 320);
 }
 
+function isTransientSshFailure(result) {
+  const diagnostic = `${result?.error?.code ?? ''}\n${result?.stderr ?? ''}`;
+  return /(?:ECONNRESET|ETIMEDOUT|Connection (?:closed|reset|timed out)|kex_exchange_identification|Connection refused)/iu
+    .test(diagnostic);
+}
+
 function run(command, args, label, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd,
-    encoding: 'utf8',
-    maxBuffer: MAX_OUTPUT_BYTES,
-    timeout: options.timeout ?? 10 * 60 * 1000,
-  });
-  if (result.error || result.status !== 0) {
+  const attempts = (options.transientRetries ?? 0) + 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = spawnSync(command, args, {
+      cwd: options.cwd,
+      encoding: 'utf8',
+      maxBuffer: MAX_OUTPUT_BYTES,
+      timeout: options.timeout ?? 10 * 60 * 1000,
+    });
+    if (!result.error && result.status === 0) {
+      return result.stdout.trim();
+    }
+    if (
+      attempt + 1 < attempts
+      && isTransientSshFailure(result)
+    ) {
+      Atomics.wait(
+        new Int32Array(new SharedArrayBuffer(4)),
+        0,
+        0,
+        1_000,
+      );
+      continue;
+    }
     const diagnostic = sanitizedDiagnostic(result.stderr);
     throw new Error(
       diagnostic ? `${label} failed: ${diagnostic}` : `${label} failed`,
     );
   }
-  return result.stdout.trim();
+  throw new Error(`${label} failed`);
 }
 
 async function assertBoundary(boundary) {
@@ -221,7 +243,7 @@ function ssh(boundary, ipAddress, command, label, timeout) {
     'ssh',
     [...sshBase(boundary, ipAddress), '--', 'sudo', '--', ...command],
     label,
-    { timeout },
+    { timeout, transientRetries: 3 },
   );
 }
 
@@ -244,6 +266,7 @@ function scp(boundary, ipAddress, source, destination, label) {
       `${SSH_OPERATOR}@${ipAddress}:${destination}`,
     ],
     label,
+    { transientRetries: 3 },
   );
 }
 
@@ -413,25 +436,60 @@ async function waitForDns(
   throw new Error('staging DNS did not resolve to the approved Droplet');
 }
 
-async function waitForHttps(hostname) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    try {
-      const response = await fetch(`https://${hostname}/healthz`, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (
-        response.status === 200
-        && response.headers.get('content-type')?.startsWith('application/json')
-        && JSON.stringify(await response.json())
-          === '{"environment":"e1","status":"ok"}'
-      ) {
-        return;
-      }
-    } catch {
-      // TLS issuance and service startup are retried for at most one minute.
+function checkHttpsHealth(hostname, curlSpawn = spawnSync) {
+  if (!/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(hostname)) {
+    throw new Error('staging HTTPS hostname is invalid');
+  }
+  const result = curlSpawn(
+    'curl',
+    [
+      '--fail',
+      '--silent',
+      '--show-error',
+      '--connect-timeout',
+      '10',
+      '--max-time',
+      '15',
+      '--max-redirs',
+      '0',
+      '--proto',
+      '=https',
+      '--write-out',
+      '\\n%{http_code}\\n%{content_type}',
+      `https://${hostname}/healthz`,
+    ],
+    {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024,
+      timeout: 20_000,
+    },
+  );
+  if (result.error || result.status !== 0) return false;
+  const lines = result.stdout.split('\n');
+  const contentType = lines.pop() ?? '';
+  const status = lines.pop() ?? '';
+  const body = lines.join('\n');
+  return (
+    status === '200'
+    && contentType.startsWith('application/json')
+    && body === '{"environment":"e1","status":"ok"}'
+  );
+}
+
+async function waitForHttps(
+  hostname,
+  {
+    attempts = 20,
+    intervalMs = 3_000,
+    check = checkHttpsHealth,
+    sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
+  } = {},
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (check(hostname)) return;
+    if (attempt + 1 < attempts) {
+      await sleep(intervalMs);
     }
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
   }
   throw new Error('staging HTTPS health check did not become ready');
 }
@@ -729,7 +787,9 @@ if (isMainModule()) {
 
 export {
   caddyfile,
+  checkHttpsHealth,
   isFakeIpAddress,
+  isTransientSshFailure,
   originDirectoryCommands,
   originConfig,
   parseArguments,
@@ -740,4 +800,5 @@ export {
   systemdUnit,
   validateLiveState,
   waitForDns,
+  waitForHttps,
 };

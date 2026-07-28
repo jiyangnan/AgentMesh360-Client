@@ -146,6 +146,12 @@ HTTPS health 未通过，live state 未声明 deployed。
 `0750 root:agentmesh-e1`；配置文件仍 `0600`，代码/配置目录均不允许 service
 user 写入，systemd hardening 不变。
 
-下一步先冻结并推送目录权限修复 executor，再幂等重跑部署并同时复验 origin/
+目录修复重跑时，operator 只读身份探针成功，但多个短 SSH 会话中出现两次瞬时
+connection closed。部署步骤均为幂等操作；实现现仅对明确的 SSH/SCP transport
+closed/reset/refused、kex reset 和 timeout 做最多 3 次、间隔 1 秒的有界重试。
+publickey/sudo/远端命令错误不重试。公网 health 同时改用 HTTPS-only、no redirect、
+有界 curl，并只接受精确 200/JSON/body，避免本机 TUN/Fake-IP 影响 Node fetch。
+
+下一步先冻结并推送 transport/health 修复 executor，再幂等重跑部署并同时复验 origin/
 Caddy active 与公网 HTTPS health。Release Set、非生产 Root/Publisher、Registry
 与故障矩阵必须继续按顺序执行，不能跳到 P5。
