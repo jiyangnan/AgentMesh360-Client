@@ -4650,3 +4650,52 @@ Release Set、上传和故障注入仍未获批、未执行
   staging DNS、Caddy TLS 与 Spaces-backed origin；
 - 之后才能重建四 Agent Release Set、生成非生产 Trust、上传回读、发布 Registry
   和执行 14 项故障矩阵；任何失败先清理，不跳到 P5。
+
+### 循环 65：P4 R3 E1 Droplet、DNS 与 origin executor
+
+状态：唯一 Droplet 和 DNS-only staging 记录已创建；Spaces-backed origin/Caddy
+部署器已完成本地验证并等待冻结 commit，生产 R3 继续关闭
+
+执行结果：
+
+1. Cycle 64 commit `028fc9f` 推送后生成本机临时 SSH transport key；私钥 mode
+   `0600`，没有进入 DigitalOcean 账号 key 列表或仓库；
+2. 首次 create 在任何 API mutation 前因完整 commit 输入错误本地 fail-close；
+   使用真实 full commit 后只创建一个 SGP1 `s-1vcpu-1gb` Droplet；
+3. API 复验 active、1 GiB、1 vCPU、25 GiB、无 backup/monitoring，并保存 mode
+   `0600` pending/live cleanup state；
+4. Cloudflare 创建一个 staging A record，明确关闭 proxy，防止 edge cache/
+   redirect/WAF 改写 exact-origin 语义；生产 DNS 未修改；
+5. 新增 Spaces-backed Node origin，只监听 loopback，由 Caddy 提供公网 TLS；
+6. Trust、Registry 和 immutable objects 映射到两个 Spaces bucket，并按路由固定
+   64 KiB/1 MiB/32 MiB 上限、MIME、no query/fragment 和 no redirect；
+7. 14 项 fault route 全部存在且受精确临时 token 保护；日志只含 method/
+   routeClass/status，不记录 URL、IP、token、bucket 或凭据；
+8. systemd 使用独立无登录用户、`NoNewPrivileges`、`ProtectSystem=strict`、
+   `ProtectHome`、空 capability；Caddy 不启用 access log；
+9. 部署器固定 DNS/Droplet/Spaces suffix、droplet executor 与当前 clean origin
+   executor，远端只注入 Reader key，Publisher 始终留在本机。
+
+自主验证：
+
+- origin service 5/5；
+- origin deploy boundary 5/5；
+- 既有 authorization/Spaces/Droplet 25/25；
+- E1 联合 35/35，另有 P4 preflight 17/17；
+- Node syntax、diff check、根 `target/` absent；
+- Kimi 继续暂停，主 Agent 已复核 remote command 不含 secret、Caddy/systemd
+  hardening、DNS-only 和 fail-close live state。
+
+外部状态与预算：
+
+- active：2 bucket、2 limited key、1 Droplet、1 DNS-only record；
+- origin/TLS：尚未部署；
+- 生产 mutation：0；
+- 当前小时成本约 `0.007 + 0.00893 = 0.01593 USD`，72 小时模型仍低于
+  `1.15 USD` 预计值和 `3 USD` 硬上限。
+
+计划复盘与下一轮：
+
+- 下一步只冻结推送 origin executor，并部署/复验 Caddy TLS 与 HTTPS health；
+- origin 通过后才进入四 Agent Release Set、E1 Root/Publisher、上传回读、
+  Registry last 与 14 项消费者故障矩阵；不跳到 P5。

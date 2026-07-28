@@ -1,7 +1,8 @@
 # P4 R3 E1 隔离基础设施检查点
 
-状态：E1 执行中；两个 SGP1 Spaces bucket 与两组最小权限 key 已创建并通过访问探针；
-Droplet、DNS/TLS、origin、Release Set、Registry、14 项故障矩阵和最终销毁尚未完成。
+状态：E1 执行中；两个 SGP1 Spaces bucket、两组最小权限 key、唯一 1 GiB Droplet
+和 DNS-only staging 记录已创建；origin executor 已通过本地契约测试，实际
+Caddy/TLS 部署、Release Set、Registry、14 项故障矩阵和最终销毁尚未完成。
 本文不是 E1 PASS 或生产 R3 关闭证据。
 
 ## 1. 冻结基线
@@ -23,8 +24,8 @@ Droplet、DNS/TLS、origin、Release Set、Registry、14 项故障矩阵和最�
 - CDN：均关闭
 - active limited-access key：2
 - revoked failed key：1
-- Droplet：0
-- DNS record：0
+- Droplet：1
+- DNS record：1，DNS-only
 - origin：0
 
 控制台显示 Spaces subscription 为约 `0.007 USD/hour`。两个 bucket 共享同一
@@ -50,6 +51,11 @@ Origin Reader key：
 撤销后重新生成；没有提升权限。重建 key 通过 Publisher 写/读、Reader 读、
 Reader 写入被 403 拒绝、Publisher 删除的完整探针，探针对象已移除。
 
+唯一 Droplet 绑定 executor `028fc9f`，API 复验为 active、SGP1、1 GiB、1 vCPU、
+25 GiB、无 backup/monitoring。Cloudflare 记录不启用 proxy，避免 edge cache、
+redirect 或 WAF 改写分发语义。真实 hostname、IP 和资源 ID 只在 mode `0600`
+临时 cleanup state 中。
+
 ## 4. 本地执行器
 
 新增无依赖 SigV4 Spaces client：
@@ -71,14 +77,27 @@ Reader 写入被 403 拒绝、Publisher 删除的完整探针，探针对象已�
 - 创建后先保留 mode `0600` cleanup state，再验证 1 GiB/1 vCPU/25 GiB/active；
 - 销毁 runner 同时撤销 Droplet 和临时 SSH private material。
 
+新增 Spaces-backed origin 与部署器：
+
+- Node origin 只监听 loopback，由 Caddy 暴露 TLS；
+- Trust/Registry/immutable object 分别映射两个 Spaces bucket；
+- metadata、Artifact 与 MIME 都有独立上限，redirect/query/fragment 不开放；
+- 14 项 fault route 必须携带精确临时 token；日志只记录 method、route class、status；
+- Caddy 不启用 access log，DNS 为直连 origin；
+- systemd 使用独立无登录用户、`NoNewPrivileges`、`ProtectSystem=strict` 和空 capability；
+- 部署前复验 Droplet/DNS/Spaces suffix 与 clean executor commit，部署后必须通过
+  公网 HTTPS health 和系统服务 active 检查。
+
 ## 5. 验证与下一步
 
 - Spaces SigV4/client：6/6
 - Droplet boundary：6/6
 - authorization：13/13
-- 联合定向：25/25
+- origin service：5/5
+- origin deployment boundary：5/5
+- E1 联合定向：35/35
 - 实际 least-privilege S3 probe：PASS，probe object removed
 
-下一步先冻结并推送本执行器 commit，再创建一个隔离 Droplet；随后配置 Cloudflare
-staging DNS、Caddy TLS 和 Spaces-backed origin。Release Set、非生产 Root/
-Publisher、Registry 与故障矩阵必须继续按顺序执行，不能跳到 P5。
+下一步先冻结并推送 origin executor commit，再向已创建的唯一 Droplet 部署
+Caddy TLS 和 Spaces-backed origin。Release Set、非生产 Root/Publisher、Registry
+与故障矩阵必须继续按顺序执行，不能跳到 P5。

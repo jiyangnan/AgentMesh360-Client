@@ -7,7 +7,8 @@ P3 零新 key provenance preflight 均已完成；Cycle 61 的 P3 R2 E0 四 Agen
 E1 的零外部资源阻断式 preflight；
 Cycle 63 已固定精确 E1 执行窗口、预算、资源、Trust、Release Set 与清理授权；
 Cycle 64 已完成两个隔离 Spaces bucket、最小权限 Publisher/Reader 与 S3 探针；
-生产 R1-R6 仍未关闭，尚未完成 Droplet/DNS/origin、E1 Release Set 或内部 canary、
+Cycle 65 已创建唯一 Droplet 与 DNS-only 记录并完成 origin executor 本地验证；
+生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
 本文档把
@@ -430,7 +431,7 @@ flowchart TD
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
-| P4 R3 E1 | **执行中**：preflight/授权已完成；两个 SGP1 Spaces、bucket-scoped Publisher/Reader 和实际权限探针已通过 | 仍需唯一 Droplet、Cloudflare DNS/Caddy TLS/origin、四 Agent Release Set、非生产 Trust/Registry、14 项故障矩阵和完整销毁；生产 R3/P5 未开放 |
+| P4 R3 E1 | **执行中**：preflight/授权、两个 SGP1 Spaces、bucket-scoped Publisher/Reader、权限探针、唯一 Droplet 与 DNS-only staging 已完成 | 仍需 Caddy TLS/HTTPS origin、四 Agent Release Set、非生产 Trust/Registry、14 项故障矩阵和完整销毁；生产 R3/P5 未开放 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
@@ -855,3 +856,23 @@ monitoring、executor clean commit、cloud-init/key digest、pending cleanup sta
 下一步先冻结推送 Cycle 64 executor，再创建唯一 Droplet、Cloudflare staging DNS、
 Caddy TLS 和 Spaces-backed origin；之后才允许进入 Release Set/Trust/Registry/
 故障矩阵。生产 R3、P5-P8 继续关闭。
+
+## 19. Cycle 65 P4 R3 E1 Droplet、DNS 与 origin executor 检查点
+
+Cycle 64 commit `028fc9f` 推送后创建唯一 active SGP1 `s-1vcpu-1gb` Droplet；
+API 复验 1 GiB、1 vCPU、25 GiB、无 backup/monitoring。Cloudflare staging A
+record 明确为 DNS-only，不通过 edge proxy；生产 DNS/主机均未修改。
+
+新增 origin/deploy executor：
+
+- Node origin 只监听 `127.0.0.1:8791`，Caddy 管理公网 TLS；
+- metadata 与 immutable release objects 分 bucket，固定响应大小/MIME；
+- 14 项 fault route 受临时 token 保护；
+- 日志只有 method/route class/status，无 URL、IP、bucket、credential；
+- systemd 独立无登录用户、`NoNewPrivileges`、只读系统、空 capability；
+- 远端只接收 Reader key，Publisher key 仍留本机。
+
+origin/deploy 10/10、既有 E1 25/25，联合 35/35；P4 preflight 17/17。当前小时成本
+约 `0.01593 USD`，72 小时模型仍为约 `1.14296 USD`。下一步冻结推送本 executor，
+完成 Caddy/TLS/HTTPS health 后再进入 Release Set/Trust/Registry/故障矩阵。
+生产 R3、P5-P8 继续关闭。

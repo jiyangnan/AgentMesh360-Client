@@ -11,7 +11,8 @@ preflight，Cycle 61 已完成获批的 P3 R2 E0 四 Agent 双构建、测试签
 销毁与非秘密 evidence；Cycle 62 已完成 P4 R3 E1 零外部资源阻断式 preflight；
 Cycle 63 已固定用户批准的 72 小时、`1.15 USD` 预计成本和 `3 USD` 硬上限；
 Cycle 64 已创建两个隔离 Spaces bucket、最小权限 Publisher/Reader 并通过实际
-S3 探针；生产 R2/R3 与 E1 完成态仍保持关闭
+S3 探针；Cycle 65 已创建唯一 Droplet 和 DNS-only 记录，并完成 origin executor
+本地验证；生产 R2/R3 与 E1 完成态仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -171,7 +172,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足（P3 R2 E0 技术演练已完成） | 已有四 Agent 双构建、测试签名与十类输出可复验证据；仍需生产 Publisher authority、受控生产发布流水线及与 R3/R6 联动的生产证据 |
-| R3 分发服务 | Agent Package | 未满足（P4 preflight/授权、Spaces/最小凭据子项已完成） | 已固定消费者契约、不可变顺序、14 项故障/LKG 矩阵、72 小时、预算和资源边界，并通过 bucket-scoped 权限探针；仍需 Droplet/DNS/TLS/origin、实际 Release Set、非生产 Trust/Registry、故障注入与完整清理 |
+| R3 分发服务 | Agent Package | 未满足（P4 preflight/授权、Spaces/凭据、Droplet/DNS 子项已完成） | 已通过 bucket-scoped 权限探针并创建唯一 1 GiB origin 主机与 DNS-only staging；仍需 Caddy TLS/HTTPS origin、实际 Release Set、非生产 Trust/Registry、故障注入与完整清理 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
 | R6 可观测与响应 | 共同 | 未满足（P1 本地基线已完成） | Release Event/证据模板/静态扫描/Runbook/E0 tabletop 已有；仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本与官方安装器恢复 |
@@ -563,3 +564,17 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 当前 E1 只关闭 Spaces/credential 子项，不关闭 R3。下一步按序创建唯一 Droplet、
   DNS/TLS/origin，再进入四 Agent Release Set/Trust/Registry/故障矩阵；P5-P8
   继续关闭。
+
+## 24. 循环 65 P4 R3 E1 Droplet、DNS 与 origin executor 检查点
+
+- `028fc9f` 推送后只创建一个 active SGP1 1 GiB Droplet；无 backup/monitoring，
+  临时 SSH 私钥只在 mode `0600` cleanup boundary；
+- Cloudflare staging A record 为 DNS-only，不启用 proxy；生产记录未修改；
+- 新 origin 只在 loopback 服务，由 Caddy TLS 反代；两个 Spaces bucket 分离
+  immutable object 与 metadata；
+- 路由固定响应大小、MIME、no query/fragment/redirect；14 个 fault route 受临时
+  token 保护，日志不含 URL/IP/bucket/credential；
+- systemd 独立用户、只读系统、无 capability；部署器只把 Reader key 注入远端；
+- origin/deploy 10/10，全部 E1 定向 35/35，P4 preflight 17/17；
+- 当前成本模型仍约 `1.14296 USD/72h`。下一步只冻结 origin executor 并完成实际
+  Caddy/TLS/health；之后才能进入 Release Set/Trust/Registry/故障矩阵，P5-P8 关闭。
