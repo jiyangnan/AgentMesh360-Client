@@ -670,6 +670,24 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 发布前固定 clean executor 与生产空 Trust/Registry；
 - 严格复验四 Agent 本地 bytes、Registry URLs/digests/Host bundles；
 - 生成唯一临时 Root，Trust/Registry canonical payload 与 Rust 同序并本地验签；
-- 顺序固定 Trust → 31 immutable objects → 6 fault fixtures → Registry last；
+- 顺序固定 Trust → 27 immutable objects → 6 fault fixtures → Registry last；
 - 每对象 HEAD absence、PUT、Reader GET digest；首个 PUT 前留 pending inventory；
 - 本轮未生成 Root/upload；下一步冻结执行器后实际发布，R3/P5-P8 不变。
+
+## 35. 循环 76 P4 R3 E1 实际不可变发布检查点
+
+- 在 `354f4a0` 冻结推送后生成唯一临时 Root 并执行 publication；
+- 27 个 Release 对象、Trust、6 个签名 fault fixture 与 Registry 共 35 个对象
+  全部通过 absence、PUT、Reader digest 回读；
+- Registry 最后发布，公网 Trust/Registry 与 27/27 Release 对象复验通过；
+- 生产 Trust/Registry 常量为空，Provider/credits/生产 mutation 为 0；
+- happy path 不等于 E1 PASS；下一步只执行 14 项故障矩阵，P5-P8 关闭。
+
+## 36. 循环 77 P4 R3 E1 故障矩阵执行器检查点
+
+- 精确固定 14 场景与顺序；
+- 要求当前仓库等于 clean 40 位 executor commit，并再检查生产空常量；
+- baseline 验证 Root、Trust sequence、Registry revision/时效/排序/签名；
+- token 仅经 curl stdin，HTTPS/no-redirect/size/timeout/retry 有界；
+- receipt 只留非秘密 evidence code 与有界请求计数；
+- 定向 9/9；下一步冻结后执行真实 staging 14/14，未通过不进入清场结论或 P5。

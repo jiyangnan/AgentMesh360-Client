@@ -993,9 +993,30 @@ Trust-first、immutable objects、Registry-last 发布；R3/P5-P8 继续关闭�
 执行器在生成 Root 前复验 clean commit、生产空常量、四 Agent state/bytes、
 Registry URLs/digests/Host bundles。Trust/Registry canonical payload 与 Rust
 同序，临时 Root 签名后由 Node 和既有 Trust verifier 双重复验。上传固定为
-Trust、31 immutable Release objects、6 fault fixtures、Registry last；每个对象
+Trust、27 immutable Release objects、6 fault fixtures、Registry last；每个对象
 执行 HEAD absence、Publisher PUT、Reader GET digest。首个 PUT 前写 pending
 cleanup inventory，允许半发布安全撤回。
 
 本轮未生成 Root 或上传。下一步冻结执行器后实际发布并公网复验；
 P4/R3/P5-P8 状态不变。
+
+## 30. Cycle 76 P4 R3 E1 实际不可变发布检查点
+
+Cycle 75 commit `354f4a0` 推送后才执行云端 publication。35 个对象完整发布并
+回读：27 个 Release 对象、Trust、6 个签名 fault fixture、Registry；Registry
+为最后一个对象。Publisher PUT 与 Origin Reader digest receipt 为 35/35，公网
+Trust/Registry 及 27/27 Release 对象均通过 HTTPS 回读。
+
+生产 Trust/Registry 常量继续为空，Provider/credits/生产 mutation 为 0。本轮只
+关闭发布 happy path；下一步严格执行 14 项故障矩阵，通过后先撤 Registry 再清场。
+P5-P8 继续关闭。
+
+## 31. Cycle 77 P4 R3 E1 故障矩阵执行器检查点
+
+执行器精确固定 14 场景，要求 clean/frozen executor 与生产空常量，先验证当前
+Trust/Registry 的 Root、sequence、revision、时效和签名。fault token 只经 curl
+stdin 传入；HTTPS/no-redirect/size/timeout/retry 均有界；receipt 不保留任何
+hostname、URL、IP、bucket、token、key 或 signature。
+
+定向 9/9 和 diff check 通过。下一步只在冻结 commit 上执行真实 staging 14/14；
+未全通过前不写 E1 PASS，不进入 P5。

@@ -4982,7 +4982,7 @@ detached frozen-commit 隔离修复待冻结后重试
    `verifyTrustBundle` 完整状态验证；
 5. Registry v2 使用 Rust 相同的 base64 字段序、package/host 排序和 canonical
    payload，revision=2 为 rollback/equivocation 故障留出 revision=1；
-6. 上传顺序固定为 Trust、31 个 immutable Release objects、6 个签名 fault
+6. 上传顺序固定为 Trust、27 个 immutable Release objects、6 个签名 fault
    fixtures、Registry last；
 7. 每个对象先 HEAD=404、再 Publisher PUT、最后 Origin Reader GET，并逐字节
    SHA-256 回读；
@@ -4998,3 +4998,53 @@ detached frozen-commit 隔离修复待冻结后重试
 - 本轮未生成 Root、未上传对象、未修改生产常量；
 - 下一步冻结推送 executor 后实际发布并用公网 Origin 复验 Trust、Registry 与
   全部 immutable objects；任何失败先按 pending inventory 清理，不进入 P5。
+
+### 循环 76：P4 R3 E1 Release Set 实际不可变发布
+
+状态：四 Agent Release Set、临时 Trust、六类签名故障 fixture 与 Registry 已按
+批准顺序发布并完成公网回读；故障矩阵和最终销毁尚未完成
+
+实际执行与证据：
+
+1. Cycle 75 commit `354f4a0` 推送后才生成本轮唯一临时 Root 并执行发布；
+2. 共发布 35 个对象：27 个 Release 对象、Trust、6 个签名故障 fixture 和
+   Registry；
+3. 每个对象都先确认 HEAD 不存在，再由最小权限 Publisher PUT，并由只读 Origin
+   Reader 回读 SHA-256；35/35 receipt 完整；
+4. Registry 是第 35 个且最后一个对象，`registryPublishedLast=true`；
+5. 公网 Trust、Registry 和 27 个 Release 对象均通过 HTTPS Origin 回读并与
+   receipt 摘要一致；
+6. 生产内嵌 Trust、生产 Trust URL、生产 Registry URL 仍全部为 `None`；
+7. Provider 请求、credits、生产资源变更均为 0。
+
+计划复盘与下一轮：
+
+- 发布 happy path 已关闭，但没有故障矩阵和完整清场就不能写 E1 PASS；
+- 下一步只执行已批准的 14 项 transport、metadata、rollback、equivocation、
+  LKG 和半发布场景；
+- 通过后严格先撤 Registry，再删除其他对象与临时密钥/云资源，不进入 P5。
+
+### 循环 77：P4 R3 E1 十四场景故障矩阵执行器
+
+状态：故障矩阵执行器已完成本地定向验证；真实 staging 演练等待本 commit
+冻结并推送后执行
+
+已经实现：
+
+1. 精确固定 14 个批准场景及顺序，不允许少测、改名或乱序；
+2. 执行前要求仓库 HEAD 等于显式 40 位 executor commit 且工作树 clean；
+3. 再次检查三个生产 Package 常量为空，并验证公网 Trust/Registry 的 Root、
+   sequence、revision、时效、package 顺序和签名；
+4. fault token 仅经 curl stdin config 传递，不进入 argv、receipt 或日志；
+5. 请求固定 HTTPS、no redirect、2 MiB 上限、有界 timeout 与最多 4 次明确
+   transport retry；
+6. receipt 只保留 scenario、evidence code、逻辑请求数和最大 curl 尝试数，
+   不保留 hostname、URL、IP、bucket、token、key 或签名；
+7. 定向测试 9/9 与 diff check 通过。
+
+计划复盘与下一轮：
+
+- 本模块没有新增资源、权限或费用类型；
+- 下一步冻结本执行器后在当前 E1 staging 跑 14/14；任一项失败先修复并复验，
+  不把部分结果写成 PASS；
+- 全部通过后立即进入既定 withdrawal/cleanup，不延伸到 P5。

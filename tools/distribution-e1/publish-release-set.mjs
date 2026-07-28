@@ -796,4 +796,5 @@ export {
   parseArguments,
   publicationWindow,
   strictRegistryRecord,
+  verifyRawSignature,
 };

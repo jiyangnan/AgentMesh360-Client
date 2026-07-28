@@ -1,9 +1,8 @@
 # P4 R3 E1 隔离基础设施检查点
 
-状态：E1 执行中；两个 SGP1 Spaces bucket、两组最小权限 key、唯一 1 GiB Droplet
-和 DNS-only staging 记录已创建；Spaces-backed origin、Caddy TLS 与公网
-HTTPS health 已通过，Release Set、Registry、14 项故障矩阵和最终销毁尚未完成。
-本文不是 E1 PASS 或生产 R3 关闭证据。
+状态：E1 执行中；隔离基础设施和四 Agent Release Set 已完成，Trust、27 个
+Release 对象、6 个故障 fixture 与 Registry 已按 Registry-last 发布并完成公网
+回读；14 项故障矩阵和最终销毁尚未完成。本文不是 E1 PASS 或生产 R3 关闭证据。
 
 ## 1. 冻结基线
 
@@ -167,3 +166,17 @@ Cycle 70 commit `8a76380` 推送后幂等重跑成功：
 
 Origin/TLS 子项已关闭。下一步严格进入四 Agent Release Set、临时 E1
 Root/Publisher、Trust-first/Registry-last 和 14 项故障矩阵；生产 R3 不因此关闭。
+
+## 6. Release Set 与 publication 实际检查点
+
+- 四 Agent A/B 双构建全部通过；每个 Agent 十类输出逐字节一致；
+- 单一临时 Publisher 完成 8 次签名和 8 次复验；
+- 发布对象总数 35：27 个 Release、Trust、6 个签名 fault fixture、Registry；
+- 35/35 均通过 HEAD absence、Publisher PUT、Origin Reader digest 回读；
+- Registry 最后发布；
+- 公网 Trust、Registry 与 27/27 Release 对象 HTTPS digest 复验通过；
+- 生产 Trust/Registry 常量为空，Provider/credits/生产 mutation 为 0。
+
+下一步只运行冻结后的 14 场景故障矩阵。全部通过后，严格先撤 Registry，再删除
+其他对象、临时 Root/Publisher、DNS、Droplet、limited key 和 bucket；未清场前
+不写最终 E1 PASS。
