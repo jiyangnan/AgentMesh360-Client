@@ -22,7 +22,7 @@ const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(MODULE_DIRECTORY, '../..');
 const AUTHORIZATION_ID = 'distribution_service_e1_20260728_0001';
 const DROPLET_EXECUTOR_COMMIT =
-  '028fc9fd2b6892f980c93e29d2af87f98433a7bc';
+  'be108f436c24014ec6e4670d883f5b9c95de2925';
 const BOUNDARY_PREFIX = 'agentmesh360-distribution-e1-';
 const SSH_OPERATOR = 'agentmesh-operator';
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;

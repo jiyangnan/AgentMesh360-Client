@@ -4771,3 +4771,28 @@ Release Set、上传和故障注入仍未获批、未执行
 - 本轮属于 P4 隔离基础设施恢复，不扩大资源数、权限、预算或执行窗口；
 - 下一步冻结推送该修复，重建唯一 1 GiB Droplet、更新同一 DNS 并复验
   Caddy/TLS/HTTPS health；成功后继续原定 Release Set，不启动 P5。
+
+### 循环 68：P4 R3 E1 替代 Droplet 与 DNS 恢复
+
+状态：唯一替代 Droplet 已创建并通过 API 规格复验，同一 DNS-only staging
+hostname 已切换并通过 HTTPS DNS 精确匹配；origin 部署等待本 commit 冻结
+
+实际执行：
+
+1. Cycle 67 commit `be108f4` 推送后，在 active E1 Droplet 为 0 的前提下生成
+   新临时 SSH key 与 operator cloud-init；
+2. 只创建一个 SGP1 `s-1vcpu-1gb` 替代 Droplet；API 复验 count=1、1 GiB、
+   1 vCPU、25 GiB、无 backups；
+3. 使用一次性 `record-dns` 写入 mode `0600` cleanup state；
+4. Cloudflare 只更新原 E1 staging A record 的 content，hostname、DNS-only、
+   TTL 和生产记录均未改变；
+5. 控制台记录和 Cloudflare HTTPS DNS 都精确匹配替代 Droplet；
+6. 部署器的固定 Droplet provenance 更新为 `be108f4`，旧的已销毁实例 commit
+   不再被接受。
+
+计划复盘与下一轮：
+
+- active E1 资源恢复为 2 bucket、2 limited key、1 Droplet、1 DNS record；
+- 资源上限、权限、区域、费用、72 小时窗口和生产隔离均未扩大；
+- 下一步冻结推送当前 origin executor，再执行 operator SSH、Caddy/TLS、
+  Spaces-backed origin 与 HTTPS health；通过前不进入 Release Set。

@@ -10,6 +10,7 @@ Cycle 64 已完成两个隔离 Spaces bucket、最小权限 Publisher/Reader 与
 Cycle 65 已创建唯一 Droplet 与 DNS-only 记录并完成 origin executor 本地验证；
 Cycle 66 已修复本机 TUN/Fake-IP 导致的 DNS 预检误判并通过 HTTPS DNS 精确复验；
 Cycle 67 已销毁 root 首次改密阻断的空载 Droplet并完成独立 SSH operator 修复；
+Cycle 68 已重建唯一替代 Droplet、切换同一 staging DNS 并通过 HTTPS DNS 复验；
 生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -908,3 +909,13 @@ cloud-init 现禁用 root SSH，改建密码锁定、仅临时公钥的独立 op
 
 本轮不关闭 P4/R3。下一步冻结该修复，重建唯一 1 GiB Droplet、更新同一 staging
 DNS 并完成 TLS/health；Release Set 与故障矩阵顺序不变，P5-P8 继续关闭。
+
+## 22. Cycle 68 P4 R3 E1 替代实例恢复检查点
+
+Cycle 67 commit `be108f4` 推送后，在 active E1 Droplet 为 0 时创建唯一替代
+实例；API 复验 SGP1、1 GiB、1 vCPU、25 GiB、无 backups。同一 DNS-only
+staging A record 只更新 content，Cloudflare UI 和 HTTPS DNS 均精确匹配。
+新的 mode `0600` cleanup state 已记录，部署器固定接受 `be108f4` provenance。
+
+本轮只恢复隔离基础设施，不关闭 P4/R3。下一步冻结当前 executor，完成
+operator SSH、Caddy/TLS/HTTPS origin 后再进入 Release Set，P5-P8 继续关闭。

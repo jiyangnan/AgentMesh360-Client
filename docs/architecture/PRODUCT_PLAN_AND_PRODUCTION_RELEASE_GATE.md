@@ -603,3 +603,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 新增从批准 Droplet 名称推导、仅能记录一次的 DNS cleanup state；
 - 当前 active E1 Droplet 为 0；替代实例只能在本修复冻结后创建，仍保持最多一个；
 - R3/P5-P8 状态不变。下一步重建唯一 Droplet、更新同一 DNS、完成 TLS/health。
+
+## 27. 循环 68 P4 R3 E1 替代实例恢复检查点
+
+- `be108f4` 冻结后才创建替代实例，创建前 active E1 Droplet 为 0；
+- API 复验当前只有一个 SGP1 1 GiB/1 vCPU/25 GiB、无 backups 的 E1 Droplet；
+- 原 staging A record 只更新 content，DNS-only/TTL/hostname 和生产 DNS 不变；
+- Cloudflare UI 与 HTTPS DNS 均精确匹配替代实例；
+- deploy runner 只接受替代 Droplet provenance，不接受已销毁实例；
+- R3 仍未满足。下一步只冻结当前 executor 并完成 Caddy/TLS/HTTPS health。

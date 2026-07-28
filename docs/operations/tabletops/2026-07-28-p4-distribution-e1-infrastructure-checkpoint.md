@@ -130,7 +130,12 @@ key、origin 文件或安装 Caddy。该空载 Droplet 已立即销毁并通过 
 
 operator/DNS 状态恢复定向测试与 origin deploy 合计 18/18。
 
-下一步先冻结并推送 operator 修复 commit，再重建唯一替代 Droplet、更新同一
-staging DNS 并部署 Caddy TLS 和 Spaces-backed origin。Release Set、非生产
-Root/Publisher、Registry
+Cycle 67 commit `be108f4` 推送后，已在 active E1 Droplet 为 0 的前提下创建
+唯一替代实例。API 复验 count=1、SGP1、1 GiB、1 vCPU、25 GiB、无 backups。
+同一 staging A record 只更新 content，仍为 DNS-only/TTL 1 分钟；控制台和
+Cloudflare HTTPS DNS 均精确匹配。新的 cleanup state 由 `record-dns` 写入并保持
+mode `0600`。当前部署器只接受替代 Droplet executor `be108f4`。
+
+下一步先冻结并推送当前 origin executor，再部署 Caddy TLS 和 Spaces-backed
+origin。Release Set、非生产 Root/Publisher、Registry
 与故障矩阵必须继续按顺序执行，不能跳到 P5。

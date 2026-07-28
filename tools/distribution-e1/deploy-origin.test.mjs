@@ -17,7 +17,7 @@ import {
 
 const COMMIT = 'a'.repeat(40);
 const DROPLET_COMMIT =
-  '028fc9fd2b6892f980c93e29d2af87f98433a7bc';
+  'be108f436c24014ec6e4670d883f5b9c95de2925';
 
 function credentials() {
   return {
