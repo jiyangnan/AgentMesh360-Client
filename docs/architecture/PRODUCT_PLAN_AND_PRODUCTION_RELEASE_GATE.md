@@ -489,3 +489,7 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   Kimi 交叉门禁；
 - 下一步只允许先完成加强自主复核和 executor commit，再进入已批准的双构建、
   唯一临时 Publisher、签名复验和销毁；P4-P8 继续关闭。
+- 首次执行完成两个隔离 Cargo build 后在 Deploy Package build 失败，发生于
+  `generate` 前；boundary/worktree/build root 已清理且无 receipt。过度脱敏的固定
+  error label 已改为 bounded/path-redacted 诊断并通过 Node 26/26，修复 commit
+  冻结前不重跑。

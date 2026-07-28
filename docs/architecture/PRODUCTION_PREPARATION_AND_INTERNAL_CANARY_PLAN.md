@@ -738,3 +738,9 @@ Kimi 恢复并另行通知前，停止调用 Kimi，由主 Agent 使用完整 di
 必须先完成上述加强自主复核并冻结 executor commit，之后才开始获批的双构建与
 唯一一次 Publisher 生成。该检查点不关闭 P3/R2，也不开放 P4-P8 或任何生产
 authority。
+
+首次正式执行在两个 Cargo build 完成后，于首个 Deploy Package build fail-close；
+尚未调用 `generate`。runner 成功移除临时 boundary、四个 detached worktree 与两个
+build root，且未写 receipt。该尝试暴露固定错误 label 无法诊断的 Low；修复后只
+返回最后一条、路径脱敏、320 字符上限的诊断，Node 回归更新为 26/26。必须先冻结
+修复后的 executor commit，再进行新的单次执行。

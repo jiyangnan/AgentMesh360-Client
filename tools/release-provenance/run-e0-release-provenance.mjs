@@ -184,9 +184,25 @@ function run(command, args, options, label) {
     maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
   });
   if (result.error || result.status !== 0) {
-    throw new Error(`${label} failed`);
+    const diagnostic = sanitizedCommandDiagnostic(result.stderr);
+    throw new Error(
+      diagnostic ? `${label} failed: ${diagnostic}` : `${label} failed`,
+    );
   }
   return result.stdout.trim();
+}
+
+function sanitizedCommandDiagnostic(stderr) {
+  if (typeof stderr !== 'string') return '';
+  const lines = stderr
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const last = lines.at(-1) ?? '';
+  return last
+    .replace(/\/[^\s:]+/gu, '<path>')
+    .replace(/[A-Za-z]:\\[^\s:]+/gu, '<path>')
+    .slice(0, 320);
 }
 
 function git(args, cwd, label) {
@@ -1171,5 +1187,6 @@ export {
   CANDIDATE_COMMIT,
   OUTPUT_CLASSES,
   parseArguments,
+  sanitizedCommandDiagnostic,
   treeDigest,
 };

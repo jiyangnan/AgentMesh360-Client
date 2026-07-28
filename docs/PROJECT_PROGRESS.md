@@ -4413,6 +4413,18 @@ Kimi 独立复核：
 - 当前自主结论 Blocker/High/Medium/Low 均为 0。该结论是用户在 Kimi 额度恢复前
   明确指定的临时复核方式，不冒充 Kimi 独立 PASS。
 
+首次正式执行尝试：
+
+- executor checkpoint `fd71b3a...` 已提交并推送；runner 完成两个顺序隔离 Cargo
+  build 后，在首个 `deploy-agent` Package build 返回失败；
+- 失败发生在任何 `generate` 之前，因此本轮累计生成测试 Publisher 数仍为 0；
+- fail-closed cleanup 已确认：临时 boundary 0、成功 receipt 不存在、根
+  `target/` 不存在、candidate 与三个 source worktree 均已移除、磁盘空间恢复；
+- 自主复核发现 1 个新的 Low：命令失败只保留固定 label，过度脱敏导致无法诊断。
+  现改为只保留 stderr 最后一条、路径替换为 `<path>`、最长 320 字符；对应负向测试
+  加入后 Node 联合回归 26/26；
+- 在诊断修复重新提交并冻结前不重跑；异常执行没有被写成 P3 PASS。
+
 计划复盘与下一轮：
 
 - 本检查点只补 P3 已批准范围内缺失的 Release assembly executor，不关闭 P3/R2；

@@ -20,6 +20,7 @@ import {
 import {
   CANDIDATE_COMMIT as RUNNER_CANDIDATE_COMMIT,
   parseArguments,
+  sanitizedCommandDiagnostic,
   treeDigest,
 } from './run-e0-release-provenance.mjs';
 
@@ -403,5 +404,19 @@ test('runner tree digest binds sorted relative names and bytes', () => {
       { relative: 'a', bytes: Buffer.from('one') },
       { relative: 'c', bytes: Buffer.from('two') },
     ]),
+  );
+});
+
+test('runner keeps failure diagnostics bounded and path-redacted', () => {
+  const diagnostic = sanitizedCommandDiagnostic([
+    'Error: Package build failed',
+    'Caused by: read /Users/example/private/source.txt: invalid input',
+  ].join('\n'));
+  assert.equal(
+    diagnostic,
+    'Caused by: read <path>: invalid input',
+  );
+  assert.ok(
+    sanitizedCommandDiagnostic(`Error: ${'x'.repeat(500)}`).length <= 320,
   );
 });
