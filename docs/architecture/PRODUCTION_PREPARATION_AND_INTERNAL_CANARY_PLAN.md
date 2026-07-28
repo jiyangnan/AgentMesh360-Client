@@ -13,7 +13,8 @@ Cycle 67 已销毁 root 首次改密阻断的空载 Droplet并完成独立 SSH o
 Cycle 68 已重建唯一替代 Droplet、切换同一 staging DNS 并通过 HTTPS DNS 复验；
 Cycle 69 已定位非特权 Origin 父目录不可穿越并固化最小权限修复；
 Cycle 70 已为瞬时 SSH transport 与本机 TUN 下的 HTTPS health 固化有界适配；
-生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
+Cycle 71 已通过隔离 Spaces-backed Origin、Caddy TLS 与公网 HTTPS health；
+生产 R1-R6 仍未关闭，尚未完成 E1 Release Set 或内部 canary、
 E2 或生产候选
 
 本文档把
@@ -436,7 +437,7 @@ flowchart TD
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
-| P4 R3 E1 | **执行中**：preflight/授权、两个 SGP1 Spaces、bucket-scoped Publisher/Reader、权限探针、唯一 Droplet 与 DNS-only staging 已完成 | 仍需 Caddy TLS/HTTPS origin、四 Agent Release Set、非生产 Trust/Registry、14 项故障矩阵和完整销毁；生产 R3/P5 未开放 |
+| P4 R3 E1 | **执行中**：preflight/授权、两个 SGP1 Spaces、bucket-scoped Publisher/Reader、权限探针、唯一 Droplet、DNS-only staging、Caddy TLS/HTTPS origin 已完成 | 仍需四 Agent Release Set、非生产 Trust/Registry、14 项故障矩阵和完整销毁；生产 R3/P5 未开放 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
@@ -942,3 +943,13 @@ no redirect、有界 curl，并只接受精确 200/JSON/body。
 
 本轮不增加资源或权限，Origin 仍未 PASS。下一步冻结修复并幂等重跑，成功后才
 进入四 Agent Release Set；P4/R3/P5-P8 状态不变。
+
+## 25. Cycle 71 P4 R3 E1 HTTPS Origin 检查点
+
+Cycle 70 commit `8a76380` 推送后，幂等部署收敛。Origin 与 Caddy 均 active，
+live state 已记录 deployed/executor/Caddy-managed TLS；公网 health 返回精确
+200/JSON/body，未发布 Trust 为 404，query 请求为 400。
+
+本轮只关闭 P4 Origin/TLS 子项。下一步按授权重建四 Agent A/B Release Set，
+生成一个临时 E1 Root/Publisher，按 Trust-first、objects、Registry-last 发布并
+执行 14 项故障矩阵；生产 R3 与 P5-P8 仍关闭。

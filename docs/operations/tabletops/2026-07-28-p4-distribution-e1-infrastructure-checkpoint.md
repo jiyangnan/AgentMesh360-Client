@@ -1,8 +1,8 @@
 # P4 R3 E1 隔离基础设施检查点
 
 状态：E1 执行中；两个 SGP1 Spaces bucket、两组最小权限 key、唯一 1 GiB Droplet
-和 DNS-only staging 记录已创建；origin executor 已通过本地契约测试，实际
-Caddy/TLS 部署、Release Set、Registry、14 项故障矩阵和最终销毁尚未完成。
+和 DNS-only staging 记录已创建；Spaces-backed origin、Caddy TLS 与公网
+HTTPS health 已通过，Release Set、Registry、14 项故障矩阵和最终销毁尚未完成。
 本文不是 E1 PASS 或生产 R3 关闭证据。
 
 ## 1. 冻结基线
@@ -26,7 +26,7 @@ Caddy/TLS 部署、Release Set、Registry、14 项故障矩阵和最终销毁尚
 - revoked failed key：1
 - Droplet：1
 - DNS record：1，DNS-only
-- origin：0
+- origin：1
 
 控制台显示 Spaces subscription 为约 `0.007 USD/hour`。两个 bucket 共享同一
 subscription，72 小时估算约 `0.50 USD`，仍与批准预算模型一致。
@@ -155,3 +155,15 @@ publickey/sudo/远端命令错误不重试。公网 health 同时改用 HTTPS-on
 下一步先冻结并推送 transport/health 修复 executor，再幂等重跑部署并同时复验 origin/
 Caddy active 与公网 HTTPS health。Release Set、非生产 Root/Publisher、Registry
 与故障矩阵必须继续按顺序执行，不能跳到 P5。
+
+Cycle 70 commit `8a76380` 推送后幂等重跑成功：
+
+- live state：`origin.deployed=true`；
+- `agentmesh360-e1-origin.service`：active；
+- `caddy`：active；
+- HTTPS health：200、JSON、精确 E1 body；
+- Trust 未上传：404；
+- query health：400。
+
+Origin/TLS 子项已关闭。下一步严格进入四 Agent Release Set、临时 E1
+Root/Publisher、Trust-first/Registry-last 和 14 项故障矩阵；生产 R3 不因此关闭。

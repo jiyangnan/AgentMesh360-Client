@@ -4852,3 +4852,28 @@ health 已完成本地验证，等待冻结后继续同一幂等部署
 - 下一步冻结本修复并再次幂等部署；只有 systemd origin/Caddy 和 HTTPS health
   全部通过才更新 infrastructure checkpoint 为 Origin PASS；
 - Release Set、Trust、Registry、故障矩阵和最终清理顺序不变。
+
+### 循环 71：P4 R3 E1 HTTPS Origin 实机通过
+
+状态：隔离 Spaces-backed Origin、Caddy TLS 和公网 HTTPS health 已通过；P4
+进入四 Agent Release Set/Trust/Registry，生产 R3 仍未关闭
+
+实际执行与证据：
+
+1. Cycle 70 commit `8a76380` 推送后，使用同一 clean executor 幂等重跑部署；
+2. operator SSH/SCP 瞬时断开由有界 transport retry 收敛，没有新增实例或凭据；
+3. 代码目录为 `0755 root:root`、配置目录 `0750 root:agentmesh-e1`、Reader
+   配置 `0600 agentmesh-e1:agentmesh-e1`；
+4. `agentmesh360-e1-origin.service` 与 `caddy` 均为 active；
+5. live state 为 `origin.deployed=true`，记录精确 executor 和 Caddy-managed TLS；
+6. 公网 `/healthz` 返回 200、`application/json` 和精确 E1 body；
+7. Trust 尚未上传时 `/v1/trust-bundle.json` 返回 404，证明 Origin 能以 Reader
+   访问 metadata bucket 且没有伪造空 Trust；
+8. 带 query 的 health 请求返回 400，no-query 边界未被 Caddy 改写。
+
+计划复盘与下一轮：
+
+- 本轮只关闭 P4 的 Origin/TLS 子项，不关闭 Release Set、故障矩阵、完整清理或 R3；
+- 下一步按授权重建四 Agent A/B Release Set，生成一个临时 E1 Root/Publisher，
+  先发布 Trust、再不可变 objects、最后 Registry；
+- 继续保持生产 Trust/Registry 常量为空，不进入 P5。
