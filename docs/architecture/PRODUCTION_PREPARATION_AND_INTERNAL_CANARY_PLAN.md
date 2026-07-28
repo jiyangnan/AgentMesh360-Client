@@ -6,9 +6,10 @@
 故障矩阵、Registry-first 撤回、Root/Publisher 与全部云端/本机资源销毁。
 
 P4 E1 状态为 `isolated_distribution_rehearsal_passed`；生产 R1-R6 仍未关闭，
-生产 Trust/Registry 常量保持为空。Cycle 86 只把 P5 前置门、21 项场景和批准卡
-固化为默认 blocked 契约；真实 Package canary、E2、生产候选、订阅/BYOK/cohort
-与 Apple 签名公证均未授权。
+生产 Trust/Registry 常量保持为空。Cycle 86 把 P5 前置门、21 项场景和批准卡
+固化为默认 blocked 契约；Cycle 87 已取得并机器固定 1 账号、1 Mac、12 次 Gemini、
+0 credits、Provider `$1`、基础设施 `$3`、72 小时的 P5 E1 精确授权。外部执行仍
+等待 authorization commit 冻结推送；E2、生产候选和 Apple 签名公证均未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -431,7 +432,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **阻断式预检已完成**：P4 receipt、R1/R2/R3/R6 前置证据、现有 consumer 契约、21 项场景和批准卡已机器固定；真实执行仍为 blocked | 需要补齐本次 E1 release chain 的适用证据，并取得真实订阅、Provider 请求/费用和 cohort 独立授权；生产门保持关闭 |
+| P5 Package canary | **精确 E1 授权已固定，尚未开始**：1 账号、1 Mac、Gemini 12 请求、0 credits、Provider `$1`、基础设施 `$3`、72 小时、隔离 rollback/cleanup | 先冻结推送 authorization，再验证账号/Keychain/设备/Package baseline；失败不创建资源，生产门保持关闭 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1103,3 +1104,19 @@ Subscription、Provider、预算、Package、Trust/Registry 与恢复场景全�
 本轮 network、Provider、credits、Keychain、外部资源和费用均为 0。真实 P5 必须
 先提供针对本次 E1 release chain 的适用 R1/R2/R3/R6 证据，再取得专用账号、有效订阅、BYOK Provider/模型、
 四类预算、cohort、窗口、rollback、Abort Owner 和清场的独立批准；P6-P8 不变。
+
+## 41. Cycle 87 P5 E1 精确授权
+
+新增 strict authorization Schema、留存安全 receipt 和 validator/CLI。授权固定
+1 个专用内部账号、1 台 Mac、72 小时；现有 Keychain Gemini 测试 Key、
+`gemini-3.5-flash-lite` 最多 12 次、0 AgentMesh credits、Provider `$1`；
+DigitalOcean SGP1 隔离基础设施预计 `$1.15`、硬上限 `$3`。
+
+Release chain 重新构建 P4 frozen 四 Agent 并增加 Job Agent 同权限/权限扩张 canary
+版本；使用全新 2 Root/2 Publisher，生产 key 和 P4 私钥不可复用。Package mutation
+仅能发生在隔离 state home；结束 Registry-first 并销毁云端资源、临时 key、
+binding 和 canary state，用户已有 Keychain credential 不删除。
+
+定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
+未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读
+验证账号、credential ref、Mac 与 Package baseline；通过后才允许进入 E1 资源。

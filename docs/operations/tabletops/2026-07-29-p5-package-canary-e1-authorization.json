@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "package_canary_e1_20260729_0001",
+  "environment": "e1",
+  "workPackage": "p5_package_canary",
+  "authority": "direct_user_authority",
+  "approvalStatus": "approved",
+  "executionStatus": "authorized_not_started",
+  "approvalReceipt": {
+    "receiptId": "approval_p5_e1_20260729_0001",
+    "authorizedScope": "p5_e1_one_account_one_mac_package_canary",
+    "recordedAt": "2026-07-28T17:48:33Z",
+    "productionAuthorityGranted": false
+  },
+  "authorizationWindow": {
+    "startsAt": "2026-07-28T17:48:33Z",
+    "stopsAt": "2026-07-31T17:48:33Z",
+    "maximumHours": 72,
+    "automaticExtensionAllowed": false
+  },
+  "executionFreeze": {
+    "preflightCommit": "4f1d8f8cb7ec4eab0c90daea0c2db45f48d28bdc",
+    "authorizationCommit": "requires_freeze_after_commit",
+    "preflightSha256": "sha256:cb2881c02d163e2bc4476044b7fcb4d451d61a2e441116c43bdc9ea5e07b7154",
+    "p4AcceptanceSha256": "sha256:4d2a7f530bd988ef0ac1bb5f9b38d44e3ee8f0f246f627678380c1b6205a7a74",
+    "executeOnlyAfterCommit": true
+  },
+  "cohort": {
+    "accountAlias": "p5-internal-account-01",
+    "deviceAlias": "p5-mac-01",
+    "accountCount": 1,
+    "deviceCount": 1,
+    "realIdentifiersRetained": false,
+    "externalCohortAllowed": false
+  },
+  "subscriptionPlan": {
+    "source": "existing_dedicated_internal_account",
+    "liveActiveSubscriptionRequired": true,
+    "accountCreationAllowed": false,
+    "subscriptionMutationAllowed": false,
+    "maximumAgentMeshCredits": 0
+  },
+  "providerPlan": {
+    "presetId": "google-gemini",
+    "modelId": "gemini-3.5-flash-lite",
+    "credentialSource": "existing_keychain_gemini_test_key",
+    "keychainReadAllowed": true,
+    "secretExportAllowed": false,
+    "maximumInferenceRequests": 12,
+    "maximumAgentMeshCredits": 0,
+    "maximumProviderCostUsd": 1,
+    "silentFallbackAllowed": false,
+    "temporaryCanaryBindingsRequired": true,
+    "removeTemporaryBindingsAtEnd": true,
+    "deleteExistingCredentialAtEnd": false
+  },
+  "infrastructurePlan": {
+    "provider": "digitalocean",
+    "accountMode": "reuse_existing_account",
+    "region": "sgp1",
+    "existingProductionDropletReusable": false,
+    "stagingDropletCount": 1,
+    "stagingDropletSize": "s-1vcpu-1gb",
+    "spacesBucketCount": 2,
+    "cloudflareDnsRecordCount": 1,
+    "productionRecordMutable": false,
+    "paidBackupAllowed": false,
+    "paidSnapshotAllowed": false,
+    "expectedCostUsd": 1.15,
+    "hardCapUsd": 3,
+    "destroyAtEnd": true
+  },
+  "releaseChain": {
+    "p4AuthorizationId": "distribution_service_e1_20260728_0001",
+    "p4AuthorizationSha256": "sha256:26dbff3609d3520cc598d6d98d6dc7f94431f8180c1736be6e15f06ef2b9ee79",
+    "mode": "rebuild_frozen_p4_release_set_with_canary_variants",
+    "agentCount": 4,
+    "freshEphemeralRootKeyCount": 2,
+    "freshEphemeralPublisherKeyCount": 2,
+    "p4PrivateMaterialReusable": false,
+    "productionKeyAllowed": false,
+    "stagingClientInjection": "explicit_authorized_e1_runtime_boundary",
+    "productionConstantsMutable": false,
+    "jobBaselineVersion": "0.4.7",
+    "jobSamePermissionVersion": "0.4.8-e1.1",
+    "jobPermissionExpansionVersion": "0.4.9-e1.1",
+    "addedCanaryPermission": "process_execution"
+  },
+  "scenarioPlan": {
+    "scenarioCount": 21,
+    "allScenariosRequired": true,
+    "realSubscriptionHappyPathRequired": true,
+    "realByokHappyPathRequired": true,
+    "failureInjectionMode": "isolated_local_or_e1_fault_boundary",
+    "productionMutationAllowed": false
+  },
+  "rollbackPlan": {
+    "capturePreCanaryPackageState": true,
+    "isolatedCanaryStateHomeRequired": true,
+    "restoreExactPreCanaryPackageState": true,
+    "stopOnUnknownMutationOutcome": true,
+    "automaticMutationRetryAllowed": false,
+    "abortBeforeCohortExpansion": true
+  },
+  "requestLimits": {
+    "maximumExternalNetworkRequests": 750,
+    "maximumProviderInferenceRequests": 12,
+    "maximumAgentMeshCredits": 0,
+    "maximumProviderCostUsd": 1,
+    "maximumInfrastructureCostUsd": 3,
+    "maximumCombinedCostUsd": 4
+  },
+  "cleanupPlan": {
+    "withdrawRegistryFirst": true,
+    "destroyDroplet": true,
+    "destroyBuckets": true,
+    "removeDnsRecord": true,
+    "revokeSpacesKeys": true,
+    "destroyEphemeralSigningKeys": true,
+    "removeTemporaryProviderBindings": true,
+    "destroyIsolatedCanaryState": true,
+    "preserveExistingKeychainCredential": true,
+    "retainOnlyNonSecretEvidence": true,
+    "failureRequiresRollbackAndCleanupBeforeRetry": true
+  },
+  "roleAliases": [
+    "release_owner",
+    "canary_operator",
+    "abort_owner"
+  ],
+  "evidencePolicy": {
+    "recordCredentials": false,
+    "recordAuthorizationHeaders": false,
+    "recordRawTrustDocuments": false,
+    "recordRawRegistryDocuments": false,
+    "recordEndpointUrls": false,
+    "recordResourceIds": false,
+    "recordIpAddresses": false,
+    "recordAbsolutePaths": false,
+    "recordPersonalIdentity": false,
+    "recordUserOrProviderContent": false,
+    "typedDigestPrefix": "sha256:"
+  }
+}

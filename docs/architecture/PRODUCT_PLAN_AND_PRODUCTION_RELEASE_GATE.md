@@ -224,9 +224,10 @@ flowchart TD
    生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
    R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 E1 隔离 Release Set、非生产
    Trust、Registry-last、14 项故障矩阵和完整清场；P5 已完成零权限阻断式
-   preflight。下一步只有在本次 E1 release chain 的适用 R1/R2/R3/R6 证据齐备并
-   取得独立批准后才执行真实 Package canary；这不关闭生产门，生产 key、
-   订阅/BYOK、cohort、签名和公证仍各自等待授权。
+   preflight；P5 已取得 1 账号、1 Mac、12 次 Gemini、0 credits、Provider `$1`、
+   基础设施 `$3`、72 小时的 E1 精确批准。下一步只在 authorization commit 冻结后
+   检查账号/Keychain/Package baseline，再受控执行；这不关闭生产门，生产 key、
+   外部 cohort、签名和公证仍各自等待授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -784,3 +785,16 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - P5 定向 18/18、全仓库 Node 169/169；
 - network、Provider、credits、Keychain、外部资源和费用均为 0；
 - 本轮不关闭生产门、不写 canary 状态；真实 P5 仍需前置门证据和独立批准。
+
+## 46. 循环 87 P5 E1 精确批准卡
+
+- strict authorization Schema/receipt/validator 已完成；
+- 1 个内部账号、1 台 Mac、72 小时，无自动延长；
+- `google-gemini` / `gemini-3.5-flash-lite` 最多 12 次、0 credits、Provider
+  `$1`；
+- SGP1 隔离基础设施预计 `$1.15`、硬上限 `$3`，不复用生产 Droplet；
+- 四 Agent frozen Release Set、2 个全新临时 Root/Publisher 对和 Job Agent
+  同权限/权限扩张 canary 版本；
+- mutation 只在隔离 state，未知结果不重试，结束完整 rollback/cleanup；
+- 定向 13/13，本轮无 Keychain、Provider、外部资源或费用动作；
+- 下一步冻结推送 authorization，再验证账号/credential/device/Package baseline。

@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、Package P0-P4 与 P5 no-authority preflight 已按原顺序推进；下一验收点是真实 P5 的独立批准卡，不自动使用订阅、BYOK Provider、credits、cohort 或生产凭据 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、Package P0-P4、P5 preflight 与 P5 E1 精确批准卡已按原顺序推进；下一验收点是冻结授权 commit 后的一账号/一设备/零 credits 基线，不自动扩大 cohort 或生产权限 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；预检固定 P4 evidence、当前仅有技术演练的 R1/R2/R3/R6、现有 Package consumer 契约、21 项 canary 场景和零权限边界，生产 endpoint/root/bundle 仍为空 | 真实 P5 需要针对本次 E1 release chain 补齐适用前置证据，并取得专用内部账号、有效订阅、BYOK/费用、cohort、回滚和停止窗口的独立精确批准；生产门仍关闭，P5-P8 继续关闭 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4、P5 阻断式预检与 P5 E1 精确授权已完成；授权固定 1 账号、1 Mac、Gemini 12 请求、0 credits、Provider `$1`、基础设施 `$3`、72 小时、隔离 state 与完整回滚/清场，生产 endpoint/root/bundle 仍为空 | 冻结推送授权后只检查专用账号、Keychain 引用和 Package 基线；通过才重建非生产 E1 release chain 并执行 21 项矩阵，任一失败先回滚和清场 |
 
 ## 开发循环记录
 
@@ -5307,3 +5307,45 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
   Provider/模型、请求/credits/费用、cohort、窗口、rollback 和清场；
 - P6-P8、Apple Developer ID、公证、生产 Trust/Registry 与外部 cohort 不在本轮
   范围。
+
+### 循环 87：P5 E1 精确批准卡
+
+状态：P5 E1 已授权但尚未开始；任何外部动作等待授权 commit 冻结推送
+
+已经实现：
+
+1. 新增 strict `agentmesh360-package-canary-authorization-v1` Schema、留存安全
+   authorization receipt 和无依赖 validator/CLI；
+2. 固定 1 个专用内部账号、1 台 Mac、`72h` 窗口且禁止自动延长；
+3. 固定现有 Keychain Gemini 测试 Key、`google-gemini` /
+   `gemini-3.5-flash-lite`、最多 12 次推理、0 AgentMesh credits、Provider
+   `$1` 硬上限且禁止静默 fallback；
+4. 固定复用 DigitalOcean 账号能力但不复用生产 Droplet：SGP1 唯一 1 GiB
+   Droplet、2 Spaces、1 DNS-only record、预计 `$1.15`、基础设施 `$3` 硬上限；
+5. 固定重新构建 P4 四 Agent frozen Release Set，生成 2 个临时 E1 Root 和
+   2 个 Publisher；P4 私钥不可复用，生产 Trust/Registry 常量不可修改；
+6. 固定 Job Agent `0.4.7` baseline、`0.4.8-e1.1` 同权限更新、
+   `0.4.9-e1.1` 增加 `process_execution` 的拒绝/批准/rollback 变体；
+7. 所有 Package mutation 必须在隔离 canary state home 进行，正常用户状态只做
+   前后摘要比对；未知 mutation 不自动重试；
+8. 结束时 Registry-first，删除 DNS/Droplet/bucket、撤销 Spaces key、销毁临时
+   signing key、provider binding 和隔离 state；保留用户现有 Keychain credential。
+
+验证证据：
+
+- P5 authorization 定向 Node：13/13；
+- authorization 逐字节绑定 P5 preflight、P4 authorization 和 P4 acceptance；
+- 负向覆盖生产/账号/设备扩张、Provider 请求/费用/credits、基础设施成本、
+  生产 Trust mutation、rollback/cleanup/evidence 弱化；
+- Validator 不具备 network、Keychain、Provider 或 subprocess capability；
+- JSON、CLI 与 `git diff --check` 通过；
+- 本轮 Provider 请求、credits、Keychain 读取、外部资源和费用均为 0；
+- Kimi 继续按用户要求暂停，本轮为主 Agent 加强自主复核。
+
+计划复盘与下一轮：
+
+- P5 是 E1 隔离 canary，不关闭生产 R1-R3，不写 `canary_running` 或
+  `canary_passed`；
+- 下一步先冻结推送本 authorization，再只读确认专用账号订阅、Gemini credential
+  ref、当前 Mac 和 Package baseline；
+- 只有四项同时满足且仍在授权窗口/预算内，才允许创建 E1 资源；否则不产生费用。
