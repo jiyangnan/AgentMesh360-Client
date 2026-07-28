@@ -289,7 +289,6 @@ async function deployOrigin(boundary, credentialPath, executorCommit) {
   const liveStatePath = path.join(resolved, 'live-state.json');
   const liveState = validateLiveState(
     await readMode0600Json(liveStatePath, 'live origin state'),
-    executorCommit,
   );
   const suffix = credentials.releasesBucket.split('-').at(-1);
   if (

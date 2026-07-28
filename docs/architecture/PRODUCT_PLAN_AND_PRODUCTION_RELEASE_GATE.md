@@ -575,6 +575,8 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 路由固定响应大小、MIME、no query/fragment/redirect；14 个 fault route 受临时
   token 保护，日志不含 URL/IP/bucket/credential；
 - systemd 独立用户、只读系统、无 capability；部署器只把 Reader key 注入远端；
+- 首次部署在 SSH 前暴露 Droplet/origin executor commit 混用并 fail-close；现已
+  分离 provenance 和补测试，未产生远端配置漂移；
 - origin/deploy 10/10，全部 E1 定向 35/35，P4 preflight 17/17；
 - 当前成本模型仍约 `1.14296 USD/72h`。下一步只冻结 origin executor 并完成实际
   Caddy/TLS/health；之后才能进入 Release Set/Trust/Registry/故障矩阵，P5-P8 关闭。

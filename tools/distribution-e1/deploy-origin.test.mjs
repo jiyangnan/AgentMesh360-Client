@@ -79,6 +79,7 @@ test('Caddy and systemd configs expose only the local hardened service', () => {
 });
 
 test('validates the exact Droplet, DNS-only hostname, and executor commit', () => {
+  assert.deepEqual(validateLiveState(liveState()), liveState());
   assert.deepEqual(validateLiveState(liveState(), DROPLET_COMMIT), liveState());
   for (const mutate of [
     (value) => {

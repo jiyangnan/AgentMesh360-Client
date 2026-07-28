@@ -872,6 +872,9 @@ record 明确为 DNS-only，不通过 edge proxy；生产 DNS/主机均未修改
 - systemd 独立无登录用户、`NoNewPrivileges`、只读系统、空 capability；
 - 远端只接收 Reader key，Publisher key 仍留本机。
 
+首次实际部署在 SSH 前因 Droplet/origin executor commit 混用而 fail-close；现已
+分离两段 provenance 并补回归，没有产生远端配置漂移。
+
 origin/deploy 10/10、既有 E1 25/25，联合 35/35；P4 preflight 17/17。当前小时成本
 约 `0.01593 USD`，72 小时模型仍为约 `1.14296 USD`。下一步冻结推送本 executor，
 完成 Caddy/TLS/HTTPS health 后再进入 Release Set/Trust/Registry/故障矩阵。

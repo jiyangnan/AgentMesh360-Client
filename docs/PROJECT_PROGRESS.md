@@ -4675,6 +4675,9 @@ Release Set、上传和故障注入仍未获批、未执行
    `ProtectHome`、空 capability；Caddy 不启用 access log；
 9. 部署器固定 DNS/Droplet/Spaces suffix、droplet executor 与当前 clean origin
    executor，远端只注入 Reader key，Publisher 始终留在本机。
+10. 首次实际 deploy 在 SSH 前 fail-close：部署器误将当前 origin executor commit
+    与 Droplet 创建 commit 比较；临时状态逐项正确，现已分离两段 provenance 并加
+    默认 Droplet commit 回归，冻结修复前不重试远端部署。
 
 自主验证：
 

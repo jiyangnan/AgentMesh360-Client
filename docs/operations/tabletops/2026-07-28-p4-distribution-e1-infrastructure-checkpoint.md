@@ -88,6 +88,11 @@ redirect 或 WAF 改写分发语义。真实 hostname、IP 和资源 ID 只在 m
 - 部署前复验 Droplet/DNS/Spaces suffix 与 clean executor commit，部署后必须通过
   公网 HTTPS health 和系统服务 active 检查。
 
+首次实际 deploy 在任何 SSH 或远端 mutation 前 fail-close：实现把当前 origin
+executor commit 错误地拿去匹配 Droplet 创建 executor commit。临时 live state
+逐项正确；现已把 Droplet provenance 和 origin provenance 分开固定并补回归测试，
+修复 commit 推送前不重试。
+
 ## 5. 验证与下一步
 
 - Spaces SigV4/client：6/6
