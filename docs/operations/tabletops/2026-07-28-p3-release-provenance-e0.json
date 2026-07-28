@@ -1,0 +1,405 @@
+{
+  "schemaVersion": 1,
+  "rehearsalId": "release_provenance_e0_20260728_0001",
+  "environment": "e0",
+  "workPackage": "p3_r2",
+  "authority": "single_test_publisher",
+  "approvalStatus": "approved",
+  "executionStatus": "technical_rehearsal_passed",
+  "algorithm": "ed25519",
+  "approvalReceipt": {
+    "receiptId": "approval_p3_e0_20260728_0001",
+    "authorizedScope": "p3_r2_e0_four_agent_dual_build_and_test_signing",
+    "authorizedCandidateCommit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c",
+    "authorizedPublisherKeyCount": 1,
+    "authorizedWindow": "current_development_cycle_only",
+    "externalServicesUsed": false,
+    "providerRequests": 0,
+    "creditsConsumed": 0,
+    "currencyCost": 0
+  },
+  "candidateFreeze": {
+    "commit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c",
+    "cleanTree": true,
+    "cargoLockSha256": "sha256:2f71e6935920a35726095642d8a1a87067c6990f44685140b77ba19f9ee82a48",
+    "rustcVersion": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "cargoVersion": "cargo 1.92.0 (344c4567c 2025-10-21)"
+  },
+  "executorFreeze": {
+    "commit": "5d97f0bf4c48de6e2ac40a3ed4066b5455361294",
+    "cleanTree": true,
+    "cargoLockSha256": "sha256:2f71e6935920a35726095642d8a1a87067c6990f44685140b77ba19f9ee82a48",
+    "executorSourceSha256": "sha256:549f0932f4d46c9b25b941b7b2d8851765465458ae41ceca0fa97f86dbbb1f6d"
+  },
+  "sourceInputs": [
+    {
+      "agentId": "deploy-agent",
+      "sourceClass": "first_party",
+      "sourceAlias": "deploy_source",
+      "commit": "781599f9b8ab1374f8a9b018da553d425cd23e13",
+      "cleanTree": true
+    },
+    {
+      "agentId": "future-agent",
+      "sourceClass": "dynamic_fixture",
+      "sourceAlias": "executor_fixture",
+      "commit": "5d97f0bf4c48de6e2ac40a3ed4066b5455361294",
+      "cleanTree": true
+    },
+    {
+      "agentId": "job-agent",
+      "sourceClass": "first_party",
+      "sourceAlias": "job_source",
+      "commit": "ed8f1c683d5d3bf8103de4c12f9f395e82251e9a",
+      "cleanTree": true
+    },
+    {
+      "agentId": "lecturecast-agent",
+      "sourceClass": "first_party",
+      "sourceAlias": "lecturecast_source",
+      "commit": "688dd61ab1910fec03383f18bdfaee74ed67ecac",
+      "cleanTree": true
+    }
+  ],
+  "roleAliases": [
+    "build_operator",
+    "independent_reviewer",
+    "test_signer_operator"
+  ],
+  "testPublisher": {
+    "keyId": "agentmesh360-publisher-e0-p3-20260728-01",
+    "publicKeySha256": "sha256:6d7a58c488d879567cc60bd55de83c4f7c03d6e32d474ba48ccfeebf1a04d8e8",
+    "generationCount": 1,
+    "signatureOperationCount": 8,
+    "privateMaterialPersisted": false,
+    "destroyed": true
+  },
+  "agentResults": [
+    {
+      "agentId": "deploy-agent",
+      "packageId": "com.agentmesh360.deploy-agent",
+      "version": "0.1.1",
+      "sourceClass": "first_party",
+      "buildCount": 2,
+      "signingRequestCount": 2,
+      "signatureVerificationCount": 2,
+      "hostBundleCount": 0,
+      "outputComparisons": [
+        {
+          "outputClass": "artifact",
+          "byteIdentical": true,
+          "sha256": "sha256:842faa04195a6325bffc4f28bf9913bf79a4b876362304f902854abef277712d",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "envelope",
+          "byteIdentical": true,
+          "sha256": "sha256:6dd596ccd2de2e7e3a66127b049aa816ea8c25d0020373a9831780ae8726f5c9",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "finalize_receipt",
+          "byteIdentical": true,
+          "sha256": "sha256:a0b74d4463a0a986b54d69178b111dd8d64427e7d6a2a14cc07d2d22a45cb83b",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "host_bundles",
+          "byteIdentical": true,
+          "sha256": "sha256:8e3149b99fb2aee8e6f83dac23b276f19b614f83e952bf8463d5c69aabb93121",
+          "fileCount": 0
+        },
+        {
+          "outputClass": "host_projection",
+          "byteIdentical": true,
+          "sha256": "sha256:06de4784a9708cf401d57480b3107ef75279a030095ec5eaa6cf7b84e9a03593",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "package_file_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:e18dd362910790c7ee7d56f77f5c7ca98e9240a816f8ada773782968635feaf0",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "registry_record",
+          "byteIdentical": true,
+          "sha256": "sha256:59a69d3130eb82ba3a8a482cf3209c8e064763703735694b6cf64e59b4e0f4fb",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "release_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:1357ed2b2a014a999ec14c32ac44d8f770b9b33841197db041f8619893f55154",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signature_result",
+          "byteIdentical": true,
+          "sha256": "sha256:e107025872f388579033428317492d7516979a63e9aabaaebd4ab068c65bae4c",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signing_request",
+          "byteIdentical": true,
+          "sha256": "sha256:d3d5c2c10dd6b888a56441180de937e5fa4c373d7a0b4c16f02e063392b9694f",
+          "fileCount": 1
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "agentId": "future-agent",
+      "packageId": "com.agentmesh360.future-agent",
+      "version": "1.0.0",
+      "sourceClass": "dynamic_fixture",
+      "buildCount": 2,
+      "signingRequestCount": 2,
+      "signatureVerificationCount": 2,
+      "hostBundleCount": 2,
+      "outputComparisons": [
+        {
+          "outputClass": "artifact",
+          "byteIdentical": true,
+          "sha256": "sha256:1dcabf634d833e354df934f3a110e94ffcc76db9751cf77ba0dbd5e342fa825e",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "envelope",
+          "byteIdentical": true,
+          "sha256": "sha256:6a5649762c6243616289a7c75436b919106ca40146500c8be94886d77217bfb5",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "finalize_receipt",
+          "byteIdentical": true,
+          "sha256": "sha256:55aa450829969777f715bd5a09044582efab11aaceda6f720ddca2c98ed26a68",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "host_bundles",
+          "byteIdentical": true,
+          "sha256": "sha256:90f3c5a95b1f9de556b11b7e9868e6d99f2ae7fa65080dc68823a44690be42f3",
+          "fileCount": 2
+        },
+        {
+          "outputClass": "host_projection",
+          "byteIdentical": true,
+          "sha256": "sha256:e9de807dd8c5631dc3a882a286cbee0a4c9b060c5ac3ad6c3ecdfb58b16ca25a",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "package_file_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:b19ea4fd22c9fd13df5a349a85b0476016ae9ba5421295b99a81af7d2169794b",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "registry_record",
+          "byteIdentical": true,
+          "sha256": "sha256:e8359add924b8e5dded2a29ad85cb426763fd21c90df827d99084c26728061bf",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "release_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:b5cd8bfbfd5db8a29077e5da4e2da6d3338582442ca8f93a0f43c7c4a2f6ae1a",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signature_result",
+          "byteIdentical": true,
+          "sha256": "sha256:88bb10715a358cc471c085ce6a8ad3901bc52c4988a155070d2c94151d9bb805",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signing_request",
+          "byteIdentical": true,
+          "sha256": "sha256:d5cb39613c4db249403e4d71c805f2e7f09887ae2f45074b6f151ae8ffdeab99",
+          "fileCount": 1
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "agentId": "job-agent",
+      "packageId": "com.agentmesh360.job-agent",
+      "version": "0.4.7",
+      "sourceClass": "first_party",
+      "buildCount": 2,
+      "signingRequestCount": 2,
+      "signatureVerificationCount": 2,
+      "hostBundleCount": 2,
+      "outputComparisons": [
+        {
+          "outputClass": "artifact",
+          "byteIdentical": true,
+          "sha256": "sha256:62b46a99cd45fdf5d9619add3157de43d199b0bc90ef3174059e23e994853130",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "envelope",
+          "byteIdentical": true,
+          "sha256": "sha256:f8053ff17f9c61b24acf31e3efd296a1bc4ee474707f09f7127f002df73625dc",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "finalize_receipt",
+          "byteIdentical": true,
+          "sha256": "sha256:ea6530b84daf234bf4d8b5e8bfea847f1219ffaad8ad594523c08622fd40ec58",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "host_bundles",
+          "byteIdentical": true,
+          "sha256": "sha256:cc4b178b6aed2ee21d8b99d8637a805ef086f3510a65a55aaf894bacdfdb5ef0",
+          "fileCount": 2
+        },
+        {
+          "outputClass": "host_projection",
+          "byteIdentical": true,
+          "sha256": "sha256:2d1d26e63e13442fdd3a1a6f2b8534fd7dc7c4a3dd3406bce3985ce636442bee",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "package_file_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:2dd21146c652ebf51d98ee337fcd29275b79688d26f0503ebbfdd7b10dda18ea",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "registry_record",
+          "byteIdentical": true,
+          "sha256": "sha256:3263492f79e0e0bd2b7f5b958d6fe7adcce98aed3cdd56cce0565f4ceedecafa",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "release_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:b0c6ba51b11d637121f7d5ec81ce0186ee96645d4b16c5d89362042ca188d772",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signature_result",
+          "byteIdentical": true,
+          "sha256": "sha256:e362a309f3d8173f433ca582eaef7e4864ac17c87bf2857a761ecd7898c0d123",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signing_request",
+          "byteIdentical": true,
+          "sha256": "sha256:db3492016c9543b11e215d18b867f4db791c9db1c3595566fe7f2434098ad2a8",
+          "fileCount": 1
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "agentId": "lecturecast-agent",
+      "packageId": "com.agentmesh360.lecturecast-agent",
+      "version": "0.4.0",
+      "sourceClass": "first_party",
+      "buildCount": 2,
+      "signingRequestCount": 2,
+      "signatureVerificationCount": 2,
+      "hostBundleCount": 3,
+      "outputComparisons": [
+        {
+          "outputClass": "artifact",
+          "byteIdentical": true,
+          "sha256": "sha256:c9a68226f153961e30a6c6ef77dfedf379f6fd31e9104d49f0710ff3d973e177",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "envelope",
+          "byteIdentical": true,
+          "sha256": "sha256:3e22ba2de682eb787fba952b36b5354a0fa95b9c6070ae22057fb129079b6aeb",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "finalize_receipt",
+          "byteIdentical": true,
+          "sha256": "sha256:1ef6194d4fc1ad4593747987a3eb7fa323e63a03585171aa984c9a5551a5de2d",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "host_bundles",
+          "byteIdentical": true,
+          "sha256": "sha256:8cb856c2e56a0e8aa5e1d75d9b143c8aa7dbf8bd18caa8eb17ade75b1dd480fb",
+          "fileCount": 3
+        },
+        {
+          "outputClass": "host_projection",
+          "byteIdentical": true,
+          "sha256": "sha256:8923b3548b5990d0eaac1660c46d4afbe85615bafa091b0b497a0d8924f483a8",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "package_file_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:fad9390f0eca3cc5d915a43994288826900185c867419e08c04a6e9bcd6a99f0",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "registry_record",
+          "byteIdentical": true,
+          "sha256": "sha256:9bab662d209ecf1049afa593c098e0f30f07aec36c3551f57bfef9bfe8cad551",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "release_manifest",
+          "byteIdentical": true,
+          "sha256": "sha256:14e3b3cfe03c0b578c96c4c104075e83812ecea1b9bf1afc51b71cc1452a9404",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signature_result",
+          "byteIdentical": true,
+          "sha256": "sha256:36db86f424b5eef1ee365476cb2be63b1a826b9d5cd7058086ee19959c4bc2a6",
+          "fileCount": 1
+        },
+        {
+          "outputClass": "signing_request",
+          "byteIdentical": true,
+          "sha256": "sha256:6f01b94b23a03760bf6c1891a5c44cec225eb5b6c98632dbeea9e20d7546b6d3",
+          "fileCount": 1
+        }
+      ],
+      "status": "passed"
+    }
+  ],
+  "cleanup": {
+    "temporaryBoundaryRemoved": true,
+    "buildRootsRemoved": 2,
+    "candidateWorktreeRemoved": true,
+    "sourceWorktreesRemoved": 3,
+    "privateFilesRemaining": 0,
+    "repositoryPrivateMaterialDetected": false,
+    "repositoryTargetAbsent": true,
+    "restoredTrustState": "empty",
+    "productionConstantsEmpty": true,
+    "forensicSecureEraseGuaranteed": false,
+    "cleanupMethod": "overwrite_fsync_unlink_then_recursive_remove"
+  },
+  "productionBoundary": {
+    "productionR2Closed": false,
+    "productionKeysCreated": false,
+    "productionRegistryPublished": false,
+    "externalAuthorityUsed": false,
+    "p4ThroughP8Opened": false
+  },
+  "evidencePolicy": {
+    "containsPrivateMaterial": false,
+    "containsRawPublicKeys": false,
+    "containsRawSignatures": false,
+    "containsAbsolutePaths": false,
+    "containsPersonalIdentity": false,
+    "containsRawCommands": false
+  },
+  "reviewLimitations": {
+    "digestInputsIndependentlyVerifiable": false,
+    "executionOccurrenceStandaloneProof": false,
+    "trustedProducer": "audited_local_runner"
+  },
+  "completedAt": "2026-07-28T07:00:01.882Z"
+}

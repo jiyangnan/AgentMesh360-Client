@@ -28,16 +28,21 @@ Provider 分阶段计划以
 计划复盘和下一轮启动都属于完成条件。Kimi 的结论必须记录其实际检查范围、执行过的
 命令和可复核结果，不记录或要求暴露模型的隐藏推理。
 
+临时例外：自 2026-07-28 起 Kimi 因账户周期额度不足不可用。用户明确要求在其恢复并
+另行通知前停止调用 Kimi；期间第 2-4 步改为主 Agent 的加强自主复核，包括完整 diff
+审计、定向与负向测试、计划边界复盘、秘密扫描和执行后证据对账，并在每轮记录中明确
+标注“非 Kimi 独立审查”。用户通知恢复后，再恢复原 Kimi 交叉门禁。
+
 ## 当前实施状态
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 E0 与 P3 零新 key preflight 已按原顺序推进；下一验收点是新的 P3 test-signing authority，不自动启动 Scheduler、Agent 专属 UI、测试/生产 key、endpoint 或发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 E0 与 P3 R2 E0 技术演练已按原顺序推进；下一验收点是 P4 R3 E1 的设计与 authority 评估，不自动创建外部资源、staging 凭据、生产 key、endpoint 或发布 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4 已通过自主验证与 Kimi 独立交叉测试；Cycle 56-59 已完成 P0/P1/P2；Cycle 60 已实现 P3 零新 key provenance preflight，生产 endpoint/root/bundle 仍为空 | P3/R2 仍未满足；下一步只有在新的测试签名 authority 生效后执行固定 commit 双构建与测试签名，生产 key 与 P4-P8 分别批准 |
+| 动态 Agent Package | H0/H1 至 H2d4、Cycle 56-60 的 P0/P1/P2/P3 preflight 与 Cycle 61 的 P3 R2 E0 技术演练均已完成；四 Agent 双构建、一个临时测试 Publisher、8 次签名、十类输出复验与销毁证据通过，生产 endpoint/root/bundle 仍为空 | 只关闭 P3 E0 技术子项，生产 R2 仍未满足；下一步按序评估 P4 R3 E1，任何外部 origin、对象存储、Registry、staging 凭据或生产 authority 都需另行批准 |
 
 ## 开发循环记录
 
@@ -4335,8 +4340,8 @@ Kimi 独立复核：
 
 ### 循环 61：P3 R2 E0 离线 Release 装配执行器与证据 runner
 
-状态：获批的 P3 实际演练尚未生成测试 key；先补齐并冻结无私钥 Release/Registry
-装配通路
+状态：已完成获批的 P3 R2 E0 技术演练、销毁、非秘密证据与加强自主复核；生产
+R2 与 P4-P8 继续关闭
 
 计划校准：
 
@@ -4438,7 +4443,7 @@ Kimi 独立复核：
 
 计划复盘与下一轮：
 
-- 本检查点只补 P3 已批准范围内缺失的 Release assembly executor，不关闭 P3/R2；
+- 本轮已关闭 P3 R2 E0 技术演练，但不关闭生产 R2；
 - 本机 Kimi 首轮已提出 1 个 Low 并已修复；其额度恢复后继续沿用 Kimi 交叉门禁；
 - Kimi 修复复核当前被其账户周期额度 403 阻断；本机只配置
   `managed:kimi-code`，没有可用的第二个零费用 Kimi provider；用户随后明确决定，
@@ -4449,7 +4454,27 @@ Kimi 独立复核：
 - Deploy 的新 HEAD 不自动进入 P3；执行仍使用最初冻结的 `781599f...`，Job 与
   LectureCast 分别使用 `ed8f1c6...` 和 `688dd61...`，三个 source worktree 都在
   receipt 前移除；
-- 随后才从 clean detached `e1ef8db...` 读取候选输入，执行四 Agent 的 A/B 构建；
-  所有无 key 的构建前检查通过后，才允许调用 worker 唯一一次生成临时测试
-  Publisher；
+- 成功执行从 clean detached `e1ef8db...` 读取候选输入；四 Agent 的 A/B 构建、
+  生成 key 前比较全部通过后，worker 唯一一次生成临时测试 Publisher；
+- 下一轮按序只评估 P4 R3 E1 的设计、外部资源、凭据和清理 authority；在得到新的
+  精确批准前不创建隔离 origin、对象存储、Registry 或 staging 凭据；
 - P4-P8、生产 key、外部资源、Provider、credits、费用与发布继续关闭。
+
+最终正式执行与证据：
+
+- executor 提交顺序为 `fd71b3a...`、`9ef6f25...`、`5d97f0b...`；前两次分别暴露
+  bounded diagnostic 缺失和 Build CLI argv 合约错误，均在 `generate` 前
+  fail-close、完整清理且未写 PASS receipt；
+- 最终 executor `5d97f0bf4c48de6e2ac40a3ed4066b5455361294` 成功完成四 Agent
+  A/B 双构建；每个 Agent 的十类输出均 10/10 逐字节一致；
+- 全窗口仅生成一个测试 Publisher，共执行 8 次签名和 8 次复验；私钥已销毁，
+  `privateFilesRemaining=0`，Trust 恢复为空；
+- 两个 build root、一个 candidate worktree、三个 source worktree 与完整临时
+  boundary 均已移除；仓库根 `target/` 仍不存在，生产常量仍为空；
+- receipt validator 与 release-provenance Node 回归 27/27 通过；秘密/签名原文/
+  绝对路径扫描为零；
+- 非秘密证据见
+  [`operations/tabletops/2026-07-28-p3-release-provenance-e0.md`](operations/tabletops/2026-07-28-p3-release-provenance-e0.md)
+  与对应 JSON receipt；
+- 本轮最终复核遵循用户最新要求，不调用额度已用尽的 Kimi；由主 Agent 完成完整
+  diff、负向测试、receipt 对账、秘密扫描与清理复验，不冒充 Kimi PASS。

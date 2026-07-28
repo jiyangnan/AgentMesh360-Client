@@ -207,3 +207,18 @@ target，再按相同步骤构建 B；二者不会同时驻留。Package/Release
 它先确认仓库 clean 且冻结 commit object 存在，再在临时 boundary 中为 Deploy、
 Job、LectureCast 分别创建该 commit 的 detached worktree。这样同仓库其他产品的
 新提交不会改变 P3 Artifact；三个 source worktree 必须在 receipt 前全部移除。
+
+## 10. 2026-07-28 E0 执行结果
+
+获批的 P3 R2 E0 技术演练已经完成。四个 Agent 均通过 A/B 双构建和十类输出逐字节
+比较；全窗口只生成 1 个临时测试 Publisher，共完成 8 次签名与复验，随后销毁私钥并
+移除两个 build root、candidate worktree、三个 source worktree 和完整临时边界。
+
+机器 receipt 与中文复核记录：
+
+- [`tabletops/2026-07-28-p3-release-provenance-e0.json`](tabletops/2026-07-28-p3-release-provenance-e0.json)
+- [`tabletops/2026-07-28-p3-release-provenance-e0.md`](tabletops/2026-07-28-p3-release-provenance-e0.md)
+
+该结果只关闭 P3 R2 E0 技术演练，不关闭生产 R2，不表示 Registry 已发布，也不开放
+P4-P8。下一步 P4 R3 E1 的任何外部 origin、对象存储、Registry 或 staging authority
+都必须另行精确批准。

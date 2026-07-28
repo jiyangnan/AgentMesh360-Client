@@ -1,11 +1,10 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
 状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线、Cycle 58 的 P2
-无 authority preflight 与 Cycle 59 的 P2 E0 测试 key 技术演练均已完成自主验证和
-本机 Kimi 四级清零；Cycle 60 的 P3 零新 key provenance preflight 也已完成双方
-验证与 Kimi 四级清零；
-生产 R1-R6 仍未关闭，尚未进入 P3 实际双构建/测试签名、生产 key ceremony、
-E1/E2、内部 canary 或生产候选
+无 authority preflight、Cycle 59 的 P2 E0 测试 key 技术演练与 Cycle 60 的
+P3 零新 key provenance preflight 均已完成；Cycle 61 的 P3 R2 E0 四 Agent
+双构建、测试签名、复验、销毁与非秘密 evidence 也已通过；
+生产 R1-R6 仍未关闭，尚未进入生产 key ceremony、E1/E2、内部 canary 或生产候选
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -45,8 +44,8 @@ Provider、消耗 credits 或写用户真实宿主目录。
   sequence 1-5、六个失败关闭输入及私钥销毁均有 retention-safe receipt；
 - P2 的 E0 子项通过不满足生产 R1；真实 custody、双人生产 ceremony 和生产 key
   仍需另一张批准卡；
-- P3 零新 key preflight 已机器固定 source/toolchain freeze、双构建、Agent 矩阵、
-  provenance 输出与 signer 批准边界；实际执行仍等待新 test-signing authority；
+- P3 已在精确批准下完成 E0 四 Agent 双构建、一个临时测试 Publisher、8 次签名、
+  十类输出逐字节复验、销毁与 retention-safe receipt；该 E0 PASS 不关闭生产 R2；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -424,7 +423,7 @@ flowchart TD
 | P0 当前态审计与计划 | 本文、蓝图/发布门/进展同步、文档验证、Kimi 四级清零 | 本轮已授权继续开发；不含外部动作 |
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
-| P3 R2 E0 | **零新 key preflight 已实现，实际演练未执行**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、十类输出与新 signer 批准边界 | 不得使用 P2 已销毁材料或生产 Publisher；实际测试签名前单独批准 |
+| P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | 隔离 origin、对象存储/Registry、故障注入和清理 | 需要创建外部资源与 staging 凭据授权 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
@@ -684,7 +683,8 @@ Blocker/High/Medium/Low 全部为零并给出 PASS。
 - P1/P2/P3 Node 联合回归 53/53；同一 Kimi session 两轮审查中，首轮 1 Medium /
   2 Low 已修复，第二轮独立复跑和 10 类负向验证后四级 findings 全零并 PASS；
 - preflight 通过只建立 `rehearsal_ready` 前的阻断结构，不代表 P3/R2 已完成；
-- 实际 P3 仍等待新的 test-signing authority，P4-P8 继续关闭。
+- 该 Cycle 60 检查点时，实际 P3 仍等待新的 test-signing authority，P4-P8
+  继续关闭。
 
 ## 15. Cycle 61 P3 离线 Release assembly executor 与证据 runner 检查点
 
@@ -750,3 +750,21 @@ build root，且未写 receipt。该尝试暴露固定错误 label 无法诊断�
 `--definition/--source`。该 Medium 发生于 `generate` 前，清理结果再次通过且累计
 key 生成数仍为 0。修复后增加纯 argv 合约测试，Node 回归更新为 27/27；须再次冻结
 executor commit 后再执行。
+
+第三次执行冻结 executor
+`5d97f0bf4c48de6e2ac40a3ed4066b5455361294` 后成功：
+
+- 四 Agent 均完成 A/B 双构建、2 份 signing request、2 次签名复验和十类输出
+  10/10 逐字节一致；
+- 全窗口只生成 1 个临时测试 Publisher，签名操作共 8 次，完成后私钥已销毁；
+- 两个 build root、candidate worktree、三个 source worktree 与完整临时 boundary
+  均已移除，Trust 恢复为空，仓库根 `target/` 与生产常量保持为空；
+- receipt validator、Node 27/27、秘密/原始签名/绝对路径扫描和清理复验全部通过；
+- 机器 receipt 与中文记录见
+  [`../operations/tabletops/2026-07-28-p3-release-provenance-e0.json`](../operations/tabletops/2026-07-28-p3-release-provenance-e0.json)
+  和
+  [`../operations/tabletops/2026-07-28-p3-release-provenance-e0.md`](../operations/tabletops/2026-07-28-p3-release-provenance-e0.md)。
+
+Cycle 61 只关闭 P3 R2 E0 技术演练，生产 R2 仍未满足。下一步按序评估 P4 R3 E1；
+创建隔离 HTTPS origin、对象存储、Registry 或 staging 凭据属于新的外部 authority，
+没有精确批准不得执行。P4-P8、生产 key、Provider、credits、费用与发布继续关闭。

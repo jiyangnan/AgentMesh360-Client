@@ -1,13 +1,14 @@
 # AgentMesh360 Client 产品计划复核与生产发布安全门
 
-状态：2026-07-27 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
+状态：2026-07-28 固定 Main Session 对话、多 Agent 恢复、标准 ACP 单次权限审批、
 安全只读工具活动、Workspace Artifact、通用 Project State、Harness 后台活动与
 Session Plan 安全投影已完成双方验证并四级清零；Gemini F0b 也已完成自主验证与
 本机 Kimi 四级清零；Cycle 56 已形成生产准备与内部 canary 的分层计划，Cycle 57
 已关闭 P1 R6 本地基线，Cycle 58 已关闭 P2 无 authority ceremony 预检设计；
 Cycle 59 已完成 P2 E0 测试 key 技术演练、自主验证与本机 Kimi 四级清零；生产
 R1-R6 与所有生产发布能力仍保持关闭；Cycle 60 已完成 P3 零新 key provenance
-preflight 的自主验证与本机 Kimi 四级清零，尚未执行双构建或测试签名
+preflight，Cycle 61 已完成获批的 P3 R2 E0 四 Agent 双构建、测试签名、复验、
+销毁与非秘密 evidence；该 E0 PASS 不关闭生产 R2
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -166,7 +167,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | --- | --- | --- | --- |
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
-| R2 Release provenance | Agent Package | 未满足 | 可复现构建证据；H2d0 外部签名输入输出；Artifact/Envelope/Host bundles/Release/Registry 的发布者、摘要和版本可追溯 |
+| R2 Release provenance | Agent Package | 未满足（P3 R2 E0 技术演练已完成） | 已有四 Agent 双构建、测试签名与十类输出可复验证据；仍需生产 Publisher authority、受控生产发布流水线及与 R3/R6 联动的生产证据 |
 | R3 分发服务 | Agent Package | 未满足 | 固定 HTTPS origin；不可变 Artifact；bounded metadata；先上传内容、后原子发布 Registry；失败不产生半发布版本 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
@@ -483,7 +484,8 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   三个首方 source 均从原冻结 commit 建临时 detached worktree，避免其他产品提交
   进入 Agent Artifact；
 - executor 与候选 commit 分开冻结和记录；它不能修改候选定义，也不能接触私钥；
-- 定向测试、Package 回归、fmt、Clippy 和 Node syntax 已通过，P3 key 尚未生成；
+- 该检查点的定向测试、Package 回归、fmt、Clippy 和 Node syntax 已通过；当时
+  P3 key 尚未生成；
 - Kimi 修复复核因账户周期额度 403 暂停；用户明确决定在其恢复前停止调用 Kimi，
   临时改用主 Agent 的完整 diff、负向测试、执行前后证据加强复核，恢复后再启用
   Kimi 交叉门禁；
@@ -496,3 +498,13 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 第二次执行用 bounded diagnostic 定位到 runner 的 Build argv 与真实 Clap 合约
   不一致；在 `generate` 前再次 fail-close 并完整清理。现改用
   `--definition/--source` 并新增纯参数合约测试，Node 更新为 27/27。
+- 第三次执行在冻结 executor `5d97f0b...` 后通过：四 Agent 均完成 A/B 双构建，
+  十类输出 10/10 逐字节一致；全窗口只生成 1 个临时测试 Publisher，完成 8 次
+  签名和复验后销毁；
+- 两个 build root、四个临时 worktree 与完整 boundary 已移除，Trust 恢复为空；
+  receipt validator、Node 27/27、秘密/路径扫描和生产常量复验通过；
+- 证据见
+  [`../operations/tabletops/2026-07-28-p3-release-provenance-e0.md`](../operations/tabletops/2026-07-28-p3-release-provenance-e0.md)；
+- 本轮只关闭 P3 R2 E0 技术演练，生产 R2 仍未满足。下一步按序评估 P4 R3 E1，
+  但任何隔离 origin、对象存储、Registry、staging 凭据或外部资源必须另行批准；
+  P4-P8 继续关闭。
