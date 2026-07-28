@@ -248,14 +248,21 @@ async function assertCleanRepository(root, expectedCommit, label) {
   return resolved;
 }
 
-async function assertSourceRepository(root, expectedCommit, label) {
+async function assertSourceRepository(
+  root,
+  expectedCommit,
+  label,
+  allowDirtyRoot = false,
+) {
   const resolved = await realpath(root);
   const status = git(
     ['status', '--porcelain=v1', '--untracked-files=all'],
     resolved,
     `${label} clean-tree inspection`,
   );
-  if (status !== '') throw new Error(`${label} source tree is dirty`);
+  if (status !== '' && !allowDirtyRoot) {
+    throw new Error(`${label} source tree is dirty`);
+  }
   git(
     ['cat-file', '-e', `${expectedCommit}^{commit}`],
     resolved,
@@ -704,19 +711,22 @@ async function runRehearsal(options) {
   await assertRepositoryBoundary(options);
   const sourceRepositories = {
     deploy: await assertSourceRepository(
-      options.deploySource,
-      SOURCE_COMMITS.deploy,
-      'Deploy source repository',
+    options.deploySource,
+    SOURCE_COMMITS.deploy,
+    'Deploy source repository',
+    options.retainBoundary === true,
     ),
     job: await assertSourceRepository(
-      options.jobSource,
-      SOURCE_COMMITS.job,
-      'Job source repository',
+    options.jobSource,
+    SOURCE_COMMITS.job,
+    'Job source repository',
+    options.retainBoundary === true,
     ),
     lecturecast: await assertSourceRepository(
-      options.lecturecastSource,
-      SOURCE_COMMITS.lecturecast,
-      'LectureCast source repository',
+    options.lecturecastSource,
+    SOURCE_COMMITS.lecturecast,
+    'LectureCast source repository',
+    options.retainBoundary === true,
     ),
   };
 
@@ -1234,6 +1244,7 @@ if (isMainModule()) {
 export {
   CANDIDATE_COMMIT,
   OUTPUT_CLASSES,
+  assertSourceRepository,
   packageBuildArguments,
   parseArguments,
   runRehearsal,

@@ -4911,3 +4911,31 @@ Publisher、Root、Release Set 或上传对象
 - 下一步先冻结推送本执行器，再运行耗时离线双构建；成功后生成临时 Root、
   组装/复验 Trust 与 Registry 并上传；
 - 生产常量、P5-P8、Provider 与 credits 继续关闭。
+
+### 循环 73：P4 R3 E1 冻结源码与用户脏工作区隔离
+
+状态：首次 E1 双构建在 key/boundary 生成前因 Deploy 源仓库 dirty 而 fail-close；
+detached frozen-commit 隔离修复待冻结后重试
+
+实际边界：
+
+- `agentmesh-deploy` 当前含用户已有的 CreatorCut production 文件修改与未跟踪
+  evidence；这些改动不属于 P4，不清理、不暂存、不提交；
+- Job Agent 与 LectureCast 源仓库仍 clean；
+- 首次执行在 `assertSourceRepository` 阶段停止，未生成 Publisher、Release Set、
+  build target 或新上传对象。
+
+修复：
+
+1. P3 E0 默认行为不变，源仓库 dirty 仍拒绝；
+2. 仅在 `retainBoundary=true` 的 P4 E1 路径，允许源仓库工作目录存在未提交改动；
+3. 实际输入仍由 `git worktree add --detach <精确冻结 commit>` 创建；
+4. 每个 detached worktree 随后必须通过 HEAD 精确 commit 和 porcelain clean
+   复验，用户工作区内容不会进入 Package；
+5. worktree 仍在成功/失败后移除，用户工作树不被改写。
+
+计划复盘：
+
+- 不降低 candidate、executor、Cargo.lock、Package 输出或签名约束；
+- 下一步冻结推送修复后重试同一 E1 双构建，再进入 Root/Trust/上传；
+- 原产品顺序与生产边界不变。

@@ -15,6 +15,7 @@ Cycle 69 已定位非特权 Origin 父目录不可穿越并固化最小权限修
 Cycle 70 已为瞬时 SSH transport 与本机 TUN 下的 HTTPS health 固化有界适配；
 Cycle 71 已通过隔离 Spaces-backed Origin、Caddy TLS 与公网 HTTPS health；
 Cycle 72 已完成 opt-in E1 可留存四 Agent 双构建执行器；
+Cycle 73 已隔离冻结源码 worktree 与用户现有 dirty 工作区；
 生产 R1-R6 仍未关闭，尚未完成 E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -964,3 +965,13 @@ live state 已记录 deployed/executor/Caddy-managed TLS；公网 health 返回�
 
 本轮未生成 E1 key、Release Set 或上传对象。下一步冻结执行器后运行双构建，再
 进入 Root/Trust/Registry；P4/R3/P5-P8 状态不变。
+
+## 27. Cycle 73 P4 R3 E1 源码工作区隔离检查点
+
+首次 E1 build 在 key/boundary 生成前因 Deploy 源仓库含用户 CreatorCut 未提交
+改动而 fail-close。该工作区不属于 P4，未被清理、暂存或提交。P3 E0 默认继续
+要求源根目录 clean；仅 E1 retain 路径允许根目录 dirty，但实际输入必须由精确
+冻结 commit 创建 detached worktree，并重新通过 commit/clean 复验。
+
+本轮未生成 key、Release Set 或 upload。下一步冻结修复后重试双构建；
+P4/R3/P5-P8 状态不变。

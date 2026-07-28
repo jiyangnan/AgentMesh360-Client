@@ -646,3 +646,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 只有完整成功才在 E1 临时边界保留单一 Publisher 与 A 组 Release，失败即销毁；
 - Release URL 绑定已部署的 DNS-only/Caddy HTTPS Origin；
 - 本轮只完成执行器，未生成 key/Release Set 或上传；下一步冻结后执行双构建。
+
+## 32. 循环 73 P4 R3 E1 源码工作区隔离检查点
+
+- 首次 build 在 key 生成前因 Deploy 源仓库含用户 CreatorCut 改动而停止；
+- 不清理、不暂存、不提交用户改动；
+- P3 E0 继续要求源根目录 clean；
+- 仅 E1 retain 路径从精确冻结 commit 创建 detached worktree，并对 worktree
+  再做 commit/clean 复验；
+- 未生成 key/Release/upload；下一步冻结隔离修复后重试双构建。
