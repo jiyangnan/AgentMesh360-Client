@@ -1139,7 +1139,9 @@ Cycle 90 新增 P5 专用隔离客户端 runtime/assembler。普通桌面启动�
 Keychain 或 Provider 能力，异常删除部分装配。当前尚未找到专用测试账号的客户端
 refresh-token/本地凭据，管理端登录不能替代专用账号，因此实时订阅门继续关闭，
 云资源仍为 0。定向 Node 22/22、Desktop 105/105（3 项真实 Host 条件跳过）、
-全仓库 Node 191/191。
+全仓库 Node 191/191。冻结 executor `308ee14...` 上的真实隔离装配已 PASS，
+boundary/state/userData 均为 `0700`、marker 为 `0600`，且网络、Keychain、
+Provider、Package mutation 和云资源均为 0；脱敏 assembly receipt 已入库。
 
 定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
 未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读

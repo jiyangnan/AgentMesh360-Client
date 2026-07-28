@@ -5423,7 +5423,7 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 
 ### 循环 90：P5 E1 隔离客户端装配
 
-状态：代码与定向门禁完成；等待 commit 冻结推送后创建本轮唯一隔离 boundary
+状态：代码、冻结 commit 与本轮唯一真实隔离 boundary 装配完成
 
 已经实现：
 
@@ -5454,5 +5454,11 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 - 本轮外部请求、Provider 请求、credits、Keychain 写入、Package mutation、云资源
   和费用仍为 0；
 - 下一步先全量回归、提交并推送，再执行一次真实 boundary 装配；
-- 装配后构建隔离真实 Host 并启动本地客户端登录页；实时订阅仍需专用内部测试账号
-  登录态，未取得前不创建 E1 云资源，也不使用管理员个人账号替代。
+- executor `308ee14...` 与 `origin/main` 一致且工作区干净后真实装配 PASS：
+  boundary/state/userData 均为 `0700`、marker 为 `0600`，网络、Keychain 和 Package
+  mutation 保持 0；
+- 非秘密装配 receipt 已固化为
+  `docs/operations/tabletops/2026-07-29-p5-isolated-client-assembly.json`；
+- 下一步只在该 boundary 内构建隔离真实 Host，补跑 3 个真实 Host 契约并启动本地
+  客户端登录页；实时订阅仍需专用内部测试账号登录态，未取得前不创建 E1 云资源，
+  也不使用管理员个人账号替代。

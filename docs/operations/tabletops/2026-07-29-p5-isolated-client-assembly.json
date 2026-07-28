@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "assemblyId": "package_canary_e1_isolated_client_20260729_0001",
+  "authorizationId": "package_canary_e1_20260729_0001",
+  "boundaryId": "p5-e1-isolated-client-01",
+  "assembledAt": "2026-07-28T18:16:29Z",
+  "executorCommit": "308ee14d86b9b069b16a4d396fadb92f6461922a",
+  "directoryCount": 3,
+  "directoryMode": "0700",
+  "markerMode": "0600",
+  "productionAuthorityGranted": false,
+  "normalStateReadable": false,
+  "keychainWritePerformed": false,
+  "networkRequestPerformed": false,
+  "providerInferenceRequestsUsed": 0,
+  "agentMeshCreditsUsed": 0,
+  "packageMutationPerformed": false,
+  "infrastructureResourcesCreated": 0,
+  "retainedPaths": false,
+  "retainedCredentials": false,
+  "gate": {
+    "isolatedClientAssemblyPassed": true,
+    "liveSubscriptionPassed": false,
+    "cloudAssemblyAllowed": false,
+    "nextRequiredGate": "real_host_and_dedicated_account_login"
+  }
+}
