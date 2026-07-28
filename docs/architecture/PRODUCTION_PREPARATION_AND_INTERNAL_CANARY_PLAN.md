@@ -1020,3 +1020,14 @@ hostname、URL、IP、bucket、token、key 或 signature。
 
 定向 9/9 和 diff check 通过。下一步只在冻结 commit 上执行真实 staging 14/14；
 未全通过前不写 E1 PASS，不进入 P5。
+
+## 32. Cycle 78 P4 R3 E1 fault-token 运行态一致性检查点
+
+真实矩阵在 timeout 场景收到 404 后立即中止，未生成 PASS receipt。只读比对证明
+live state、本地 config 与远端磁盘 config 一致；根因是幂等部署覆盖新 token 后
+仅执行 `systemctl enable --now`，已 active 的 Origin 没有 restart，内存仍持有
+旧 token。
+
+修复改为 daemon-reload、enable、无条件 restart Origin，并在正常 HTTPS health
+之后增加 direct-to-approved-IP 的受保护 fault probe；token 仅经 curl stdin，
+不进 argv。定向 20/20。下一步冻结后幂等重部署，再从头重跑 14/14；P5-P8 关闭。

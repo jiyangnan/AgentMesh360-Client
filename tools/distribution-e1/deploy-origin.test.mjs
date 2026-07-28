@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   caddyfile,
+  checkFaultToken,
   checkHttpsHealth,
   isFakeIpAddress,
   isTransientSshFailure,
@@ -110,6 +111,48 @@ test('Caddy and systemd configs expose only the local hardened service', () => {
       '/etc/agentmesh360-e1',
     ],
   ]);
+});
+
+test('fault token probe bypasses proxies and keeps the token off argv', () => {
+  const hostname = 'packages-e1-1234abcd.agentmesh360.com';
+  const token = 'x'.repeat(43);
+  let invocation;
+  const passed = checkFaultToken(
+    hostname,
+    '203.0.113.10',
+    token,
+    (command, args, options) => {
+      invocation = { command, args, input: options.input };
+      return {
+        status: 0,
+        stdout: [
+          'HTTP/1.1 200 OK',
+          'content-type: text/plain',
+          '',
+          '{}',
+        ].join('\r\n'),
+      };
+    },
+  );
+  assert.equal(passed, true);
+  assert.equal(invocation.command, 'curl');
+  assert.deepEqual(invocation.args, ['--config', '-']);
+  assert.ok(!invocation.args.join(' ').includes(token));
+  assert.match(invocation.input, /noproxy = "\*"/u);
+  assert.match(invocation.input, /resolve = "/u);
+  assert.ok(invocation.input.includes(token));
+  assert.equal(
+    checkFaultToken(hostname, '203.0.113.10', token, () => ({
+      status: 0,
+      stdout: [
+        'HTTP/1.1 404 Not Found',
+        'content-type: application/json',
+        '',
+        '',
+      ].join('\r\n'),
+    })),
+    false,
+  );
 });
 
 test('validates the exact Droplet, DNS-only hostname, and executor commit', () => {

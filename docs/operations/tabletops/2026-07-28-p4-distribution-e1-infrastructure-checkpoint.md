@@ -180,3 +180,13 @@ Root/Publisher、Trust-first/Registry-last 和 14 项故障矩阵；生产 R3 �
 下一步只运行冻结后的 14 场景故障矩阵。全部通过后，严格先撤 Registry，再删除
 其他对象、临时 Root/Publisher、DNS、Droplet、limited key 和 bucket；未清场前
 不写最终 E1 PASS。
+
+## 7. fault-token 运行态一致性恢复
+
+首次真实故障矩阵在 timeout 场景收到 404 后 fail-close，没有生成通过 receipt。
+只读哈希比对确认 live state、本地 config 和远端磁盘 config 一致；常驻 Origin
+进程未在幂等配置更新后 restart，仍使用旧 token。
+
+部署器现固定 daemon-reload、enable、无条件 restart Origin，并在正常 health
+之后用 curl stdin token 直连批准 IP 执行受保护 fault probe。修复冻结后只重部署
+同一实例，不增加资源或权限；probe 通过后完整矩阵必须从第 1 项重新执行。

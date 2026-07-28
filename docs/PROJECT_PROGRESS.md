@@ -5048,3 +5048,35 @@ detached frozen-commit 隔离修复待冻结后重试
 - 下一步冻结本执行器后在当前 E1 staging 跑 14/14；任一项失败先修复并复验，
   不把部分结果写成 PASS；
 - 全部通过后立即进入既定 withdrawal/cleanup，不延伸到 P5。
+
+### 循环 78：P4 R3 E1 Origin fault-token 运行态一致性修复
+
+状态：真实矩阵在 timeout 场景 fail-close；已定位配置文件与常驻进程 token 漂移，
+修复及回归测试完成，等待冻结后幂等重部署再重跑完整矩阵
+
+实际现象与根因：
+
+- 第 1 项 not-found 返回预期 404，但第 2 项 timeout 在约 6 秒返回 404，执行器
+  立即中止且没有生成 PASS receipt；
+- 独立复测 wrong-content-type 同样为 404，说明受保护 fault route 没有接受当前
+  state token；
+- 本机 live state、本地 origin config 与远端磁盘 config 逐字节哈希一致；
+- 幂等部署每次生成新 token 并覆盖配置，但原命令使用
+  `systemctl enable --now`；服务已 active 时不会 restart，常驻 Node 进程继续
+  使用上一次内存 token。
+
+修复与复核：
+
+1. unit 写入并 daemon-reload 后，先 `systemctl enable`，再无条件显式 restart
+   Origin；Caddy restart 和两个 active 检查不变；
+2. HTTPS health 通过后新增 direct-to-approved-IP fault probe，绕过本机代理/TUN；
+3. token 仍只通过 curl stdin config，不进入 argv、日志或状态之外的新证据；
+4. probe 必须收到 200、`text/plain` 与精确 body，旧进程/新配置漂移会 fail-close；
+5. 定向测试 20/20 和 diff check 通过。
+
+计划复盘与下一轮：
+
+- 这是当前 P4 fault harness 的运行态一致性修复，不改变产品、资源或权限范围；
+- 下一步冻结推送后幂等重部署同一 Origin，要求 health 与受保护 fault probe 同时
+  通过，再从第 1 项重新执行完整 14 场景；
+- 不接受从第 3 项续跑，也不进入 P5。

@@ -476,6 +476,53 @@ function checkHttpsHealth(hostname, curlSpawn = spawnSync) {
   );
 }
 
+function checkFaultToken(
+  hostname,
+  ipAddress,
+  faultToken,
+  curlSpawn = spawnSync,
+) {
+  if (
+    !/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(hostname)
+    || !/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(ipAddress)
+    || !/^[A-Za-z0-9_-]{43}$/u.test(faultToken)
+  ) {
+    throw new Error('staging fault probe boundary is invalid');
+  }
+  const config = [
+    'silent',
+    'show-error',
+    'max-time = 15',
+    'max-redirs = 0',
+    'proto = "=https"',
+    'noproxy = "*"',
+    `resolve = "${hostname}:443:${ipAddress}"`,
+    'include',
+    `url = "https://${hostname}/_e1/fault/wrong_content_type/registry"`,
+    `header = "x-agentmesh360-e1-fault-token: ${faultToken}"`,
+    '',
+  ].join('\n');
+  const result = curlSpawn('curl', ['--config', '-'], {
+    encoding: 'utf8',
+    input: config,
+    maxBuffer: 64 * 1024,
+    timeout: 20_000,
+  });
+  if (result.error || result.status !== 0) return false;
+  const marker = '\r\n\r\n';
+  const headerEnd = result.stdout.indexOf(marker);
+  if (headerEnd < 0) return false;
+  const headers = result.stdout.slice(0, headerEnd);
+  const body = result.stdout.slice(headerEnd + marker.length);
+  return (
+    /^HTTP\/\S+\s+200\b/u.test(headers)
+    && /\r\ncontent-type:\s*text\/plain(?:\s*;[^\r\n]*)?\r\n/iu.test(
+      `\r\n${headers}\r\n`,
+    )
+    && body === '{}'
+  );
+}
+
 async function waitForHttps(
   hostname,
   {
@@ -687,8 +734,14 @@ async function deployOrigin(boundary, credentialPath, executorCommit) {
   ssh(
     resolved,
     ipAddress,
-    ['systemctl', 'enable', '--now', 'agentmesh360-e1-origin.service'],
+    ['systemctl', 'enable', 'agentmesh360-e1-origin.service'],
     'origin service enable',
+  );
+  ssh(
+    resolved,
+    ipAddress,
+    ['systemctl', 'restart', 'agentmesh360-e1-origin.service'],
+    'origin service restart',
   );
   ssh(
     resolved,
@@ -709,6 +762,13 @@ async function deployOrigin(boundary, credentialPath, executorCommit) {
     'Caddy active check',
   );
   await waitForHttps(liveState.dns.hostname);
+  if (!checkFaultToken(
+    liveState.dns.hostname,
+    ipAddress,
+    faultToken,
+  )) {
+    throw new Error('staging fault token probe failed');
+  }
 
   const nextState = {
     ...liveState,
@@ -787,6 +847,7 @@ if (isMainModule()) {
 
 export {
   caddyfile,
+  checkFaultToken,
   checkHttpsHealth,
   isFakeIpAddress,
   isTransientSshFailure,

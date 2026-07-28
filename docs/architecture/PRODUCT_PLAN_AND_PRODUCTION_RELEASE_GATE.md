@@ -691,3 +691,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - token 仅经 curl stdin，HTTPS/no-redirect/size/timeout/retry 有界；
 - receipt 只留非秘密 evidence code 与有界请求计数；
 - 定向 9/9；下一步冻结后执行真实 staging 14/14，未通过不进入清场结论或 P5。
+
+## 37. 循环 78 P4 R3 E1 fault-token 运行态一致性检查点
+
+- 首次真实矩阵在 timeout 场景 fail-close，未生成 PASS receipt；
+- state、本地 config、远端磁盘 config 一致，漂移发生在未重启的常驻进程内；
+- 幂等 deploy 由 `enable --now` 改为 enable 后无条件 restart Origin；
+- HTTPS health 后新增绕过代理、直连批准 IP 的受保护 fault probe；
+- token 仍只经 curl stdin；定向 20/20；
+- 下一步冻结后重部署并从头重跑 14/14，P5-P8 继续关闭。
