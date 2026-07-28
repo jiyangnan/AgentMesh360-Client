@@ -107,6 +107,17 @@ UDP/53 A 查询改写为 `198.18.0.0/15`，导致预检看不到真实权威答�
 hostname、IP、endpoint URL 或凭据。远端仍未收到 Reader key，Caddy/origin
 仍未安装。
 
+随后部署器首次 SSH 连接已接受临时公钥，但 DigitalOcean Ubuntu 镜像要求 root
+首次登录修改密码，非交互命令在 cloud-init 检查前被 PAM 拒绝。没有传输 Reader
+key、origin 文件或安装 Caddy。该空载 Droplet 已立即销毁并通过 API 复验，
+旧临时 SSH 私钥已覆盖后删除；当前 active E1 Droplet 为 0，staging DNS 暂时
+指向已销毁地址。
+
+恢复实现禁用 root SSH，改用密码锁定、仅公钥的 `agentmesh-operator`；所有远端
+特权命令统一显式执行 `sudo --`，SCP 只写 `/tmp`。新增一次性的 `record-dns`
+动作，从批准 Droplet 名称推导 hostname，避免替代实例状态被手工拼接。重建必须
+在 active Droplet 为 0 后开始，始终满足最多一个 E1 Droplet。
+
 ## 5. 验证与下一步
 
 - Spaces SigV4/client：6/6
@@ -117,6 +128,9 @@ hostname、IP、endpoint URL 或凭据。远端仍未收到 Reader key，Caddy/o
 - E1 联合定向：40/40
 - 实际 least-privilege S3 probe：PASS，probe object removed
 
-下一步先冻结并推送 Fake-IP DNS 修复 commit，再向已创建的唯一 Droplet 部署
-Caddy TLS 和 Spaces-backed origin。Release Set、非生产 Root/Publisher、Registry
+operator/DNS 状态恢复定向测试与 origin deploy 合计 18/18。
+
+下一步先冻结并推送 operator 修复 commit，再重建唯一替代 Droplet、更新同一
+staging DNS 并部署 Caddy TLS 和 Spaces-backed origin。Release Set、非生产
+Root/Publisher、Registry
 与故障矩阵必须继续按顺序执行，不能跳到 P5。

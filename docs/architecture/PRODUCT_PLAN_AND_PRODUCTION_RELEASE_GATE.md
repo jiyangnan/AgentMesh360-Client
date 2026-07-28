@@ -592,3 +592,14 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 实际 staging 精确复验通过；origin deploy boundary 11/11、E1 联合 40/40；
 - R3 状态不变。下一步只冻结本修复并完成唯一隔离 Origin 的 Caddy/TLS/HTTPS
   health，再按序进入四 Agent Release Set，不启动 P5-P8。
+
+## 26. 循环 67 P4 R3 E1 SSH operator 恢复检查点
+
+- DNS 通过后首次 SSH 已接受临时 key，但镜像要求 root 首次改密，所有安装前
+  fail-close；
+- 无 Reader 传输、Caddy 安装或 origin 状态；空载 Droplet 与 SSH 私钥已销毁；
+- cloud-init 改为禁用 root SSH、创建密码锁定且仅公钥的独立 operator，远端
+  特权命令统一显式 `sudo --`；
+- 新增从批准 Droplet 名称推导、仅能记录一次的 DNS cleanup state；
+- 当前 active E1 Droplet 为 0；替代实例只能在本修复冻结后创建，仍保持最多一个；
+- R3/P5-P8 状态不变。下一步重建唯一 Droplet、更新同一 DNS、完成 TLS/health。

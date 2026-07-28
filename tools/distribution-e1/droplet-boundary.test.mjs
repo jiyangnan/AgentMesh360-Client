@@ -14,6 +14,7 @@ import {
   cloudInit,
   parseArguments,
   prepareBoundary,
+  recordDns,
   sanitizedDiagnostic,
   validateDropletObject,
 } from './droplet-boundary.mjs';
@@ -42,7 +43,11 @@ test('cloud-init pins SSH-only boundary, required packages, and firewall', () =>
     `ssh-ed25519 ${Buffer.alloc(32).toString('base64')} agentmesh360-p4-e1`,
   );
   assert.match(value, /ssh_pwauth: false/u);
-  assert.match(value, /disable_root: false/u);
+  assert.match(value, /disable_root: true/u);
+  assert.match(value, /name: agentmesh-operator/u);
+  assert.match(value, /lock_passwd: true/u);
+  assert.match(value, /sudo: "ALL=\(ALL\) NOPASSWD:ALL"/u);
+  assert.doesNotMatch(value, /name: root/u);
   assert.match(value, /agentmesh360-p4-e1/u);
   assert.match(value, /- nodejs/u);
   assert.match(value, /\[ufw, allow, 22\/tcp\]/u);
@@ -149,6 +154,14 @@ test('validates only the approved active Droplet shape', () => {
 test('parses strict prepare, create, and destroy commands', () => {
   assert.deepEqual(
     parseArguments([
+      'record-dns',
+      '--boundary',
+      '/private/tmp/agentmesh360-distribution-e1-current',
+    ]).action,
+    'record-dns',
+  );
+  assert.deepEqual(
+    parseArguments([
       'prepare',
       '--boundary',
       '/private/tmp/agentmesh360-distribution-e1-current',
@@ -183,6 +196,44 @@ test('parses strict prepare, create, and destroy commands', () => {
       '--executor-commit',
       'a'.repeat(40),
     ]));
+});
+
+test('records only the derived DNS-only staging hostname once', async () => {
+  const boundary = await mkdtemp(
+    '/private/tmp/agentmesh360-distribution-e1-record-dns-',
+  );
+  const liveStatePath = path.join(boundary, 'live-state.json');
+  try {
+    await chmod(boundary, 0o700);
+    await writeFile(liveStatePath, JSON.stringify({
+      schemaVersion: 1,
+      authorizationId: 'distribution_service_e1_20260728_0001',
+      droplet: {
+        name: 'am360-p4-e1-1234abcd',
+        status: 'active',
+      },
+    }), {
+      mode: 0o600,
+      flag: 'wx',
+    });
+    const result = await recordDns(boundary);
+    assert.deepEqual(
+      {
+        provider: result.dns.provider,
+        hostname: result.dns.hostname,
+        proxied: result.dns.proxied,
+      },
+      {
+        provider: 'cloudflare',
+        hostname: 'packages-e1-1234abcd.agentmesh360.com',
+        proxied: false,
+      },
+    );
+    assert.equal((await lstat(liveStatePath)).mode & 0o777, 0o600);
+    await assert.rejects(recordDns(boundary), /cannot accept/u);
+  } finally {
+    await rm(boundary, { recursive: true, force: true });
+  }
 });
 
 test('sanitizes paths, IPs, and credential IDs from command diagnostics', () => {

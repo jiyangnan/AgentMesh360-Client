@@ -28,6 +28,7 @@ const DROPLET_TAG = 'agentmesh360-p4-e1';
 const EXPECTED_REGION = 'sgp1';
 const EXPECTED_SIZE = 's-1vcpu-1gb';
 const EXPECTED_IMAGE = 'ubuntu-24-04-x64';
+const SSH_OPERATOR = 'agentmesh-operator';
 const MAX_DOCTL_OUTPUT = 4 * 1024 * 1024;
 
 function typedSha256(bytes) {
@@ -135,10 +136,16 @@ function cloudInit(publicKey) {
     throw new Error('ephemeral SSH public key is invalid');
   }
   return `#cloud-config
-disable_root: false
+disable_root: true
 ssh_pwauth: false
 users:
-  - name: root
+  - name: ${SSH_OPERATOR}
+    gecos: AgentMesh360 E1 operator
+    groups:
+      - sudo
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    shell: /bin/bash
     ssh_authorized_keys:
       - ${publicKey}
 package_update: true
@@ -456,6 +463,40 @@ async function createDroplet(boundary, executorCommit) {
   return liveState;
 }
 
+async function recordDns(boundary) {
+  const resolved = await assertExistingBoundary(boundary);
+  const liveStatePath = path.join(resolved, 'live-state.json');
+  const liveState = await readMode0600Json(
+    liveStatePath,
+    'live Droplet state',
+  );
+  const suffix = liveState?.droplet?.name
+    ?.match(/^am360-p4-e1-([0-9a-f]{8})$/u)?.[1];
+  if (
+    liveState?.authorizationId !== AUTHORIZATION_ID
+    || liveState?.droplet?.status !== 'active'
+    || !suffix
+    || liveState.dns != null
+  ) {
+    throw new Error('live Droplet state cannot accept staging DNS');
+  }
+  const nextState = {
+    ...liveState,
+    dns: {
+      provider: 'cloudflare',
+      hostname: `packages-e1-${suffix}.agentmesh360.com`,
+      proxied: false,
+      recordedAt: new Date().toISOString(),
+    },
+  };
+  await writeFile(liveStatePath, JSON.stringify(nextState), {
+    mode: 0o600,
+    flag: 'w',
+  });
+  await chmod(liveStatePath, 0o600);
+  return nextState;
+}
+
 function parseDoctlJsonList(document, label) {
   let parsed;
   try {
@@ -591,6 +632,9 @@ function parseArguments(argv) {
       executorCommit: values.get('--executor-commit'),
     };
   }
+  if (action === 'record-dns' && values.size === 1) {
+    return { action, boundary };
+  }
   if (action === 'destroy' && values.size === 1) {
     return { action, boundary };
   }
@@ -615,7 +659,9 @@ if (isMainModule()) {
       ? prepareBoundary(options.boundary, options.credentials)
       : options.action === 'create'
         ? createDroplet(options.boundary, options.executorCommit)
-        : destroyDroplet(options.boundary);
+        : options.action === 'record-dns'
+          ? recordDns(options.boundary)
+          : destroyDroplet(options.boundary);
     task
       .then((result) => {
         if (options.action === 'prepare') {
@@ -626,6 +672,8 @@ if (isMainModule()) {
           console.log(
             'E1 Droplet active: SGP1, 1 GiB, no backups or monitoring',
           );
+        } else if (options.action === 'record-dns') {
+          console.log('E1 DNS-only staging boundary recorded');
         } else if (
           result.destroyed
           && result.ephemeralSshPrivateMaterialDestroyed
@@ -644,5 +692,6 @@ export {
   cloudInit,
   parseArguments,
   prepareBoundary,
+  recordDns,
   sanitizedDiagnostic,
 };

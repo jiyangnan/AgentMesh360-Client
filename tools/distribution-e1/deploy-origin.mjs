@@ -24,6 +24,7 @@ const AUTHORIZATION_ID = 'distribution_service_e1_20260728_0001';
 const DROPLET_EXECUTOR_COMMIT =
   '028fc9fd2b6892f980c93e29d2af87f98433a7bc';
 const BOUNDARY_PREFIX = 'agentmesh360-distribution-e1-';
+const SSH_OPERATOR = 'agentmesh-operator';
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 function sanitizedDiagnostic(stderr) {
@@ -211,14 +212,14 @@ function sshBase(boundary, ipAddress) {
     `UserKnownHostsFile=${path.join(boundary, 'known_hosts')}`,
     '-o',
     'ConnectTimeout=10',
-    `root@${ipAddress}`,
+    `${SSH_OPERATOR}@${ipAddress}`,
   ];
 }
 
 function ssh(boundary, ipAddress, command, label, timeout) {
   return run(
     'ssh',
-    [...sshBase(boundary, ipAddress), '--', ...command],
+    [...sshBase(boundary, ipAddress), '--', 'sudo', '--', ...command],
     label,
     { timeout },
   );
@@ -240,7 +241,7 @@ function scp(boundary, ipAddress, source, destination, label) {
       '-o',
       'ConnectTimeout=10',
       source,
-      `root@${ipAddress}:${destination}`,
+      `${SSH_OPERATOR}@${ipAddress}:${destination}`,
     ],
     label,
   );

@@ -4736,3 +4736,38 @@ Release Set、上传和故障注入仍未获批、未执行
 - 本轮仅修复 DNS 安全预检，不关闭 TLS/origin、E1 或生产 R3；
 - 下一步先冻结推送本修复 commit，再对唯一隔离 Droplet 执行 Caddy/TLS/origin
   部署和 HTTPS health；通过后按原计划进入四 Agent Release Set，不跳到 P5。
+
+### 循环 67：P4 R3 E1 SSH operator 恢复边界
+
+状态：不可非交互登录的空载 Droplet 已销毁，临时 SSH 私钥已销毁；独立 operator
+修复已通过本地测试，等待冻结 commit 后重建唯一替代 Droplet
+
+实际偏差与处置：
+
+- DNS 复验通过后，部署器首次接触 Droplet；临时 SSH key 被接受，但 DigitalOcean
+  Ubuntu 镜像要求 `root` 首次登录修改密码，非交互命令在 `cloud-init` 检查前
+  被 PAM 拒绝；
+- 没有安装 Caddy、没有传输 Reader key 或 origin 文件，也没有产生远端应用状态；
+- 不关闭 PAM、不设置 root 密码、不进入 recovery console；立即销毁该空载
+  Droplet，API 复验不再存在，旧临时 SSH 私钥覆盖后删除；
+- staging DNS 暂时仍存在但指向已销毁 IP，不承载任何服务；两个 bucket 和两组
+  limited key 保持原边界。
+
+已经实现：
+
+1. cloud-init 禁止 root SSH，创建 `agentmesh-operator` 独立用户；
+2. operator 密码锁定、只允许临时 Ed25519 公钥登录，只加入 sudo 组并为本次
+   自动化提供明确 NOPASSWD sudo；
+3. 远端命令统一通过 `sudo --` 执行，SCP 只先写 operator 可写的 `/tmp`，再由
+   受控安装命令设置最终 owner/mode；
+4. 新增 `record-dns` 状态动作，从批准 Droplet 名称推导唯一 staging hostname，
+   只能记录一次且保持 mode `0600`；
+5. 重建顺序固定为 active Droplet=0 后 prepare/create，再更新同一 staging
+   DNS，不允许同时存在两个 E1 Droplet。
+
+自主验证与计划复盘：
+
+- Droplet/operator 与 origin deploy 定向 18/18；
+- 本轮属于 P4 隔离基础设施恢复，不扩大资源数、权限、预算或执行窗口；
+- 下一步冻结推送该修复，重建唯一 1 GiB Droplet、更新同一 DNS 并复验
+  Caddy/TLS/HTTPS health；成功后继续原定 Release Set，不启动 P5。

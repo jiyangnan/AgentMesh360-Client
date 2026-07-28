@@ -9,6 +9,7 @@ Cycle 63 已固定精确 E1 执行窗口、预算、资源、Trust、Release Set
 Cycle 64 已完成两个隔离 Spaces bucket、最小权限 Publisher/Reader 与 S3 探针；
 Cycle 65 已创建唯一 Droplet 与 DNS-only 记录并完成 origin executor 本地验证；
 Cycle 66 已修复本机 TUN/Fake-IP 导致的 DNS 预检误判并通过 HTTPS DNS 精确复验；
+Cycle 67 已销毁 root 首次改密阻断的空载 Droplet并完成独立 SSH operator 修复；
 生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -894,3 +895,16 @@ HTTPS DNS、JSON、状态、hostname 或 IP 任一异常仍 fail-close。实际 
 
 本轮不关闭 P4/R3。下一步先冻结推送该修复，再完成唯一隔离 Droplet 上的
 Caddy/TLS/HTTPS origin；成功后才进入 Release Set/Trust/Registry/故障矩阵。
+
+## 21. Cycle 67 P4 R3 E1 SSH operator 恢复检查点
+
+DNS 复验通过后，镜像接受临时 SSH key，但 root 首次改密策略阻止非交互命令；
+部署在 cloud-init 检查前中止，Reader key、origin 文件和 Caddy 均未进入远端。
+空载 Droplet 已销毁，API 复验资源不存在，旧临时 SSH 私钥已销毁。
+
+cloud-init 现禁用 root SSH，改建密码锁定、仅临时公钥的独立 operator；所有远端
+特权命令显式通过 `sudo --`，SCP 只写 `/tmp`。一次性 DNS 状态动作从批准名称
+推导 hostname，替代实例只能在 active Droplet 为 0 后创建。
+
+本轮不关闭 P4/R3。下一步冻结该修复，重建唯一 1 GiB Droplet、更新同一 staging
+DNS 并完成 TLS/health；Release Set 与故障矩阵顺序不变，P5-P8 继续关闭。
