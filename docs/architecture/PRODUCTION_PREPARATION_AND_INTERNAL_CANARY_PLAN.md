@@ -1070,3 +1070,13 @@ Cloudflare E1 record absent；精确 E1 Droplet count=0 且 operator 私钥 abse
 
 含首台短命 Droplet的保守运行成本上界 `0.05 USD`，最终 invoice 尚未结算。
 下一步只销毁本机临时 credential/state/boundary，再做全量回归；P5-P8 关闭。
+
+## 37. Cycle 83 P4 R3 E1 本机 finalizer 检查点
+
+finalizer 绑定 clean executor、生产空常量、cloud/object/fault receipts 和精确
+7-entry `/private/tmp` inventory。两个 boundary 必须是 mode `0700` 直接子目录；
+regular files 通过 `O_NOFOLLOW` 随机覆盖、fsync、unlink，symlink/特殊文件/路径
+扩张均 fail-close。结束必须 E1 temp count=0。
+
+定向 2/2，实际 7/7 inventory 预检通过。下一步冻结后执行，再做完整回归；
+P5-P8 关闭。

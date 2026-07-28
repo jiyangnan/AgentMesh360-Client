@@ -739,3 +739,13 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 账户无其他 Spaces bucket，生产/其他 staging 未修改；
 - 保守运行成本上界 `0.05 USD`，final invoice 未结算；
 - 下一步只清本机 secret/state 并全量回归，P5-P8 关闭。
+
+## 42. 循环 83 P4 R3 E1 本机 finalizer 检查点
+
+- 绑定 clean executor、生产空常量和完整 cleanup/fault evidence；
+- `/private/tmp` 只接受精确 7 个 E1 entry；
+- 两个 boundary 必须 mode `0700`、direct child、non-symlink；
+- regular files 随机覆盖、fsync、unlink；
+- symlink、特殊文件、路径扩张全部 fail-close；
+- 结束要求 E1 temp count=0；定向 2/2、实际 inventory 7/7；
+- 下一步冻结后执行并全量回归，P5-P8 关闭。

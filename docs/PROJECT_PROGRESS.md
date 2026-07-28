@@ -5186,3 +5186,29 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
   credential、Origin token/state、publication/release/fault/cleanup temp state
   和两段 Droplet boundary；
 - 随后做全量回归、生产空 Trust/Registry、根 `target/`、GitHub main 同步复验。
+
+### 循环 83：P4 R3 E1 本机 secret/state 最终销毁器
+
+状态：本机 finalizer 完成实现和精确 inventory 预检；尚未执行本机不可逆销毁
+
+已经实现：
+
+1. 只接受 frozen/clean executor 和生产空 Trust/Registry 常量；
+2. 复验仓库 cloud cleanup evidence、mode `0600` object cleanup/publication/
+   release/fault/credential state；
+3. 要求 cloud evidence 明确 DNS absent、Droplet/key/billable bucket 为 0；
+4. 要求对象 35/35 absent、Registry-first、Root/Publisher/Release boundary
+   已销毁、fault matrix 14/14；
+5. `/private/tmp` 只允许精确 7 个 E1 entry，任何额外同前缀文件或遗留
+   release-provenance boundary 都 fail-close；
+6. 两个 Droplet boundary 必须是系统临时目录直接子目录、mode `0700`、非 symlink；
+7. 所有 regular file 使用 `O_NOFOLLOW` 随机覆盖、fsync、unlink；目录内遇到
+   symlink、特殊文件或超过 64 MiB 文件即停止；
+8. 完成后要求 E1 temp entry count=0；定向 2/2，实际 inventory 7/7 预检通过。
+
+计划复盘与下一轮：
+
+- 下一步冻结推送 finalizer 后执行一次本机销毁；
+- 执行结果只固化非秘密计数，不保留 URL、路径、key、token、IP、signature；
+- 随后完成 P4 全量测试、Rust consumer 定向测试、生产空常量、根 `target/`、
+  Git clean/main push 复验；P5 不在本轮范围。

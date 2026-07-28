@@ -236,3 +236,13 @@ E1 PASS。
 
 运行窗口不足 2.2 小时，含首台短命 Droplet 的保守成本上界为 `0.05 USD`；
 最终账单未结算。下一步只销毁本机临时 secret/state/boundary，再完成全量回归。
+
+## 12. 本机 finalizer 检查点
+
+finalizer 只接受 cloud/object/fault 完整 evidence 与精确 7-entry E1 临时
+inventory。两个 boundary 必须是 `/private/tmp` 直接 mode `0700` 目录；regular
+file 使用 `O_NOFOLLOW` 随机覆盖、fsync、unlink，任何 symlink、特殊文件或同前缀
+额外 entry 都停止。
+
+本节仍是执行前检查点。冻结后实际销毁必须证明剩余 E1 temp entry=0，再进入最终
+回归和 P4 结论。
