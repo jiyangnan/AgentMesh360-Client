@@ -612,3 +612,12 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - Cloudflare UI 与 HTTPS DNS 均精确匹配替代实例；
 - deploy runner 只接受替代 Droplet provenance，不接受已销毁实例；
 - R3 仍未满足。下一步只冻结当前 executor 并完成 Caddy/TLS/HTTPS health。
+
+## 28. 循环 69 P4 R3 E1 Origin 目录权限检查点
+
+- operator SSH、cloud-init、Caddy/文件安装通过，root 登录问题已关闭；
+- Reader 配置以 service user `0600` 进入隔离机，Publisher 保持本机；
+- origin 未激活是父目录仍为 cloud-init 的 `0700 root:root`，不是文件缺失；
+- 修复固定代码目录 `0755 root:root`、配置目录 `0750 root:agentmesh-e1`，配置
+  文件仍 `0600`，service user 无写权限；
+- HTTPS health/deployed state 尚未通过，R3 不变；下一步冻结修复并幂等重跑。

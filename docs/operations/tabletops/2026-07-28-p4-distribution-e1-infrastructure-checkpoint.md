@@ -136,6 +136,16 @@ Cycle 67 commit `be108f4` 推送后，已在 active E1 Droplet 为 0 的前提�
 Cloudflare HTTPS DNS 均精确匹配。新的 cleanup state 由 `record-dns` 写入并保持
 mode `0600`。当前部署器只接受替代 Droplet executor `be108f4`。
 
-下一步先冻结并推送当前 origin executor，再部署 Caddy TLS 和 Spaces-backed
-origin。Release Set、非生产 Root/Publisher、Registry
+首次在替代实例执行部署时，operator SSH、cloud-init、Caddy 安装、SCP 和最终文件
+安装均已通过；Reader 配置以 `0600 agentmesh-e1:agentmesh-e1` 写入，Publisher
+仍只在本机。origin 未激活的根因是 cloud-init 预先创建的 `/opt`、`/etc`
+AgentMesh 目录保持 `0700 root:root`，非特权 service user 无法穿过父目录。
+HTTPS health 未通过，live state 未声明 deployed。
+
+修复在 service user 创建后显式设置代码目录 `0755 root:root`、配置目录
+`0750 root:agentmesh-e1`；配置文件仍 `0600`，代码/配置目录均不允许 service
+user 写入，systemd hardening 不变。
+
+下一步先冻结并推送目录权限修复 executor，再幂等重跑部署并同时复验 origin/
+Caddy active 与公网 HTTPS health。Release Set、非生产 Root/Publisher、Registry
 与故障矩阵必须继续按顺序执行，不能跳到 P5。

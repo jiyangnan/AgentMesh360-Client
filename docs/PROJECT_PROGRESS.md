@@ -4796,3 +4796,28 @@ hostname 已切换并通过 HTTPS DNS 精确匹配；origin 部署等待本 comm
 - 资源上限、权限、区域、费用、72 小时窗口和生产隔离均未扩大；
 - 下一步冻结推送当前 origin executor，再执行 operator SSH、Caddy/TLS、
   Spaces-backed origin 与 HTTPS health；通过前不进入 Release Set。
+
+### 循环 69：P4 R3 E1 非特权 Origin 目录权限修复
+
+状态：operator SSH、cloud-init、Caddy 安装和文件传输均已通过；origin 因父目录
+不可穿越而未激活，最小目录权限修复已完成本地验证并等待冻结
+
+实际结果与根因：
+
+- operator 公钥登录和 `sudo --` 成功，root 首次改密问题已关闭；
+- Caddy、Node origin、systemd unit 和 Reader 配置已进入唯一隔离 Droplet；
+- Reader 配置为 `0600 agentmesh-e1:agentmesh-e1`，Publisher 未进入远端；
+- cloud-init 为提前保守建目录使用 `0700 root:root`，部署阶段没有在 service user
+  创建后调整父目录；文件虽存在，`agentmesh-e1` 无法穿过 `/opt`，systemd 循环
+  报入口模块不存在；
+- HTTPS health 尚未通过，live state 未写 `origin.deployed=true`，因此 P4/R3
+  仍未关闭。
+
+修复与复核：
+
+1. service user 创建后显式把代码目录固定为 `0755 root:root`；
+2. 配置目录固定为 `0750 root:agentmesh-e1`，配置文件本身继续保持 `0600`；
+3. 不把代码或配置目录设为 service user 可写，不放宽 systemd hardening；
+4. 修复冻结后重跑幂等部署，再要求 origin/Caddy active 和公网 HTTPS health
+   同时通过；
+5. 下一步仍是关闭 Origin 子项，未进入 Release Set/P5。

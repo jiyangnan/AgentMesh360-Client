@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   caddyfile,
   isFakeIpAddress,
+  originDirectoryCommands,
   originConfig,
   parseArguments,
   resolvesToApprovedDroplet,
@@ -81,6 +82,31 @@ test('Caddy and systemd configs expose only the local hardened service', () => {
   assert.match(unit, /ProtectSystem=strict/u);
   assert.match(unit, /CapabilityBoundingSet=\n/u);
   assert.doesNotMatch(unit, /Environment=.*(?:KEY|TOKEN|SECRET)/u);
+
+  assert.deepEqual(originDirectoryCommands(), [
+    [
+      'install',
+      '-d',
+      '-o',
+      'root',
+      '-g',
+      'root',
+      '-m',
+      '0755',
+      '/opt/agentmesh360-e1',
+    ],
+    [
+      'install',
+      '-d',
+      '-o',
+      'root',
+      '-g',
+      'agentmesh-e1',
+      '-m',
+      '0750',
+      '/etc/agentmesh360-e1',
+    ],
+  ]);
 });
 
 test('validates the exact Droplet, DNS-only hostname, and executor commit', () => {

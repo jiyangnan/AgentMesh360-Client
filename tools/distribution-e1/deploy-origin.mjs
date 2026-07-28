@@ -247,6 +247,33 @@ function scp(boundary, ipAddress, source, destination, label) {
   );
 }
 
+function originDirectoryCommands() {
+  return [
+    [
+      'install',
+      '-d',
+      '-o',
+      'root',
+      '-g',
+      'root',
+      '-m',
+      '0755',
+      '/opt/agentmesh360-e1',
+    ],
+    [
+      'install',
+      '-d',
+      '-o',
+      'root',
+      '-g',
+      'agentmesh-e1',
+      '-m',
+      '0750',
+      '/etc/agentmesh360-e1',
+    ],
+  ];
+}
+
 function isFakeIpAddress(address) {
   const octets = String(address).split('.').map(Number);
   return (
@@ -496,6 +523,9 @@ async function deployOrigin(boundary, credentialPath, executorCommit) {
       'origin service account creation',
     );
   }
+  for (const command of originDirectoryCommands()) {
+    ssh(resolved, ipAddress, command, 'origin directory installation');
+  }
   scp(
     resolved,
     ipAddress,
@@ -700,6 +730,7 @@ if (isMainModule()) {
 export {
   caddyfile,
   isFakeIpAddress,
+  originDirectoryCommands,
   originConfig,
   parseArguments,
   resolvesToApprovedDroplet,

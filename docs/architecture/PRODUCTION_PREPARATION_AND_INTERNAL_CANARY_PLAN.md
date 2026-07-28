@@ -11,6 +11,7 @@ Cycle 65 已创建唯一 Droplet 与 DNS-only 记录并完成 origin executor �
 Cycle 66 已修复本机 TUN/Fake-IP 导致的 DNS 预检误判并通过 HTTPS DNS 精确复验；
 Cycle 67 已销毁 root 首次改密阻断的空载 Droplet并完成独立 SSH operator 修复；
 Cycle 68 已重建唯一替代 Droplet、切换同一 staging DNS 并通过 HTTPS DNS 复验；
+Cycle 69 已定位非特权 Origin 父目录不可穿越并固化最小权限修复；
 生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -919,3 +920,14 @@ staging A record 只更新 content，Cloudflare UI 和 HTTPS DNS 均精确匹配
 
 本轮只恢复隔离基础设施，不关闭 P4/R3。下一步冻结当前 executor，完成
 operator SSH、Caddy/TLS/HTTPS origin 后再进入 Release Set，P5-P8 继续关闭。
+
+## 23. Cycle 69 P4 R3 E1 Origin 目录权限检查点
+
+替代实例上的 operator SSH、cloud-init、Caddy 安装和文件传输均成功；Reader
+配置以 `0600` 写入 service user，Publisher 未出本机。origin 未激活是
+cloud-init 的 `0700 root:root` 父目录阻止非特权服务穿越，HTTPS health 和
+deployed state 均未通过。
+
+部署器现于 service user 创建后固定代码目录 `0755 root:root`、配置目录
+`0750 root:agentmesh-e1`；配置文件继续 `0600`，目录不可由服务用户写入，
+systemd hardening 不变。下一步冻结修复并幂等重跑 Origin，P4/R3/P5-P8 不变。
