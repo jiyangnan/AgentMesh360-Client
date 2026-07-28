@@ -19,7 +19,10 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 
-const TEMP_PREFIX = 'agentmesh360-release-provenance-e0-';
+const TEMP_PREFIXES = [
+  'agentmesh360-release-provenance-e0-',
+  'agentmesh360-release-provenance-e1-',
+];
 const MAX_REQUEST_BYTES = 128 * 1024;
 const MAX_PAYLOAD_BYTES = 128 * 1024;
 const MAX_PRIVATE_KEY_BYTES = 4 * 1024;
@@ -56,9 +59,9 @@ async function validateBoundary(boundary) {
   const temporaryRoot = await realpath(os.tmpdir());
   if (
     path.dirname(resolved) !== temporaryRoot
-    || !path.basename(resolved).startsWith(TEMP_PREFIX)
+    || !TEMP_PREFIXES.some((prefix) => path.basename(resolved).startsWith(prefix))
   ) {
-    fail('boundary is not a direct E0 release-provenance temporary directory');
+    fail('boundary is not a direct release-provenance temporary directory');
   }
   const stat = await lstat(resolved);
   if (!stat.isDirectory() || stat.isSymbolicLink()) {

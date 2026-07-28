@@ -638,3 +638,11 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 公网 health 精确 200/JSON/body，Trust 未发布时 404，query 请求 400；
 - Origin/TLS 子项关闭但 R3 不关闭；
 - 下一步严格进入四 Agent A/B Release Set、临时 E1 Trust、Registry-last 和故障矩阵。
+
+## 31. 循环 72 P4 R3 E1 Release Set builder 检查点
+
+- P3 runner 增加 opt-in E1 retain 模式，默认 E0 销毁语义不变；
+- 仍执行四 Agent 双 build、8 次签名、十类输出逐字节比较；
+- 只有完整成功才在 E1 临时边界保留单一 Publisher 与 A 组 Release，失败即销毁；
+- Release URL 绑定已部署的 DNS-only/Caddy HTTPS Origin；
+- 本轮只完成执行器，未生成 key/Release Set 或上传；下一步冻结后执行双构建。

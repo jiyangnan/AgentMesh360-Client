@@ -4877,3 +4877,37 @@ health 已完成本地验证，等待冻结后继续同一幂等部署
 - 下一步按授权重建四 Agent A/B Release Set，生成一个临时 E1 Root/Publisher，
   先发布 Trust、再不可变 objects、最后 Registry；
 - 继续保持生产 Trust/Registry 常量为空，不进入 P5。
+
+### 循环 72：P4 R3 E1 可留存 Release Set 构建器
+
+状态：四 Agent A/B 双构建的 E1 临时留存执行器已完成本地验证；尚未生成 E1
+Publisher、Root、Release Set 或上传对象
+
+计划校准：
+
+- 复用已通过 P3 的同一冻结候选、三项外部源码 commit、离线 Cargo 构建和十类
+  逐字节比较，不复制另一套较弱的 Package Author；
+- E1 与 P3 的差异只有成功后暂存 A 组发布结果和单一 Publisher 私钥，供本轮
+  Trust/Registry 发布；失败时仍自动销毁；
+- 临时结果只允许在系统临时目录的 `agentmesh360-release-provenance-e1-*`
+  mode `0700` 边界，状态文件 mode `0600`，不进入仓库或聊天证据。
+
+已经实现：
+
+1. Release signer 继续支持原 E0 边界，并新增精确 E1 临时前缀；其他路径仍拒绝；
+2. 原 P3 runner 默认行为完全不变：E0 成功仍销毁 key、build roots 和整个边界；
+3. E1 retain 模式仍执行两个独立 Cargo target、四 Agent 双 build、8 次签名、
+   十类输出逐字节比较和 source/candidate worktree 清理；
+4. 只有全部四 Agent 比较通过时才保留一个 Publisher 私钥、公开证据和 A 组
+   Release；任何中途异常继续销毁；
+5. Release URL 绑定实际已部署的 DNS-only HTTPS Origin，拒绝未 deployed、
+   非 Caddy TLS、proxied 或非 E1 hostname 的状态；
+6. 新 runner 只接受完整绝对路径参数、精确 executor commit 和 mode `0600`
+   Origin state，不输出临时路径、公钥或签名。
+
+计划复盘与下一轮：
+
+- 新增 E1 builder 2/2，Release signer/既有 provenance 联合 18/18；
+- 下一步先冻结推送本执行器，再运行耗时离线双构建；成功后生成临时 Root、
+  组装/复验 Trust 与 Registry 并上传；
+- 生产常量、P5-P8、Provider 与 credits 继续关闭。

@@ -14,6 +14,7 @@ Cycle 68 已重建唯一替代 Droplet、切换同一 staging DNS 并通过 HTTP
 Cycle 69 已定位非特权 Origin 父目录不可穿越并固化最小权限修复；
 Cycle 70 已为瞬时 SSH transport 与本机 TUN 下的 HTTPS health 固化有界适配；
 Cycle 71 已通过隔离 Spaces-backed Origin、Caddy TLS 与公网 HTTPS health；
+Cycle 72 已完成 opt-in E1 可留存四 Agent 双构建执行器；
 生产 R1-R6 仍未关闭，尚未完成 E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -953,3 +954,13 @@ live state 已记录 deployed/executor/Caddy-managed TLS；公网 health 返回�
 本轮只关闭 P4 Origin/TLS 子项。下一步按授权重建四 Agent A/B Release Set，
 生成一个临时 E1 Root/Publisher，按 Trust-first、objects、Registry-last 发布并
 执行 14 项故障矩阵；生产 R3 与 P5-P8 仍关闭。
+
+## 26. Cycle 72 P4 R3 E1 Release Set builder 检查点
+
+既有 P3 runner 新增 opt-in E1 retain 模式，默认 E0 成功销毁语义不变。E1 仍需
+两个独立 Cargo target、四 Agent 双 build、8 次签名、十类输出逐字节比较；仅
+完整成功时保留一个临时 Publisher 和 A 组 Release，失败自动销毁。Release URL
+必须来自已部署、DNS-only、Caddy TLS 的 E1 Origin。
+
+本轮未生成 E1 key、Release Set 或上传对象。下一步冻结执行器后运行双构建，再
+进入 Root/Trust/Registry；P4/R3/P5-P8 状态不变。

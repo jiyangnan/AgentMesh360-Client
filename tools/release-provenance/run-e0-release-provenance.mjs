@@ -567,6 +567,7 @@ async function assembleAgent(
   publicKeyPath,
   releaseRoot,
   keyId,
+  releaseBaseUrl,
 ) {
   const output = path.join(releaseRoot, agent.agentId);
   const stdout = run(
@@ -586,7 +587,7 @@ async function assembleAgent(
       '--output',
       output,
       '--release-base-url',
-      `https://packages.agentmesh360.invalid/e0/${agent.packageId}/${agent.version}`,
+      releaseBaseUrl,
     ],
     undefined,
     `${label} ${agent.agentId} Release assembly`,
@@ -699,7 +700,7 @@ async function removeDetachedWorktree(repository, worktree, label) {
 
 async function runRehearsal(options) {
   await access(WORKER);
-  await assertNewOutput(options.outputPath);
+  if (!options.retainBoundary) await assertNewOutput(options.outputPath);
   await assertRepositoryBoundary(options);
   const sourceRepositories = {
     deploy: await assertSourceRepository(
@@ -720,7 +721,12 @@ async function runRehearsal(options) {
   };
 
   const boundary = await mkdtemp(
-    path.join(os.tmpdir(), 'agentmesh360-release-provenance-e0-'),
+    path.join(
+      os.tmpdir(),
+      options.retainBoundary
+        ? 'agentmesh360-release-provenance-e1-'
+        : 'agentmesh360-release-provenance-e0-',
+    ),
   );
   await chmod(boundary, 0o700);
   const resolvedBoundary = await realpath(boundary);
@@ -750,6 +756,11 @@ async function runRehearsal(options) {
   let keyDestroyed = false;
   let publicEvidence;
   let agentResults;
+  let agents;
+  let builds;
+  let assembled;
+  let publicKeyPath;
+  let successfulBuild = false;
   let cleanupError;
   try {
     await mkdir(privateRoot, { mode: 0o700 });
@@ -815,7 +826,7 @@ async function runRehearsal(options) {
       candidateRoot,
       'crates/codegen/xai-grok-shell/src/agentmesh360/packages',
     );
-    const agents = [
+    agents = [
       {
         agentId: 'deploy-agent',
         packageId: 'com.agentmesh360.deploy-agent',
@@ -872,7 +883,7 @@ async function runRehearsal(options) {
     await mkdir(releaseOutputs[0], { mode: 0o700 });
     await mkdir(releaseOutputs[1], { mode: 0o700 });
 
-    const builds = [[], []];
+    builds = [[], []];
     for (const agent of agents) {
       builds[0].push(
         await buildAgent(
@@ -919,7 +930,7 @@ async function runRehearsal(options) {
     ) {
       throw new Error('isolated signer returned invalid public evidence');
     }
-    const publicKeyPath = path.join(publicRoot, 'publisher-public-key.json');
+    publicKeyPath = path.join(publicRoot, 'publisher-public-key.json');
     await writeFile(
       publicKeyPath,
       JSON.stringify({
@@ -931,7 +942,7 @@ async function runRehearsal(options) {
       { flag: 'wx', mode: 0o600 },
     );
 
-    const assembled = [[], []];
+    assembled = [[], []];
     let signatureOperations = 0;
     for (let builder = 0; builder < 2; builder += 1) {
       for (let index = 0; index < agents.length; index += 1) {
@@ -952,6 +963,9 @@ async function runRehearsal(options) {
             publicKeyPath,
             releaseOutputs[builder],
             options.publisherKeyId,
+            options.releaseOrigin
+              ? `${options.releaseOrigin}/objects/releases/${agents[index].packageId}/${agents[index].version}`
+              : `https://packages.agentmesh360.invalid/e0/${agents[index].packageId}/${agents[index].version}`,
           ),
         );
       }
@@ -972,8 +986,11 @@ async function runRehearsal(options) {
         ),
       );
     }
+    successfulBuild = true;
   } finally {
-    if (generationAttempted) {
+    const retainSuccessfulBoundary =
+      options.retainBoundary === true && successfulBuild;
+    if (generationAttempted && !retainSuccessfulBoundary) {
       try {
         const destroyed = callWorker(resolvedBoundary, {
           action: 'destroy',
@@ -1009,13 +1026,40 @@ async function runRehearsal(options) {
         cleanupError ??= error;
       }
     }
-    try {
-      await rm(resolvedBoundary, { recursive: true, force: true });
-    } catch (error) {
-      cleanupError ??= error;
+    if (!retainSuccessfulBoundary) {
+      try {
+        await rm(resolvedBoundary, { recursive: true, force: true });
+      } catch (error) {
+        cleanupError ??= error;
+      }
     }
   }
   if (cleanupError) throw cleanupError;
+  if (options.retainBoundary) {
+    if (
+      !successfulBuild
+      || !keyGenerated
+      || !publicEvidence
+      || !agentResults
+      || !agents
+      || !builds
+      || !assembled
+      || !publicKeyPath
+    ) {
+      throw new Error('E1 Release Set was not retained completely');
+    }
+    return {
+      boundary: resolvedBoundary,
+      privateKeyPath,
+      publicEvidence,
+      publicKeyPath,
+      agents,
+      builds: builds[0],
+      assembled: assembled[0],
+      agentResults,
+      publisherKeyId: options.publisherKeyId,
+    };
+  }
   if (!keyGenerated || !keyDestroyed || !publicEvidence || !agentResults) {
     throw new Error('P3 rehearsal did not complete and retainable evidence was not produced');
   }
@@ -1192,6 +1236,7 @@ export {
   OUTPUT_CLASSES,
   packageBuildArguments,
   parseArguments,
+  runRehearsal,
   sanitizedCommandDiagnostic,
   treeDigest,
 };

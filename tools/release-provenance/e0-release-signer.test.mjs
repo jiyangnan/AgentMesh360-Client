@@ -103,3 +103,28 @@ test('destroy is idempotent when private material is already absent', async () =
     await rm(boundary, { recursive: true, force: true });
   }
 });
+
+test('E1 retained Release Set boundary accepts one generated temporary key', async () => {
+  const boundary = await mkdtemp(
+    path.join(os.tmpdir(), 'agentmesh360-release-provenance-e1-'),
+  );
+  try {
+    const target = path.join(boundary, 'publisher.pk8');
+    const generated = invoke({
+      action: 'generate',
+      boundary,
+      target,
+    });
+    assert.equal(generated.status, 0, generated.stderr);
+    const publicEvidence = JSON.parse(generated.stdout);
+    assert.match(publicEvidence.publicKeyBase64, /^[A-Za-z0-9+/]{43}=$/u);
+    const destroyed = invoke({
+      action: 'destroy',
+      boundary,
+      target,
+    });
+    assert.equal(destroyed.status, 0, destroyed.stderr);
+  } finally {
+    await rm(boundary, { recursive: true, force: true });
+  }
+});
