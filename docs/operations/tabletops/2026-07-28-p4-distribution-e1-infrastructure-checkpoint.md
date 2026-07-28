@@ -93,16 +93,30 @@ executor commit 错误地拿去匹配 Droplet 创建 executor commit。临时 li
 逐项正确；现已把 Droplet provenance 和 origin provenance 分开固定并补回归测试，
 修复 commit 推送前不重试。
 
+第二次实际 deploy 仍在 SSH 前 fail-close：本机 TUN/Fake-IP DNS 把公共与权威
+UDP/53 A 查询改写为 `198.18.0.0/15`，导致预检看不到真实权威答案。Cloudflare
+控制台记录仍是批准 Droplet IP、DNS-only，生产 DNS 未变化。部署器现已：
+
+- 仅把 `198.18.0.0/15` 识别为 Fake-IP；
+- 在系统 DNS 不精确匹配时，用无 redirect、有限时、有限输出的 Cloudflare
+  HTTPS DNS 复验；
+- 只接受查询 hostname 的精确 IPv4 A answer；
+- HTTPS DNS 或解析异常时继续 fail-close，不允许跳过 IP 绑定。
+
+实际 staging HTTPS DNS 复验已得到 `approved_dns_match=true`；复验输出不包含
+hostname、IP、endpoint URL 或凭据。远端仍未收到 Reader key，Caddy/origin
+仍未安装。
+
 ## 5. 验证与下一步
 
 - Spaces SigV4/client：6/6
 - Droplet boundary：6/6
 - authorization：13/13
 - origin service：5/5
-- origin deployment boundary：5/5
-- E1 联合定向：35/35
+- origin deployment boundary：11/11
+- E1 联合定向：40/40
 - 实际 least-privilege S3 probe：PASS，probe object removed
 
-下一步先冻结并推送 origin executor commit，再向已创建的唯一 Droplet 部署
+下一步先冻结并推送 Fake-IP DNS 修复 commit，再向已创建的唯一 Droplet 部署
 Caddy TLS 和 Spaces-backed origin。Release Set、非生产 Root/Publisher、Registry
 与故障矩阵必须继续按顺序执行，不能跳到 P5。

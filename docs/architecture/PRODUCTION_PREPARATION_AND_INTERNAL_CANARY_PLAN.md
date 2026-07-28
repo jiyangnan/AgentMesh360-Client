@@ -8,6 +8,7 @@ E1 的零外部资源阻断式 preflight；
 Cycle 63 已固定精确 E1 执行窗口、预算、资源、Trust、Release Set 与清理授权；
 Cycle 64 已完成两个隔离 Spaces bucket、最小权限 Publisher/Reader 与 S3 探针；
 Cycle 65 已创建唯一 Droplet 与 DNS-only 记录并完成 origin executor 本地验证；
+Cycle 66 已修复本机 TUN/Fake-IP 导致的 DNS 预检误判并通过 HTTPS DNS 精确复验；
 生产 R1-R6 仍未关闭，尚未完成 TLS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
@@ -879,3 +880,17 @@ origin/deploy 10/10、既有 E1 25/25，联合 35/35；P4 preflight 17/17。当�
 约 `0.01593 USD`，72 小时模型仍为约 `1.14296 USD`。下一步冻结推送本 executor，
 完成 Caddy/TLS/HTTPS health 后再进入 Release Set/Trust/Registry/故障矩阵。
 生产 R3、P5-P8 继续关闭。
+
+## 20. Cycle 66 P4 R3 E1 Fake-IP DNS 预检检查点
+
+Cloudflare 控制台仍显示 staging A record 精确指向批准 Droplet、DNS-only；本机
+TUN 则把公共和权威 UDP/53 A 查询统一改写为 RFC 2544 `198.18.0.0/15`，使原
+部署预检在 SSH 前 fail-close。该现象不是生产或 staging DNS 被修改。
+
+部署器现只在系统 DNS 不精确匹配时执行 Cloudflare HTTPS DNS 复验；请求不跟随
+redirect，连接/总时长和输出均有限，只接受查询 hostname 的精确 IPv4 A answer。
+HTTPS DNS、JSON、状态、hostname 或 IP 任一异常仍 fail-close。实际 staging
+复验返回精确匹配，origin deploy boundary 11/11、E1 联合定向 40/40。
+
+本轮不关闭 P4/R3。下一步先冻结推送该修复，再完成唯一隔离 Droplet 上的
+Caddy/TLS/HTTPS origin；成功后才进入 Release Set/Trust/Registry/故障矩阵。

@@ -246,15 +246,141 @@ function scp(boundary, ipAddress, source, destination, label) {
   );
 }
 
-async function waitForDns(hostname, expectedIp) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+function isFakeIpAddress(address) {
+  const octets = String(address).split('.').map(Number);
+  return (
+    octets.length === 4
+    && octets.every((value) => Number.isInteger(value) && value >= 0 && value <= 255)
+    && octets[0] === 198
+    && (octets[1] === 18 || octets[1] === 19)
+  );
+}
+
+function parseCloudflareDohAnswer(hostname, payload) {
+  if (payload?.Status !== 0 || !Array.isArray(payload.Answer)) {
+    throw new Error('Cloudflare DNS-over-HTTPS answer is invalid');
+  }
+  const normalizedHostname = hostname.toLowerCase();
+  return payload.Answer
+    .filter(
+      (answer) =>
+        answer?.type === 1
+        && String(answer.name ?? '').replace(/\.$/u, '').toLowerCase()
+          === normalizedHostname
+        && /^(?:\d{1,3}\.){3}\d{1,3}$/u.test(answer.data),
+    )
+    .map((answer) => answer.data);
+}
+
+async function resolveWithCloudflareDoh(hostname, dohFetch = fetch) {
+  const endpoint = new URL('https://cloudflare-dns.com/dns-query');
+  endpoint.searchParams.set('name', hostname);
+  endpoint.searchParams.set('type', 'A');
+  const response = await dohFetch(endpoint, {
+    headers: {
+      accept: 'application/dns-json',
+    },
+    redirect: 'error',
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) {
+    throw new Error('Cloudflare DNS-over-HTTPS lookup failed');
+  }
+  return parseCloudflareDohAnswer(hostname, await response.json());
+}
+
+function resolveWithCloudflareDohCurl(
+  hostname,
+  curlSpawn = spawnSync,
+) {
+  const result = curlSpawn(
+    'curl',
+    [
+      '--fail',
+      '--silent',
+      '--show-error',
+      '--connect-timeout',
+      '15',
+      '--max-time',
+      '30',
+      '--max-redirs',
+      '0',
+      '--header',
+      'accept: application/dns-json',
+      '--get',
+      '--data-urlencode',
+      `name=${hostname}`,
+      '--data-urlencode',
+      'type=A',
+      'https://cloudflare-dns.com/dns-query',
+    ],
+    {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024,
+      timeout: 35_000,
+    },
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error('Cloudflare DNS-over-HTTPS curl lookup failed');
+  }
+  try {
+    return parseCloudflareDohAnswer(hostname, JSON.parse(result.stdout));
+  } catch (error) {
+    throw new Error('Cloudflare DNS-over-HTTPS curl answer is invalid', {
+      cause: error,
+    });
+  }
+}
+
+async function resolvesToApprovedDroplet(
+  hostname,
+  expectedIp,
+  {
+    systemResolve4 = resolve4,
+    dohResolve = resolveWithCloudflareDohCurl,
+  } = {},
+) {
+  let systemAddresses = [];
+  try {
+    systemAddresses = await systemResolve4(hostname);
+  } catch {
+    // The HTTPS resolver below is the bounded fallback.
+  }
+  if (systemAddresses.includes(expectedIp)) return true;
+
+  const hasOnlyFakeIpAnswers =
+    systemAddresses.length > 0 && systemAddresses.every(isFakeIpAddress);
+  try {
+    const dohAddresses = await dohResolve(hostname);
+    return dohAddresses.includes(expectedIp);
+  } catch (error) {
+    if (hasOnlyFakeIpAnswers) {
+      throw new Error(
+        'local DNS returned Fake-IP and HTTPS DNS verification failed',
+        { cause: error },
+      );
+    }
+    return false;
+  }
+}
+
+async function waitForDns(
+  hostname,
+  expectedIp,
+  {
+    attempts = 12,
+    intervalMs = 5_000,
+    resolves = resolvesToApprovedDroplet,
+    sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
+  } = {},
+) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const addresses = await resolve4(hostname);
-      if (addresses.includes(expectedIp)) return;
+      if (await resolves(hostname, expectedIp)) return;
     } catch {
       // DNS propagation is retried within the approved bounded window.
     }
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    if (attempt + 1 < attempts) await sleep(intervalMs);
   }
   throw new Error('staging DNS did not resolve to the approved Droplet');
 }
@@ -572,9 +698,14 @@ if (isMainModule()) {
 
 export {
   caddyfile,
+  isFakeIpAddress,
   originConfig,
   parseArguments,
+  resolvesToApprovedDroplet,
+  resolveWithCloudflareDoh,
+  resolveWithCloudflareDohCurl,
   sanitizedDiagnostic,
   systemdUnit,
   validateLiveState,
+  waitForDns,
 };

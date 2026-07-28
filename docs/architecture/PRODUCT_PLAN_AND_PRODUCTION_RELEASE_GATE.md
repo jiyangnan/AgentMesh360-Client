@@ -580,3 +580,15 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - origin/deploy 10/10，全部 E1 定向 35/35，P4 preflight 17/17；
 - 当前成本模型仍约 `1.14296 USD/72h`。下一步只冻结 origin executor 并完成实际
   Caddy/TLS/health；之后才能进入 Release Set/Trust/Registry/故障矩阵，P5-P8 关闭。
+
+## 25. 循环 66 P4 R3 E1 Fake-IP DNS 预检检查点
+
+- Cloudflare UI 中 staging A record 精确指向批准 Droplet、DNS-only，生产记录未改；
+- 本机 TUN 将 UDP/53 结果改写为 `198.18.0.0/15`，原部署预检在 SSH 前正确
+  fail-close，但把本地 Fake-IP 误判为权威记录漂移；
+- 部署器现在只识别 RFC 2544 Fake-IP，并在系统 DNS 不精确匹配时通过有限时、
+  有限输出、无 redirect 的 Cloudflare HTTPS DNS 复验；
+- HTTPS DNS 仍只接受精确 hostname 的 IPv4 A answer，任何异常继续 fail-close；
+- 实际 staging 精确复验通过；origin deploy boundary 11/11、E1 联合 40/40；
+- R3 状态不变。下一步只冻结本修复并完成唯一隔离 Origin 的 Caddy/TLS/HTTPS
+  health，再按序进入四 Agent Release Set，不启动 P5-P8。

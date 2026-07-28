@@ -4702,3 +4702,37 @@ Release Set、上传和故障注入仍未获批、未执行
 - 下一步只冻结推送 origin executor，并部署/复验 Caddy TLS 与 HTTPS health；
 - origin 通过后才进入四 Agent Release Set、E1 Root/Publisher、上传回读、
   Registry last 与 14 项消费者故障矩阵；不跳到 P5。
+
+### 循环 66：P4 R3 E1 Fake-IP DNS 预检修复
+
+状态：Cloudflare staging 记录已通过 HTTPS DNS 精确复验；本机 TUN/Fake-IP
+造成的部署预检误判已修复，origin 远端部署仍需在本 commit 冻结推送后执行
+
+偏差识别与计划校准：
+
+- Cloudflare 控制台中的 staging A record 为预期 Droplet IP、DNS-only、TTL
+  1 分钟，zone 为 Full/Active；生产记录没有变化；
+- 本机直接向公共和权威 DNS 发起的 UDP/53 查询均被 TUN 改写为
+  `198.18.0.0/15` RFC 2544 保留网段，部署器因此无法看到真实权威答案；
+- 这不是 Cloudflare 传播失败，也不允许通过跳过 IP 校验继续部署；修复保持
+  “staging hostname 必须精确指向批准 Droplet”的 fail-closed 条件。
+
+已经实现：
+
+1. 明确识别且仅识别 `198.18.0.0/15` Fake-IP，不把其他私网或不匹配地址当作
+   已批准答案；
+2. 系统 DNS 精确匹配时不发额外请求；不匹配或 Fake-IP 时使用 Cloudflare
+   HTTPS DNS 做独立 A 记录复验；
+3. HTTPS DNS 请求不跟随 redirect，固定 15 秒连接/30 秒总超时、64 KiB 输出
+   上限，并只接受查询 hostname 的精确 IPv4 A answer；
+4. curl/JSON/状态/hostname/IP 任一异常均视为未解析，不回退为宽松放行；
+5. 实际 staging HTTPS DNS 复验返回 `approved_dns_match=true`，未输出或留存
+   hostname、IP、endpoint URL 或凭据。
+
+自主验证与计划复盘：
+
+- origin deploy boundary 11/11；
+- E1 authorization/Spaces/Droplet/origin 联合定向 40/40；
+- 本轮仅修复 DNS 安全预检，不关闭 TLS/origin、E1 或生产 R3；
+- 下一步先冻结推送本修复 commit，再对唯一隔离 Droplet 执行 Caddy/TLS/origin
+  部署和 HTTPS health；通过后按原计划进入四 Agent Release Set，不跳到 P5。
