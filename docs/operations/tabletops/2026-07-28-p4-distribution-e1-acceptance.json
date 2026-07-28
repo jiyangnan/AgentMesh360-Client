@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "distribution_service_e1_20260728_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "executionStatus": "isolated_distribution_rehearsal_passed",
+  "productionR3Closed": false,
+  "releaseSet": {
+    "agentCount": 4,
+    "buildsPerAgent": 2,
+    "comparedOutputClassesPerAgent": 10,
+    "publisherSignatureVerificationCount": 8
+  },
+  "publication": {
+    "publishedObjectCount": 35,
+    "registryPublishedLast": true,
+    "publicReleaseObjectVerificationCount": 27
+  },
+  "faultMatrix": {
+    "scenarioCount": 14,
+    "passedCount": 14
+  },
+  "cleanup": {
+    "registryWithdrawnFirst": true,
+    "verifiedAbsentObjectCount": 35,
+    "rootPrivateMaterialDestroyed": true,
+    "publisherPrivateMaterialDestroyed": true,
+    "dnsRecordCount": 0,
+    "dropletCount": 0,
+    "limitedAccessKeyCount": 0,
+    "bucketCount": 0,
+    "localTempEntryCount": 0
+  },
+  "regression": {
+    "nodePassed": 151,
+    "nodeFailed": 0,
+    "rustPackageTrustPassed": 8,
+    "rustRegistrySnapshotPassed": 7,
+    "rustRegistryFetcherPassed": 4,
+    "rustFailed": 0,
+    "repositoryRootTargetAbsent": true,
+    "isolatedCargoTargetRemoved": true,
+    "productionPackageConstantsEmpty": true
+  },
+  "externalUsage": {
+    "approvedExecutionWindowHours": 72,
+    "approvedPlanEstimateUsd": 1.15,
+    "providerRequests": 0,
+    "creditsConsumed": 0,
+    "estimatedRuntimeCostUsdUpperBound": 0.05,
+    "approvedBudgetHardCapUsd": 3,
+    "invoiceFinal": false
+  },
+  "independentReview": {
+    "kimiStatus": "paused_by_user",
+    "countedAsAcceptanceGate": false,
+    "primaryAgentSelfReviewCompleted": true
+  },
+  "nextGate": {
+    "workPackage": "p5_package_canary",
+    "authorized": false,
+    "requiresSeparateSubscriptionByokCohortAndBudgetApproval": true
+  },
+  "completedAt": "2026-07-28T17:19:13.000Z"
+}

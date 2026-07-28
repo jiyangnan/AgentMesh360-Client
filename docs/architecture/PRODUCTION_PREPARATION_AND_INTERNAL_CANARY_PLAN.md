@@ -1,25 +1,13 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
-状态：Cycle 56 的 P0 计划、Cycle 57 的 P1 R6 本地基线、Cycle 58 的 P2
-无 authority preflight、Cycle 59 的 P2 E0 测试 key 技术演练与 Cycle 60 的
-P3 零新 key provenance preflight 均已完成；Cycle 61 的 P3 R2 E0 四 Agent
-双构建、测试签名、复验、销毁与非秘密 evidence 也已通过；Cycle 62 已完成 P4 R3
-E1 的零外部资源阻断式 preflight；
-Cycle 63 已固定精确 E1 执行窗口、预算、资源、Trust、Release Set 与清理授权；
-Cycle 64 已完成两个隔离 Spaces bucket、最小权限 Publisher/Reader 与 S3 探针；
-Cycle 65 已创建唯一 Droplet 与 DNS-only 记录并完成 origin executor 本地验证；
-Cycle 66 已修复本机 TUN/Fake-IP 导致的 DNS 预检误判并通过 HTTPS DNS 精确复验；
-Cycle 67 已销毁 root 首次改密阻断的空载 Droplet并完成独立 SSH operator 修复；
-Cycle 68 已重建唯一替代 Droplet、切换同一 staging DNS 并通过 HTTPS DNS 复验；
-Cycle 69 已定位非特权 Origin 父目录不可穿越并固化最小权限修复；
-Cycle 70 已为瞬时 SSH transport 与本机 TUN 下的 HTTPS health 固化有界适配；
-Cycle 71 已通过隔离 Spaces-backed Origin、Caddy TLS 与公网 HTTPS health；
-Cycle 72 已完成 opt-in E1 可留存四 Agent 双构建执行器；
-Cycle 73 已隔离冻结源码 worktree 与用户现有 dirty 工作区；
-Cycle 74 已完成四 Agent A/B Release Set、8 次签名与十类逐字节复验；
-Cycle 75 已完成 Trust/Registry、不可变上传与 fault fixture 发布执行器；
-生产 R1-R6 仍未关闭，尚未完成 E1 Release Set 或内部 canary、
-E2 或生产候选
+状态：P0/P1 基线、P2 key ceremony E0、P3 四 Agent provenance E0 与 P4
+分发服务 E1 隔离演练均已完成。Cycle 63-85 在精确 72 小时、`3 USD` 硬上限授权
+内完成隔离 Spaces/Origin、四 Agent 双构建、Trust/Registry-last 发布、14 项
+故障矩阵、Registry-first 撤回、Root/Publisher 与全部云端/本机资源销毁。
+
+P4 E1 状态为 `isolated_distribution_rehearsal_passed`；生产 R1-R6 仍未关闭，
+生产 Trust/Registry 常量保持为空。P5 Package canary、E2、生产候选、真实订阅/
+BYOK/cohort 与 Apple 签名公证均未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -61,8 +49,8 @@ Provider、消耗 credits 或写用户真实宿主目录。
   仍需另一张批准卡；
 - P3 已在精确批准下完成 E0 四 Agent 双构建、一个临时测试 Publisher、8 次签名、
   十类输出逐字节复验、销毁与 retention-safe receipt；该 E0 PASS 不关闭生产 R2；
-- P4 已机器固定 P3 evidence 交接、现有消费者契约、不可变发布顺序、14 项故障矩阵、
-  LKG、日志/evidence 边界与精确批准卡；实际 E1 资源和生产 R3 仍未开放；
+- P4 已完成 E1 隔离四 Agent Release Set、非生产 Trust、Registry-last、14 项
+  故障矩阵、Registry-first 撤回与完整资源销毁；该 E1 PASS 不关闭生产 R3；
 - 真正的内部 canary 不是下一条命令，而是 R1-R4/R6 相应前置证据通过后的受控阶段；
 - Package 与桌面可以分别形成 canary 证据，合并开放必须再通过共同 canary。
 
@@ -441,7 +429,7 @@ flowchart TD
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
-| P4 R3 E1 | **执行中**：preflight/授权、两个 SGP1 Spaces、bucket-scoped Publisher/Reader、权限探针、唯一 Droplet、DNS-only staging、Caddy TLS/HTTPS origin 已完成 | 仍需四 Agent Release Set、非生产 Trust/Registry、14 项故障矩阵和完整销毁；生产 R3/P5 未开放 |
+| P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
@@ -1087,3 +1075,14 @@ P5-P8 关闭。
 `os.tmpdir()` 指向用户级 `/var/folders/.../T`，与本轮批准并实际使用的
 `/private/tmp` 不同。finalizer 现显式固定批准根 `/private/tmp`，不允许 TMPDIR
 改写；boundary realpath/direct-child 约束不变。定向 3/3，下一步冻结后重跑。
+
+## 39. Cycle 85 P4 R3 E1 最终验收
+
+finalizer 在 `cda215c` 推送后完成：本机 7-entry E1 inventory 归零。最终外部
+复验 DNS/Droplet/limited key/bucket 均为 0。Node 工具 151/151；Rust Trust/
+Cache 8/8、Registry Snapshot 7/7、Registry Fetcher/LKG 4/4。隔离 Cargo target
+与仓库根 `target/` 均 absent，生产 Package 三个常量为空。
+
+P4 E1 结论为隔离分发演练 PASS，不是生产 R3。下一项按计划为 P5 Package canary，
+但专用账号、真实订阅、BYOK Provider/费用、cohort 和停止窗口尚无独立授权；
+因此 P5-P8 保持关闭。

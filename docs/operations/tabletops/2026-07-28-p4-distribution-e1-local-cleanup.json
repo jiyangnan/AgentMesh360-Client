@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "distribution_service_e1_20260728_0001",
+  "environment": "e1",
+  "workPackage": "p4_r3",
+  "executorCommit": "cda215c1febf505249595cec9f18e6e3eeeadbea",
+  "executionStatus": "local_secret_state_destroyed",
+  "destroyedStandaloneFileCount": 5,
+  "destroyedBoundaryCount": 2,
+  "remainingE1TempEntryCount": 0,
+  "productionPackageConstantsEmpty": true,
+  "providerRequests": 0,
+  "creditsConsumed": 0,
+  "completedAt": "2026-07-28T16:59:58.995Z"
+}

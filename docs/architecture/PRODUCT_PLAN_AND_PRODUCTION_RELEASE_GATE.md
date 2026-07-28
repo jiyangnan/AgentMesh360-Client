@@ -219,13 +219,12 @@ flowchart TD
    测试凭据、指定模型、12 次短请求上限和费用授权；实际使用 11 次，真实 Gemini
    Streaming、Function Calling、Structured Output、Reasoning 与重启后 Tool Loop
    已通过，并完成 Kimi 四级清零；
-6. **桌面与 Package 生产准备计划（Cycle 56-63 的 P0-P4 已按门禁推进）**：
+6. **桌面与 Package 生产准备计划（Cycle 56-85 的 P0-P4 已按门禁推进）**：
    已经拆分 E0 本地演练、E1 隔离 staging、E2 封闭
    生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
-   R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 preflight，并已取得和机器固定
-   精确 E1 批准卡。下一步只按该卡创建新 Release Set、非生产 Trust、隔离 origin、
-   对象存储/Registry 与最小凭据；生产 key、真实订阅/BYOK canary、签名、公证和
-   cohort 仍各自等待独立授权。
+   R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 E1 隔离 Release Set、非生产
+   Trust、Registry-last、14 项故障矩阵和完整清场。下一步是仍未授权的 P5 Package
+   canary；生产 key、真实订阅/BYOK、cohort、签名和公证仍各自等待独立授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -757,3 +756,16 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - finalizer 显式固定 `/private/tmp`，不接受 TMPDIR 漂移；
 - direct-child/mode/symlink/精确 inventory 约束不变；
 - 定向 3/3；下一步冻结后重跑，P5-P8 关闭。
+
+## 44. 循环 85 P4 R3 E1 最终验收
+
+- finalizer 完成，本机 E1 temp entry=0；
+- DNS、Droplet、limited key、bucket 最终计数均为 0；
+- 四 Agent 双构建、35-object Registry-last、14/14 fault、Registry-first
+  35/35 absence 与临时私钥销毁全部有去秘密 evidence；
+- Node 151/151；
+- Rust Trust/Cache 8/8、Registry Snapshot 7/7、Fetcher/LKG 4/4；
+- 隔离 Cargo target 与仓库根 `target/` absent；
+- 生产 Trust/Registry 常量为空，Provider/credits/生产 mutation 为 0；
+- P4 E1 隔离演练 PASS，但生产 R3 未关闭；
+- P5 需要专用账号、真实订阅、BYOK/费用、cohort 与停止窗口独立批准，本轮不启动。

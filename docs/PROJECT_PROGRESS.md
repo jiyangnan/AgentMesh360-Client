@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、P0、P1、P2 E0、P3 R2 E0 与 P4 no-authority preflight 已按原顺序推进；下一验收点是独立的 P4 R3 E1 authority，不自动创建外部资源、staging 凭据、生产 key、endpoint 或发布 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；下一验收点是仍未授权的 P5 Package canary，不自动使用真实订阅、BYOK Provider、credits、cohort 或生产凭据 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、Cycle 56-61 的 P0-P3 与 Cycle 62 的 P4 R3 E1 阻断式 preflight 已完成；已机器固定 P3 evidence 交接、现有消费者契约、不可变发布顺序、14 项故障矩阵、LKG 与证据边界，生产 endpoint/root/bundle 仍为空 | 生产 R2/R3 仍未满足；实际 P4 必须另行批准新的 E1 Release Set、非生产 Trust、origin/对象存储/Registry、最小凭据、请求上限与清理窗口，P5-P8 继续关闭 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P3 与 P4 R3 E1 隔离演练已完成；四 Agent 双构建、Registry-last、14 项故障矩阵、Registry-first 撤回和全部 E1 云端/本机资源清场均通过，生产 endpoint/root/bundle 仍为空 | 生产 R2/R3 仍未满足；P5 Package canary 需要专用内部账号、真实有效订阅、BYOK/费用、cohort 和停止窗口的独立精确批准，P5-P8 继续关闭 |
 
 ## 开发循环记录
 
@@ -5231,3 +5231,36 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 
 下一步：冻结推送修复后重新执行一次 finalizer，再进入最终回归；产品顺序、
 权限和 P5 状态不变。
+
+### 循环 85：P4 R3 E1 隔离分发演练最终验收
+
+状态：P4 的 E1 隔离分发演练完整通过并清场；生产 R3 未关闭，P5 未授权
+
+最终结果：
+
+1. finalizer 修复 commit `cda215c` 推送后执行成功：standalone state/credential
+   5 项、Droplet boundary 2 项全部覆盖删除，本机 E1 temp entry=0；
+2. Cloudflare E1 DNS record=0、DigitalOcean E1 Droplet=0、limited key=0；
+3. 两个 bucket 从“不再计费的删除队列”完成为 exact bucket count=0；
+4. 四 Agent 双构建、8 次 Publisher 签名复验、每 Agent 十类输出逐字节一致；
+5. Trust-first、27 Release objects、6 fault fixtures、Registry-last 共 35 对象
+   发布与回读完成；
+6. 14/14 故障矩阵完整通过；Registry-first、35/35 absence 与 Root/Publisher
+   私钥销毁完成；
+7. 全仓库 Node 工具测试 151/151；
+8. Rust consumer：Package Trust/Cache 8/8、Registry Snapshot 7/7、
+   Registry Fetcher/LKG 4/4；
+9. Rust 测试隔离 target 与仓库根 `target/` 均 absent；
+10. 生产内嵌 Trust、生产 Trust URL、生产 Registry URL 均保持 `None`；
+11. Provider 请求、credits、生产 mutation 均为 0；保守成本上界 `0.05 USD`，
+    final invoice 尚未结算；
+12. Kimi 按用户要求暂停，不计为本轮门禁；主 Agent 完成全部代码、证据、边界和
+    外部状态自复核。
+
+计划复盘与后续边界：
+
+- 本轮只证明 E1 隔离分发链、故障恢复和完整清场成立，不等于生产 key、生产
+  endpoint 或生产 R3 通过；
+- 按原计划下一项是 P5 Package canary，但它需要专用内部账号、真实有效订阅、
+  BYOK Provider/费用、cohort 和停止窗口的独立精确批准；
+- 本轮不启动 P5，不启动 Apple 签名/公证 P6，不修改生产常量。

@@ -1,8 +1,7 @@
 # P4 R3 E1 隔离基础设施检查点
 
-状态：E1 执行中；隔离基础设施和四 Agent Release Set 已完成，Trust、27 个
-Release 对象、6 个故障 fixture 与 Registry 已按 Registry-last 发布并完成公网
-回读；14 项故障矩阵和最终销毁尚未完成。本文不是 E1 PASS 或生产 R3 关闭证据。
+状态：P4 R3 E1 隔离分发演练已完整通过并清场。本文证明 E1，不能作为生产 R3、
+P5 canary、生产 key 或生产 endpoint 的关闭证据。
 
 ## 1. 冻结基线
 
@@ -253,3 +252,20 @@ file 使用 `O_NOFOLLOW` 随机覆盖、fsync、unlink，任何 symlink、特殊
 macOS 进程 `os.tmpdir()` 指向用户级临时目录，而本轮所有批准路径固定为
 `/private/tmp`。finalizer 现显式锁定 `/private/tmp`，不允许 TMPDIR 改写；
 realpath、direct-child、mode、symlink 和 exact inventory 门禁不变。
+
+## 14. 最终验收
+
+- Release Set：4 Agent × 2 builds × 10 output classes，8 次签名复验；
+- publication：35 objects，Registry last，27/27 Release object 公网复验；
+- fault matrix：14/14；
+- withdrawal：Registry first，35/35 objects absent；
+- private material：Root/Publisher/operator absent；
+- cloud：DNS/Droplet/limited key/bucket 均为 0；
+- local：E1 temp entry=0；
+- Node：151/151；
+- Rust：Trust/Cache 8/8、Registry Snapshot 7/7、Fetcher/LKG 4/4；
+- targets：隔离 Cargo target 与仓库根 `target/` absent；
+- cost：保守上界 `0.05 USD`，final invoice 未结算；
+- production：Trust/Registry 常量为空，production mutation=0。
+
+结论：`isolated_distribution_rehearsal_passed`。生产 R3 未关闭，P5 未授权。
