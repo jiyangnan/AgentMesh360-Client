@@ -10,7 +10,8 @@ R1-R6 与所有生产发布能力仍保持关闭；Cycle 60 已完成 P3 零新 
 preflight，Cycle 61 已完成获批的 P3 R2 E0 四 Agent 双构建、测试签名、复验、
 销毁与非秘密 evidence；Cycle 62 已完成 P4 R3 E1 零外部资源阻断式 preflight；
 Cycle 63 已固定用户批准的 72 小时、`1.15 USD` 预计成本和 `3 USD` 硬上限；
-生产 R2/R3 与实际 E1 仍保持关闭
+Cycle 64 已创建两个隔离 Spaces bucket、最小权限 Publisher/Reader 并通过实际
+S3 探针；生产 R2/R3 与 E1 完成态仍保持关闭
 
 本文档是 H2d4 关闭后的计划复核结果。它回答两个问题：
 
@@ -170,7 +171,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | R0 产品可用性 | 共同 | 已满足（开发验证） | 文本对话、多 Agent、用户可见 reload/重连恢复、标准 ACP 单次权限边界，以及订阅失效、重启与账户切换隔离均已通过开发验证；此状态不替代 R1-R6 或生产验收 |
 | R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足（P3 R2 E0 技术演练已完成） | 已有四 Agent 双构建、测试签名与十类输出可复验证据；仍需生产 Publisher authority、受控生产发布流水线及与 R3/R6 联动的生产证据 |
-| R3 分发服务 | Agent Package | 未满足（P4 preflight 与精确 E1 授权门禁已完成） | 已固定消费者契约、不可变顺序、14 项故障/LKG 矩阵、72 小时、预算和资源边界；仍需实际 E1 Release Set、非生产 Trust、隔离 origin/Registry、故障注入与完整清理证据 |
+| R3 分发服务 | Agent Package | 未满足（P4 preflight/授权、Spaces/最小凭据子项已完成） | 已固定消费者契约、不可变顺序、14 项故障/LKG 矩阵、72 小时、预算和资源边界，并通过 bucket-scoped 权限探针；仍需 Droplet/DNS/TLS/origin、实际 Release Set、非生产 Trust/Registry、故障注入与完整清理 |
 | R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
 | R6 可观测与响应 | 共同 | 未满足（P1 本地基线已完成） | Release Event/证据模板/静态扫描/Runbook/E0 tabletop 已有；仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本与官方安装器恢复 |
@@ -546,3 +547,19 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   Node 13/13 与 CLI 通过；
 - 当前尚未创建付费资源或写 E1 PASS。下一步只在本 commit 冻结推送后执行批准的
   隔离资源、构建签名、不可变发布、14 项故障矩阵和完整销毁；P5-P8 继续关闭。
+
+## 23. 循环 64 P4 R3 E1 Spaces 与最小权限检查点
+
+- 授权 commit `635b87b` 推送后，创建两个 SGP1 Standard Spaces bucket，CDN
+  关闭；一个 subscription 的页面小时价约 `0.007 USD`，预算仍成立；
+- active 凭据严格为一个 bucket-scoped Read/Write/Delete Publisher 和一个
+  Read-only Origin Reader，均不接触生产 bucket；
+- 初次 Reader key 的 S3 secret 配对失败，已永久撤销并重建；实际探针最终验证
+  Publisher 写/读/删、Reader 读和 Reader 写被 403 拒绝，探针对象已删除；
+- 新 SigV4 client 与 Droplet runner 固定 endpoint/region/bucket、mode `0600`
+  凭据、secret-safe error、临时 SSH、cloud-init/UFW、1 GiB/无 backup/monitoring、
+  executor freeze 和 fail-closed cleanup state；
+- 定向 Node 25/25 和实际 probe PASS；Kimi 继续暂停，使用加强自主复核；
+- 当前 E1 只关闭 Spaces/credential 子项，不关闭 R3。下一步按序创建唯一 Droplet、
+  DNS/TLS/origin，再进入四 Agent Release Set/Trust/Registry/故障矩阵；P5-P8
+  继续关闭。

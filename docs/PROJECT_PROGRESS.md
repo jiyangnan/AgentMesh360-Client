@@ -4593,3 +4593,60 @@ Release Set、上传和故障注入仍未获批、未执行
   签署四 Agent Release Set，执行上传回读与 14 项故障矩阵，随后完整销毁和留证；
 - 任一项遇到预算、登录、权限、对象不可变、Trust、Registry、故障矩阵或清理漂移，
   必须停止并先清理，不跳到 P5。
+
+### 循环 64：P4 R3 E1 Spaces 与最小权限基础设施
+
+状态：E1 执行中；两个隔离 Spaces bucket 与两组最小权限 key 已创建并通过 S3
+访问探针，Droplet/DNS/origin/Release Set/故障矩阵/最终销毁仍待按序完成
+
+计划校准：
+
+- 所有付费 mutation 均发生在 Cycle 63 授权执行器 commit `635b87b` 推送后；
+- DigitalOcean 控制台恢复登录，Spaces UI 明确支持 bucket-scoped limited key；
+- 继续不改生产 Droplet、其他 staging、生产 Trust/Registry 常量，不调用 Provider
+  或 credits。
+
+已经实现和执行：
+
+1. 在 SGP1 创建两个 Standard Storage bucket，分别承载不可变 Release 对象和
+   Trust/Registry metadata，CDN 均关闭；
+2. Spaces subscription 页面显示约 `0.007 USD/hour`，两个 bucket 共享 subscription，
+   72 小时约 `0.50 USD`，仍在 `1.15/3 USD` 预算边界；
+3. 创建一个仅限两个 E1 bucket 的 Read/Write/Delete Publisher key，以及一个仅限
+   同两 bucket 的 Read-only Origin Reader key；
+4. 初次 Reader key 返回 `SignatureDoesNotMatch`，立即永久撤销并重建；未扩大权限，
+   active key 保持两组；
+5. 实际探针验证 Publisher PUT/GET、Reader GET、Reader PUT 被 403 拒绝和 Publisher
+   DELETE，退出状态 0 且 probe object removed；
+6. 新增无依赖 S3 SigV4 client，固定 SGP1/批准 bucket 命名、canonical path/query、
+   payload digest、手动 redirect、15 秒 timeout 和 secret-safe error；
+7. 凭据文件必须 bounded regular non-symlink mode `0600`，Publisher/Reader access
+   ID 必须不同；secret 不进入仓库、命令参数或 evidence；
+8. 新增 fail-closed Droplet boundary runner：本机临时 SSH key、固定 cloud-init、
+   22/80/443 UFW、1 GiB SGP1/无 backup/monitoring、executor clean commit、
+   pre/post create 复验、pending cleanup state 与销毁时私钥清除。
+
+自主验证：
+
+- Spaces client 6/6；
+- Droplet boundary 6/6；
+- authorization 13/13；
+- 联合定向 25/25、Node syntax、diff check 通过；
+- Kimi 按用户要求继续暂停，由主 Agent 对 credential scope、SigV4、失败 key
+  撤销、probe cleanup 和 Droplet fail-close 路径进行加强自主复核。
+
+外部状态：
+
+- active E1 resources：2 个 bucket、2 个 limited key；
+- revoked E1 credentials：1 个失败 Reader key；
+- Droplet/DNS/origin：0；
+- 生产资源 mutation：0；
+- 当前成本只来自已启动 Spaces subscription，尚未启动 Droplet 计费。
+
+计划复盘与下一轮：
+
+- 本模块关闭 Spaces 与最小权限 credential 子项，不关闭 E1/R3；
+- 下一步先冻结推送 Cycle 64 executor，再创建唯一 SGP1 Droplet、配置 Cloudflare
+  staging DNS、Caddy TLS 与 Spaces-backed origin；
+- 之后才能重建四 Agent Release Set、生成非生产 Trust、上传回读、发布 Registry
+  和执行 14 项故障矩阵；任何失败先清理，不跳到 P5。

@@ -6,7 +6,8 @@ P3 零新 key provenance preflight 均已完成；Cycle 61 的 P3 R2 E0 四 Agen
 双构建、测试签名、复验、销毁与非秘密 evidence 也已通过；Cycle 62 已完成 P4 R3
 E1 的零外部资源阻断式 preflight；
 Cycle 63 已固定精确 E1 执行窗口、预算、资源、Trust、Release Set 与清理授权；
-生产 R1-R6 仍未关闭，尚未创建 E1 资源或进入生产 key ceremony、内部 canary、
+Cycle 64 已完成两个隔离 Spaces bucket、最小权限 Publisher/Reader 与 S3 探针；
+生产 R1-R6 仍未关闭，尚未完成 Droplet/DNS/origin、E1 Release Set 或内部 canary、
 E2 或生产候选
 
 本文档把
@@ -429,7 +430,7 @@ flowchart TD
 | P1 R6 基线 | **已完成**：Runbook、最小事件 Schema、证据模板、静态 secret/content 检查与 E0 tabletop | 未创建外部资源；不等于完整 R6 关闭 |
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
-| P4 R3 E1 | **preflight 与精确执行授权已完成，实际 E1 未执行**：P3 handoff、消费者契约、不可变顺序、14 项故障矩阵、LKG、72 小时、预算、资源、Trust、Release Set、请求和清理边界 | 本授权只允许一次 SGP1 隔离演练；生产 R3、P5 和任何扩容/延期仍需独立决定 |
+| P4 R3 E1 | **执行中**：preflight/授权已完成；两个 SGP1 Spaces、bucket-scoped Publisher/Reader 和实际权限探针已通过 | 仍需唯一 Droplet、Cloudflare DNS/Caddy TLS/origin、四 Agent Release Set、非生产 Trust/Registry、14 项故障矩阵和完整销毁；生产 R3/P5 未开放 |
 | P5 Package canary | 专用内部账号、BYOK 预算、安装/权限/rollback/rotation | 需要真实订阅、Provider 请求/费用和 cohort 授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
@@ -828,3 +829,29 @@ Kimi 仍按用户要求暂停，由主 Agent 完成加强自主复核。
 当前只关闭 `approval_missing`：尚未创建付费资源、生成 E1 key、重建 Release Set、
 上传 Registry 或运行故障矩阵。下一步先冻结推送执行器 commit，再按授权完成资源、
 签名、发布、故障注入和销毁；任一失败必须先清理，不能跳到 P5。
+
+## 18. Cycle 64 P4 R3 E1 Spaces 与凭据检查点
+
+付费 mutation 在授权 commit `635b87b` 推送后开始。已在 SGP1 创建两个 Standard
+Storage bucket，CDN 关闭；Spaces subscription 页面小时价约 `0.007 USD`，72 小时
+约 `0.50 USD`。它仍符合 `1.15 USD` 预计成本和 `3 USD` 硬上限。
+
+凭据分离为：
+
+- Publisher：只限两个 E1 bucket，Read/Write/Delete，本机 mode `0600`；
+- Origin Reader：只限两个 E1 bucket，Read，未来只以 mode `0600` 注入 Droplet。
+
+初次 Reader key 的 access ID/secret S3 复验失败，已永久撤销后重建。最终实际探针
+通过 Publisher PUT/GET、Reader GET、Reader PUT 403 deny 和 Publisher DELETE，
+且探针对象已移除。
+
+新增 SigV4 client 和 Droplet boundary runner；后者固定本机临时 SSH、Ubuntu
+24.04 cloud-init、passwordless SSH、UFW 22/80/443、SGP1 `s-1vcpu-1gb`、无 backup/
+monitoring、executor clean commit、cloud-init/key digest、pending cleanup state
+和销毁时私钥清除。Node 定向 25/25 与 diff check 通过；Kimi 继续暂停，主 Agent
+完成加强自主复核。
+
+当前 E1 active 状态只有两个 bucket 和两组 limited key，尚无 Droplet/DNS/origin。
+下一步先冻结推送 Cycle 64 executor，再创建唯一 Droplet、Cloudflare staging DNS、
+Caddy TLS 和 Spaces-backed origin；之后才允许进入 Release Set/Trust/Registry/
+故障矩阵。生产 R3、P5-P8 继续关闭。
