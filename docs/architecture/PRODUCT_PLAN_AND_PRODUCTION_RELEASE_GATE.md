@@ -464,3 +464,28 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   验证后 Blocker/High/Medium/Low 全零并 PASS；
 - 本轮不执行双构建、签名、finalize、Registry candidate、外部服务或发布；P3/R2
   仍未满足，P4-P8 继续关闭。
+
+## 20. 循环 61 P3 离线装配执行器与证据 runner 检查点
+
+- 用户已批准固定 `e1ef8db...` 候选、一个临时测试 Publisher 和四 Agent 双构建；
+- 正式执行前发现 CLI 缺少 H2d1-H2d3 的无私钥装配入口，不能用带硬编码测试 key
+  的 crate 测试替代；
+- 新增 `assemble-release`，复用现有 finalize/H1/H2d1/H2d2/H2d3 实现，Trust
+  仅在进程内用于当前公开 key 的离线复验，失败清理完整输出；
+- Kimi 首轮 signer TOCTOU Low 已通过 `O_NOFOLLOW + fstat` 修复；无 key 负向测试
+  也修复了 macOS 临时目录 canonical alias 的合法 target 误拒；
+- 新增 strict receipt/validator 和 fail-closed runner；runner 在唯一 `generate`
+  前完成 commit/clean/lock/空生产常量/根 target 门禁、两个顺序隔离 Cargo build
+  及四 Agent 的前三类输出比较，异常不写 PASS receipt；
+- 无 key Node 联合测试 25/25，14 GiB 临时开发 target 已清理；正式 A/B target
+  将顺序驻留和删除，避免重复占满磁盘；
+- Deploy 仓库并发前进到仅含 CreatorCut RC11 变更的新 HEAD；P3 不改写 freeze，
+  三个首方 source 均从原冻结 commit 建临时 detached worktree，避免其他产品提交
+  进入 Agent Artifact；
+- executor 与候选 commit 分开冻结和记录；它不能修改候选定义，也不能接触私钥；
+- 定向测试、Package 回归、fmt、Clippy 和 Node syntax 已通过，P3 key 尚未生成；
+- Kimi 修复复核因账户周期额度 403 暂停；用户明确决定在其恢复前停止调用 Kimi，
+  临时改用主 Agent 的完整 diff、负向测试、执行前后证据加强复核，恢复后再启用
+  Kimi 交叉门禁；
+- 下一步只允许先完成加强自主复核和 executor commit，再进入已批准的双构建、
+  唯一临时 Publisher、签名复验和销毁；P4-P8 继续关闭。

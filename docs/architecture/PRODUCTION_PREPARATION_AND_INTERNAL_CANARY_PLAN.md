@@ -685,3 +685,56 @@ Blocker/High/Medium/Low 全部为零并给出 PASS。
   2 Low 已修复，第二轮独立复跑和 10 类负向验证后四级 findings 全零并 PASS；
 - preflight 通过只建立 `rehearsal_ready` 前的阻断结构，不代表 P3/R2 已完成；
 - 实际 P3 仍等待新的 test-signing authority，P4-P8 继续关闭。
+
+## 15. Cycle 61 P3 离线 Release assembly executor 与证据 runner 检查点
+
+用户已把 P3 R2 E0 的 authority 精确限定为 commit `e1ef8db...`、一个临时测试
+Publisher、四 Agent 双构建和本机非秘密 provenance。执行前复核发现原有 CLI 只能
+构建 Artifact 和 finalize 外部签名，无法从公开命令组装 H2d1-H2d3；直接调用
+`#[cfg(test)]` helper 又会带入既有硬编码测试 key。因此新增一个单独冻结、单独记录
+commit/digest 的离线 executor：
+
+- `assemble-release` 不接收私钥，只读取签名结果和公开 key；
+- 先执行 H2d0 finalize 与 H1 复验，再复用正式 H2d1-H2d3 实现生成 Host bundles、
+  Release Manifest 和未发布 Registry record；
+- Trust 仅是进程内、单 key、无 Root/expiry/cache 的离线验证 store，不修改客户端
+  embedded/cached Trust；
+- 输出目录必须全新；失败删除整个目录，成功删除验证 staging；
+- Registry location 只允许 HTTPS，正式 E0 runner 将使用 `.invalid` 地址且不访问
+  网络；
+- 动态 `future-agent` 使用文件 fixture 进入同一 CLI 路径，不能靠内置 Catalog
+  特判。
+
+该 executor 的定向测试、80 项 Package 回归、fmt、Clippy 和 Node syntax 已通过。
+Kimi 首轮提出 signer TOCTOU Low 后，worker 改为 `O_NOFOLLOW + fstat`，并增加
+不生成 key 的 symlink/mode/size/absent 负向测试；测试同时修复 macOS `/var` 与
+`/private/var` canonical alias 导致的合法 target 误拒。当前仍未生成 P3 key。
+
+同时新增 strict execution receipt/validator 与 fail-closed runner。runner 的顺序
+固定为：
+
+1. 校验显式 ack、候选/执行器/三份首方 source commit、clean tree、lock、
+   生产关闭常量和根 `target/`；
+2. 在两个仓库外 Cargo target 中顺序构建执行器，每次复制完成即删除该 target，
+   避免两个约十余 GiB 的目录同时占盘；
+3. 四 Agent 分别完成 A/B `artifact/signing_request/host_projection`，在生成 key
+   前逐字节比较；
+4. 唯一一次生成 Publisher，执行 8 次签名与 8 次 assemble/H1 复验；
+5. 比较每个 Agent 的十类输出，销毁私钥、移除 detached worktree/两个 build root/
+   完整临时 boundary，最后才写非秘密 receipt。
+
+执行准备期间 Deploy 源仓库 clean HEAD 从冻结的 `781599f...` 前进到
+`d92cc44...`，仅修改同仓库 CreatorCut RC11 文件，Deploy 打包输入 `AGENTS.md`
+未变。为避免把并发产品提交悄悄写入 P3，runner 不更新 source freeze，而是为
+Deploy、Job、LectureCast 分别从原冻结 commit 创建临时 detached source worktree；
+receipt 前三者连同 candidate worktree 一起移除。
+
+preflight、receipt/runner 与 worker 无 key 联合测试 25/25。Kimi 修复复核因其账户
+周期额度 403 暂时不能完成，本机无第二个 Kimi provider。用户随后明确决定：在
+Kimi 恢复并另行通知前，停止调用 Kimi，由主 Agent 使用完整 diff 审计、负向测试、
+执行前门禁和执行后 receipt/清理证据进行加强自主复核；Kimi 恢复后再恢复交叉门禁。
+该决定不允许改动 P3 的密钥、外部资源、费用或销毁范围。
+
+必须先完成上述加强自主复核并冻结 executor commit，之后才开始获批的双构建与
+唯一一次 Publisher 生成。该检查点不关闭 P3/R2，也不开放 P4-P8 或任何生产
+authority。

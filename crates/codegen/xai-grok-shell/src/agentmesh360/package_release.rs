@@ -118,6 +118,10 @@ pub(crate) struct AgentReleaseBuild {
 }
 
 impl AgentReleaseBuild {
+    pub(super) fn document(&self) -> &[u8] {
+        &self.document
+    }
+
     pub(super) fn verified_descriptor(&self) -> Result<VerifiedAgentReleaseDescriptor> {
         let descriptor = verify_agent_release_descriptor(&self.document)?;
         if descriptor.package_id != self.package_id
@@ -157,7 +161,7 @@ impl AgentReleaseBuild {
 
     #[cfg(test)]
     pub(super) fn document_for_test(&self) -> &[u8] {
-        &self.document
+        self.document()
     }
 }
 

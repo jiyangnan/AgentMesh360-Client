@@ -102,9 +102,23 @@ impl TrustedPublisherStore {
         })
     }
 
+    /// Creates an in-memory trust store for the offline release-authoring CLI.
+    ///
+    /// This never changes embedded or cached production trust. The caller must
+    /// first validate the external public-key document and the matching
+    /// signature result; the store is dropped with the authoring process.
+    pub(super) fn for_offline_authoring(key: TrustedPublisherKey) -> Self {
+        Self {
+            keys: HashMap::from([(key.key_id.clone(), key)]),
+            trust_sequence: 0,
+            root_key_id: None,
+            expires_at: None,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn with_key(key: TrustedPublisherKey) -> Self {
-        Self::with_key_and_audit(key, 0, None)
+        Self::for_offline_authoring(key)
     }
 
     #[cfg(test)]

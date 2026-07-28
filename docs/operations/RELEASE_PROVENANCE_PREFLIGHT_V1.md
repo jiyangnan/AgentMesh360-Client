@@ -154,3 +154,56 @@ node tools/release-provenance/validate-release-provenance-preflight.mjs \
 
 验证通过只表示 P3 的阻断边界已被机器表达，不表示 source 已冻结、双构建/签名已经
 执行、R2 已满足、Registry 已生成或任何 staging/canary/production authority 已开放。
+
+## 8. 获批执行的无私钥装配路径
+
+实际演练使用 `agentmesh360-package-author` 的三段式路径：
+
+1. `build`：从 Agent manifest/authoring manifest 构建 Artifact、signing request
+   和 Host projection；
+2. 隔离 signer worker：只在获批临时目录生成一个测试 Publisher，逐项签署
+   signing request，并在演练结束时销毁私钥；
+3. `assemble-release`：只接收 Artifact、request、signature result、公开 key 与
+   Host projection，执行 finalize、H1 复验、Host bundle export、Release Manifest
+   assembly 和未发布 Registry binding。
+
+`assemble-release` 不接受私钥参数，不写 embedded/cached Trust。它创建一个仅当前
+进程有效的 public-key Trust store；输出目录必须是新目录，失败会删除整个目录，
+成功会删除验证 staging。E0 Registry URL 使用 HTTPS `.invalid` 地址，只绑定
+canonical 文档，不发生网络请求。
+
+隔离 signer 通过 canonical parent 约束 target；已有私钥只允许
+`O_NOFOLLOW` 打开后由 `fstat` 确认 regular file、`0600` 和 4 KiB 上限，避免
+`lstat` 后的 symlink swap。macOS `/var` 与 `/private/var` alias 由 parent
+`realpath` 归一化，不对未归一化字符串做错误前缀比较。
+
+候选内容仍来自批准的 clean detached commit；新增 executor 必须先独立通过测试、
+Kimi 审查并冻结 commit/digest。最终 receipt 同时记录 candidate commit 与 executor
+commit，防止用工具补齐掩盖候选漂移。
+
+## 9. Execution receipt 与 runner
+
+获批执行证据使用：
+
+- `schemas/agentmesh360-release-provenance-receipt-v1.schema.json`
+- `tools/release-provenance/validate-release-provenance-receipt.mjs`
+- `tools/release-provenance/run-e0-release-provenance.mjs`
+
+receipt 只保留 commit、tool version、公开 ID/version、role alias、typed tree digest、
+file count、比较/复验/销毁状态。它固定一个 Publisher、8 次签名、四 Agent 与十类
+输出，不允许 raw public key、raw signature、绝对路径、个人身份或原始命令。
+
+runner 必须收到 `--execute-approved-p3-e0` 才能运行。即使有 ack，也必须先完成全部
+source/lock/production boundary 检查、两个隔离 executor build 与四 Agent 的
+Artifact/signing request/Host projection A/B 比较；任一步失败都不会调用
+`generate`。生成后任一异常进入同一 finally 清理：尝试销毁私钥、移除 detached
+worktree 和完整临时 boundary，不写成功 receipt。
+
+为控制磁盘，A/B Cargo target 仍是两个独立 root，但按 A 构建、复制执行器、删除 A
+target，再按相同步骤构建 B；二者不会同时驻留。Package/Release A/B 输出保留到比较
+结束，随后随 boundary 一并删除。
+
+首方 source 参数标识本机仓库，但 runner 不直接使用其可前进的当前 checkout。
+它先确认仓库 clean 且冻结 commit object 存在，再在临时 boundary 中为 Deploy、
+Job、LectureCast 分别创建该 commit 的 detached worktree。这样同仓库其他产品的
+新提交不会改变 P3 Artifact；三个 source worktree 必须在 receipt 前全部移除。

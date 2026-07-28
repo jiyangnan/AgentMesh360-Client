@@ -22,6 +22,7 @@ mod package_management;
 mod package_registry_fetcher;
 mod package_registry_snapshot;
 mod package_release;
+pub mod package_release_authoring;
 mod package_skill_export;
 mod package_trust;
 mod package_trust_cache;

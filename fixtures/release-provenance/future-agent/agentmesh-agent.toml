@@ -1,0 +1,38 @@
+schemaVersion = 1
+packageId = "com.agentmesh360.future-agent"
+version = "1.0.0"
+publisher = "agentmesh360"
+sourceRepository = "https://github.com/agentmesh360/future-agent"
+requestedPermissions = ["local_files"]
+
+[agent]
+agentId = "future-agent"
+displayName = "Future Agent"
+description = "Same-repository onboarding smoke without a built-in Client Catalog entry."
+sortOrder = 90
+
+[persistence]
+mainSessionStrategy = "account_agent_stable_v5"
+workspaceStrategy = "account_agent_directory"
+
+[runtime]
+promptMode = "extend"
+discoverSkills = true
+inheritSkills = true
+agentsMd = true
+promptBody = "You are the persistent Future Agent."
+
+[modelPolicy]
+tools = "preferred"
+streaming = "preferred"
+
+[skills]
+canonicalWorkflow = "docs/agent-onboarding.md"
+
+[[skills.adapters]]
+host = "claude-code"
+path = "skills/claude-code/SKILL.md"
+
+[[skills.adapters]]
+host = "openclaw"
+path = "skills/openclaw-future-agent/SKILL.md"

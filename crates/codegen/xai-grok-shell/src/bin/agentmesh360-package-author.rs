@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use xai_grok_shell::agentmesh360::package_authoring::{build_package, finalize_external_signature};
+use xai_grok_shell::agentmesh360::package_release_authoring::assemble_offline_release;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -46,6 +47,25 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Assemble Host bundles, a Release Manifest, and an unpublished Registry record.
+    AssembleRelease {
+        #[arg(long)]
+        request: PathBuf,
+        #[arg(long)]
+        artifact: PathBuf,
+        #[arg(long)]
+        signature_result: PathBuf,
+        #[arg(long)]
+        public_key: PathBuf,
+        #[arg(long)]
+        host_projection: PathBuf,
+        /// New output directory. Existing directories are never overwritten.
+        #[arg(long)]
+        output: PathBuf,
+        /// HTTPS candidate location used only to bind the unpublished Registry record.
+        #[arg(long)]
+        release_base_url: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -74,6 +94,23 @@ fn main() -> Result<()> {
             &public_key,
             &output,
         )?)?,
+        Command::AssembleRelease {
+            request,
+            artifact,
+            signature_result,
+            public_key,
+            host_projection,
+            output,
+            release_base_url,
+        } => serde_json::to_string(&assemble_offline_release(
+            &request,
+            &artifact,
+            &signature_result,
+            &public_key,
+            &host_projection,
+            &output,
+            &release_base_url,
+        )?)?,
     };
     println!("{receipt}");
     Ok(())
@@ -101,6 +138,27 @@ mod tests {
                 "output",
                 "--key-id",
                 "release-key",
+            ])
+            .is_ok()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "agentmesh360-package-author",
+                "assemble-release",
+                "--request",
+                "request.json",
+                "--artifact",
+                "package.ampkg.tar.zst",
+                "--signature-result",
+                "signature.json",
+                "--public-key",
+                "public-key.json",
+                "--host-projection",
+                "host-skills.json",
+                "--output",
+                "release-output",
+                "--release-base-url",
+                "https://packages.agentmesh360.invalid/e0/package/1.0.0",
             ])
             .is_ok()
         );

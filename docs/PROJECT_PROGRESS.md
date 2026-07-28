@@ -4332,3 +4332,101 @@ Kimi 独立复核：
 - 下一步必须等待新的精确 test-signing authority，才能生成一个新 E0 测试
   Publisher、执行固定 commit 双构建与测试签名；没有该批准时 P4-P8 和生产发布
   继续关闭。
+
+### 循环 61：P3 R2 E0 离线 Release 装配执行器与证据 runner
+
+状态：获批的 P3 实际演练尚未生成测试 key；先补齐并冻结无私钥 Release/Registry
+装配通路
+
+计划校准：
+
+- 用户批准的候选仍固定为
+  `e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c`，四 Agent、一个临时测试
+  Publisher、双构建与十类 provenance 输出不变；
+- 复核发现该 commit 的公开 CLI 只有 `build` 与 `finalize`，H2d1 Host bundle、
+  H2d2 Release Manifest 和 H2d3 Registry record 只在 crate 内部测试通路可组装；
+- 若直接复用测试 helper，会带入硬编码测试 key，并违反“本轮只生成一个新测试
+  Publisher”的批准边界。因此先增加正式但仅离线的无私钥装配命令；它作为单独
+  executor commit/digest 记录，不改写候选源码 commit。
+
+已经实现：
+
+1. `agentmesh360-package-author assemble-release` 只接收 Artifact、signing request/
+   result、公开 Publisher key 与 Host projection，不接收或保存私钥；
+2. 装配器复用 H2d0 finalize，再经临时内存 Trust 完成 H1 复验，随后输出 H2d1
+   Host bundles、H2d2 Release Manifest、H2d3 未发布 Registry record 和非秘密
+   finalize receipt；
+3. public key 必须是 canonical Ed25519 原始公钥；Registry URL 只接受 HTTPS；
+   输出目录必须是新目录，任一步失败都删除完整输出，成功后删除验证 staging；
+4. 新增与既有 H2d1 动态 Agent 一致的 `future-agent` 文件 fixture，供正式双构建
+   使用，而不依赖 Catalog 特判；
+5. 新增隔离 signer worker 的 `generate/sign/destroy` 协议。worker 只允许直接位于
+   `/tmp/agentmesh360-release-provenance-e0-*` 的边界目录、私钥权限 `0600`，
+   evidence 不保留公钥/签名原文；当前尚未调用 `generate`；
+6. Kimi 首轮审查识别 signer 在 `lstat` 后 `readFile/open` 的 TOCTOU Low；现改为
+   `O_NOFOLLOW` 打开后用 `fstat` 校验 regular file、`0600` 和 4 KiB 上限；
+7. 新增不生成 key 的 worker 负向测试，并由此发现 macOS `/var` 到
+   `/private/var` 的 canonical alias 会误拒合法 target；现改为先解析 target
+   parent 的 `realpath` 再与 canonical boundary 比较；
+8. 新增 strict Release provenance receipt Schema/validator，固定一个测试
+   Publisher、四个 source input、四 Agent、每项十类逐字节一致、销毁/空 Trust/
+   未发布边界，并拒绝 raw key/signature、绝对路径、原始命令和 bare digest；
+9. 新增 fail-closed E0 runner：显式 ack 后仍先固定 candidate/executor/source
+   commits、clean tree、`Cargo.lock`、空生产常量与根 `target/`；A/B Cargo target
+   顺序构建并各自删除，两个执行器先完成四 Agent 的 Artifact/signing request/
+   Host projection 比较，全部通过后才有唯一一次 `generate`；
+10. runner 只签署八个已比较 request，分别走 finalize/H1/H2d1-H2d3，再比较十类
+    输出；任何异常都停止、销毁已尝试生成的 Publisher、移除 detached worktree 与
+    完整临时 boundary，失败时不写 PASS receipt；
+11. 加强自主复核发现 Deploy 源仓库 clean HEAD 从已冻结 `781599f...` 前进到
+    `d92cc44...`，差异只涉及同仓库 CreatorCut RC11 文件，Deploy 打包输入
+    `AGENTS.md` 未变；runner 不改写基线，而是让三个首方 Agent 都从各自冻结 commit
+    建立临时 detached source worktree，避免并发产品开发污染 provenance。
+
+自主验证：
+
+- `package_release_authoring::tests` 2/2；
+- `agentmesh360-package-author` CLI parser 1/1；
+- Agent Package 模块回归 80 通过、0 失败、1 个需要真实外部源码路径的既有测试
+  保持显式 ignored；
+- `cargo fmt --all -- --check`、目标 binary/library 的
+  `cargo clippy --offline --locked ... -D warnings`、Node syntax 和
+  `git diff --check` 通过；
+- signer worker 的 symlink、permissive/oversized file 与 absent destroy 负向测试
+  3/3；这些测试只使用伪字节，不生成或读取任何真实 key；
+- P3 preflight、receipt/runner 与 signer worker 联合 Node 25/25；receipt CLI、
+  三个 Node syntax、Schema JSON、diff check 通过；
+- 已删除 14 GiB 的仓库外开发 target，磁盘可用空间由约 39 GiB 恢复到约
+  53 GiB；正式 runner 保证两个大型 Cargo target 不同时驻留；
+- 所有 Cargo 输出均位于仓库外临时 target；仓库根 `target/` 未创建；未生成 key、
+  未签名、未调用 Provider/外部服务，也未产生 credits 或费用。
+
+加强自主复核：
+
+- 全量 staged diff 覆盖 21 个文件；逐项核对 private-key CLI boundary、ephemeral
+  Trust、H1/H2d1-H2d3 binding、失败清理、receipt retention、唯一 `generate` 与
+  finally destroy；
+- 新增内容的 private PEM/API key/个人本机路径扫描为零，生产 Trust/Registry 三个
+  `None` 常量保持为空；
+- 自主复核先后发现并修复 macOS temp canonical alias、signer TOCTOU 和首方 source
+  HEAD 漂移；修复后 Node 25/25、fmt、Schema/CLI/syntax/diff/root-target 检查通过；
+- 当前自主结论 Blocker/High/Medium/Low 均为 0。该结论是用户在 Kimi 额度恢复前
+  明确指定的临时复核方式，不冒充 Kimi 独立 PASS。
+
+计划复盘与下一轮：
+
+- 本检查点只补 P3 已批准范围内缺失的 Release assembly executor，不关闭 P3/R2；
+- 本机 Kimi 首轮已提出 1 个 Low 并已修复；其额度恢复后继续沿用 Kimi 交叉门禁；
+- Kimi 修复复核当前被其账户周期额度 403 阻断；本机只配置
+  `managed:kimi-code`，没有可用的第二个零费用 Kimi provider；用户随后明确决定，
+  在 Kimi 额度恢复并另行通知前，由主 Agent 通过完整 diff 审计、负向测试与执行
+  前后证据核对承担加强自主复核，不再尝试调用 Kimi 或购买额度；
+- 该临时复核调整不改变 P3 authority、候选 commit、一个 Publisher、异常停止、
+  销毁、零 Provider/credits/费用和非秘密 evidence 边界；
+- Deploy 的新 HEAD 不自动进入 P3；执行仍使用最初冻结的 `781599f...`，Job 与
+  LectureCast 分别使用 `ed8f1c6...` 和 `688dd61...`，三个 source worktree 都在
+  receipt 前移除；
+- 随后才从 clean detached `e1ef8db...` 读取候选输入，执行四 Agent 的 A/B 构建；
+  所有无 key 的构建前检查通过后，才允许调用 worker 唯一一次生成临时测试
+  Publisher；
+- P4-P8、生产 key、外部资源、Provider、credits、费用与发布继续关闭。
