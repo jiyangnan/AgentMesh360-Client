@@ -1128,7 +1128,9 @@ Cycle 89 增加留存安全的本机 baseline capture。它要求执行器已推
 摘要读取，前后不得变化。receipt 只含 alias、计数、布尔值与 typed digest，
 写入 `/private/tmp` 的 `0600` 临时文件。该门即使 PASS 也不授权云资源，下一道门
 仍是专用账号的实时订阅复验和隔离客户端/临时 Keychain 装配。定向测试 18/18；
-全仓库 Node 在仅放开本机 loopback 的复跑中 187/187。
+全仓库 Node 在仅放开本机 loopback 的复跑中 187/187。冻结 executor
+`a236a84...` 上的真实 capture 已 PASS：源测试 Key存在、产品 Keychain 为空、
+正常 Package/Profile/Trust 均为 0 且读取前后未变化；脱敏 receipt 已入库。
 
 定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
 未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读

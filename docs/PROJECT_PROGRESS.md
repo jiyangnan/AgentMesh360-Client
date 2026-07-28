@@ -5381,7 +5381,7 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 
 ### 循环 89：P5 E1 本机 baseline capture
 
-状态：工具与负向门禁已完成；等待 commit 推送后执行真实只读 capture
+状态：工具、负向门禁与冻结 commit 上的真实只读 capture 已完成
 
 已经实现：
 
@@ -5412,5 +5412,11 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
   fail-close；
 - 本轮真实 Provider 请求、credits、Keychain 写入、Package mutation、外部资源和
   费用仍为 0；
-- 下一步先完成全量 Node 回归、提交并推送；随后只在该冻结 commit 执行一次真实
-  baseline。成功后才规划隔离 state/临时 Keychain 装配，仍不跳过实时订阅门。
+- executor `a236a84...` 与 `origin/main` 一致且工作区干净后，真实 baseline
+  capture PASS；源 Key present、产品 Keychain empty、正常 schema v10、
+  Package/Profile/Trust count 均为 0，state 前后 unchanged；
+- 脱敏 receipt 已固化为
+  `docs/operations/tabletops/2026-07-29-p5-local-baseline.json`；临时原件只保留在
+  本轮清场范围；
+- 下一步规划隔离 state/临时 Keychain 装配与实时订阅复验；该门通过前仍不创建
+  DigitalOcean/Cloudflare 资源。

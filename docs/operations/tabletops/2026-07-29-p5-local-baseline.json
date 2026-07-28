@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "baselineId": "package_canary_e1_local_baseline_20260729_0001",
+  "authorizationId": "package_canary_e1_20260729_0001",
+  "capturedAt": "2026-07-28T18:06:33.638Z",
+  "executorCommit": "a236a84b9b3fc9fc01e30cb944dc5e6ab0ee29fe",
+  "authorizationSha256": "sha256:f6faac58a90a712a82c6526486cf8bc05bbfedef3b95a1f4efb3b47eb86ae463",
+  "cohort": {
+    "accountAlias": "p5-internal-account-01",
+    "deviceAlias": "p5-mac-01",
+    "accountCount": 1,
+    "deviceCount": 1,
+    "platform": "macos",
+    "architecture": "arm64",
+    "realIdentifiersRetained": false
+  },
+  "provider": {
+    "presetId": "google-gemini",
+    "modelId": "gemini-3.5-flash-lite",
+    "savedSourceCredentialPresent": true,
+    "preexistingProductKeychainCredentialPresent": false,
+    "inferenceRequestsUsed": 0,
+    "agentMeshCreditsUsed": 0,
+    "providerCostUsd": 0
+  },
+  "account": {
+    "subscriptionRevalidation": "pending_live_client_bootstrap",
+    "subscriptionMutationPerformed": false,
+    "accountMutationPerformed": false
+  },
+  "normalState": {
+    "schemaVersion": 10,
+    "ownerAccountCount": 0,
+    "providerProfileCount": 0,
+    "packageRegistryCount": 0,
+    "trustCacheCount": 0,
+    "registryFetchCount": 0,
+    "packageStateDigest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "packageTree": {
+      "entryCount": 0,
+      "byteCount": 0,
+      "treeDigest": "sha256:f4fbe8313d081327b8891d61a21ea4875ba27f633a65c574c760d85666e5db63"
+    },
+    "stateDirectoryModeRestricted": false,
+    "stateDatabaseModeRestricted": false,
+    "unchangedDuringCapture": true
+  },
+  "execution": {
+    "externalNetworkRequestsUsed": 0,
+    "infrastructureResourcesCreated": 0,
+    "keychainWritesPerformed": 0,
+    "packageMutationsPerformed": 0,
+    "productionMutationsPerformed": 0
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "credentialDigestsRetained": false,
+    "pathsRetained": false,
+    "personalIdentifiersRetained": false,
+    "rawPackageOrTrustDocumentsRetained": false
+  },
+  "gate": {
+    "localBaselinePassed": true,
+    "cloudAssemblyAllowed": false,
+    "nextRequiredGate": "live_subscription_and_isolated_client_assembly"
+  }
+}
