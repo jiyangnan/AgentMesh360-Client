@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；场景已真实暴露并修复 P5-only Fake-IP DNS、签名 expiry 毫秒缓存精度，以及 Package receipt camelCase/JS 安全整数契约问题 | 恢复隔离 Client 的 pre-Package baseline，冻结并升级同一 Host 后重跑 21 场景；全部通过且恢复最终 canary Package 状态后，严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；14 项 Host 场景已通过并保留严格回执，场景还真实暴露并修复 P5-only Fake-IP DNS、签名 expiry 毫秒缓存精度，以及 Package receipt camelCase/JS 安全整数契约问题 | 冻结并推送 Host 回执恢复收口器，把 14 项真实 Host 回执与 7 项既有契约证据固化为 21/21 矩阵；随后严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
 
 ## 开发循环记录
 
@@ -6525,3 +6525,46 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
   Provider 或生产 authority。下一轮先提交推送，按授权精确删除两个 canary
   Package 行及其两个隔离 version 目录，保留 OAuth/BYOK/Trust/Provider 状态，再升级
   同一 Host 并重跑 21 场景；矩阵 PASS 前不进入 Registry-first 清场。
+
+### 循环 120：Origin Reader 原地轮换与 Host 回执恢复收口
+
+状态：P5 隔离 Origin Key 已原地再生成并恢复只读服务；14/14 真实 Host 场景回执
+已通过正式校验，安全恢复收口器完成回归，21 场景矩阵等待冻结提交后固化
+
+实际执行与恢复边界：
+
+1. DigitalOcean 对固定 `am360-p5-e1-origin-*` Key 执行原生 regenerate；旧
+   Access ID/Secret 永久失效，新 ID/Secret 均发生变化，Key 名称、两个 P5 Bucket
+   和 `Read` 权限不变；
+2. 新凭据只写入既有 mode `0600` 隔离凭据与 Origin config；Publisher principal
+   逐字节未改，Root/Publisher 私钥、Release 对象、Trust、Registry、Droplet、
+   DNS 和生产常量均未修改；
+3. 同一 Droplet 的非特权 Origin 服务更新 config 并重启；direct-to-approved-IP
+   HTTPS health、Trust 与 Registry 分别返回 `200 application/json`，证明新 Reader
+   已生效且 61/61 Registry-last 发布链仍可读；
+4. 完整场景执行已经写出 mode `0600` Host receipt：14 个固定场景全部唯一
+   `passed`，Package mutation 精确为 5，Provider inference 新增 0、credits 0、
+   production authority false，账户标识、凭据与 prompt/response 均未记录；
+5. 外层 Electron 进程在 Host receipt 写入后没有向 wrapper 提供可靠终态，因此
+   wrapper 返回通用失败且未写 matrix receipt；正式 `validateHostReceipt` 和
+   `buildScenarioResults` 独立复验为 Host 14/14、总矩阵 21/21；
+6. 新增唯一 `finalize-host-receipt` 恢复入口：只接受固定 Client/source、原
+   Driver input、Host receipt、publication/Origin state 和当前 clean pushed
+   executor；要求
+   `Origin → Builder → Publisher → Host → Finalizer` 全序 ancestry，并逐字节
+   重建 Driver input 后才能写 matrix receipt；
+7. 恢复路径不会再次启动 Electron、不会重复 5 次 Package mutation，也不能指定
+   任意路径、场景、Endpoint、Key 或输出；receipt 额外绑定 Host executor 与
+   Driver input typed SHA-256。
+
+自主验证与计划复盘：
+
+- Scenario/Cleanup 定向 16/16；P4/P5 Package、Distribution、Key Ceremony 与
+  Release Evidence 工具链沙箱外 246/246；Node 语法和 `git diff --check` 通过；
+- 沙箱内同一套 242/246，唯一四项仍是环境禁止 Origin 测试监听
+  `127.0.0.1` 的 `EPERM`；沙箱外四项全部通过，不属于产品失败；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 复核旧 Key 已失效、新 Reader 只读、
+  Publisher 未变、Host receipt 无秘密字段、Driver input/receipt/提交链不可替换；
+- 产品计划没有增加场景或进入 P6。下一轮先冻结、提交、推送本恢复器，再以现有
+  `dd7030c...` Host executor 收口 21/21 matrix receipt；通过后立即进入既定
+  Registry-first Release Chain 清场，不重跑 Host 场景。

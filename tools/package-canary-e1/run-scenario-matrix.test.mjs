@@ -203,7 +203,27 @@ test('parses only the frozen executor CLI', () => {
     parseArguments(['--executor-commit', COMMIT]),
     { executorCommit: COMMIT },
   );
+  assert.deepEqual(
+    parseArguments([
+      'finalize-host-receipt',
+      '--host-executor-commit',
+      COMMIT,
+      '--executor-commit',
+      'b'.repeat(40),
+    ]),
+    {
+      hostExecutorCommit: COMMIT,
+      executorCommit: 'b'.repeat(40),
+    },
+  );
   assert.throws(() => parseArguments([COMMIT]));
+  assert.throws(() => parseArguments([
+    'finalize-host-receipt',
+    '--host-executor-commit',
+    COMMIT,
+    '--executor-commit',
+    'invalid',
+  ]));
   assert.throws(() => parseArguments([
     '--executor-commit',
     COMMIT,
@@ -213,7 +233,7 @@ test('parses only the frozen executor CLI', () => {
 });
 
 test('keeps production Package constants empty and canary scope fixed', async () => {
-  const [canary, trust, fetcher, driver] = await Promise.all([
+  const [canary, trust, fetcher, driver, runner] = await Promise.all([
     readFile(new URL(
       '../../crates/codegen/xai-grok-shell/src/agentmesh360/package_canary.rs',
       import.meta.url,
@@ -228,6 +248,10 @@ test('keeps production Package constants empty and canary scope fixed', async ()
     ), 'utf8'),
     readFile(new URL(
       '../../desktop/src/package-canary-e1-driver.js',
+      import.meta.url,
+    ), 'utf8'),
+    readFile(new URL(
+      './run-scenario-matrix.mjs',
       import.meta.url,
     ), 'utf8'),
   ]);
@@ -246,6 +270,15 @@ test('keeps production Package constants empty and canary scope fixed', async ()
   assert.match(canary, /AGENTMESH360_PACKAGE_CANARY_E1/u);
   assert.match(canary, /2026-07-31T17:48:33Z/u);
   assert.match(driver, /AGENTMESH360_PACKAGE_CANARY_E1/u);
+  assert.match(
+    runner,
+    /assertP5ExecutorAncestry\(hostExecutorCommit, executorCommit\)/u,
+  );
+  assert.match(
+    runner,
+    /JSON\.stringify\(driverInput\.value\) !== JSON\.stringify\(expectedDriverInput\)/u,
+  );
+  assert.match(runner, /driverInputSha256: typedSha256\(driverInput\.bytes\)/u);
   assert.doesNotMatch(
     `${canary}\n${driver}`,
     /GEMINI_API_KEY|api\.cloudflare\.com|digitalocean\.com\/v2/u,

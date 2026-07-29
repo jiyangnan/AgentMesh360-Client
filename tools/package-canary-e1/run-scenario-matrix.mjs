@@ -585,14 +585,171 @@ async function runScenarioMatrix(executorCommit) {
   return receipt;
 }
 
+async function finalizeScenarioMatrixFromHostReceipt(
+  hostExecutorCommit,
+  executorCommit,
+) {
+  await assertP5ExecutionAuthority(executorCommit);
+  await Promise.all([
+    assertPrivateDirectory(CLIENT_BOUNDARY, 'P5 retained client boundary'),
+    assertPrivateDirectory(CLIENT_STATE_HOME, 'P5 retained client state'),
+    assertPrivateDirectory(CLIENT_USER_DATA, 'P5 retained client userData'),
+    assertExecutable(HOST_BINARY, 'P5 retained Host'),
+    assertAbsent(OUTPUT_RECEIPT_PATH, 'P5 scenario matrix receipt'),
+  ]);
+  if (
+    !/^[0-9a-f]{40}$/u.test(hostExecutorCommit ?? '')
+    || runGit(['rev-parse', 'HEAD'], CLIENT_SOURCE) !== hostExecutorCommit
+    || runGit([
+      'status',
+      '--porcelain=v1',
+      '--untracked-files=all',
+    ], CLIENT_SOURCE) !== ''
+  ) {
+    throw new Error(
+      'P5 retained client source is not the Host receipt executor',
+    );
+  }
+  const [
+    authorization,
+    oauth,
+    byok,
+    origin,
+    publication,
+    driverInput,
+    hostReceipt,
+  ] = await Promise.all([
+    readStrictJson(AUTHORIZATION_PATH, 'P5 authorization'),
+    readStrictJson(OAUTH_EVIDENCE_PATH, 'P5 OAuth evidence'),
+    readStrictJson(BYOK_EVIDENCE_PATH, 'P5 BYOK evidence'),
+    readStrictJson(ORIGIN_STATE_PATH, 'P5 origin state', { mode: 0o600 }),
+    readStrictJson(PUBLICATION_STATE_PATH, 'P5 publication state', {
+      mode: 0o600,
+    }),
+    readStrictJson(DRIVER_INPUT_PATH, 'P5 scenario driver input', {
+      mode: 0o600,
+    }),
+    readStrictJson(HOST_RECEIPT_PATH, 'P5 live Host receipt', {
+      mode: 0o600,
+    }),
+  ]);
+  const providerOperationsUsed = validateEvidence(
+    authorization.value,
+    oauth.value,
+    byok.value,
+  );
+  const syntheticOverCap = structuredClone(byok.value);
+  syntheticOverCap.budget.providerInferenceOperationsUsed =
+    MAX_PROVIDER_OPERATIONS + 1;
+  let budgetGatePassed = false;
+  try {
+    validateProviderBudget(syntheticOverCap);
+  } catch {
+    budgetGatePassed = true;
+  }
+  if (!budgetGatePassed) {
+    throw new Error('P5 synthetic Provider budget gate did not fail closed');
+  }
+  const roots = validatePublication(
+    publication.value,
+    origin.value,
+    executorCommit,
+  );
+  assertScenarioExecutorAncestry({
+    originExecutorCommit: origin.value.origin.executorCommit,
+    publicationExecutorCommit: publication.value.executorCommit,
+    releaseExecutorCommit: publication.value.releaseExecutorCommit,
+    scenarioExecutorCommit: hostExecutorCommit,
+  });
+  assertP5ExecutorAncestry(hostExecutorCommit, executorCommit);
+  const expectedDriverInput = buildDriverInput({
+    executorCommit: hostExecutorCommit,
+    origin: origin.value,
+    roots,
+  });
+  if (
+    JSON.stringify(driverInput.value) !== JSON.stringify(expectedDriverInput)
+  ) {
+    throw new Error(
+      'P5 retained driver input does not match the Host receipt executor',
+    );
+  }
+  runContractTests();
+  const hostResults = validateHostReceipt(
+    hostReceipt.value,
+    hostExecutorCommit,
+  );
+  const results = buildScenarioResults(hostResults);
+  const receipt = {
+    schemaVersion: 1,
+    receiptId: 'package_canary_e1_scenario_matrix_20260729_0001',
+    authorizationId: AUTHORIZATION_ID,
+    environment: 'e1',
+    workPackage: 'p5_package_canary',
+    executionStatus: 'scenario_matrix_passed',
+    executorCommit,
+    hostExecutorCommit,
+    inputDigests: {
+      authorizationSha256: typedSha256(authorization.bytes),
+      oauthEvidenceSha256: typedSha256(oauth.bytes),
+      byokEvidenceSha256: typedSha256(byok.bytes),
+      publicationStateSha256: typedSha256(publication.bytes),
+      driverInputSha256: typedSha256(driverInput.bytes),
+      liveHostReceiptSha256: typedSha256(hostReceipt.bytes),
+    },
+    scenarioCount: results.length,
+    results,
+    budget: {
+      providerInferenceOperationsUsed,
+      providerInferenceOperationsAdded: 0,
+      maximumProviderInferenceOperations: MAX_PROVIDER_OPERATIONS,
+      agentMeshCreditsUsed: 0,
+      maximumAgentMeshCredits: 0,
+      maximumProviderCostUsd: 1,
+      maximumInfrastructureCostUsd: 3,
+    },
+    mutationSummary: {
+      packageMutationsPerformed: hostReceipt.value.packageMutationsPerformed,
+      accountMutationsPerformed: 0,
+      subscriptionMutationsPerformed: 0,
+      productionMutationsPerformed: 0,
+    },
+    cleanupRequired: true,
+    productionAuthorityGranted: false,
+    accountIdentifierRecorded: false,
+    credentialMaterialRecorded: false,
+    promptOrResponseRecorded: false,
+    completedAt: new Date().toISOString(),
+  };
+  await writeFile(OUTPUT_RECEIPT_PATH, `${JSON.stringify(receipt)}\n`, {
+    mode: 0o600,
+    flag: 'wx',
+  });
+  await chmod(OUTPUT_RECEIPT_PATH, 0o600);
+  return receipt;
+}
+
 function parseArguments(argv) {
+  if (
+    argv.length === 5
+    && argv[0] === 'finalize-host-receipt'
+    && argv[1] === '--host-executor-commit'
+    && /^[0-9a-f]{40}$/u.test(argv[2] || '')
+    && argv[3] === '--executor-commit'
+    && /^[0-9a-f]{40}$/u.test(argv[4] || '')
+  ) {
+    return {
+      hostExecutorCommit: argv[2],
+      executorCommit: argv[4],
+    };
+  }
   if (
     argv.length !== 2
     || argv[0] !== '--executor-commit'
     || !/^[0-9a-f]{40}$/u.test(argv[1] || '')
   ) {
     throw new Error(
-      'usage: run-scenario-matrix.mjs --executor-commit <commit>',
+      'usage: run-scenario-matrix.mjs --executor-commit <commit> | finalize-host-receipt --host-executor-commit <commit> --executor-commit <commit>',
     );
   }
   return { executorCommit: argv[1] };
@@ -612,7 +769,13 @@ if (isMainModule()) {
     process.exitCode = 2;
   }
   if (options) {
-    runScenarioMatrix(options.executorCommit)
+    const operation = options.hostExecutorCommit
+      ? finalizeScenarioMatrixFromHostReceipt(
+        options.hostExecutorCommit,
+        options.executorCommit,
+      )
+      : runScenarioMatrix(options.executorCommit);
+    operation
       .then((receipt) => {
         process.stdout.write(
           `P5 E1 ${receipt.scenarioCount}-scenario matrix passed with no additional Provider inference\n`,
@@ -636,6 +799,7 @@ export {
   assertScenarioExecutorAncestry,
   buildDriverInput,
   buildScenarioResults,
+  finalizeScenarioMatrixFromHostReceipt,
   parseArguments,
   validateEvidence,
   validateHostReceipt,
