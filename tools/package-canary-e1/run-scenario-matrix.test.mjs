@@ -279,6 +279,18 @@ test('keeps production Package constants empty and canary scope fixed', async ()
     /JSON\.stringify\(driverInput\.value\) !== JSON\.stringify\(expectedDriverInput\)/u,
   );
   assert.match(runner, /driverInputSha256: typedSha256\(driverInput\.bytes\)/u);
+  assert.equal(
+    (
+      runner.match(
+        /providerInferenceOperationsUsed: providerOperationsUsed/gu,
+      ) ?? []
+    ).length,
+    2,
+  );
+  assert.doesNotMatch(
+    runner,
+    /^\s+providerInferenceOperationsUsed,\s*$/mu,
+  );
   assert.doesNotMatch(
     `${canary}\n${driver}`,
     /GEMINI_API_KEY|api\.cloudflare\.com|digitalocean\.com\/v2/u,

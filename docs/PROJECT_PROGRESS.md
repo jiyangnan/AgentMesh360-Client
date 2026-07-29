@@ -6568,3 +6568,33 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
 - 产品计划没有增加场景或进入 P6。下一轮先冻结、提交、推送本恢复器，再以现有
   `dd7030c...` Host executor 收口 21/21 matrix receipt；通过后立即进入既定
   Registry-first Release Chain 清场，不重跑 Host 场景。
+
+### 循环 121：矩阵预算字段终态映射修复
+
+状态：首次恢复执行在 matrix receipt 写入前安全停止；原场景器的确定性
+ReferenceError 已修复并完成完整回归，Host/Driver/Package 状态未重复修改
+
+根因与修复：
+
+1. Cycle 120 恢复器提交 `e8e4e08...` 推送后，第一次使用精确完整提交执行；
+   authority、Client/source、Driver input、Host receipt、发布 inventory、预算和
+   五段 ancestry 全部通过，最后在构造 matrix receipt 的 `budget` 时停止；
+2. 原正常场景器早已把局部变量命名为 `providerOperationsUsed`，但 receipt 对象
+   使用了不存在的 shorthand `providerInferenceOperationsUsed`，触发
+   `ReferenceError`；这解释了此前 14 项 Host 已完成、外层仍返回通用失败的完整
+   因果链；
+3. 正常执行和 Host receipt 恢复执行两个分支都改为显式
+   `providerInferenceOperationsUsed: providerOperationsUsed`；字段名仍与既有
+   receipt Schema 相同，值仍来自已批准 BYOK evidence，没有改动预算或新增请求；
+4. 回归固定要求两个分支均存在显式映射，并禁止独立 shorthand 再次出现；第一次
+   恢复没有创建 matrix receipt，不存在需要删除或覆盖的半成 evidence。
+
+自主验证与计划复盘：
+
+- Scenario/Cleanup 定向 16/16；P4/P5 完整工具链沙箱外 246/246；Node 语法与
+  `git diff --check` 通过；
+- Provider 请求仍为历史 4/12、本轮新增 0，credits 0，Package mutation 没有
+  重跑；Kimi 继续暂停，由主 Agent 复核字段名、值来源和失败发生在唯一输出写入前；
+- 下一轮只冻结、提交、推送该一行双分支修复，再以相同 Host receipt 执行一次
+  恢复收口；成功生成 21/21 matrix receipt 后立即更新进展并进入
+  Registry-first 清场，不延伸到 P6。

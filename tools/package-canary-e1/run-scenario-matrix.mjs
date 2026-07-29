@@ -556,7 +556,7 @@ async function runScenarioMatrix(executorCommit) {
     scenarioCount: results.length,
     results,
     budget: {
-      providerInferenceOperationsUsed,
+      providerInferenceOperationsUsed: providerOperationsUsed,
       providerInferenceOperationsAdded: 0,
       maximumProviderInferenceOperations: MAX_PROVIDER_OPERATIONS,
       agentMeshCreditsUsed: 0,
@@ -700,7 +700,7 @@ async function finalizeScenarioMatrixFromHostReceipt(
     scenarioCount: results.length,
     results,
     budget: {
-      providerInferenceOperationsUsed,
+      providerInferenceOperationsUsed: providerOperationsUsed,
       providerInferenceOperationsAdded: 0,
       maximumProviderInferenceOperations: MAX_PROVIDER_OPERATIONS,
       agentMeshCreditsUsed: 0,
