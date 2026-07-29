@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；场景前两次启动均在 Package mutation 前失败关闭，已分别修复 P5-only Fake-IP DNS 兼容和签名 expiry 毫秒缓存精度 | 冻结并升级同一隔离 Client 后重跑 21 场景；全部通过且恢复最终 canary Package 状态后，严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；场景已真实暴露并修复 P5-only Fake-IP DNS、签名 expiry 毫秒缓存精度，以及 Package receipt camelCase/JS 安全整数契约问题 | 恢复隔离 Client 的 pre-Package baseline，冻结并升级同一 Host 后重跑 21 场景；全部通过且恢复最终 canary Package 状态后，严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
 
 ## 开发循环记录
 
@@ -6486,3 +6486,42 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
   新协议、网络或生产 authority。下一轮提交推送并升级同一隔离 Client/Host，
   清除第二次失败遗留输入，再从 baseline 重跑 21 场景；全 PASS 前仍不清场，
   P6 继续关闭。
+
+### 循环 119：Package mutation receipt 的桌面数值契约
+
+状态：第三次场景已通过网络、签名 cache 与 discovery，并完成首个隔离 Future Agent
+安装；桌面 receipt 契约问题已修复并完成回归，等待恢复 pre-Package baseline 后重跑
+
+执行证据与根因：
+
+1. Cycle 118 提交 `41734ce...` 推送并升级同一 Client/Host 后，baseline Trust/
+   Registry、cache reload 与四个远端 Package discovery 全部通过；
+2. Driver 成功安装 `future-agent 1.0.0` 后在 Job baseline mutation receipt 处返回
+   安全码 `invalid_package_response`；为判定不确定 mutation，隔离 DB 与安全原始
+   receipt 对账确认 Future 已安装，随后诊断批准也实际安装 `job-agent 0.4.7`；
+3. Rust `PackageMutationReceipt` 外层为 camelCase，但 tagged enum
+   `PackageRuntimeVisibility` 只对 variant 名应用 snake_case，variant 内字段仍输出
+   `catalog_generation/catalog_revision`；桌面白名单只接受
+   `catalogGeneration/catalogRevision`，因此 mutation 已提交但响应被正确拒绝；
+4. 动态本地 Catalog revision 取 SHA-256 前 64 位，真实值还可能超过 JavaScript
+   `Number.MAX_SAFE_INTEGER`；即便只修字段名，桌面随后读取 Catalog/Status 仍会失败；
+5. 修复后 enum variant 状态继续为 `visible/superseded/refresh_pending`，但字段统一
+   camelCase；动态本地 Catalog revision 保持相同输入的确定性 SHA 派生，只截取
+   53 位并保证非 0。远端签名 Registry revision、Trust sequence、Package 版本与
+   digest 全部不变；
+6. Rust 新增真实 receipt JSON 的字段名、禁止 snake_case 和 53 位上限断言；动态
+   Catalog 测试同时验证序列化值为 JS 安全整数。桌面继续严格拒绝未知或超界 Host
+   payload，没有放宽 Renderer 白名单。
+
+自主验证与计划复盘：
+
+- 动态 Agent Catalog 9/9、Package Delivery 14/14、桌面 Package Controller
+  12/12、Trust Cache 5/5；P4/P5 Package + Distribution Node 142/142；
+- `cargo fmt --check` 与 `git diff --check` 通过；临时 raw receipt 诊断只输出 Rust
+  已证明不含路径、摘要、账户与秘密的公开字段，并已删除；
+- Kimi 继续暂停，本轮由主 Agent 对 mutation 不确定性、Rust/JS 字段合同、53 位
+  revision、签名 Registry 不变和 Renderer 仍失败关闭自主复核；
+- 本轮属于既有 Package Center Host→Desktop 合同修复，不增加场景、权限、网络、
+  Provider 或生产 authority。下一轮先提交推送，按授权精确删除两个 canary
+  Package 行及其两个隔离 version 目录，保留 OAuth/BYOK/Trust/Provider 状态，再升级
+  同一 Host 并重跑 21 场景；矩阵 PASS 前不进入 Registry-first 清场。

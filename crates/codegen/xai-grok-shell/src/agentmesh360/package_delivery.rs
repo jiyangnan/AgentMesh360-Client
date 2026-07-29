@@ -319,7 +319,11 @@ pub(crate) struct PackageMutationReceipt {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    tag = "status"
+)]
 pub(crate) enum PackageRuntimeVisibility {
     Visible {
         catalog_generation: u64,
@@ -497,6 +501,25 @@ mod tests {
         for secret in ["sha256", "relativePath", temp.path().to_str().unwrap()] {
             assert!(!receipt.contains(secret));
         }
+        let receipt_value: serde_json::Value =
+            serde_json::from_str(&receipt).expect("parse install receipt");
+        let visibility = receipt_value
+            .get("runtimeVisibility")
+            .and_then(serde_json::Value::as_object)
+            .expect("runtime visibility");
+        assert_eq!(
+            visibility.get("status").and_then(serde_json::Value::as_str),
+            Some("visible")
+        );
+        assert!(visibility.contains_key("catalogGeneration"));
+        assert!(
+            visibility
+                .get("catalogRevision")
+                .and_then(serde_json::Value::as_u64)
+                .is_some_and(|revision| revision <= (1_u64 << 53) - 1)
+        );
+        assert!(!visibility.contains_key("catalog_generation"));
+        assert!(!visibility.contains_key("catalog_revision"));
         assert!(
             service
                 .approve_and_install(&approval.approval_id, &access)

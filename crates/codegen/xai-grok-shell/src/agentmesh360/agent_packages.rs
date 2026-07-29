@@ -12,6 +12,7 @@ use super::model_policy::AgentModelPolicy;
 
 const SUPPORTED_MANIFEST_SCHEMA_VERSION: u32 = 1;
 const BUILTIN_CATALOG_REVISION: u64 = 1;
+const MAX_SAFE_JSON_INTEGER: u64 = (1_u64 << 53) - 1;
 pub(super) const MAX_PACKAGE_IDENTIFIER_BYTES: usize = 128;
 pub(super) const MAX_PACKAGE_PATH_BYTES: usize = 512;
 const BUILTIN_PACKAGE_DOCUMENTS: [&str; 3] = [
@@ -349,7 +350,7 @@ fn calculate_catalog_revision(packages: &[AgentPackageManifest]) -> u64 {
     let bytes: [u8; 8] = digest.finalize()[..8]
         .try_into()
         .expect("SHA-256 prefix is eight bytes");
-    u64::from_be_bytes(bytes).max(1)
+    (u64::from_be_bytes(bytes) & MAX_SAFE_JSON_INTEGER).max(1)
 }
 
 pub(super) fn validate_identifier(field: &str, value: &str, allow_period: bool) -> Result<()> {
@@ -583,6 +584,14 @@ mod tests {
             ]
         );
         assert_ne!(catalog.catalog_revision, BUILTIN_CATALOG_REVISION);
+        assert!(catalog.catalog_revision <= MAX_SAFE_JSON_INTEGER);
+        assert!(
+            serde_json::to_value(&catalog)
+                .expect("serialize dynamic catalog")
+                .get("catalogRevision")
+                .and_then(serde_json::Value::as_u64)
+                .is_some_and(|revision| revision <= MAX_SAFE_JSON_INTEGER)
+        );
     }
 
     #[test]
