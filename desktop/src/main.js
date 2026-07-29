@@ -11,6 +11,7 @@ const {
   shell,
 } = require('electron');
 const { AgentMeshCoreClient } = require('./auth/core-client');
+const { DesktopOAuthBroker } = require('./auth/oauth-loopback');
 const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
 const { AgentConversationController } = require('./conversation-controller');
@@ -63,12 +64,17 @@ async function boot() {
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   session.defaultSession.on('will-download', (event) => event.preventDefault());
   const core = new AgentMeshCoreClient();
+  const oauth = new DesktopOAuthBroker({
+    core,
+    allowedCoreOrigin: new URL(core.baseUrl).origin,
+    openExternal: (url) => shell.openExternal(url),
+  });
   const tokenStore = new SecureTokenStore({
     safeStorage,
     filePath: path.join(app.getPath('userData'), 'identity', 'refresh-token.secure.json'),
   });
   const host = new AcpHostClient();
-  controller = new IdentityController({ core, tokenStore, host });
+  controller = new IdentityController({ core, tokenStore, host, oauth });
   conversations = new AgentConversationController({
     identity: controller,
     host,
@@ -143,6 +149,16 @@ function createWindow() {
 function registerIpc(identity, providers, packages, conversationController, loginItemController, host) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
+    const hasProvider = Object.hasOwn(credentials || {}, 'provider');
+    const provider = typeof credentials?.provider === 'string'
+      ? credentials.provider.toLowerCase()
+      : '';
+    if (hasProvider) {
+      if (!['google', 'github'].includes(provider)) {
+        throw new Error('第三方登录方式无效');
+      }
+      return identity.loginWithOAuth(provider);
+    }
     const email = typeof credentials?.email === 'string' ? credentials.email : '';
     const password = typeof credentials?.password === 'string' ? credentials.password : '';
     return identity.login(email, password);

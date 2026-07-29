@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "executionId": "package_canary_e1_owner_account_real_host_prelogin_20260729_0002",
+  "authorizationId": "package_canary_e1_20260729_0002",
+  "baselineId": "package_canary_e1_local_baseline_20260729_0002",
+  "baselineSha256": "sha256:0f630b96a142e1a5d6a85fe92d9d97354c0aceb5a70dae218b05e987f7f0d507",
+  "boundaryId": "p5-e1-isolated-client-02",
+  "recordedAt": "2026-07-29T04:23:30Z",
+  "sourceCommit": "1bc4bb2dc518d4c0693ea348ee272c2ae8593310",
+  "hostVersion": "0.2.106",
+  "hostByteCount": 435634896,
+  "hostSha256": "sha256:1e936628a99146d710c9d49aae0cc375e21b94e30c2f717beafb3ed37bd34d13",
+  "buildProfile": "dev",
+  "buildBoundaryRetainedForCanary": true,
+  "repositoryRootTargetPresent": false,
+  "realHostContractTests": {
+    "required": 3,
+    "passed": 3,
+    "failed": 0,
+    "subscriptionStateContractPassed": true,
+    "sessionReplayContractPassed": true,
+    "persistentLeaderRecoveryPassed": true
+  },
+  "isolatedClient": {
+    "started": true,
+    "visibleState": "email_password_only_login_gap",
+    "authorizedAccountAlias": "p5-owner-online-account-01",
+    "emailFieldPrepared": true,
+    "passwordEnteredByAutomation": false,
+    "refreshTokenPresent": false,
+    "providerKeychainCredentialPresent": false,
+    "normalUserDataRead": false,
+    "normalStateRead": false
+  },
+  "execution": {
+    "productionCoreRequestsUsed": 0,
+    "providerInferenceRequestsUsed": 0,
+    "agentMeshCreditsUsed": 0,
+    "providerCostUsd": 0,
+    "infrastructureResourcesCreated": 0,
+    "packageMutationsPerformed": 0,
+    "accountMutationsPerformed": 0,
+    "subscriptionMutationsPerformed": 0,
+    "productionMutationsPerformed": 0
+  },
+  "gate": {
+    "realHostPassed": true,
+    "ownerAccountLoginPassed": false,
+    "liveSubscriptionPassed": false,
+    "cloudAssemblyAllowed": false,
+    "nextRequiredGate": "implement_and_release_google_github_desktop_oauth",
+    "correctionReason": "authorized_owner_account_uses_google_oauth_and_has_no_existing_password"
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "accountIdentifiersRetained": false,
+    "emailRetained": false,
+    "pathsRetained": false,
+    "providerContentRetained": false
+  }
+}

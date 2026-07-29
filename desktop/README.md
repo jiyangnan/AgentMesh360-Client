@@ -6,7 +6,10 @@
 
 ## 当前已经实现
 
-- 邮箱密码登录 AgentMesh360 账号；
+- Google/GitHub 系统浏览器一键登录，以及邮箱密码兼容登录；
+- 桌面 OAuth 使用 `127.0.0.1` 随机端口、随机 callback path、客户端 state 与
+  S256 PKCE；Core 只回传 90 秒一次性 code，Provider token、Access Token、
+  Refresh Token 与 verifier 都不进入浏览器 URL 或 Renderer；
 - Access Token 仅保存在桌面主进程内存中；
 - Refresh Token 使用 Electron `safeStorage` 加密后写入本机。在 macOS 上，
   加密密钥由 Keychain 保护；安全存储不可用时拒绝明文降级；
@@ -52,8 +55,8 @@
 - Gemini F0b 已在用户明确的 12 次短请求上限内使用 11 次完成真实契约验证；Catalog
   只加入实际通过的官方兼容预设，不批量声称其他 Provider 已兼容。
 
-当前尚未实现 OAuth、Plan/Todo mutation、Scheduler、Subagent 或 Agent 专属垂直
-页面；其他 Provider 的真实 E2E 仍需逐个取得凭据与费用授权，动态 Agent Package
+当前尚未实现 Plan/Todo mutation、Scheduler、Subagent 或 Agent 专属垂直页面；
+其他 Provider 的真实 E2E 仍需逐个取得凭据与费用授权，动态 Agent Package
 的生产发布也仍关闭。生产 Registry 关闭意味着当前动态 Agent 泛化只有本地 fixture
 证据，不代表用户已经能从远端取得新 Agent。这些能力按
 [`PRODUCT_BLUEPRINT.md`](../docs/architecture/PRODUCT_BLUEPRINT.md) 的顺序继续开发。
@@ -67,6 +70,8 @@ Cycle 56 的生产准备与内部 canary 计划见
 ```mermaid
 flowchart LR
     UI["受限渲染进程"] -->|"脱敏 IPC"| MAIN["Electron 主进程"]
+    MAIN -->|"固定 Core HTTPS 授权入口"| BROWSER["系统浏览器\nGoogle / GitHub"]
+    BROWSER -->|"一次性 code + state\nloopback"| MAIN
     MAIN -->|"HTTPS 登录、刷新与 bootstrap"| CORE["AgentMesh360 Core"]
     MAIN -->|"ACP stdio\n可丢弃 Bridge"| BRIDGE["Grok Client Bridge"]
     BRIDGE -->|"专属 UDS / Named Pipe"| HOST["持久 Grok Leader\nAgentMesh360 Host"]
@@ -76,10 +81,12 @@ flowchart LR
     HOST --> STATE["state.db、Provider Profile\n与 Grok Session Store"]
 ```
 
-渲染进程在用户登录输入期间会短暂接触邮箱和密码，但不得持久化或读回 Access Token、
-Refresh Token、密码或 Provider API Key。它只能调用白名单 IPC，接收 `signed_out`、
+渲染进程在邮箱登录输入期间会短暂接触邮箱和密码；Google/GitHub 登录只提交固定
+Provider ID。Renderer 不得持久化或读回 Access Token、Refresh Token、OAuth code、
+PKCE verifier、密码或 Provider API Key。它只能调用白名单 IPC，接收 `signed_out`、
 `checking`、`blocked`、`unavailable` 或 `ready` 等脱敏状态。
-外部跳转只允许 `https://agentmesh360.com`，窗口导航、下载和浏览器权限全部默认拒绝。
+普通外部跳转只允许 `https://agentmesh360.com`；OAuth 只允许 Core 固定 origin 和
+固定 start path，由主进程在打开前复验。窗口导航、下载和浏览器权限全部默认拒绝。
 
 ## 本地开发
 

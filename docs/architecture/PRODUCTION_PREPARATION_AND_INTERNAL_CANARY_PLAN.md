@@ -1201,3 +1201,38 @@ receipt 不含邮箱、真实账号 ID、路径或 secret，临时 `0600` 原件
 相同。本轮账号/订阅、Keychain、Provider、credits、Package、云资源、费用和生产
 mutation 均为 0。下一步冻结 baseline 后重建 v2 隔离客户端，实时订阅双门前不
 进入 E1 release chain。
+
+## 45. Cycle 95 P5 E1 v2 真实 Host 与 owner 登录门
+
+冻结 baseline 后，v2 boundary/state/userData 以 `0700`、marker 以 `0600`
+重建；detached worktree 和约 10 GiB Cargo target 都只在可销毁 boundary，仓库根
+`target/` absent。`grok 0.2.106 (1bc4bb2)` dev Host 构建成功，435,634,896 bytes
+及 typed digest 已留存。
+
+真实 Host 测试首次仅因沙箱不允许 `127.0.0.1` 监听而 3 项 `EPERM`；放开本机
+loopback 后 Desktop 108/108，通过 subscription、Session replay、persistent
+Leader recovery 三个真实合同。
+
+隔离 Electron 已停在正确的源码登录页。owner 邮箱字段按直接授权填入，但 evidence
+不保留邮箱；密码为空，未由自动化读取、输入或提交。随后确认 owner 账号由 Google
+OAuth 创建，不存在必须可用的邮箱密码。Cycle 95 的下一门已纠正为补齐桌面 OAuth，
+不能要求账号所有者寻找不存在的密码。refresh token 与产品 Provider Keychain 均
+absent，Core/Provider/credits/Package/云资源/费用仍为 0。
+
+## 46. Cycle 96 桌面 OAuth 前置能力
+
+本轮是用户明确纠正后的最小身份前置修复，不改变 P5 的预算、账号、Provider、
+Package 或生产 authority。Core/Client 使用 RFC 8252 loopback 与 S256 PKCE：
+
+1. Client 在 `127.0.0.1` 随机端口监听随机 callback path，生成随机 state 和 verifier；
+2. 系统浏览器只打开 Core 固定 HTTPS OAuth start；Google/GitHub 仍回调 Core；
+3. Core 签发 90 秒、只存 SHA-256 摘要的一次性 code，绑定用户、精确 loopback 与
+   challenge；
+4. loopback URL 只带 code/state，Renderer、浏览器 URL 和日志不取得长期 token；
+5. Client 主进程提交 verifier 兑换 token pair，Refresh Token 仍只写 `safeStorage`，
+   然后复用原 Core/Host 双订阅门。
+
+本地 Core 300/3、共享注册表 4/4 和登录页视觉 smoke 已通过；Desktop 复用隔离
+真实 Grok Host 后为 117/117，不再保留真实 Host skip。
+生产 Core 尚未发布，P5 仍停在登录前；共享 Core 发布与全产品 live regression
+必须作为独立受控动作，成功后才复用保留的隔离 Host build 恢复 owner Google 登录。

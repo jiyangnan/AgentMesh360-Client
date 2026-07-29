@@ -838,3 +838,31 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 源 Gemini Key present、产品 Keychain empty，不保留 secret 或个人标识；
 - 本轮 Provider、credits、Keychain/Package/账号/订阅 mutation、云资源和费用为 0；
 - 下一步冻结 receipt 后重新装配隔离客户端，实时订阅通过前不进入 release chain。
+
+## 50. 循环 95 P5 v2 真实 Host 与 owner 登录门
+
+- v2 boundary/state/userData `0700`、marker `0600`，旧 v1 不可复用；
+- detached worktree/Cargo target 全在可销毁 boundary，仓库根 `target/` absent；
+- `grok 0.2.106 (1bc4bb2)` dev Host 构建成功，约 10 GiB 缓存隔离；
+- 真实 Host 首轮仅 3 项 loopback `EPERM`，放开本机监听后 Desktop 108/108；
+- 隔离 Electron 已显示源码登录页，owner 邮箱已按授权填入但 evidence 不保留；
+- 密码未由自动化读取/输入，登录尚未提交；随后确认 owner 账号通过 Google OAuth
+  创建，Cycle 95 的“输入密码”下一步无效；
+- Core/Provider/credits/Package/云资源/费用为 0；
+- 下一步先补齐并发布 Google/GitHub 桌面 OAuth，Core/Host 双 active 前不进入
+  BYOK 或 E1 release chain。
+
+## 51. 循环 96 桌面 OAuth 计划偏差纠正
+
+- 原 P5 范围明确“不实现 OAuth”，但 owner 真实账号只能通过 Google OAuth 登录；
+  继续要求密码会让已订阅用户无法进入客户端，属于已证实的身份前置缺口；
+- 用户明确纠正后，本轮仅在共享 Core 与 `desktop/` 补系统浏览器 OAuth，不扩展
+  Host、Provider、Package、credits、云资源或生产 Root/Trust；
+- Core 采用 90 秒一次性 code、摘要存储、精确 loopback、state、S256 PKCE 和原子
+  消费；安装包不嵌入 OAuth client secret，浏览器 URL 不含长期 token；
+- Renderer 只提交固定 Provider ID；main process 持有 listener、verifier、code
+  和 token pair，继续复用 `safeStorage` 与 Core/Host 双订阅门；
+- 本地 Core 全量 300/3、共享注册表 4/4、Desktop 复用隔离真实 Grok Host 后
+  117/117，登录页视觉 smoke 通过；
+- 当前只完成本地实现，生产 Core 仍是旧契约。下一步按顺序完成文档/证据、自复核、
+  两仓提交推送，再经过共享 Core 发布批准与全产品回归，之后恢复 P5 owner 登录。

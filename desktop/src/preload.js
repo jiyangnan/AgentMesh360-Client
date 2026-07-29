@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     email: String(email || '').slice(0, 320),
     password: String(password || '').slice(0, 1024),
   }),
+  oauthLogin: (provider) => ipcRenderer.invoke('identity:login', {
+    provider: ['google', 'github'].includes(provider) ? provider : '',
+  }),
   logout: () => ipcRenderer.invoke('identity:logout'),
   recheck: () => ipcRenderer.invoke('identity:recheck'),
   activateAgent: (agentId) => ipcRenderer.invoke('agent:activate', String(agentId || '').slice(0, 100)),

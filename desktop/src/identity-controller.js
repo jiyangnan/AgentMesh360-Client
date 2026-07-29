@@ -9,6 +9,7 @@ class IdentityController {
     core,
     tokenStore,
     host,
+    oauth = null,
     setIntervalImpl = setInterval,
     clearIntervalImpl = clearInterval,
     revalidateIntervalMs = DEFAULT_REVALIDATE_INTERVAL_MS,
@@ -16,6 +17,7 @@ class IdentityController {
     this.core = core;
     this.tokenStore = tokenStore;
     this.host = host;
+    this.oauth = oauth;
     this.setIntervalImpl = setIntervalImpl;
     this.clearIntervalImpl = clearIntervalImpl;
     this.revalidateIntervalMs = revalidateIntervalMs;
@@ -76,25 +78,22 @@ class IdentityController {
   }
 
   login(email, password) {
-    return this.#exclusive(async () => {
-      this.#publish({ phase: 'checking', message: '正在登录并验证订阅…' });
-      let pair;
-      try {
-        pair = await this.core.login(String(email || '').trim(), String(password || ''));
-        validateTokenPair(pair);
-        this.tokenStore.saveRefreshToken(pair.refresh_token);
-      } catch (error) {
-        this.accessToken = null;
-        await this.host.invalidate().catch(() => {});
-        if (error instanceof CoreRequestError && ['invalid_credentials', 'email_not_verified'].includes(error.code)) {
-          this.#publish({ phase: 'signed_out', error: error.message, code: error.code });
-          return this.state;
-        }
-        this.#publishUnavailable(error, true);
-        return this.state;
-      }
-      return this.#validatePair(pair, 'login');
-    });
+    return this.#completeLogin(
+      () => this.core.login(String(email || '').trim(), String(password || '')),
+      '正在登录并验证订阅…',
+      'login',
+    );
+  }
+
+  loginWithOAuth(provider) {
+    if (!this.oauth) {
+      return Promise.reject(new Error('第三方登录服务尚未初始化'));
+    }
+    return this.#completeLogin(
+      () => this.oauth.login(String(provider || '').toLowerCase()),
+      '请在系统浏览器完成登录，客户端正在等待安全回调…',
+      'oauth',
+    );
   }
 
   revalidate(reason = 'manual') {
@@ -175,6 +174,38 @@ class IdentityController {
         this.hostReconnectPromise = null;
       });
     return this.hostReconnectPromise;
+  }
+
+  #completeLogin(loadPair, message, reason) {
+    return this.#exclusive(async () => {
+      this.#publish({ phase: 'checking', message });
+      let pair;
+      try {
+        pair = await loadPair();
+        validateTokenPair(pair);
+        this.tokenStore.saveRefreshToken(pair.refresh_token);
+      } catch (error) {
+        this.accessToken = null;
+        await this.host.invalidate().catch(() => {});
+        if (
+          (
+            error instanceof CoreRequestError
+            && ['invalid_credentials', 'email_not_verified'].includes(error.code)
+          )
+          || String(error?.code || '').startsWith('oauth_')
+        ) {
+          this.#publish({
+            phase: 'signed_out',
+            error: error.message,
+            code: error.code,
+          });
+          return this.state;
+        }
+        this.#publishUnavailable(error, true);
+        return this.state;
+      }
+      return this.#validatePair(pair, reason);
+    });
   }
 
   #runValidation(refreshToken, reason) {

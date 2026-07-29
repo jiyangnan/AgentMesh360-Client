@@ -87,6 +87,18 @@ test('login persists only the refresh token and activation is available only fro
   assert.equal(fixture.host.calls.activateAgent, 1);
 });
 
+test('OAuth login persists only the refresh token before the same subscription gate', async () => {
+  const fixture = makeFixture({ storedRefreshToken: null });
+  const state = await fixture.controller.loginWithOAuth('google');
+
+  assert.equal(state.phase, 'ready');
+  assert.equal(fixture.oauth.provider, 'google');
+  assert.equal(fixture.tokenStore.saved, 'oauth-refresh-token');
+  assert.equal(JSON.stringify(state).includes('oauth-access-token'), false);
+  assert.equal(JSON.stringify(state).includes('oauth-refresh-token'), false);
+  assert.deepEqual(fixture.host.bootstrapTokens, ['oauth-access-token']);
+});
+
 test('Agent activation failures never project raw Host errors into Renderer state', async () => {
   const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
   await fixture.controller.start();
@@ -212,10 +224,21 @@ function makeFixture({
     async invalidate() { this.calls.invalidate += 1; },
     async stop() { this.calls.stop += 1; },
   });
+  const oauth = {
+    provider: null,
+    async login(provider) {
+      this.provider = provider;
+      return {
+        access_token: 'oauth-access-token',
+        refresh_token: 'oauth-refresh-token',
+      };
+    },
+  };
   const controller = new IdentityController({
     core,
     tokenStore,
     host,
+    oauth,
     setIntervalImpl: () => ({ unref() {} }),
     clearIntervalImpl: () => {},
   });
@@ -228,7 +251,7 @@ function makeFixture({
     }
     return result;
   };
-  return { controller, core, host, tokenStore };
+  return { controller, core, host, oauth, tokenStore };
 }
 
 async function waitFor(predicate, timeoutMs = 1000) {

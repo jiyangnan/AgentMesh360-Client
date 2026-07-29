@@ -8,10 +8,15 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const phase = process.env.AGENTMESH360_VISUAL_STATE || 'signed_out';
 const output = process.env.AGENTMESH360_SCREENSHOT || path.join('/tmp', `agentmesh360-${phase}.png`);
 const backgroundWrites = [];
+const identityLoginWrites = [];
 let backgroundEnabled = true;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => fixtureState(phase));
+  ipcMain.handle('identity:login', (_event, payload) => {
+    identityLoginWrites.push(payload);
+    return fixtureState(phase);
+  });
   ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
   ipcMain.handle('package:get-snapshot', () => packageFixture());
   ipcMain.handle('package:refresh-registry', () => ({
@@ -26,7 +31,6 @@ app.whenReady().then(async () => {
     return backgroundFixture();
   });
   for (const channel of [
-    'identity:login',
     'identity:logout',
     'identity:recheck',
     'agent:activate',
@@ -94,6 +98,16 @@ app.whenReady().then(async () => {
     assert.deepEqual(backgroundWrites, [false]);
     const body = await window.webContents.executeJavaScript('document.body.innerText');
     assert.equal(body.includes('未开启'), true);
+  } else if (phase === 'signed_out') {
+    const oauthLabels = await window.webContents.executeJavaScript(
+      "[...document.querySelectorAll('[data-oauth-provider]')].map((button) => button.innerText)",
+    );
+    assert.deepEqual(oauthLabels, ['G使用 Google 登录', 'GH使用 GitHub 登录']);
+    await window.webContents.executeJavaScript(
+      "document.querySelector('[data-oauth-provider=\"google\"]').click()",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(identityLoginWrites, [{ provider: 'google' }]);
   }
   await app.quit();
 }).catch(() => app.exit(1));

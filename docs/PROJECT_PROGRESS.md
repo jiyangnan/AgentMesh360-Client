@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 owner 账号 v2 baseline 已通过，下一门是冻结 receipt 后重新装配隔离客户端 |
-| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 隔离客户端和真实 Host 已通过，owner 账号要求 Google OAuth，先完成共享 Core/Client 登录契约再恢复 P5 |
+| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已完成本地实现和全量回归 | 共享 Core 提交、推送与受控发布后，用 owner Google 账号验证 Core/Host 双 active |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；错误假定内部账号的 v1 已中止，v2 已按用户直接授权改为单一现有 owner 线上账号；新 baseline 已确认正常 Package/Profile/Trust 仍为 0 且产品 Keychain 为空 | 冻结推送 baseline 后重新装配隔离客户端；实时订阅双门通过前不重建 E1 release chain |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host 和 3 个真实 Host 合同均通过；产品 Keychain/refresh token 仍为空，正常状态未读 | 先发布桌面 OAuth 契约，再由 owner Google 登录并完成 Core/Host 双 active；此前不装配临时 BYOK、不重建 E1 release chain |
 
 ## 开发循环记录
 
@@ -5593,3 +5593,76 @@ Cycle 92 已纠正并中止
 - 下一步提交推送 receipt，在新的 clean executor 上运行 v2 assembler；
 - 隔离客户端先验证线上账号登录与 Core/Host 双 active，之后才允许临时 BYOK
   Keychain 装配或 E1 云资源。
+
+### 循环 95：P5 E1 v2 隔离客户端、真实 Host 与 owner 登录门
+
+状态：v2 隔离客户端与真实 Host 已通过；“等待 owner 输入密码”已由 Cycle 96
+纠正为客户端 OAuth 能力缺口
+
+已经完成：
+
+1. baseline receipt `1bc4bb2...` 推送后，在 `/private/tmp` 重建唯一 v2 boundary；
+   boundary/state/userData 为 `0700`，marker 为 `0600`，authorization/boundary
+   分别为 `...0002` / `...-02`；
+2. 使用同一冻结 commit 创建 detached worktree，Cargo target 固定在 boundary；
+   仓库根 `target/` 始终 absent；
+3. 冷构建约 5 分钟，生成 `grok 0.2.106 (1bc4bb2)` dev Host，435,634,896 bytes，
+   typed digest 已写入非秘密 evidence，约 10 GiB 缓存只保留在可销毁 boundary；
+4. 首次真实 Host 全套测试的 3 项只因沙箱禁止监听 `127.0.0.1` 返回 `EPERM`；
+   仅放开本机 loopback 后 108/108 全通过，包括 subscription、Session replay 和
+   persistent Leader recovery；
+5. 隔离 Electron 已显示正确的源码登录页；系统中另有旧打包版 AgentMesh360，
+   已按完整 Electron app path 区分，避免在错误窗口登录；
+6. 用户明确授权的 owner 邮箱已填入隔离窗口，但仓库/evidence 不保留邮箱；
+   密码框仍为空，自动化没有读取或输入密码，也没有提交登录。
+
+当前边界：
+
+- canary refresh token absent，产品 Provider Keychain absent；
+- Core 请求、Provider 请求、credits、Keychain 写入、Package/账号/订阅 mutation、
+  云资源、费用和生产 mutation 均为 0；
+- owner 账号由 Google OAuth 创建，没有可供当前邮箱密码页提交的现成密码；
+- 下一步必须先补齐并发布 Google/GitHub 桌面 OAuth，不能要求用户寻找不存在的密码；
+- 登录结果由 Core/Host 双重返回 active 前，不装配临时 BYOK，不进入 E1
+  Trust/Release/Origin。
+
+### 循环 96：Google/GitHub 桌面 OAuth 根因修复
+
+状态：Core 与 Client 本地实现、全量测试和登录页视觉检查通过；尚未提交、推送或部署
+共享 Core，P5 继续停在登录前
+
+根因与计划纠正：
+
+1. 生产 Core 的 Google/GitHub OAuth 成功后只把 token pair 写入官网同源
+   `localStorage`；桌面客户端仅实现 `/v1/auth/login` 邮箱密码接口；
+2. owner 线上账号通过 Google OAuth 创建，没有必须存在的登录密码；Cycle 95
+   把“使用该账号”误解为“填邮箱密码”，属于产品缺口，不是用户准备问题；
+3. 既定 P5 原范围曾明确“不实现 OAuth”，但真实 owner 登录暴露其为订阅验收的前置
+   能力。按用户明确纠正，当前只补身份链路，不扩展 Host、Provider、Package 或 credits。
+
+已经实现：
+
+1. Core OAuth start 新增 `client=desktop` 分支，只接受 `127.0.0.1` / `::1`
+   随机端口、随机 callback path、客户端 state 与 S256 PKCE challenge；
+2. Google/GitHub 回调成功后生成 90 秒一次性 code，只保存 SHA-256 摘要并绑定用户、
+   精确 loopback 与 challenge；浏览器 URL 不含 Access/Refresh/Provider token
+   或 verifier；
+3. 公开 exchange 不嵌入桌面 client secret，错误 verifier 不消费 code，正确兑换
+   原子消费并拒绝重放；
+4. Electron 主进程启动本机 loopback listener，以固定 Core HTTPS URL 打开系统
+   浏览器；Renderer 只提交 `google` / `github` Provider ID，永远不接触 code、
+   verifier 或 token；
+5. 登录页加入 Google/GitHub 主入口，并保留邮箱密码兼容路径；旧隔离 Electron
+   已停止，约 10 GiB Host build 缓存保留供新提交最终 canary 复用。
+
+验证与计划复盘：
+
+- Core 定向 OAuth/原产品登录交接 10/10，全量 300 passed / 3 skipped；共享产品注册表
+  静态 4/4，Ruff、格式和 diff 检查通过；
+- Desktop OAuth/identity/Core-client 23/23；复用隔离真实 Grok Host 后全套
+  117/117，subscription、Session replay 与 persistent Leader recovery 均真实通过；
+- Electron 登录页视觉 smoke 确认 Google/GitHub、邮箱密码和订阅提示均正确显示；
+- 当前生产 Core 尚未发布新 exchange，真实 Google 登录仍不可验收；下一步先更新
+  两仓文档和证据、自复核、提交推送，再单独执行共享 Core 受控发布门；
+- 发布和实时登录前，Provider 请求、credits、Keychain/Package/账号/订阅 mutation、
+  云资源与费用继续为 0，P5 不进入 BYOK 或 release chain。

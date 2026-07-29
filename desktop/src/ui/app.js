@@ -152,6 +152,11 @@ function renderSignedOut(state) {
           <h2>登录你的工作台</h2>
           <p class="subtitle">客户端会先验证有效订阅，再启动本地 Agent Host。</p>
           ${state.error ? `<div class="form-error" role="alert">${escapeHtml(state.error)}</div>` : ''}
+          <div class="oauth-actions">
+            <button class="oauth-button" type="button" data-oauth-provider="google"><span>G</span>使用 Google 登录</button>
+            <button class="oauth-button" type="button" data-oauth-provider="github"><span>GH</span>使用 GitHub 登录</button>
+          </div>
+          <div class="auth-divider"><span>或使用邮箱密码</span></div>
           <label class="field"><span>邮箱</span><input name="email" type="email" autocomplete="username" required autofocus placeholder="you@example.com"></label>
           <label class="field"><span>密码</span><input name="password" type="password" autocomplete="current-password" required placeholder="输入登录密码"></label>
           <button class="primary" type="submit">登录并验证订阅</button>
@@ -166,6 +171,16 @@ function renderSignedOut(state) {
     button.disabled = true;
     button.textContent = '正在登录…';
     await bridge.login({ email: data.get('email'), password: data.get('password') });
+  });
+  document.querySelectorAll('[data-oauth-provider]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const provider = button.dataset.oauthProvider;
+      document.querySelectorAll('[data-oauth-provider]').forEach((item) => {
+        item.disabled = true;
+      });
+      button.textContent = '正在打开系统浏览器…';
+      await bridge.oauthLogin(provider);
+    });
   });
   document.getElementById('open-registration').addEventListener('click', () => bridge.openRegistration());
 }

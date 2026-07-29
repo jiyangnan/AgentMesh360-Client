@@ -27,6 +27,33 @@ class AgentMeshCoreClient {
     });
   }
 
+  oauthStartUrl(provider, { redirectUri, state, codeChallenge }) {
+    if (!['google', 'github'].includes(provider)) {
+      throw new CoreRequestError(
+        'oauth_provider_unsupported',
+        '当前客户端不支持此登录方式',
+      );
+    }
+    const url = new URL(`${this.baseUrl}/v1/auth/oauth/${provider}/start`);
+    url.searchParams.set('client', 'desktop');
+    url.searchParams.set('redirect_uri', redirectUri);
+    url.searchParams.set('state', state);
+    url.searchParams.set('code_challenge', codeChallenge);
+    return url.toString();
+  }
+
+  exchangeDesktopOAuth({ code, codeVerifier, redirectUri }) {
+    return this.#request('/v1/auth/oauth/desktop/exchange', {
+      method: 'POST',
+      body: {
+        code,
+        code_verifier: codeVerifier,
+        redirect_uri: redirectUri,
+      },
+      errorContext: 'oauth_exchange',
+    });
+  }
+
   refresh(refreshToken) {
     return this.#request('/v1/auth/refresh', {
       method: 'POST',
@@ -91,6 +118,13 @@ function mapHttpError(status, payload, context) {
   }
   if ((context === 'refresh' || context === 'bootstrap') && status === 401) {
     return new CoreRequestError('session_expired', '登录状态已失效，请重新登录', status);
+  }
+  if (context === 'oauth_exchange' && [400, 401].includes(status)) {
+    return new CoreRequestError(
+      'oauth_exchange_failed',
+      '第三方登录凭据已失效，请重新登录',
+      status,
+    );
   }
   return new CoreRequestError(
     `http_${status}`,

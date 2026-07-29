@@ -37,6 +37,42 @@ test('bootstrap sends the access token only through Authorization', async () => 
   assert.equal(request.options.body, undefined);
 });
 
+test('desktop OAuth builds a trusted start URL and exchanges only the one-time code', async () => {
+  let request;
+  const client = new AgentMeshCoreClient({
+    baseUrl: 'https://core.example',
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return response(200, {
+        access_token: 'oauth-access-token',
+        refresh_token: 'oauth-refresh-token',
+      });
+    },
+  });
+  const start = new URL(client.oauthStartUrl('google', {
+    redirectUri: 'http://127.0.0.1:43123/oauth/callback/desktop_callback_123456',
+    state: 's'.repeat(43),
+    codeChallenge: 'c'.repeat(43),
+  }));
+  assert.equal(start.origin, 'https://core.example');
+  assert.equal(start.pathname, '/v1/auth/oauth/google/start');
+  assert.equal(start.searchParams.get('client'), 'desktop');
+  assert.equal(start.searchParams.get('state'), 's'.repeat(43));
+
+  await client.exchangeDesktopOAuth({
+    code: 'one-time-code',
+    codeVerifier: 'v'.repeat(43),
+    redirectUri: 'http://127.0.0.1:43123/oauth/callback/desktop_callback_123456',
+  });
+  assert.equal(request.url, 'https://core.example/v1/auth/oauth/desktop/exchange');
+  assert.deepEqual(JSON.parse(request.options.body), {
+    code: 'one-time-code',
+    code_verifier: 'v'.repeat(43),
+    redirect_uri: 'http://127.0.0.1:43123/oauth/callback/desktop_callback_123456',
+  });
+  assert.equal(request.options.headers.Authorization, undefined);
+});
+
 test('HTTP authentication failures map to stable, token-free errors', async () => {
   const client = new AgentMeshCoreClient({
     fetchImpl: async () => response(401, { detail: 'private-access-token was rejected' }),
