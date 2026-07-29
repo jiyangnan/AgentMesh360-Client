@@ -6705,3 +6705,44 @@ credential、隔离 Client/state/build 尚待 finalizer 销毁
   receipt 和 Registry-first cleanup receipt；精确删除临时 Keychain credential、
   Provider Profile/Assignment/Binding、隔离 Client/build 以及剩余 P5
   credential/state，保留正常用户状态与源 Gemini Key；完成前不进入 P6。
+
+### 循环 125：P5 本机终态清理器冻结
+
+状态：专用 finalizer 与产品内 Provider 清理 Driver 已实现并完成静态/合同回归；
+等待 clean pushed executor 执行后销毁最后的隔离 Client、Keychain 与临时状态
+
+实现与安全边界：
+
+1. finalizer 只接受当前 clean、已推送且仍在授权窗口内的完整提交，并要求生产
+   Publisher Trust、Trust URL 与 Registry URL 三个常量继续为空；
+2. 输入 inventory 固定为 `/private/tmp` 下精确 11 个 P5 项；同时校验非秘密 cloud
+   cleanup evidence、21/21 matrix、Registry-first 61/61 cleanup、两代
+   Root/Publisher 已销毁和
+   `Scenario executor → Cleanup executor → Finalizer executor` ancestry；
+3. 修复 retained Host provenance 读取目录错误：现在从固定隔离 `source` 仓库读取
+   Host commit，不再误读主仓库 HEAD；
+4. 临时 Gemini Provider 不由 SQL 直接删除，而是通过现有
+   `ProviderController.deleteProfile` 产品 API 同时移除 Keychain credential、
+   Profile 与 Assignment；Driver 不创建 Profile、不运行 probe、不读取源
+   `GEMINI_API_KEY`，Provider inference 新增 0、credits 0；
+5. 删除前将 opaque credential ref 写入隔离 mode `0600` 恢复状态；如果产品删除
+   已完成但后续本机步骤异常，可验证 Keychain 与数据库终态后继续，且该恢复状态
+   随 Client boundary 一并销毁；
+6. retained Host PID 必须同时匹配固定 build binary 与 `agent leader` 命令才允许
+   终止；build/source 普通递归删除，state、user-data、credential、receipt 与
+   SSH/云临时状态使用 `O_NOFOLLOW` 有界覆盖后删除；
+7. finalizer 不含 Cloudflare、DigitalOcean 或 Provider 推理 mutation 能力，不触碰
+   正常 AgentMesh360 Client 状态与已保存源 Gemini Key，也不进入 P6。
+
+自主验证与计划复盘：
+
+- finalizer 与 Electron Driver 语法通过；新增 5/5 清理合同测试，P5 工具目录
+  78/78 通过；完整 P2–P5、Distribution 与 Release 工具链 251/251 通过，其中
+  沙箱内 247/251，四项 loopback Origin 测试按既定方法在沙箱外复跑 5/5 通过；
+  覆盖精确 inventory、CLI、预算上限、完整场景/清理计数、ancestry 与
+  destructive scope；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 复核 provenance cwd、Keychain
+  产品删除路径、失败恢复状态、符号链接防护和生产常量关闭；
+- 下一步只提交、推送本 finalizer，然后以该完整提交执行一次终态清理；执行成功
+  后复验 `/private/tmp` P5 项为 0、P5 Host 进程为 0、仓库 `target/` 仍不存在，
+  更新 P5 完成文档并运行最终回归，不启动 P6。
