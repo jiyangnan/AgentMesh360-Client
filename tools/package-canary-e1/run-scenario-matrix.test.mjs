@@ -7,6 +7,7 @@ import {
   HARD_STOP,
   HOST_SCENARIOS,
   SCENARIOS,
+  assertScenarioExecutorAncestry,
   buildDriverInput,
   buildScenarioResults,
   parseArguments,
@@ -52,6 +53,7 @@ function publication() {
     authorizationId: AUTHORIZATION_ID,
     executionStatus: 'published',
     executorCommit: COMMIT,
+    releaseExecutorCommit: COMMIT,
     registryPublishedLast: true,
     cleanupRequired: true,
     rootKeyIds: [
@@ -133,6 +135,36 @@ test('accepts only complete Registry-last publication and two public roots', () 
   const badRoot = publication();
   badRoot.rootPublicEvidence.b.publicKeyBase64 = 'bad';
   assert.throws(() => validatePublication(badRoot, origin(), COMMIT));
+});
+
+test('requires ordered Origin to Release to Publisher to Scenario provenance', () => {
+  const commits = ['a', 'b', 'c', 'd'].map(
+    (value) => value.repeat(40),
+  );
+  const pairs = [];
+  assertScenarioExecutorAncestry({
+    originExecutorCommit: commits[0],
+    releaseExecutorCommit: commits[1],
+    publicationExecutorCommit: commits[2],
+    scenarioExecutorCommit: commits[3],
+  }, (ancestor, descendant) => {
+    pairs.push([ancestor, descendant]);
+  });
+  assert.deepEqual(pairs, [
+    [commits[0], commits[1]],
+    [commits[1], commits[2]],
+    [commits[2], commits[3]],
+  ]);
+  const value = publication();
+  value.releaseExecutorCommit = commits[1];
+  value.executorCommit = commits[2];
+  const deployed = origin();
+  deployed.origin.executorCommit = commits[0];
+  assert.doesNotThrow(() =>
+    validatePublication(value, deployed, commits[3]));
+  value.releaseExecutorCommit = 'invalid';
+  assert.throws(() =>
+    validatePublication(value, deployed, commits[3]));
 });
 
 test('validates exact live Host coverage and restores final scenario order', () => {

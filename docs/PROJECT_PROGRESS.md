@@ -6382,3 +6382,32 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
 - 产品蓝图下一项严格是 21 场景矩阵：先冻结推送本状态并升级同一隔离 Client，
   再运行 14 项真实 Host 场景和 7 项已绑定的订阅/BYOK/预算证据。矩阵必须全部通过
   且恢复最终 canary Package 状态，才进入 Registry-first 全清场；P6 继续关闭。
+
+### 循环 116：P5 Scenario executor 有序 provenance
+
+状态：21 场景执行前的同提交约束已修复并完成完整回归；Electron/Host 场景尚未启动
+
+执行前复核与修复：
+
+1. 场景器仍要求 publication executor、Origin executor 与当前 scenario executor
+   字节相同；真实 state 分别记录 `fb51833...` Origin、`42ff4ca...` Builder、
+   `5700589...` Publisher 和当前后继执行器；
+2. 修复后严格要求
+   `Origin → Release Builder → Publisher → Scenario` 三段 Git ancestry，
+   并从 publication state 的 `releaseExecutorCommit` 绑定 Builder provenance；
+3. publication/Origin executor 均必须是合法 40 位提交；反向、无关、未知或格式
+   错误提交失败关闭，不改写已发布 state；
+4. 61/61 inventory、Registry-last、两 Root public evidence、固定 hostname、
+   fault token、授权窗口、Provider 4/12、credits 0、固定 Client/Host/Electron
+   路径和输出不存在门均保持不变。
+
+自主验证与计划复盘：
+
+- Scenario/Publisher/Cleanup/Origin 定向 28/28；P4/P5 Package + Distribution
+  沙箱外 142/142；Node 语法、`git diff --check` 通过；
+- Kimi 继续暂停，本轮由主 Agent 对三段 ancestry、发布 inventory、Driver 输入、
+  生产常量关闭态和不新增 Provider 调用自主复核；
+- 下一轮冻结推送、升级同一保留式 Client 后只执行一次 21 场景矩阵；要求 14 项
+  live Host 和 7 项契约/历史真实证据全部 PASS、Provider 新增 0、credits 0、
+  production mutation 0，并把 canary Package 状态恢复到矩阵定义的最终状态。
+  通过前不进入清场，P6 继续关闭。

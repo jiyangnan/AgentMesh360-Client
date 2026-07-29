@@ -14,6 +14,9 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import {
+  assertP5ExecutorAncestry,
+} from '../distribution-e1/deploy-origin.mjs';
+import {
   AUTHORIZATION_ID,
   BOUNDARY as INFRASTRUCTURE_BOUNDARY,
   assertP5ExecutionAuthority,
@@ -182,7 +185,11 @@ function validatePublication(publication, origin, executorCommit) {
     publication?.schemaVersion !== 1
     || publication.authorizationId !== AUTHORIZATION_ID
     || publication.executionStatus !== 'published'
-    || publication.executorCommit !== executorCommit
+    || !/^[0-9a-f]{40}$/u.test(publication.executorCommit ?? '')
+    || !/^[0-9a-f]{40}$/u.test(
+      publication.releaseExecutorCommit ?? '',
+    )
+    || !/^[0-9a-f]{40}$/u.test(executorCommit ?? '')
     || publication.registryPublishedLast !== true
     || publication.cleanupRequired !== true
     || !Array.isArray(publication.plannedObjects)
@@ -194,7 +201,7 @@ function validatePublication(publication, origin, executorCommit) {
       !== [ROOT_KEY_IDS.a, ROOT_KEY_IDS.b].join('\n')
     || origin?.authorizationId !== AUTHORIZATION_ID
     || origin.origin?.deployed !== true
-    || origin.origin?.executorCommit !== executorCommit
+    || !/^[0-9a-f]{40}$/u.test(origin.origin?.executorCommit ?? '')
     || !/^packages-p5-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
       origin.dns?.hostname || '',
     )
@@ -234,6 +241,17 @@ function validatePublication(publication, origin, executorCommit) {
     };
   });
   return roots;
+}
+
+function assertScenarioExecutorAncestry({
+  originExecutorCommit,
+  publicationExecutorCommit,
+  releaseExecutorCommit,
+  scenarioExecutorCommit,
+}, assertAncestry = assertP5ExecutorAncestry) {
+  assertAncestry(originExecutorCommit, releaseExecutorCommit);
+  assertAncestry(releaseExecutorCommit, publicationExecutorCommit);
+  assertAncestry(publicationExecutorCommit, scenarioExecutorCommit);
 }
 
 function validateEvidence(authorization, oauth, byok) {
@@ -485,6 +503,12 @@ async function runScenarioMatrix(executorCommit) {
     origin.value,
     executorCommit,
   );
+  assertScenarioExecutorAncestry({
+    originExecutorCommit: origin.value.origin.executorCommit,
+    publicationExecutorCommit: publication.value.executorCommit,
+    releaseExecutorCommit: publication.value.releaseExecutorCommit,
+    scenarioExecutorCommit: executorCommit,
+  });
   if (path.dirname(INFRASTRUCTURE_BOUNDARY) !== '/private/tmp') {
     throw new Error('P5 infrastructure boundary drift');
   }
@@ -605,6 +629,7 @@ export {
   HOST_SCENARIOS,
   OUTPUT_RECEIPT_PATH,
   SCENARIOS,
+  assertScenarioExecutorAncestry,
   buildDriverInput,
   buildScenarioResults,
   parseArguments,
