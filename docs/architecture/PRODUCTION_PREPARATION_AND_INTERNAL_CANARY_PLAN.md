@@ -1143,6 +1143,13 @@ refresh-token/本地凭据，管理端登录不能替代专用账号，因此实
 boundary/state/userData 均为 `0700`、marker 为 `0600`，且网络、Keychain、
 Provider、Package mutation 和云资源均为 0；脱敏 assembly receipt 已入库。
 
+Cycle 91 在同一 boundary 内构建 `grok 0.2.106 (308ee14)` 真实 Host，根
+`target/` 保持 absent；3 个真实 Host 契约全部通过。隔离 Electron 已启动并显示
+专用账号登录页，但 canary refresh token 和 Provider Keychain 均为空。管理端
+登录态不能替代专用账号，故当前唯一人工门是用户在该窗口完成专用内部测试账号
+登录；Core/Host 双 active 前，临时 Keychain、E1 云资源和 Package mutation 均
+保持 0。
+
 定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
 未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读
 验证账号、credential ref、Mac 与 Package baseline；通过后才允许进入 E1 资源。

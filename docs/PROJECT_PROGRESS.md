@@ -5462,3 +5462,35 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 - 下一步只在该 boundary 内构建隔离真实 Host，补跑 3 个真实 Host 契约并启动本地
   客户端登录页；实时订阅仍需专用内部测试账号登录态，未取得前不创建 E1 云资源，
   也不使用管理员个人账号替代。
+
+### 循环 91：P5 E1 真实 Host 与专用账号登录门
+
+状态：真实 Host/隔离客户端通过；实时订阅门等待专用内部测试账号手动登录
+
+已经完成：
+
+1. 在隔离 boundary 内为 `308ee14...` 创建 detached worktree，Cargo target 同样
+   固定在 boundary；仓库根 `target/` 始终 absent；
+2. 首次沙箱构建被上游 `protoc` 写 `/dev/stdout` 的 `EPERM` 阻断；无源码错误，
+   放开本机构建沙箱后复用缓存成功，未访问 Provider 或云资源；
+3. 生成 arm64 `grok 0.2.106 (308ee14)` debug Host，二进制 byte count 与 typed
+   digest 已固化；约 10 GiB build cache 仅在可销毁 canary boundary 内；
+4. 补跑此前条件跳过的 3 个真实 Host 契约全部通过：
+   active/expired subscription 双门、Session Plan/后台任务 replay、持久 Leader
+   detach/replacement；
+5. 使用固定 P5 flag、authorization ID、executor、隔离 state/userData 与真实 Host
+   启动 Electron，真实显示 AgentMesh360 登录页；
+6. canary userData 中 refresh token absent，产品 Provider Keychain 仍 empty；
+   因此启动没有自动访问生产 Core，也没有 Provider/Package mutation；
+7. 管理端只有管理员登录态，测试账号筛选没有提供专用账号客户端凭据；禁止读取
+   管理员 token、推断密码、创建账号、修改订阅或改用管理员个人账号。
+
+验证与计划复盘：
+
+- 真实 Host 3/3，隔离客户端登录页可见；非秘密 prelogin receipt 见
+  `docs/operations/tabletops/2026-07-29-p5-real-host-prelogin.json`；
+- Provider 请求 0/12、AgentMesh credits 0、Provider 费用 `$0/$1`、云资源
+  `0`、基础设施费用 `$0/$3`；
+- 当前唯一前置是用户在已打开的隔离 AgentMesh360 窗口登录专用内部测试账号；
+- 登录并由 Core/Host 双重返回 active 后，才允许创建临时 Provider Keychain
+  credential；该项通过后再进入 E1 Trust/Release/Origin，顺序不变。

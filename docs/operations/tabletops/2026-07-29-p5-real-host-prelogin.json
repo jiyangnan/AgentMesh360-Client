@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "executionId": "package_canary_e1_real_host_prelogin_20260729_0001",
+  "authorizationId": "package_canary_e1_20260729_0001",
+  "boundaryId": "p5-e1-isolated-client-01",
+  "recordedAt": "2026-07-29T02:45:36Z",
+  "sourceCommit": "308ee14d86b9b069b16a4d396fadb92f6461922a",
+  "hostVersion": "0.2.106",
+  "hostByteCount": 435634896,
+  "hostSha256": "sha256:fc338d3bee3dff83c098a9c19409d9d43777faa71976d94c74d156cb2e6a14d3",
+  "buildProfile": "dev",
+  "buildBoundaryRetainedForCanary": true,
+  "repositoryRootTargetPresent": false,
+  "realHostContractTests": {
+    "required": 3,
+    "passed": 3,
+    "failed": 0,
+    "subscriptionStateContractPassed": true,
+    "sessionReplayContractPassed": true,
+    "persistentLeaderRecoveryPassed": true
+  },
+  "isolatedClient": {
+    "started": true,
+    "visibleState": "dedicated_account_login_required",
+    "refreshTokenPresent": false,
+    "providerKeychainCredentialPresent": false,
+    "normalUserDataRead": false,
+    "normalStateRead": false
+  },
+  "execution": {
+    "productionCoreRequestsUsed": 0,
+    "providerInferenceRequestsUsed": 0,
+    "agentMeshCreditsUsed": 0,
+    "providerCostUsd": 0,
+    "infrastructureResourcesCreated": 0,
+    "packageMutationsPerformed": 0,
+    "productionMutationsPerformed": 0
+  },
+  "gate": {
+    "realHostPassed": true,
+    "dedicatedAccountLoginPassed": false,
+    "liveSubscriptionPassed": false,
+    "cloudAssemblyAllowed": false,
+    "nextRequiredGate": "user_completes_dedicated_internal_account_login"
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "accountIdentifiersRetained": false,
+    "pathsRetained": false,
+    "providerContentRetained": false
+  }
+}
