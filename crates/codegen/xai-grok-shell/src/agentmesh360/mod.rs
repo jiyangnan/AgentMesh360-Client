@@ -15,6 +15,7 @@ mod model_policy;
 mod model_routing;
 mod package_artifact;
 pub mod package_authoring;
+mod package_canary;
 mod package_delivery;
 mod package_downloader;
 mod package_installer;

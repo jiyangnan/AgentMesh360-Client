@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 的真实 Host、owner OAuth/订阅、BYOK、预检与双代 Release Builder 均已关闭源码门，下一门实现隔离基础设施执行器 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 的真实 Host、owner OAuth/订阅、BYOK、发布链、21 场景和清场源码门均已关闭，下一门只执行已冻结的唯一 staging |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；P5 后续只复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 与 Release Chain 无网络预检均通过；P5 双代 Release Builder 已冻结但尚未执行 | 下一门实现并冻结唯一 P5 Droplet/Spaces/DNS/Origin 执行器，再串联发布、21 场景与清场；不复用生产 Droplet/Trust，不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；双代 Builder、唯一基础设施、Origin、Registry-last 发布、21 场景与 Registry-first 清场执行器均已冻结但尚未实际运行 | 下一门按固定顺序升级保留式隔离 Client，创建唯一 staging，双构建/签名/发布并执行 21 场景；随后先撤 Registry、再销毁其余 E1/本机临时状态；不复用生产 Droplet/Trust，不推进 P6 |
 
 ## 开发循环记录
 
@@ -5921,3 +5921,57 @@ bucket 或 Cloudflare DNS
   Provider、credits、Package/Keychain mutation、云资源和费用均为 0；
 - 下一轮按序实现并冻结 21 项场景执行器与 Registry-first 清场执行器。两者完整
   回归通过后，才进入真实 staging 执行；P6 关闭。
+
+### 循环 104：P5 21 场景、隔离 Client 升级与 Registry-first 清场
+
+状态：源码、自主复核与完整回归完成；尚未升级保留式 Host、创建 staging、生成本轮
+Root/Publisher、上传对象或执行真实场景
+
+已经实现：
+
+1. 正式 Host 新增严格 P5-only Package runtime：只有固定环境变量、固定 `0700`
+   隔离目录、`0600` 配置、v2 授权 ID、不可延长停止点、DNS-only E1 hostname、
+   两把指定测试 Root 和固定 fault 场景同时匹配时，才注入测试 Trust/Registry；
+   生产 Root、Trust Bundle URL 与 Registry URL 常量继续为空；
+2. Registry 与 Artifact 下载复用真实签名、单调序列、摘要、MIME、大小、超时和
+   no-redirect 校验；中断安装只替换受 fault token 保护的传输目标，不放宽已签名
+   Release URL 或生产 Origin；
+3. Electron 驱动器复用已加密恢复的 Google OAuth owner 账号，要求 Core、Host、
+   subscription 三者均为 active；14 项场景走真实 Host，包括 Future Agent 新装、
+   Job baseline、同权限更新、权限扩张拒绝/批准、截断传输、篡改、Registry 回退、
+   Trust 过期、Package rollback、Skill 投影、Publisher/Root 轮换和 Registry 撤回；
+4. 最终 21 项矩阵由 14 项 live Host、2 项订阅/跨账户契约、4 项已通过的真实 BYOK
+   与失败关闭证据、1 项执行前合成预算超限门组成；本轮执行器不再发 Provider 请求，
+   预算保持 4/12、AgentMesh credits 0，且不记录邮箱、余额、Key、Prompt 或响应；
+5. 保留式隔离 Client 升级器只接受 clean pushed 后继 commit，拒绝 source/build
+   symlink 或路径漂移；先在固定 build 目录完成正式 Host 构建并核对版本 commit，
+   再原子更新 marker，保留加密 Refresh Token、BYOK 绑定和 Agent 状态；
+6. Registry-first 清场器必须先 DELETE/HEAD/public HTTPS 复验 Registry 404，再按
+   反序删除并复验所有对象，随后经隔离 signer 销毁两把 Root 与两把 Publisher 私钥；
+   清场授权不因 72 小时窗口结束而失效，但凭据、Bucket、Origin、场景回执、Signer
+   和授权文件的全部传递依赖必须仍是当前已推送版本；
+7. 清场第一段完成后只允许继续删除 Cloudflare DNS、Droplet、Spaces bucket/临时
+   principal、临时 BYOK Profile/Assignment/Binding/Keychain 凭据和整个隔离 Client；
+   只有这些均销毁并保留非秘密证据后，P5 才能关闭。
+
+自主测试与复核：
+
+- P5 新执行器定向 Node 17/17；完整工具链 Node 238/238；
+- Desktop 114 passed / 3 skipped / 0 failed；Google/GitHub OAuth 的 PKCE、
+  loopback callback、state mismatch、取消、超时和并发门均通过；
+- Rust P5 runtime 2/2，另有 5,994 项非目标测试被过滤；`cargo fmt --check` 与
+  正式 lib `cargo clippy -- -D warnings` 通过；
+- 自审先后修复无效 Ed25519 测试公钥、仅在 `cfg(test)` 可用导致正式 Host
+  编译失败的 Root 构造器，以及 retained build symlink/清场传递依赖未完全锁定；
+- 仓库根 `target/` absent，Node 语法、`git diff --check` 通过；Kimi 继续按用户
+  要求暂停，本轮为主 Agent 完整 diff、负向边界与正式构建自主复核。
+
+计划复盘与下一轮：
+
+- 与产品蓝图和 P5 预检的 21 项顺序一致；没有引入第二套 Harness、第二套 Package
+  校验栈或生产 Trust，也没有把历史 evidence 冒充全部 live 场景；
+- 本轮新增云资源、签名 key、Spaces 对象、Package mutation、Provider 请求、
+  AgentMesh credits 和费用均为 0；
+- 下一轮只执行已冻结顺序：提交并推送 Cycle 104，升级保留式隔离 Client，创建唯一
+  DigitalOcean/Spaces/Cloudflare staging，运行双代 Builder、Registry-last 发布和
+  21 场景；通过后立即进入 Registry-first 全清场。P6 继续关闭。

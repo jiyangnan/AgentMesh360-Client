@@ -175,11 +175,25 @@ impl TrustedRootStore {
         Self::default()
     }
 
+    pub(super) fn from_keys(keys: Vec<TrustedRootKey>) -> Result<Self> {
+        if keys.is_empty() || keys.len() > MAX_PUBLISHER_KEYS {
+            bail!("Agent Package trusted root count is invalid");
+        }
+        let mut indexed = HashMap::new();
+        for key in keys {
+            validate_identifier("root keyId", &key.key_id)?;
+            VerifyingKey::from_bytes(&key.public_key)
+                .context("validate Agent Package trusted root")?;
+            if indexed.insert(key.key_id.clone(), key).is_some() {
+                bail!("Agent Package trusted roots must be unique");
+            }
+        }
+        Ok(Self { keys: indexed })
+    }
+
     #[cfg(test)]
     pub(super) fn with_key(key: TrustedRootKey) -> Self {
-        Self {
-            keys: HashMap::from([(key.key_id.clone(), key)]),
-        }
+        Self::from_keys(vec![key]).expect("valid test root")
     }
 
     fn verify(&self, bundle: &PublisherTrustBundle) -> Result<()> {

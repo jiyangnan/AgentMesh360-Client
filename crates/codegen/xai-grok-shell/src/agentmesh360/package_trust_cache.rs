@@ -56,7 +56,9 @@ impl PackageTrustCacheStore {
         }
     }
 
-    #[cfg(test)]
+    /// Builds a cache with caller-validated roots for isolated tests and the
+    /// bounded P5 E1 canary runtime. Production callers continue to use
+    /// `in_home`, whose embedded root store is intentionally empty.
     pub(super) fn in_home_with_roots(
         state_home: impl Into<PathBuf>,
         roots: TrustedRootStore,

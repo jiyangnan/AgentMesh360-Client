@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use super::access::ClientAccess;
 use super::package_artifact::{PackageArtifactVerifier, VerifiedStagedPackage};
+use super::package_canary;
 use super::package_registry_fetcher::{PRODUCTION_PACKAGE_ORIGIN, validate_endpoint};
 use super::package_release::MAX_RELEASE_MANIFEST_BYTES;
 use super::package_trust_cache::PackageTrustCacheStore;
@@ -29,6 +30,7 @@ pub(crate) struct PackageArtifactDownloader {
     cache: PackageTrustCacheStore,
     client: reqwest::Client,
     allowed_origin: String,
+    canary_transport_override: Option<Url>,
     #[cfg(test)]
     transport_origin_override: Option<Url>,
 }
@@ -36,11 +38,23 @@ pub(crate) struct PackageArtifactDownloader {
 impl PackageArtifactDownloader {
     pub(crate) fn in_home(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
+        if let Some(canary) = package_canary::load(&state_home) {
+            return Self {
+                cache: PackageTrustCacheStore::in_home_with_roots(&state_home, canary.roots),
+                state_home,
+                client: download_client(canary.default_headers),
+                allowed_origin: canary.allowed_origin,
+                canary_transport_override: canary.download_transport_override,
+                #[cfg(test)]
+                transport_origin_override: None,
+            };
+        }
         Self {
             cache: PackageTrustCacheStore::in_home(&state_home),
             state_home,
-            client: download_client(),
+            client: download_client(reqwest::header::HeaderMap::new()),
             allowed_origin: PRODUCTION_PACKAGE_ORIGIN.into(),
+            canary_transport_override: None,
             #[cfg(test)]
             transport_origin_override: None,
         }
@@ -56,8 +70,9 @@ impl PackageArtifactDownloader {
         Self {
             cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
             state_home,
-            client: download_client(),
+            client: download_client(reqwest::header::HeaderMap::new()),
             allowed_origin: PRODUCTION_PACKAGE_ORIGIN.into(),
+            canary_transport_override: None,
             transport_origin_override: Some(transport_origin_override),
         }
     }
@@ -160,6 +175,9 @@ impl PackageArtifactDownloader {
     }
 
     fn request_url(&self, verified_url: &Url) -> Url {
+        if let Some(url) = &self.canary_transport_override {
+            return url.clone();
+        }
         #[cfg(test)]
         if let Some(origin) = &self.transport_origin_override {
             let mut request_url = origin.clone();
@@ -170,8 +188,9 @@ impl PackageArtifactDownloader {
     }
 }
 
-fn download_client() -> reqwest::Client {
+fn download_client(default_headers: reqwest::header::HeaderMap) -> reqwest::Client {
     reqwest::Client::builder()
+        .default_headers(default_headers)
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(90))
         .redirect(reqwest::redirect::Policy::none())

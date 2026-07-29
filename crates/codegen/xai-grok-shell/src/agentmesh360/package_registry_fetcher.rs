@@ -13,6 +13,7 @@ use serde::Serialize;
 use url::Url;
 
 use super::access::ClientAccess;
+use super::package_canary;
 use super::package_trust_cache::{
     PackageTrustCacheAudit, PackageTrustCacheStore, RemotePackageSummary,
 };
@@ -39,6 +40,17 @@ pub(crate) struct PackageRegistryFetcher {
 impl PackageRegistryFetcher {
     pub(crate) fn embedded(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
+        if let Some(canary) = package_canary::load(&state_home) {
+            return Self {
+                cache: PackageTrustCacheStore::in_home_with_roots(&state_home, canary.roots),
+                state_home,
+                client: http_client(canary.default_headers),
+                endpoints: Some(RemotePackageMetadataEndpoints {
+                    trust_bundle: canary.trust_bundle_url,
+                    registry: canary.registry_url,
+                }),
+            };
+        }
         let endpoints = match (PRODUCTION_TRUST_BUNDLE_URL, PRODUCTION_REGISTRY_URL) {
             (Some(trust), Some(registry)) => {
                 match RemotePackageMetadataEndpoints::production(trust, registry) {
@@ -54,7 +66,7 @@ impl PackageRegistryFetcher {
         Self {
             cache: PackageTrustCacheStore::in_home(&state_home),
             state_home,
-            client: http_client(),
+            client: http_client(HeaderMap::new()),
             endpoints,
         }
     }
@@ -72,7 +84,7 @@ impl PackageRegistryFetcher {
         Self {
             cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
             state_home,
-            client: http_client(),
+            client: http_client(HeaderMap::new()),
             endpoints: Some(endpoints),
         }
     }
@@ -86,7 +98,7 @@ impl PackageRegistryFetcher {
         Self {
             cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
             state_home,
-            client: http_client(),
+            client: http_client(HeaderMap::new()),
             endpoints: None,
         }
     }
@@ -251,8 +263,9 @@ impl PackageRegistryFetcher {
     }
 }
 
-fn http_client() -> reqwest::Client {
+fn http_client(default_headers: HeaderMap) -> reqwest::Client {
     reqwest::Client::builder()
+        .default_headers(default_headers)
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
