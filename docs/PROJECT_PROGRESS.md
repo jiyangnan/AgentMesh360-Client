@@ -6197,3 +6197,37 @@ Spaces 路由均通过；尚未生成测试 Root/Publisher、构建或发布 Rel
 - 产品蓝图下一项严格是 Registry-last publisher：先冻结推送本状态并升级同一
   隔离 Client，再生成两把临时 Root、按两代上传 Release/Trust，最后上传 Registry
   并从公网逐字节复验。发布通过前不运行 21 场景，P6 继续关闭。
+
+### 循环 111：P5 Origin、Builder 与 Publisher 提交 provenance 串联
+
+状态：发布前发现的同提交约束已修复并完成回归；尚未生成 Root、上传对象或运行
+21 场景
+
+执行前复核与修复：
+
+1. Cycle 110 提交推送并升级保留式 Client 后，发布前逐值检查发现 publisher
+   仍要求 `origin.executorCommit`、Release Chain `executorCommit` 与当前
+   publisher executor 三者字节相同；
+2. 真实 state 分别正确记录 Origin 部署提交 `fb51833...`、双代 Builder 提交
+   `42ff4ca...` 与当前后继提交；旧约束会在生成 Root 和第一个 Spaces PUT 前
+   失败，与逐模块记录、推送再进入下一模块的既定闭环冲突；
+3. publisher 现要求有序的两段 Git ancestry：
+   `Origin executor → Release Builder executor → Publisher executor`；每段均调用
+   已回归的 `git merge-base --is-ancestor`，未知、反向、无关和格式错误提交失败
+   关闭；
+4. 不改写 Origin/Release state，不把后继提交冒充历史创建提交；publication state
+   继续分别记录当前 executor 与 `releaseExecutorCommit`，Origin state 继续保留
+   自己的部署 executor；
+5. 当前 executor 仍必须 clean、pushed、在授权窗口内；固定路径、两代身份、对象
+   inventory、Registry-last、Publisher/Root 数量、Spaces scope、生产关闭态和清理
+   传递依赖均未放宽。
+
+自主验证与计划复盘：
+
+- Publisher/Origin 定向 27/27；P4/P5 Package + Distribution 工具链沙箱外
+  136/136，通过本机回环 Origin 四项服务测试；
+- Node 语法、`git diff --check` 通过；Kimi 继续暂停，本轮由主 Agent 复核没有
+  改写历史 state、没有接受平行分支、没有在结构校验前生成 key 或上传对象；
+- 当前外部 Package 对象与新增 Root 仍为 0。下一轮冻结推送该修复、升级同一
+  隔离 Client，再执行一次 Registry-last publisher；发布 PASS 和公网逐字节复验
+  前不运行 21 场景，P6 继续关闭。

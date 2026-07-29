@@ -15,6 +15,7 @@ import {
   OUTPUT_STATE_PATH,
   RELEASE_STATE_PATH,
   ROOT_KEY_IDS,
+  assertPublicationExecutorAncestry,
   assertUniquePackages,
   metadataObject,
   parseArguments,
@@ -122,6 +123,55 @@ test('binds both exact release generations to the deployed P5 origin', () => {
     assert.throws(() =>
       validateReleaseChainState(changed.release, changed.origin, COMMIT));
   }
+});
+
+test('requires ordered Origin to Release to Publisher provenance', () => {
+  const originCommit = 'a'.repeat(40);
+  const releaseCommit = 'b'.repeat(40);
+  const publicationCommit = 'c'.repeat(40);
+  const pairs = [];
+  assert.doesNotThrow(() => assertPublicationExecutorAncestry(
+    originCommit,
+    releaseCommit,
+    publicationCommit,
+    (ancestor, descendant) => {
+      pairs.push([ancestor, descendant]);
+    },
+  ));
+  assert.deepEqual(pairs, [
+    [originCommit, releaseCommit],
+    [releaseCommit, publicationCommit],
+  ]);
+  assert.throws(
+    () => assertPublicationExecutorAncestry(
+      releaseCommit,
+      originCommit,
+      publicationCommit,
+      (ancestor, descendant) => {
+        if (ancestor === releaseCommit && descendant === originCommit) {
+          throw new Error('not an ancestor');
+        }
+      },
+    ),
+    /not an ancestor/u,
+  );
+
+  const value = states();
+  value.origin.origin.executorCommit = originCommit;
+  value.release.executorCommit = releaseCommit;
+  assert.doesNotThrow(() =>
+    validateReleaseChainState(
+      value.release,
+      value.origin,
+      publicationCommit,
+    ));
+  value.release.executorCommit = 'invalid';
+  assert.throws(() =>
+    validateReleaseChainState(
+      value.release,
+      value.origin,
+      publicationCommit,
+    ));
 });
 
 test('Registry package order is unique and deterministic', () => {

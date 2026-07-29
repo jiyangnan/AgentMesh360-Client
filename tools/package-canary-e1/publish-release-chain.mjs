@@ -30,6 +30,9 @@ import {
   verifyRawSignature,
 } from '../distribution-e1/publish-release-set.mjs';
 import {
+  assertP5ExecutorAncestry,
+} from '../distribution-e1/deploy-origin.mjs';
+import {
   readCredentialFile,
 } from '../distribution-e1/spaces-client.mjs';
 import {
@@ -195,7 +198,8 @@ function validateReleaseChainState(state, originState, executorCommit) {
   if (
     state.authorizationId !== AUTHORIZATION_ID
     || state.executionStatus !== 'release_chain_built'
-    || state.executorCommit !== executorCommit
+    || !/^[0-9a-f]{40}$/u.test(state.executorCommit ?? '')
+    || !/^[0-9a-f]{40}$/u.test(executorCommit ?? '')
     || state.releaseOrigin !== `https://${originState.dns?.hostname}`
     || state.generations?.length !== 2
     || state.temporaryPublisherPrivateKeyCount !== 2
@@ -204,7 +208,9 @@ function validateReleaseChainState(state, originState, executorCommit) {
     || state.cleanupRequired !== true
     || originState.authorizationId !== AUTHORIZATION_ID
     || originState.origin?.deployed !== true
-    || originState.origin?.executorCommit !== executorCommit
+    || !/^[0-9a-f]{40}$/u.test(
+      originState.origin?.executorCommit ?? '',
+    )
     || originState.origin?.tls !== 'caddy_managed_lets_encrypt'
     || originState.infrastructure?.dropletCount !== 1
     || originState.infrastructure?.spacesBucketCount !== 2
@@ -230,6 +236,16 @@ function validateReleaseChainState(state, originState, executorCommit) {
     generations[generationName] = generation;
   }
   return generations;
+}
+
+function assertPublicationExecutorAncestry(
+  originExecutorCommit,
+  releaseExecutorCommit,
+  publicationExecutorCommit,
+  assertAncestry = assertP5ExecutorAncestry,
+) {
+  assertAncestry(originExecutorCommit, releaseExecutorCommit);
+  assertAncestry(releaseExecutorCommit, publicationExecutorCommit);
 }
 
 async function assertRetainedGenerationBoundary(generation) {
@@ -398,6 +414,11 @@ async function publishReleaseChain(executorCommit) {
   const generations = validateReleaseChainState(
     state,
     originState,
+    executorCommit,
+  );
+  assertPublicationExecutorAncestry(
+    originState.origin.executorCommit,
+    state.executorCommit,
     executorCommit,
   );
   await Promise.all([
@@ -740,6 +761,7 @@ export {
   OUTPUT_STATE_PATH,
   RELEASE_STATE_PATH,
   ROOT_KEY_IDS,
+  assertPublicationExecutorAncestry,
   assertRetainedGenerationBoundary,
   assertUniquePackages,
   metadataObject,
