@@ -332,7 +332,9 @@ export async function captureLocalCanaryBaseline({
   await validateOutputPath(outputPath);
   const receipt = {
     schemaVersion: 1,
-    baselineId: 'package_canary_e1_local_baseline_20260729_0001',
+    baselineId: authorization.schemaVersion === 2
+      ? 'package_canary_e1_local_baseline_20260729_0002'
+      : 'package_canary_e1_local_baseline_20260729_0001',
     authorizationId: authorization.authorizationId,
     capturedAt: now.toISOString(),
     executorCommit: head,

@@ -824,5 +824,6 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   `$1`、基础设施 `$3` 和零生产权限；
 - assembler 只接受 v2 与新 baseline，旧 v1 即使配套旧 baseline 也 fail-close；
 - Electron canary marker 升级到 v2，普通客户端路径不变；
+- 首次 v2 baseline capture 发现 receipt ID 复用 v1，已阻断并修为 `...0002`；
 - P5 定向 23/23、Electron 4/4、Desktop 105/105（真实 Host 3 项按环境门跳过）；
 - 下一步冻结推送 v2 后重做 baseline/隔离装配，订阅双门前不创建云资源。

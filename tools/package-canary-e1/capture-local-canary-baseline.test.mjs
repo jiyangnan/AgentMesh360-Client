@@ -120,6 +120,14 @@ test('captures only retention-safe local baseline signals', async () => {
     try {
       assert.equal(receipt.gate.localBaselinePassed, true);
       assert.equal(receipt.gate.cloudAssemblyAllowed, false);
+      assert.equal(
+        receipt.baselineId,
+        'package_canary_e1_local_baseline_20260729_0002',
+      );
+      assert.equal(
+        receipt.authorizationId,
+        'package_canary_e1_20260729_0002',
+      );
       assert.equal(receipt.provider.savedSourceCredentialPresent, true);
       assert.equal(receipt.provider.inferenceRequestsUsed, 0);
       assert.equal(receipt.normalState.packageRegistryCount, 0);

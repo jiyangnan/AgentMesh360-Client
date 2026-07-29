@@ -1182,7 +1182,8 @@ v2 继续固定单账号、单 Mac、原 72 小时停止点、Gemini BYOK 最多
 
 validator 可按 schemaVersion 严格选择 v1/v2；assembler 只接受 v2 和重新捕获的
 匹配 baseline，旧 v1 即使带旧 baseline 也失败关闭。Electron marker 同步升级为
-schema v2 和新 authorization/boundary ID，普通客户端不受影响。
+schema v2 和新 authorization/boundary ID，普通客户端不受影响。首次 v2 baseline
+在零 mutation 下发现 receipt ID 仍沿用 v1，已阻断并改为 schema 对应的 `...0002`。
 
 P5 定向 23/23、Electron canary 4/4、Desktop 105/105（真实 Host 3 项按环境门跳过）；
 本轮账号登录、Provider、credits、Keychain、Package、云资源和费用均为 0。下一步

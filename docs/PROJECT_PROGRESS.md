@@ -5552,7 +5552,10 @@ Cycle 92 已纠正并中止
 6. 隔离客户端 assembler 只接受 v2 和与其逐字节匹配的新 baseline；v1 即使配套
    旧 baseline 也 fail-close；
 7. Electron canary marker 升级到 schema v2、authorization `...0002` 和 boundary
-   `...-02`；普通客户端启动路径不变。
+   `...-02`；普通客户端启动路径不变；
+8. 首次真实 v2 baseline capture 在零 mutation 下发现 receipt ID 仍沿用 v1；
+   已阻断该 receipt，改为按 authorization schema 生成 `...baseline...0002`，
+   禁止 v1/v2 证据编号碰撞。
 
 验证与计划复盘：
 
