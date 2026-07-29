@@ -1363,3 +1363,29 @@ DNS-only TTL 60 记录、hostname/IP/suffix 和不可延长的自动销毁时间
 
 计划下一模块保持原顺序：实现并冻结 P5 双代 Registry-last 发布器；通过后才创建
 唯一 staging 并执行 Builder、发布、21 场景与 Registry-first 清场。P6 关闭。
+
+## 53. Cycle 103 P5 双代 Registry-last 发布器
+
+冻结提交 `1e56f6b...` 在 P4 经过演练的 canonical Registry/Trust、Ed25519、
+SigV4 PUT/GET readback 原语上增加 P5-only publisher。入口只接收 executor
+commit，其余 Origin、Release Chain、credentials 与 output state 路径全部固定。
+
+发布器要求 v2 授权仍有效、executor clean 且已推送、生产 Trust/Registry 常量为空、
+两代 Publisher 与六个版本双构建完整、保留边界和私钥均为受限真实文件。P5 在生成
+Root 前先写 cleanup state，异常时仍可定位两 Root、两 Publisher 和已计划对象。
+
+Trust sequence 1 为 Root A/Publisher A，sequence 2 为 A/B overlap，sequence 3
+撤销 A，sequence 4 切换 Root B。Registry revision 1 为 baseline，revision 2
+同权限 Job 更新，revision 3 权限扩张，revision 4 Publisher A 撤销，revision 5
+Root B。每个 snapshot 中 package ID 唯一。
+
+canonical Trust 先上传，六版本 immutable objects 与受 fault token 保护的迁移/
+故障文档随后上传，canonical Registry 必须最后 PUT 并用 Origin reader readback。
+Origin allowlist 新增 7 条 P5 路由，总数 21；P4 原 14 项 runner 不变。
+
+定向 publisher 10/10、Origin 路由 15/15、完整 Node 335/3/0，语法/diff/秘密与
+单调序列检查通过。本轮没有运行 publisher，没有新增 key、上传、网络、Provider、
+credits、Package/Keychain mutation、云资源或费用。
+
+下一步严格按计划实现并冻结 21 项场景执行器和 Registry-first 清场执行器；两者
+回归通过前不创建 staging。P6 关闭。

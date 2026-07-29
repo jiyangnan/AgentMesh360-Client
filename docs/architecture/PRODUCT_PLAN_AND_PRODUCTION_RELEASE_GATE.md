@@ -962,3 +962,20 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本轮没有运行远端部署，云、Provider、credits、Package/Keychain mutation 和
   新增费用均为 0；
 - 下一步实现并冻结 P5 双代 Registry-last 发布器。P5 executing，P6 关闭。
+
+## 58. 循环 103 P5 双代 Registry-last 发布器
+
+- P5-only publisher 固定 Origin、Release Chain、credentials 与 output state，
+  入口只接收 clean pushed executor commit；
+- 两 Root/Publisher、Trust sequence 1-4 与 Registry revision 1-5 分离覆盖
+  overlap、同权限、权限扩张、Publisher 撤销和 Root rotation；
+- 每个 Registry snapshot 保持 package ID 唯一；两个 Job 更新分别存在于独立
+  snapshot；
+- Trust、六版本 immutable objects、transition/fault 文档先发布，canonical
+  Registry 最后发布并 readback；
+- Origin fault allowlist 增至 21 条，P4 原 14 项 runner 保持不变；
+- 定向 publisher 10/10、Origin 路由 15/15、完整 Node 335 passed /
+  3 skipped / 0 failed，提交 `1e56f6b` 已推送；
+- 本轮没有运行发布器，key、上传、云、Provider、credits、Package/Keychain
+  mutation 和费用为 0；
+- 下一步实现并冻结 21 场景与 Registry-first 清场执行器。P5 executing，P6 关闭。

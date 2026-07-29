@@ -5881,3 +5881,43 @@ bucket 或 Cloudflare DNS
   credits、Package/Keychain mutation 和新增费用均为 0；
 - 下一轮按序实现并冻结 P5 双代 Registry-last 发布器；在完整回归前仍不创建
   staging。随后才进入真实基础设施、Builder、发布、21 场景和清场；P6 关闭。
+
+### 循环 103：P5 双代 Registry-last 发布器
+
+状态：源码、负向测试、完整回归和冻结推送完成；尚未生成本轮 Root key 或上传对象
+
+已经实现：
+
+1. P4 已验证的 canonical Registry、Trust、Ed25519、对象摘要、SigV4 PUT/GET
+   readback 原语开放为共享内部能力；P4 CLI、四 Agent 和 14 项 fault matrix 行为
+   保持不变；
+2. P5 publisher 只接收 frozen executor commit，固定读取 P5 Origin、
+   Release Chain、Spaces 凭据和唯一 publication state；再次验证 v2 时窗、
+   clean pushed executor、空生产常量、两代双构建和隔离边界/私钥模式；
+3. Generation A 固定 Root A / Publisher A / Trust sequence 1 / Registry
+   revision 1；Generation B 的两个 Job 版本对象与 baseline 一同按不可变路径准备；
+4. Publisher overlap、Publisher A revoke 和 Root B rotation 分别使用 Trust
+   sequence 2/3/4；同权限、权限扩张、Publisher revoke 和 Root rotation 分别使用
+   Registry revision 2/3/4/5，禁止把轮换与撤销混成同一个状态；
+5. Registry 每个 package ID 只能出现一次，因此同权限与权限扩张是两个独立
+   Job record snapshot，而不是在同一 Registry 中并列同 package 的多个版本；
+6. canonical Trust 先发布，六个版本的不可变 Release 对象和受 fault token 保护的
+   transition 文档随后发布，`metadata/registry.v2.json` 必须最后上传并 readback；
+7. Origin fault allowlist 从 P4 的 14 项扩展到 21 条路由，新增同权限、权限扩张拒绝/
+   批准、Root rotation、Publisher rotation/revoke 与 Registry withdrawal；旧 14
+   项顺序和 runner 不变；
+8. publication state 在生成 Root 前先落盘两个固定私钥目标；任何中断都留下完整
+   planned object/root/publisher 清理线索，且 Release 文件/状态 symlink 被拒绝。
+
+验证与计划复盘：
+
+- P5 publisher 与共享 Registry 定向 10/10，Origin 路由联测 15/15；完整 Node
+  335 passed / 3 skipped / 0 failed；
+- 语法、diff、固定路径、单调序列、Registry-last、邮箱/API key/私钥模式扫描通过；
+- 提交 `1e56f6b feat: publish p5 two-generation release chain` 已推送 `main`；
+- Kimi 继续暂停，由主 Agent 复核 package ID 唯一性、Root/Publisher 独立迁移、
+  中断恢复、symlink 边界和 P4 兼容；
+- 本轮没有运行 publisher，因此新增 Root/Publisher key、Spaces 上传、网络、
+  Provider、credits、Package/Keychain mutation、云资源和费用均为 0；
+- 下一轮按序实现并冻结 21 项场景执行器与 Registry-first 清场执行器。两者完整
+  回归通过后，才进入真实 staging 执行；P6 关闭。
