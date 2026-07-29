@@ -21,9 +21,11 @@ import { strictConfig } from './origin-service.mjs';
 const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(MODULE_DIRECTORY, '../..');
 const AUTHORIZATION_ID = 'distribution_service_e1_20260728_0001';
+const P5_AUTHORIZATION_ID = 'package_canary_e1_20260729_0002';
 const DROPLET_EXECUTOR_COMMIT =
   'be108f436c24014ec6e4670d883f5b9c95de2925';
 const BOUNDARY_PREFIX = 'agentmesh360-distribution-e1-';
+const P5_BOUNDARY = '/private/tmp/agentmesh360-p5-e1-infrastructure';
 const SSH_OPERATOR = 'agentmesh-operator';
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
@@ -80,7 +82,38 @@ function run(command, args, label, options = {}) {
   throw new Error(`${label} failed`);
 }
 
-async function assertBoundary(boundary) {
+function scopeContract(scope) {
+  if (scope === 'p4') {
+    return {
+      authorizationId: AUTHORIZATION_ID,
+      bucketPrefix: 'am360-e1',
+      dropletPrefix: 'am360-p4-e1',
+      hostnamePrefix: 'packages-e1',
+    };
+  }
+  if (scope === 'p5') {
+    return {
+      authorizationId: P5_AUTHORIZATION_ID,
+      bucketPrefix: 'am360-p5-e1',
+      dropletPrefix: 'am360-p5-e1',
+      hostnamePrefix: 'packages-p5-e1',
+    };
+  }
+  throw new Error('origin deployment scope is invalid');
+}
+
+function approvedHostname(hostname, scope = null) {
+  const scopes = scope == null ? ['p4', 'p5'] : [scope];
+  return scopes.some((candidate) => {
+    const contract = scopeContract(candidate);
+    return new RegExp(
+      `^${contract.hostnamePrefix}-[0-9a-f]{8}\\.agentmesh360\\.com$`,
+      'u',
+    ).test(hostname);
+  });
+}
+
+async function assertBoundary(boundary, scope = 'p4') {
   const resolved = await realpath(boundary);
   const allowedParents = new Set([
     await realpath(os.tmpdir()),
@@ -91,7 +124,11 @@ async function assertBoundary(boundary) {
     !stat.isDirectory()
     || stat.isSymbolicLink()
     || (stat.mode & 0o777) !== 0o700
-    || !path.basename(resolved).startsWith(BOUNDARY_PREFIX)
+    || (
+      scope === 'p4'
+        ? !path.basename(resolved).startsWith(BOUNDARY_PREFIX)
+        : resolved !== P5_BOUNDARY
+    )
     || !allowedParents.has(path.dirname(resolved))
   ) {
     throw new Error('origin deployment boundary is invalid');
@@ -120,12 +157,47 @@ async function readMode0600Json(filePath, label) {
 function validateLiveState(
   value,
   dropletExecutorCommit = DROPLET_EXECUTOR_COMMIT,
+  scope = 'p4',
 ) {
+  const contract = scopeContract(scope);
+  if (scope === 'p5') {
+    const destroyAt = Date.parse(value?.automaticDestroyNoLaterThan);
+    if (
+      !value
+      || typeof value !== 'object'
+      || value.schemaVersion !== 1
+      || value.authorizationId !== contract.authorizationId
+      || value.executionStatus !== 'dns_recorded'
+      || value.executorCommit !== dropletExecutorCommit
+      || value.infrastructure?.dropletCount !== 1
+      || value.infrastructure?.spacesBucketCount !== 2
+      || value.infrastructure?.cloudflareDnsRecordCount !== 1
+      || !Number.isSafeInteger(value.droplet?.id)
+      || !new RegExp(
+        `^${contract.dropletPrefix}-[0-9a-f]{8}$`,
+        'u',
+      ).test(value.droplet?.name)
+      || value.droplet?.status !== 'active'
+      || !/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(value.droplet?.publicIpv4)
+      || !approvedHostname(value.dns?.hostname, scope)
+      || value.dns?.ipv4 !== value.droplet.publicIpv4
+      || value.dns?.proxied !== false
+      || value.dns?.ttlSeconds !== 60
+      || !Number.isFinite(destroyAt)
+      || destroyAt <= Date.now()
+      || value.cleanupRequired !== true
+    ) {
+      throw new Error(
+        'live origin state differs from the approved P5 E1 boundary',
+      );
+    }
+    return value;
+  }
   if (
     !value
     || typeof value !== 'object'
     || value.schemaVersion !== 1
-    || value.authorizationId !== AUTHORIZATION_ID
+    || value.authorizationId !== contract.authorizationId
     || value.executorCommit !== dropletExecutorCommit
     || !Number.isSafeInteger(value.droplet?.id)
     || value.droplet?.region !== 'sgp1'
@@ -156,14 +228,26 @@ async function assertExecutorCommit(executorCommit) {
     'origin executor commit inspection',
     { cwd: REPOSITORY_ROOT },
   );
+  const originCommit = run(
+    'git',
+    ['rev-parse', 'origin/main'],
+    'origin pushed commit inspection',
+    { cwd: REPOSITORY_ROOT },
+  );
   const status = run(
     'git',
     ['status', '--porcelain=v1', '--untracked-files=all'],
     'origin executor clean-tree inspection',
     { cwd: REPOSITORY_ROOT },
   );
-  if (commit !== executorCommit || status !== '') {
-    throw new Error('origin executor is not the approved clean commit');
+  if (
+    commit !== executorCommit
+    || originCommit !== executorCommit
+    || status !== ''
+  ) {
+    throw new Error(
+      'origin executor is not the approved clean pushed commit',
+    );
   }
 }
 
@@ -181,7 +265,7 @@ function originConfig(credentials, faultToken) {
 
 function systemdUnit() {
   return `[Unit]
-Description=AgentMesh360 P4 E1 isolated package origin
+Description=AgentMesh360 E1 isolated package origin
 After=network-online.target
 Wants=network-online.target
 
@@ -210,9 +294,7 @@ WantedBy=multi-user.target
 }
 
 function caddyfile(hostname) {
-  if (
-    !/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(hostname)
-  ) {
+  if (!approvedHostname(hostname)) {
     throw new Error('Caddy hostname is invalid');
   }
   return `${hostname} {
@@ -437,7 +519,7 @@ async function waitForDns(
 }
 
 function checkHttpsHealth(hostname, curlSpawn = spawnSync) {
-  if (!/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(hostname)) {
+  if (!approvedHostname(hostname)) {
     throw new Error('staging HTTPS hostname is invalid');
   }
   const result = curlSpawn(
@@ -483,7 +565,7 @@ function checkFaultToken(
   curlSpawn = spawnSync,
 ) {
   if (
-    !/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(hostname)
+    !approvedHostname(hostname)
     || !/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(ipAddress)
     || !/^[A-Za-z0-9_-]{43}$/u.test(faultToken)
   ) {
@@ -541,18 +623,49 @@ async function waitForHttps(
   throw new Error('staging HTTPS health check did not become ready');
 }
 
-async function deployOrigin(boundary, credentialPath, executorCommit) {
-  const resolved = await assertBoundary(boundary);
+async function deployOrigin(
+  boundary,
+  credentialPath,
+  executorCommit,
+  scope = 'p4',
+) {
+  const contract = scopeContract(scope);
+  const resolved = await assertBoundary(boundary, scope);
   await assertExecutorCommit(executorCommit);
   const credentials = await readCredentialFile(credentialPath);
-  const liveStatePath = path.join(resolved, 'live-state.json');
+  const expectedBucketPattern = new RegExp(
+    `^${contract.bucketPrefix}-releases-[0-9a-f]{8}$`,
+    'u',
+  );
+  if (!expectedBucketPattern.test(credentials.releasesBucket)) {
+    throw new Error('Spaces credentials escaped the origin deployment scope');
+  }
+  const liveStatePath = path.join(
+    resolved,
+    scope === 'p5' ? 'dns-state.json' : 'live-state.json',
+  );
+  const outputStatePath = path.join(
+    resolved,
+    scope === 'p5' ? 'origin-state.json' : 'live-state.json',
+  );
+  if (scope === 'p5') {
+    try {
+      await lstat(outputStatePath);
+      throw new Error('P5 origin state already exists');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
   const liveState = validateLiveState(
     await readMode0600Json(liveStatePath, 'live origin state'),
+    executorCommit,
+    scope,
   );
   const suffix = credentials.releasesBucket.split('-').at(-1);
   if (
-    liveState.dns.hostname !== `packages-e1-${suffix}.agentmesh360.com`
-    || liveState.droplet.name !== `am360-p4-e1-${suffix}`
+    liveState.dns.hostname
+      !== `${contract.hostnamePrefix}-${suffix}.agentmesh360.com`
+    || liveState.droplet.name !== `${contract.dropletPrefix}-${suffix}`
   ) {
     throw new Error('origin DNS, Droplet, and Spaces suffixes differ');
   }
@@ -780,11 +893,12 @@ async function deployOrigin(boundary, credentialPath, executorCommit) {
       deployedAt: new Date().toISOString(),
     },
   };
-  await writeFile(liveStatePath, JSON.stringify(nextState), {
+  await writeFile(outputStatePath, JSON.stringify(nextState), {
     mode: 0o600,
-    flag: 'w',
+    flag: scope === 'p5' ? 'wx' : 'w',
   });
-  await chmod(liveStatePath, 0o600);
+  await chmod(outputStatePath, 0o600);
+  return nextState;
 }
 
 function parseArguments(argv) {
@@ -846,9 +960,11 @@ if (isMainModule()) {
 }
 
 export {
+  approvedHostname,
   caddyfile,
   checkFaultToken,
   checkHttpsHealth,
+  deployOrigin,
   isFakeIpAddress,
   isTransientSshFailure,
   originDirectoryCommands,

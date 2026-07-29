@@ -194,6 +194,12 @@ function assertFrozenExecutor(executorCommit, preflightCommit) {
   }
 }
 
+async function assertP5ExecutionAuthority(executorCommit) {
+  const authority = await readRetainedPreflight();
+  assertFrozenExecutor(executorCommit, authority.preflight.executorCommit);
+  return authority;
+}
+
 function cloudInit(publicKey) {
   if (
     typeof publicKey !== 'string'
@@ -288,8 +294,7 @@ function suffixFromCredentials(credentials) {
 }
 
 async function probeSpaces(executorCommit) {
-  const { preflight } = await readRetainedPreflight();
-  assertFrozenExecutor(executorCommit, preflight.executorCommit);
+  await assertP5ExecutionAuthority(executorCommit);
   const credentials = await readCredentialFile(CREDENTIAL_PATH);
   suffixFromCredentials(credentials);
   await runAccessProbe(credentials);
@@ -300,8 +305,7 @@ async function prepareBoundary(executorCommit) {
   const {
     preflight,
     automaticDestroyNoLaterThan,
-  } = await readRetainedPreflight();
-  assertFrozenExecutor(executorCommit, preflight.executorCommit);
+  } = await assertP5ExecutionAuthority(executorCommit);
   const credentials = await readCredentialFile(CREDENTIAL_PATH);
   const suffix = suffixFromCredentials(credentials);
   const boundary = await assertNewBoundary();
@@ -478,10 +482,8 @@ function validateDropletObject(value, prepared) {
 async function createDroplet(executorCommit) {
   const boundary = await assertExistingBoundary();
   const {
-    preflight,
     automaticDestroyNoLaterThan,
-  } = await readRetainedPreflight();
-  assertFrozenExecutor(executorCommit, preflight.executorCommit);
+  } = await assertP5ExecutionAuthority(executorCommit);
   const prepared = await readMode0600Json(
     path.join(boundary, 'prepared-state.json'),
     'prepared P5 infrastructure state',
@@ -651,6 +653,7 @@ async function createDroplet(executorCommit) {
     dnsRecordCount: 1,
     backupsEnabled: false,
     monitoringEnabled: false,
+    automaticDestroyNoLaterThan,
     createdAt: new Date().toISOString(),
   };
   await writeFile(
@@ -690,8 +693,7 @@ function validateCloudflareState(value, live) {
 
 async function recordDns(executorCommit) {
   const boundary = await assertExistingBoundary();
-  const { preflight } = await readRetainedPreflight();
-  assertFrozenExecutor(executorCommit, preflight.executorCommit);
+  await assertP5ExecutionAuthority(executorCommit);
   const [live, cloudflare] = await Promise.all([
     readMode0600Json(
       path.join(boundary, 'live-state.json'),
@@ -719,6 +721,7 @@ async function recordDns(executorCommit) {
     },
     droplet: live.droplet,
     dns: cloudflare,
+    automaticDestroyNoLaterThan: live.automaticDestroyNoLaterThan,
     cleanupRequired: true,
     recordedAt: new Date().toISOString(),
   };
@@ -892,6 +895,7 @@ export {
   BOUNDARY,
   CLOUDFLARE_STATE_PATH,
   CREDENTIAL_PATH,
+  assertP5ExecutionAuthority,
   cloudInit,
   exactTaggedDroplets,
   parseArguments,
