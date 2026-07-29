@@ -38,7 +38,7 @@ Provider 分阶段计划以
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 隔离客户端和真实 Host 已通过，owner 账号要求 Google OAuth，先完成共享 Core/Client 登录契约再恢复 P5 |
-| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已完成本地实现和全量回归 | 共享 Core 提交、推送与受控发布后，用 owner Google 账号验证 Core/Host 双 active |
+| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已完成实现和全量回归；Client `8545bc1` 已推送 `main`，Core `1b6e34f` 只推送非生产分支 | 完成共享 Core 受控发布后，用 owner Google 账号验证 Core/Host 双 active |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
@@ -5628,8 +5628,9 @@ Cycle 92 已纠正并中止
 
 ### 循环 96：Google/GitHub 桌面 OAuth 根因修复
 
-状态：Core 与 Client 本地实现、全量测试和登录页视觉检查通过；尚未提交、推送或部署
-共享 Core，P5 继续停在登录前
+状态：Core 与 Client 实现、全量测试和登录页视觉检查通过；Client 提交 `8545bc1`
+已推送 `main`，Core 提交 `1b6e34f` 已推送不触发生产的
+`codex/native-desktop-oauth` 分支；共享 Core 尚未部署，P5 继续停在登录前
 
 根因与计划纠正：
 
@@ -5662,7 +5663,7 @@ Cycle 92 已纠正并中止
 - Desktop OAuth/identity/Core-client 23/23；复用隔离真实 Grok Host 后全套
   117/117，subscription、Session replay 与 persistent Leader recovery 均真实通过；
 - Electron 登录页视觉 smoke 确认 Google/GitHub、邮箱密码和订阅提示均正确显示；
-- 当前生产 Core 尚未发布新 exchange，真实 Google 登录仍不可验收；下一步先更新
-  两仓文档和证据、自复核、提交推送，再单独执行共享 Core 受控发布门；
+- 当前生产 Core 尚未发布新 exchange，真实 Google 登录仍不可验收；Client 已推送，
+  Core 已停在非生产分支，下一步只执行共享 Core 受控发布门和部署后全产品回归；
 - 发布和实时登录前，Provider 请求、credits、Keychain/Package/账号/订阅 mutation、
   云资源与费用继续为 0，P5 不进入 BYOK 或 release chain。
