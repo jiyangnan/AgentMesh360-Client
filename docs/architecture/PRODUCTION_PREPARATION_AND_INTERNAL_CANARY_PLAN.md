@@ -1341,3 +1341,25 @@ least-privilege principal。
 计划复盘后，下一模块保持原顺序：先实现并冻结 P5 Origin 部署与 Release 发布适配；
 其完整回归通过后才允许创建唯一 staging，再运行 Builder、Registry-last 发布、
 21 场景及 Registry-first 清场。P6 不开放。
+
+## 52. Cycle 102 P5 隔离 Origin 部署
+
+冻结提交 `9f25c2e...` 将 P4 已验证的 SSH/Caddy/systemd/DNS/HTTPS/fault-token
+部署路径改为显式 scope。默认 P4 CLI 仍只接受 P4 boundary；P5 必须通过只接收
+executor commit 的专用 wrapper，无法选择其他 boundary 或 credentials。
+
+P5 部署同时绑定当前有效的 v2 授权与摘要、clean pushed executor、Cycle 99
+preflight ancestor、固定 P5 namespace、单 Droplet、双 Spaces bucket、单
+DNS-only TTL 60 记录、hostname/IP/suffix 和不可延长的自动销毁时间。P5 从
+`dns-state.json` 一次性生成 `origin-state.json`；P4 旧 live-state 路径不变。
+
+远端只安装最小 Origin 服务、只读 Spaces principal 与 Caddy TLS；fault token、
+凭据和远端诊断都不进入仓库或公开输出。异常后不会取得额外云创建 authority，
+且专用 Droplet 仍可由 Cycle 101 的独立 destroy 通道回收。
+
+定向 27/27、完整 Node 329/3/0、语法/diff/秘密扫描通过。本轮没有运行部署动作，
+云连接、云 mutation、Provider、credits、Package/Keychain mutation 和新增费用
+仍为 0。
+
+计划下一模块保持原顺序：实现并冻结 P5 双代 Registry-last 发布器；通过后才创建
+唯一 staging 并执行 Builder、发布、21 场景与 Registry-first 清场。P6 关闭。

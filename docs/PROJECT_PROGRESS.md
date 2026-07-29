@@ -5846,3 +5846,38 @@ bucket 或 Cloudflare DNS
 - 下一轮按序实现并冻结 P5 Origin 部署与发布适配；在该模块完成回归前不调用本轮
   云 mutation 动作。之后才创建唯一 staging、运行双代 Builder、Registry-last
   发布、21 场景和 Registry-first 清场；P6 继续关闭。
+
+### 循环 102：P5 隔离 Origin 部署适配
+
+状态：源码、测试、完整回归和冻结推送完成；尚未连接或部署云端 Origin
+
+已经实现：
+
+1. 复用 P4 已验证的 SSH、Caddy、systemd、DNS/HTTPS 等待和 fault-token 探针，
+   但引入显式 `p4` / `p5` scope；默认 P4 CLI 不能误入 P5；
+2. P5 wrapper 不接受 boundary 或 credentials 参数，只能使用固定
+   `/private/tmp/agentmesh360-p5-e1-infrastructure` 和 P5 Spaces 凭据；
+3. 部署前再次验证 v2 授权摘要与 72 小时时窗、clean pushed executor、
+   Cycle 99 preflight ancestor、单 Droplet/双 bucket/单 DNS、DNS-only、TTL 60、
+   hostname/IP/suffix 和未到期的自动销毁时间；
+4. P4/P5 共享 Origin 只接受各自 bucket、Droplet 和 hostname namespace；
+   P4 行为保持原 live-state 覆写，P5 则从 `dns-state.json` 生成一次性的
+   `origin-state.json`，防止跨阶段状态被静默改写；
+5. P5 `origin-state.json` 继续保留在 `0600` 隔离边界，fault token 和只读
+   Origin principal 不进入仓库或输出；Renderer、Provider、生产 Trust/Registry
+   不参与该路径；
+6. 基础设施 receipt 补齐不可延长停止点的 live/DNS 逐阶段传递，清理入口仍可在
+   授权到期后执行。
+
+验证与计划复盘：
+
+- P5 Origin/基础设施与 P4 回归定向 27/27；完整 Node 329 passed / 3 skipped /
+  0 failed；
+- 语法、diff、固定路径、namespace、邮箱/API key/私钥模式扫描通过；
+- 提交 `9f25c2e feat: adapt p5 isolated origin deployment` 已推送 `main`；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 复核 P4 兼容、授权时窗、DNS/HTTPS
+  fail-close、状态单写和远端失败后的可清理性；
+- 本轮没有运行 wrapper，因此 Droplet/Spaces/DNS/Origin 连接与 mutation、Provider、
+  credits、Package/Keychain mutation 和新增费用均为 0；
+- 下一轮按序实现并冻结 P5 双代 Registry-last 发布器；在完整回归前仍不创建
+  staging。随后才进入真实基础设施、Builder、发布、21 场景和清场；P6 关闭。

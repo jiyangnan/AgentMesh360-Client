@@ -946,3 +946,19 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本轮云资源、Provider、credits、Package/Keychain mutation 和新增费用均为 0；
 - 下一步按序实现并冻结 P5 Origin 部署与发布适配，再创建唯一 staging。P5 保持
   executing，P6 关闭。
+
+## 57. 循环 102 P5 隔离 Origin 部署
+
+- P4 已验证的 SSH/Caddy/systemd/DNS/HTTPS/fault-token 路径增加显式 P4/P5
+  scope，默认 P4 CLI 不可误入 P5；
+- P5 wrapper 只接收 frozen executor commit，固定 boundary、credentials 和
+  `dns-state.json` → `origin-state.json` 单写路径；
+- 部署前再次绑定有效 v2 时窗、授权摘要、clean pushed executor、preflight
+  ancestor、单 Droplet/双 bucket/单 DNS 与 hostname/IP/suffix；
+- P5 自动销毁停止点贯穿 live、DNS 与 Origin，过期后新部署失败关闭，destroy
+  继续可用；
+- 定向 27/27、完整 Node 329 passed / 3 skipped / 0 failed，提交 `9f25c2e`
+  已推送；
+- 本轮没有运行远端部署，云、Provider、credits、Package/Keychain mutation 和
+  新增费用均为 0；
+- 下一步实现并冻结 P5 双代 Registry-last 发布器。P5 executing，P6 关闭。
