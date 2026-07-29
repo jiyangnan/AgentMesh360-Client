@@ -6279,3 +6279,40 @@ Spaces 路由均通过；尚未生成测试 Root/Publisher、构建或发布 Rel
 - 下一轮先冻结推送本回滚器并升级同一隔离 Client，再执行部分回滚；必须得到
   Registry 公网 404、11 个对象删除/缺失复验、两把 Root 销毁与 publication state
   移除证据后，才重新运行 publisher。21 场景和 P6 继续关闭。
+
+### 循环 113：P5 首次部分发布完整回滚
+
+状态：11 个部分对象与两把临时 Root 已清除，Registry/Trust 公网均为 404；两把
+Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改变
+
+实际执行与证据：
+
+1. Cycle 112 提交 `2b400f4...` 推送后，同一保留式 Client/Host 升级成功；固定
+   `rollback-partial` 基于 `dd0d006... → 2b400f4...` ancestry 接受失败 state；
+2. Registry 首先执行 HEAD/可能撤回，并以 direct-to-approved-IP HTTPS 复验公开
+   404；实际 Registry 从未存在，因此 Registry DELETE 计数为 0，但
+   `registryWithdrawnFirst=true`；
+3. 未回执第 12 个对象再次确认不存在；随后 11 个回执对象按反序 DELETE，每个均由
+   Origin Reader HEAD=404。最终 deletedObjectCount 为 11，
+   verifiedAbsentObjectCount 为 13（Registry、下一个对象、11 个已回执对象）；
+4. 两把临时 Root 经隔离 signer 销毁，两个 Root 文件均不存在；失败
+   publication state 已移除；
+5. 两把 mode `0600` Publisher 私钥、两个 mode `0700` Release boundary 与
+   `release_chain_built` state 全部保留；未重做构建、未创建新 Root、未调用
+   Provider、未扣 credits；
+6. 另行公网复验 `/v1/trust-bundle.json` 与 `/v2/registry.json` 均为
+   `404 application/json`，正常客户端与 canary Client 均没有可见 Package 目录
+   变更。
+
+自主验证与计划复盘：
+
+- 部分回滚 receipt 为 mode `0600`、`partial_publication_rolled_back`、
+  cleanupRequired=false；Root absent、Publisher present、publication state absent
+  与两个 Release boundary retained 均逐项通过；
+- Kimi 继续暂停，本轮由主 Agent 对 Registry-first、对象计数、公网 404、Root
+  销毁、Publisher/Release 保留与正常 Package 零 mutation 自主复核；
+- 计划下一项仍是同一 Registry-last 发布，但 61 对象需要约 180 次独立 Spaces
+  请求；首次失败点对象不存在，符合瞬时 HEAD/传输失败特征。下一轮先为单对象
+  HEAD/PUT/readback 增加有界、摘要证明的幂等恢复：未知 PUT 结果必须先 HEAD+GET
+  验证计划摘要，绝不盲目覆盖；回归与冻结推送后才重新生成 Root 并发布。21 场景
+  与 P6 继续关闭。
