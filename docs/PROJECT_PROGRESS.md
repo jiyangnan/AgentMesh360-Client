@@ -39,10 +39,10 @@ Provider 分阶段计划以
 | --- | --- | --- |
 | 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 隔离客户端、真实 Host、owner Google 登录和重启恢复均通过，下一门只验证真实 BYOK 主路径 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；P5 后续只复用已验收准入，不再回退邮箱密码假设 |
-| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host 和 3 个真实 Host 合同均通过；产品 Keychain/refresh token 仍为空，正常状态未读 | 先发布桌面 OAuth 契约，再由 owner Google 登录并完成 Core/Host 双 active；此前不装配临时 BYOK、不重建 E1 release chain |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅和真实 Gemini BYOK 均通过 | 下一门按授权重建 frozen E1 Release Chain 并创建唯一隔离 staging；不复用生产 Droplet/Trust，不推进 P6 |
 
 ## 开发循环记录
 
@@ -5707,3 +5707,41 @@ Gemini BYOK 主路径
   owner 账号 P5 前提；
 - 下一轮严格进入已批准的 Gemini BYOK happy path；不提前创建 E1 云资源、不进入
   Package release chain，也不扩大账号、设备、请求次数或费用上限。
+
+### 循环 98：P5 owner Gemini BYOK、选路与恢复
+
+状态：真实 BYOK happy path、Provider 失败关闭与新进程恢复均通过；临时主 Profile、
+Assignment、Binding 和系统凭据保留给 P5 后续门，完整 canary 尚未完成
+
+执行结果：
+
+1. 在已通过 OAuth/订阅的隔离客户端中，从受控进程环境读取已批准测试 Key；Key
+   只经主进程传给 Host，未打印、写入仓库、进入 SQLite 或留存 evidence；
+2. 创建 `google-gemini` / `gemini-3.5-flash-lite` Profile 和 global `main`
+   Assignment；本地 Vault Probe 通过且零网络；
+3. 未确认付费的 minimal inference 返回 `confirmation_required` 且零网络；
+   未启用模型在请求前拒绝；
+4. 明确确认后，官方 Gemini minimal inference 返回非空响应；
+5. 一个产品 Agent 的固定 Main Session 完成真实短 Turn，Host 的 Turn Route 精确记录
+   所选 Provider、Preset 与模型；Prompt 和响应不进入证据；
+6. 无效测试凭据向官方端点失败，未发生 fallback；隔离 loopback 429 同样返回固定
+   失败并无 fallback；两个故障 Profile 与临时凭据随即删除；
+7. 新 Electron 进程恢复 active 订阅、唯一 Profile/Assignment、系统加密凭据、
+   固定 Main Session 历史与同一 Turn Route；恢复检查只执行零网络 Vault Probe，
+   未增加 Provider 推理；
+8. 非秘密 receipt：
+   `docs/operations/tabletops/2026-07-29-p5-owner-account-byok-active.json`。
+
+预算、复核与边界：
+
+- 推理操作 4 次：3 次外部 Provider 尝试（含 1 次无效凭据）和 1 次本机 429 fault；
+  低于 12 次上限；客户端不提供 Provider 费用实时报表，因此只记录未观察到 `$1`
+  cap breach，不虚报精确费用；
+- AgentMesh credits 0，基础设施费用 0，Package/账号/订阅 mutation 0；
+- 隔离 state 当前 1 Profile、1 Assignment、1 Binding、1 Turn Route、6 Probe；
+  1 个 Agent 为 running、2 个 inactive，仓库根 `target/` absent；
+- Provider/P5 定向 42/42、两份临时脚本语法、源 Key 值不在脚本中的扫描均通过；
+- Kimi 仍按用户要求暂停，本轮由主 Agent 完整复核，不冒充独立审查；
+- 下一轮进入授权内的 frozen E1 Release Chain 重建与唯一隔离 staging；仍不复用生产
+  Droplet/Trust，不改生产常量，不推进 P6。P5 结束前必须删除临时 Profile/Binding/
+  Keychain 凭据并销毁隔离状态，保留源测试 Key。

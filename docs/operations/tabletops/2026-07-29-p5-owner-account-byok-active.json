@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "executionId": "package_canary_e1_owner_account_byok_active_20260729_0002",
+  "authorizationId": "package_canary_e1_20260729_0002",
+  "baselineId": "package_canary_e1_local_baseline_20260729_0002",
+  "boundaryId": "p5-e1-isolated-client-02",
+  "accountAlias": "p5-owner-online-account-01",
+  "deviceAlias": "p5-mac-01",
+  "sourceCommit": "19e912197db3587f8dfd9b5def955a36e99f7aab",
+  "provider": {
+    "presetId": "google-gemini",
+    "modelId": "gemini-3.5-flash-lite",
+    "profileCount": 1,
+    "assignmentCount": 1,
+    "credentialConfigured": true,
+    "credentialBackend": "os-credential-store",
+    "credentialValueRetained": false,
+    "temporaryCredentialRetainedForNextGate": true,
+    "temporaryBindingRetainedForNextGate": true
+  },
+  "happyPath": {
+    "activeSubscriptionRevalidated": true,
+    "localVaultValidationPassed": true,
+    "localVaultValidationUsedNetwork": false,
+    "paidConfirmationRequiredBeforeNetwork": true,
+    "officialMinimalInferencePassed": true,
+    "productAgentMainTurnPassed": true,
+    "selectedProviderAndModelRecorded": true,
+    "turnRouteCount": 1,
+    "fixedMainSessionHistoryPresent": true
+  },
+  "failureInjection": {
+    "capabilityMismatchRejectedBeforeRequest": true,
+    "invalidCredentialAttempted": true,
+    "invalidCredentialFailed": true,
+    "invalidCredentialFallbackObserved": false,
+    "loopback429Attempted": true,
+    "loopback429Failed": true,
+    "loopback429FallbackObserved": false,
+    "temporaryFailureProfilesDeleted": true
+  },
+  "restartRecovery": {
+    "newProcessUsed": true,
+    "subscriptionStatus": "active",
+    "canEnterClient": true,
+    "providerProfileRestored": true,
+    "assignmentRestored": true,
+    "encryptedCredentialRestored": true,
+    "zeroNetworkVaultValidationPassed": true,
+    "fixedMainSessionHistoryRestored": true,
+    "selectedTurnRouteRestored": true,
+    "additionalProviderInferenceRequests": 0
+  },
+  "state": {
+    "runningAgentCount": 1,
+    "inactiveAgentCount": 2,
+    "providerProfileCount": 1,
+    "modelAssignmentCount": 1,
+    "sessionBindingCount": 1,
+    "turnRouteCount": 1,
+    "probeRecordCount": 6,
+    "packageMutationCount": 0,
+    "cloudResourceCount": 0,
+    "repositoryRootTargetPresent": false
+  },
+  "budget": {
+    "providerInferenceOperationsUsed": 4,
+    "externalProviderInferenceAttempts": 3,
+    "loopbackFaultInferenceAttempts": 1,
+    "maximumProviderInferenceRequests": 12,
+    "agentMeshCreditsUsed": 0,
+    "maximumAgentMeshCredits": 0,
+    "providerCostUsdReportedByClient": null,
+    "maximumProviderCostUsd": 1,
+    "providerCostCapBreachObserved": false,
+    "infrastructureCostUsd": 0,
+    "maximumInfrastructureCostUsd": 3
+  },
+  "validation": {
+    "providerAndP5TargetedTestsRequired": 42,
+    "providerAndP5TargetedTestsPassed": 42,
+    "providerAndP5TargetedTestsFailed": 0,
+    "temporaryScriptSyntaxPassed": true,
+    "sourceCredentialValueFoundInTemporaryScripts": false,
+    "kimiIndependentReviewPerformed": false,
+    "kimiUnavailableByUserInstruction": true,
+    "primaryAgentSelfReviewPassed": true
+  },
+  "gate": {
+    "realByokHappyPathPassed": true,
+    "providerFailureBoundaryPassed": true,
+    "restartRecoveryPassed": true,
+    "packageCanaryCompleted": false,
+    "nextRequiredGate": "rebuild_frozen_e1_release_chain_and_create_isolated_staging"
+  },
+  "cleanup": {
+    "temporaryFailureCredentialsDeleted": true,
+    "canaryProviderCredentialDeletionPending": true,
+    "canaryBindingDeletionPending": true,
+    "isolatedStateDestructionPending": true,
+    "preserveSavedSourceCredential": true,
+    "cleanupRequiredBeforeP5Completion": true
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "credentialDigestsRetained": false,
+    "accountIdentifiersRetained": false,
+    "emailRetained": false,
+    "endpointUrlsRetained": false,
+    "absolutePathsRetained": false,
+    "promptOrResponseRetained": false,
+    "providerContentRetained": false
+  }
+}

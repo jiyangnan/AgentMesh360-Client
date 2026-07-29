@@ -881,3 +881,18 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本门 Provider 推理、AgentMesh credits、费用和 Package/账号/订阅 mutation 为 0；
 - 下一步只执行授权范围内的 Gemini BYOK happy path；通过前不创建 E1 云资源、
   不进入 Package release chain、不推进 P6。
+
+## 53. 循环 98 P5 owner Gemini BYOK 与失败关闭
+
+- 唯一官方 Gemini Profile、global `main` Assignment 和系统凭据已在 v2 隔离
+  state 中创建；Key 值没有进入仓库、SQLite、输出或 evidence；
+- 零网络 Vault Probe、付费确认门、未启用模型调用前拒绝均通过；
+- 官方 minimal inference 和一个产品 Agent 固定 Main Session 的真实短 Turn 通过；
+  Turn Route 精确记录 `google-gemini` / `gemini-3.5-flash-lite`；
+- 无效凭据与隔离 loopback 429 均固定失败且没有 fallback；故障 Profile/凭据删除；
+- 新进程恢复 Profile/Assignment、加密凭据、固定 Main Session 历史和 Turn Route，
+  恢复阶段新增 Provider 推理 0；
+- 共 4 次推理操作，3 次外部 Provider 尝试、1 次本机 fault，低于 12 次上限；
+  AgentMesh credits 和基础设施费用 0；Provider 精确费用不可见，不虚报；
+- 下一门按授权重建 frozen E1 Release Chain 并创建唯一隔离 staging；临时主
+  Profile/Binding/Keychain 凭据必须在 P5 完整清场时删除，不能推进 P6。

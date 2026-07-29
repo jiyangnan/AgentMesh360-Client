@@ -434,7 +434,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner Google OAuth、Core/Host 双 active 与加密重启恢复通过；旧内部账号 v1 保持 aborted | 下一门仅执行 Gemini BYOK happy path；通过前不创建 E1 云资源或进入 release chain |
+| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭与加密重启恢复通过；旧内部账号 v1 保持 aborted | 下一门重建 frozen E1 Release Chain 并创建唯一隔离 staging；完整清场前不推进 P6 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1253,3 +1253,22 @@ endpoint 或绝对路径。
 Package/账号/订阅 mutation 均为 0。P5 仍是 executing，不等于 Package canary
 完成；下一门严格为已批准的 Gemini BYOK happy path，通过前不创建 E1 云资源、
 不进入 release chain、不推进 P6。
+
+## 48. Cycle 98 P5 owner Gemini BYOK 门
+
+在同一 v2 boundary 中创建唯一官方 Gemini Profile 与 global `main` Assignment。
+零网络 Vault Probe、付费确认门和未启用模型调用前拒绝通过；明确确认后，
+`gemini-3.5-flash-lite` minimal inference 返回非空响应。一个产品 Agent 的固定
+Main Session 完成真实短 Turn，Host 的 Turn Route 精确绑定所选 Profile/Preset/模型。
+
+故障矩阵同时验证无效凭据和隔离 loopback 429 均返回固定失败且没有 fallback；
+两个故障 Profile/凭据立即删除。新 Electron 进程在不增加推理请求的情况下恢复
+active 订阅、Profile/Assignment、系统加密凭据、固定 Main Session 历史与 Turn Route。
+
+本门共 4 次推理操作，其中 3 次为外部 Provider 尝试、1 次为本机 fault，低于
+12 次上限；AgentMesh credits 和基础设施费用为 0。客户端不能读取 Provider 账单，
+因此只记录没有观察到 `$1` cap breach，不写虚假的精确费用。
+
+P5 临时主 Profile、Assignment、Binding 和 Keychain 凭据按批准保留给后续门；
+完整清场仍为强制退出条件。下一门按序重建 frozen E1 Release Chain 并创建唯一
+隔离 staging，不复用生产 Droplet/Trust、不改生产常量、不推进 P6。
