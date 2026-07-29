@@ -227,10 +227,10 @@ flowchart TD
    preflight。其 E1 历史批准卡错误假定已有专用内部测试账号；用户纠正后已在
    订阅复验、Keychain/Package mutation 和云资源创建前中止并完整清场。账号所有者
    随后直接授权改用其现有线上账号，v2 授权链、baseline、隔离客户端、owner
-   OAuth/订阅、Gemini BYOK 与 Release Chain 无网络预检均已通过，旧 v1 保持
-   aborted。下一步先实现、测试并冻结 P5 专用 Release/21 场景/清场执行器，之后
-   才创建唯一隔离 staging；这不关闭生产门，生产 key、外部 cohort、签名和公证
-   仍各自等待授权。
+   OAuth/订阅、Gemini BYOK、双代 Release Chain、21/21 Package canary、
+   Registry-first 撤回以及云端/本机资源归零均已通过，旧 v1 保持 aborted。
+   P5 已完成但不关闭生产门；下一顺序 P6 的 Developer ID、Apple 签名/公证、
+   自动更新渠道和恢复矩阵仍各自等待独立授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -979,3 +979,22 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本轮没有运行发布器，key、上传、云、Provider、credits、Package/Keychain
   mutation 和费用为 0；
 - 下一步实现并冻结 21 场景与 Registry-first 清场执行器。P5 executing，P6 关闭。
+
+## 59. 循环 104-126 P5 Package Canary 执行与终态清场
+
+- 唯一 P5 E1 staging 完成双代四 Agent 构建/签名、61/61 Registry-last 发布和
+  21/21 场景矩阵；真实 owner OAuth/订阅、Gemini BYOK、主 Agent Turn Route、
+  失败关闭与重启恢复全部通过；
+- 场景覆盖安装、同权限更新、权限扩张批准、rollback、Publisher overlap/撤销、
+  Root rotation、Trust/Registry LKG 和固定网络故障；执行中发现并修复四项真实
+  Host/Desktop/receipt 合同问题；
+- 清场先撤公开 Registry 并复验 404，再删除其余 60 个对象、两 Root、两
+  Publisher、两个 Release boundary，最后撤回 DNS、Droplet、limited key、两个
+  空 Bucket 和全部本机隔离状态；
+- 产品 API 删除临时 Gemini Profile/Assignment/Keychain，Binding 随 state 销毁；
+  retained Host PID 退出，26 GiB build/source 与全部 P5 临时项归零，生产
+  Trust/Registry 常量保持为空；
+- Provider 历史使用 4/12、本机/清场新增 0，credits 0，生产 mutation 0；
+  基础设施保守成本上界 0.10 USD，最终账单尚未结算；
+- P5 状态为完成，但生产 R1-R6 未因此关闭。P6 R4 必须等待 Developer ID、Apple
+  签名/公证、自动更新渠道和安装恢复矩阵的独立批准；本轮不启动 P6-P8。

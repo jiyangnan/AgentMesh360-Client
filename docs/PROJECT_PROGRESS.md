@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 的真实 Host、owner OAuth/订阅、BYOK、发布链、21 场景和清场源码门均已关闭，下一门只执行已冻结的唯一 staging |
-| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；P5 后续只复用已验收准入，不再回退邮箱密码假设 |
-| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 Apple 签名/公证仍关闭，需独立授权后才能启动 |
+| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
+| Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary 场景、Registry-first 对象/私钥清理和全部云资源撤回均已真实通过；场景还暴露并修复四项真实合同问题 | 实现并冻结 P5 本机 finalizer，删除临时 Provider Profile/Assignment/Binding/Keychain credential、整个隔离 Client/build 和全部 P5 secret/state；随后完成非秘密验收关闭 P5，不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P5 已完成；P5 v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary、Registry-first 清理以及云端/本机资源归零均已真实通过；场景还暴露并修复四项真实合同问题 | P5 已关闭；保持生产 Trust/Registry 常量为空，未取得 P6 独立授权前不启动 Apple 签名、公证或 Desktop Candidate |
 
 ## 开发循环记录
 
@@ -6746,3 +6746,42 @@ credential、隔离 Client/state/build 尚待 finalizer 销毁
 - 下一步只提交、推送本 finalizer，然后以该完整提交执行一次终态清理；执行成功
   后复验 `/private/tmp` P5 项为 0、P5 Host 进程为 0、仓库 `target/` 仍不存在，
   更新 P5 完成文档并运行最终回归，不启动 P6。
+
+### 循环 126：P5 Package Canary 完整关闭
+
+状态：已完成；P5 真实 Package canary、Registry-first 撤回、云端与本机清场全部
+通过，生产常量继续为空，P6 未启动
+
+终态执行与证据：
+
+1. 以 clean 且已推送的 `5a2b2fb...` executor 执行专用 finalizer；先复验固定
+   11 项本机 inventory、21/21 matrix、61/61 Registry-first cleanup、两代
+   Root/Publisher 私钥与 Release boundary 已销毁、cloud cleanup evidence 和完整
+   executor ancestry；
+2. 产品 `ProviderController.deleteProfile` 删除隔离 Gemini Profile 1 个、
+   Assignment 1 个与对应 Keychain credential 1 个；历史 Binding 1 个随隔离
+   state boundary 销毁，源 Gemini Key 与正常客户端状态未进入清理范围；
+3. 固定 retained Host PID 只在命令匹配隔离 build binary 与 `agent leader` 后终止；
+   独立进程复验该 PID 已不存在；
+4. 删除 26 GiB 隔离 Client build/source/state/user-data、基础设施 boundary 与
+   9 个独立 P5 临时文件；`/private/tmp` 的 P5 与 release-provenance 匹配项为 0，
+   仓库根 `target/` 仍不存在；
+5. 非秘密终态 evidence 只保留计数、executor、关闭状态与时间；不含邮箱、账户 ID、
+   IP、URL、Access ID、secret、credential ref、本机路径、prompt 或响应；
+6. Provider inference 本轮新增 0、AgentMesh credits 0、生产 mutation 0；完整 P5
+   历史使用仍为批准范围内 4/12 Provider 请求，基础设施保守成本上界 0.10 USD，
+   最终账单尚未结算。
+
+自主验证、计划复盘与后续边界：
+
+- finalizer 正式返回 `local_secret_state_destroyed`；本机残留 0、原 P5 Host PID
+  absent、HEAD 与 `origin/main` 一致；
+- 清理器新增测试 5/5、P5 工具 78/78、完整 P2–P5/Distribution/Release 工具链
+  251/251；桌面语法检查通过，桌面测试 114 passed / 3 个真实 Host 环境门
+  skipped / 0 failed；四项 Origin 与五项 OAuth loopback 测试均在沙箱外复验通过；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 完成完整 diff、产品 API 删除路径、
+  Keychain/DB/进程/文件终态、预算与生产关闭常量加强复核；
+- 对照产品蓝图和生产准备计划，P5 的 Package canary 目标已完整实现，没有把 staging
+  PASS 写成生产 R1-R6 关闭；下一顺序仍是 P6 R4 Desktop Candidate，但它需要
+  Developer ID、Apple 公证、更新渠道与恢复矩阵的独立授权。本轮在 P5 关闭处停止，
+  不自行生成凭据、不签名、不公证、不发布 Desktop Candidate。

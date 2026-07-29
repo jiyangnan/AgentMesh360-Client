@@ -1,7 +1,7 @@
 # AgentMesh360 Client 生产准备与内部 Canary 计划
 
 状态：P0/P1 基线、P2 key ceremony E0、P3 四 Agent provenance E0、P4
-分发服务 E1 隔离演练与 P5 no-authority preflight 均已完成。Cycle 63-85 在精确 72 小时、`3 USD` 硬上限授权
+分发服务 E1 隔离演练与 P5 Package canary 均已完成。Cycle 63-85 在精确 72 小时、`3 USD` 硬上限授权
 内完成隔离 Spaces/Origin、四 Agent 双构建、Trust/Registry-last 发布、14 项
 故障矩阵、Registry-first 撤回、Root/Publisher 与全部云端/本机资源销毁。
 
@@ -11,7 +11,9 @@ P4 E1 状态为 `isolated_distribution_rehearsal_passed`；生产 R1-R6 仍未�
 Cycle 92 在用户纠正该账号并不存在后，于订阅复验、Keychain 写入、Package
 mutation 和云端资源创建前中止 P5 E1，并销毁隔离客户端、构建缓存和 worktree。
 Cycle 93 已取得账号所有者对其现有线上账号的直接授权，并新建严格 v2 授权链；
-旧 v1 继续保持 aborted。E2、生产候选和 Apple 签名公证均未授权。
+旧 v1 继续保持 aborted。Cycle 94-126 已完成 owner OAuth/订阅、Gemini BYOK、
+双代 Release Chain、21/21 Package 场景、Registry-first 撤回和云端/本机资源
+归零；P5 状态为完成。E2、生产候选和 Apple 签名公证均未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -434,7 +436,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭、加密重启恢复与 Release Chain 无网络预检通过；双代 Release Builder 已冻结但未执行；旧内部账号 v1 保持 aborted | 下一门实现并冻结 P5 专用 Droplet/Spaces/DNS/Origin 执行器；之后才创建唯一隔离 staging、运行 Builder/发布/21 场景，完整清场前不推进 P6 |
+| P5 Package canary | **v2 已完成并完整清场**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭、加密重启恢复、双代 Release Chain、21/21 场景、Registry-first 撤回以及云端/本机资源归零全部通过；旧内部账号 v1 保持 aborted | 只关闭 E1 Package canary，不关闭生产 R1-R6；P6 需要 Apple 凭据、签名/公证和更新渠道的独立授权 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1389,3 +1391,24 @@ credits、Package/Keychain mutation、云资源或费用。
 
 下一步严格按计划实现并冻结 21 项场景执行器和 Registry-first 清场执行器；两者
 回归通过前不创建 staging。P6 关闭。
+
+## 54. Cycle 104-126 P5 Package Canary 执行与关闭
+
+P5 v2 按原固定顺序完成唯一隔离 staging、双代四 Agent Release Chain、61/61
+Registry-last 发布、真实 owner OAuth/订阅与 Gemini BYOK、14 项 Host 场景和合计
+21/21 场景矩阵。Package 路径覆盖安装、同权限更新、权限扩张批准、rollback、
+Publisher overlap/撤销、Root rotation、Trust/Registry LKG 与网络故障；实际执行
+暴露并修复 mutation receipt 字段、JavaScript 安全整数、持久 Host 启动以及 matrix
+预算映射四项合同问题。
+
+退出严格遵循 Registry-first：先撤回公开 Registry 并复验 404，再反序删除 61 个
+对象，销毁两把临时 Root、两把临时 Publisher 和两个 Release boundary，最后删除
+DNS、Droplet、两个 limited key、两个空 Bucket、临时 SSH/Spaces credential、
+隔离 Provider/Keychain、Host 进程与 26 GiB Client boundary。终态
+`/private/tmp` P5 inventory 为 0，生产 Trust/Registry 常量仍为空。
+
+P5 Provider inference 历史使用 4/12、本机/清场阶段新增 0，AgentMesh credits 0，
+生产 mutation 0；基础设施保守成本上界 0.10 USD，最终账单尚未结算。P5 只关闭 E1
+Package canary，不关闭生产 R1-R6。下一顺序为 P6 R4 Desktop Candidate，但
+Developer ID、Apple 签名/公证、自动更新渠道与安装恢复矩阵均需新的独立授权；在此
+之前 P6-P8 保持关闭。

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "package_canary_e1_20260729_0002",
+  "environment": "e1",
+  "workPackage": "p5_package_canary",
+  "executorCommit": "5a2b2fb5e7db640aaab182ca6a5580d182582b7e",
+  "executionStatus": "local_secret_state_destroyed",
+  "providerProfileDeletedCount": 1,
+  "providerAssignmentDeletedCount": 1,
+  "historicalProviderBindingDestroyedWithBoundaryCount": 1,
+  "keychainCredentialDeletedCount": 1,
+  "destroyedStandaloneFileCount": 9,
+  "destroyedBoundaryCount": 2,
+  "remainingP5TempEntryCount": 0,
+  "retainedP5HostProcessCount": 0,
+  "repositoryRootTargetAbsent": true,
+  "productionPackageConstantsEmpty": true,
+  "providerInferenceOperationsAdded": 0,
+  "agentMeshCreditsUsed": 0,
+  "productionMutationCount": 0,
+  "completedAt": "2026-07-29T12:54:41.796Z"
+}
