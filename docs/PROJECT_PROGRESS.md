@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；双代 Builder、唯一基础设施、Origin、Registry-last 发布、21 场景与 Registry-first 清场执行器均已冻结；P5 两个隔离 Spaces Bucket、Publisher/Origin 最小权限 Key 与真实权限探针已落地并通过 | 下一门按固定顺序只创建唯一 SGP1 Droplet 和 DNS-only 测试记录，再部署 Origin、双构建/签名/发布并执行 21 场景；随后先撤 Registry、再销毁其余 E1/本机临时状态；不复用生产 Droplet/Trust，不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；场景首次启动在 Package mutation 前识别本机 TUN Fake-IP 与 Rust 直连不兼容，P5-only Origin IPv4 覆写已完成回归 | 冻结并升级同一隔离 Client 后重跑 21 场景；全部通过且恢复最终 canary Package 状态后，严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
 
 ## 开发循环记录
 
@@ -6411,3 +6411,42 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
   live Host 和 7 项契约/历史真实证据全部 PASS、Provider 新增 0、credits 0、
   production mutation 0，并把 canary Package 状态恢复到矩阵定义的最终状态。
   通过前不进入清场，P6 继续关闭。
+
+### 循环 117：P5 Host 的隔离 Origin DNS 兼容边界
+
+状态：场景首次启动在任何 Package mutation 前安全停止；P5-only Origin IPv4
+覆写已实现并完成回归，21 场景等待冻结提交与隔离 Host 升级后重跑
+
+执行证据与根因：
+
+1. Cycle 116 提交 `e2b24f3...` 推送并升级保留式 Client 后，场景 Driver 在
+   baseline Trust 刷新处返回安全错误码 `baseline_trust_invalid`；没有生成 Host
+   receipt 或 matrix receipt；
+2. 隔离 `state.db` 只读核对确认 Package/Trust 相关表均为 0 行，场景未发生
+   Package mutation；公网 Trust 与 Registry 使用相同 fault header 均为 200，
+   因此没有改写已发布 Release Chain；
+3. 本机 TUN DNS 把 P5 hostname 解析到 RFC 2544 `198.18.0.0/15` Fake-IP。Node/curl
+   经过系统代理可访问，但正式 Rust `reqwest` Package metadata/data client 的直连
+   路径无法连接该 Fake-IP；
+4. 场景输入现在从已经审批并复验的 P5 `origin-state.json` 绑定唯一 Droplet IPv4。
+   Electron Driver 与 Rust canary runtime 都要求合法 IPv4，并显式拒绝私网、
+   loopback、link-local、CGNAT、multicast、broadcast 和 RFC 2544 Fake-IP；
+5. 只有固定 `AGENTMESH360_P5_E1_CANARY`、固定 Client boundary、固定 P5 hostname
+   和有效 Root/场景文档同时成立时，Registry fetcher 与 Release downloader 才向
+   `reqwest::ClientBuilder::resolve` 注入该地址；URL、HTTPS hostname、TLS SNI、
+   Release 签名 URL 和 Origin allowlist 均保持 hostname，不降级 HTTP；
+6. 普通生产构造器、测试 transport override 和生产 Package 常量继续传入
+   `None`，没有 DNS 覆写、生产 endpoint、Provider 请求、credits 或新增云资源。
+
+自主验证与计划复盘：
+
+- P5 canary runtime 2/2、Registry fetcher 4/4、Downloader 10/10；P4/P5 Package +
+  Distribution Node 142/142；场景输入定向 8/8；
+- `cargo fmt --check`、Node 语法与 `git diff --check` 通过；编译 target 位于
+  `/private/tmp`，项目根目录没有恢复大体积 `target`；
+- Kimi 继续暂停，本轮由主 Agent 对输入来源、地址拒绝集合、TLS hostname、
+  生产 `None` 路径和首次失败零 mutation 自主复核；
+- 产品顺序未改变：本修复只打通已经冻结的 21 场景执行路径，不建立通用自定义 DNS
+  功能，不扩大到 P4/生产，不新增场景或云资源。下一轮先提交推送并升级同一隔离
+  Client/Host，清除首次失败遗留的未消费 Driver 输入，再重跑 21 场景；全 PASS
+  前不得执行 Registry-first 清场，P6 继续关闭。

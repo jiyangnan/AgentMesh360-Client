@@ -1,4 +1,5 @@
 use std::fs::{self, OpenOptions};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -39,10 +40,11 @@ impl PackageArtifactDownloader {
     pub(crate) fn in_home(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
         if let Some(canary) = package_canary::load(&state_home) {
+            let dns_override = (canary.origin_hostname.clone(), canary.origin_socket_addr);
             return Self {
                 cache: PackageTrustCacheStore::in_home_with_roots(&state_home, canary.roots),
                 state_home,
-                client: download_client(canary.default_headers),
+                client: download_client(canary.default_headers, Some(dns_override)),
                 allowed_origin: canary.allowed_origin,
                 canary_transport_override: canary.download_transport_override,
                 #[cfg(test)]
@@ -52,7 +54,7 @@ impl PackageArtifactDownloader {
         Self {
             cache: PackageTrustCacheStore::in_home(&state_home),
             state_home,
-            client: download_client(reqwest::header::HeaderMap::new()),
+            client: download_client(reqwest::header::HeaderMap::new(), None),
             allowed_origin: PRODUCTION_PACKAGE_ORIGIN.into(),
             canary_transport_override: None,
             #[cfg(test)]
@@ -70,7 +72,7 @@ impl PackageArtifactDownloader {
         Self {
             cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
             state_home,
-            client: download_client(reqwest::header::HeaderMap::new()),
+            client: download_client(reqwest::header::HeaderMap::new(), None),
             allowed_origin: PRODUCTION_PACKAGE_ORIGIN.into(),
             canary_transport_override: None,
             transport_origin_override: Some(transport_origin_override),
@@ -188,12 +190,19 @@ impl PackageArtifactDownloader {
     }
 }
 
-fn download_client(default_headers: reqwest::header::HeaderMap) -> reqwest::Client {
-    reqwest::Client::builder()
+fn download_client(
+    default_headers: reqwest::header::HeaderMap,
+    dns_override: Option<(String, SocketAddr)>,
+) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder()
         .default_headers(default_headers)
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(90))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some((hostname, socket_addr)) = dns_override {
+        builder = builder.resolve(&hostname, socket_addr);
+    }
+    builder
         .build()
         .expect("Agent Package download HTTP client configuration is valid")
 }

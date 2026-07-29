@@ -86,6 +86,9 @@ function origin() {
     dns: {
       hostname: 'packages-p5-e1-1234abcd.agentmesh360.com',
     },
+    droplet: {
+      publicIpv4: '203.0.113.10',
+    },
   };
 }
 
@@ -189,6 +192,7 @@ test('builds only the fixed P5 driver authority', () => {
     input.origin,
     'https://packages-p5-e1-1234abcd.agentmesh360.com',
   );
+  assert.equal(input.originIpv4, '203.0.113.10');
   assert.equal(input.stopsAt, HARD_STOP);
   assert.equal(input.productionAuthorityGranted, false);
   assert.equal(CLIENT_BOUNDARY, '/private/tmp/agentmesh360-p5-e1-client');

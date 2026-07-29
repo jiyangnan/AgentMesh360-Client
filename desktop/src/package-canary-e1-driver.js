@@ -42,6 +42,28 @@ function requireCondition(value, code) {
   }
 }
 
+function isApprovedPublicIpv4(value) {
+  const parts = String(value || '').split('.').map(Number);
+  if (
+    parts.length !== 4
+    || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
+    return false;
+  }
+  const [first, second] = parts;
+  return !(
+    first === 0
+    || first === 10
+    || first === 127
+    || (first === 100 && second >= 64 && second <= 127)
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && second === 168)
+    || (first === 198 && (second === 18 || second === 19))
+    || first >= 224
+  );
+}
+
 function readMode0600Json(filePath, label, maximum = 64 * 1024) {
   const info = fs.lstatSync(filePath);
   requireCondition(
@@ -67,6 +89,10 @@ function validateInput(value) {
       value.origin || '',
     ),
     'origin_invalid',
+  );
+  requireCondition(
+    isApprovedPublicIpv4(value.originIpv4),
+    'origin_ipv4_invalid',
   );
   requireCondition(
     typeof value.faultToken === 'string'
@@ -111,6 +137,7 @@ function writeScenarioConfig(input, scenario) {
     executorCommit: input.executorCommit,
     stateHome: STATE_HOME,
     origin: input.origin,
+    originIpv4: input.originIpv4,
     scenario,
     faultToken: input.faultToken,
     rootKeys: input.rootKeys,

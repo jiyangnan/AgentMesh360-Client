@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -41,10 +42,11 @@ impl PackageRegistryFetcher {
     pub(crate) fn embedded(state_home: impl Into<PathBuf>) -> Self {
         let state_home = state_home.into();
         if let Some(canary) = package_canary::load(&state_home) {
+            let dns_override = (canary.origin_hostname.clone(), canary.origin_socket_addr);
             return Self {
                 cache: PackageTrustCacheStore::in_home_with_roots(&state_home, canary.roots),
                 state_home,
-                client: http_client(canary.default_headers),
+                client: http_client(canary.default_headers, Some(dns_override)),
                 endpoints: Some(RemotePackageMetadataEndpoints {
                     trust_bundle: canary.trust_bundle_url,
                     registry: canary.registry_url,
@@ -66,7 +68,7 @@ impl PackageRegistryFetcher {
         Self {
             cache: PackageTrustCacheStore::in_home(&state_home),
             state_home,
-            client: http_client(HeaderMap::new()),
+            client: http_client(HeaderMap::new(), None),
             endpoints,
         }
     }
@@ -84,7 +86,7 @@ impl PackageRegistryFetcher {
         Self {
             cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
             state_home,
-            client: http_client(HeaderMap::new()),
+            client: http_client(HeaderMap::new(), None),
             endpoints: Some(endpoints),
         }
     }
@@ -98,7 +100,7 @@ impl PackageRegistryFetcher {
         Self {
             cache: PackageTrustCacheStore::in_home_with_roots(&state_home, roots),
             state_home,
-            client: http_client(HeaderMap::new()),
+            client: http_client(HeaderMap::new(), None),
             endpoints: None,
         }
     }
@@ -263,12 +265,19 @@ impl PackageRegistryFetcher {
     }
 }
 
-fn http_client(default_headers: HeaderMap) -> reqwest::Client {
-    reqwest::Client::builder()
+fn http_client(
+    default_headers: HeaderMap,
+    dns_override: Option<(String, SocketAddr)>,
+) -> reqwest::Client {
+    let mut builder = reqwest::Client::builder()
         .default_headers(default_headers)
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some((hostname, socket_addr)) = dns_override {
+        builder = builder.resolve(&hostname, socket_addr);
+    }
+    builder
         .build()
         .expect("Agent Package registry HTTP client configuration is valid")
 }

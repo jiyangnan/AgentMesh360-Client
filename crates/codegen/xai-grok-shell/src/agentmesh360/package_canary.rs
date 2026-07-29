@@ -1,4 +1,5 @@
 use std::fs;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -28,6 +29,8 @@ pub(super) struct PackageCanaryRuntime {
     pub(super) allowed_origin: String,
     pub(super) default_headers: HeaderMap,
     pub(super) download_transport_override: Option<Url>,
+    pub(super) origin_hostname: String,
+    pub(super) origin_socket_addr: SocketAddr,
     pub(super) registry_url: Url,
     pub(super) roots: TrustedRootStore,
     pub(super) trust_bundle_url: Url,
@@ -42,6 +45,7 @@ struct PackageCanaryDocument {
     executor_commit: String,
     state_home: String,
     origin: String,
+    origin_ipv4: String,
     scenario: String,
     fault_token: String,
     root_keys: Vec<PackageCanaryRoot>,
@@ -172,6 +176,13 @@ fn parse_document(
     {
         bail!("P5 Agent Package canary fault authority is invalid");
     }
+    let origin_ipv4: Ipv4Addr = document
+        .origin_ipv4
+        .parse()
+        .context("parse P5 Agent Package canary origin IPv4")?;
+    if !approved_public_ipv4(origin_ipv4) {
+        bail!("P5 Agent Package canary origin IPv4 is invalid");
+    }
     let mut default_headers = HeaderMap::new();
     default_headers.insert(
         HeaderName::from_static(FAULT_HEADER),
@@ -212,10 +223,25 @@ fn parse_document(
         allowed_origin: origin.origin().ascii_serialization(),
         default_headers,
         download_transport_override,
+        origin_hostname: hostname.to_owned(),
+        origin_socket_addr: SocketAddr::new(IpAddr::V4(origin_ipv4), 443),
         registry_url,
         roots: TrustedRootStore::from_keys(roots)?,
         trust_bundle_url,
     })
+}
+
+fn approved_public_ipv4(value: Ipv4Addr) -> bool {
+    let [first, second, _, _] = value.octets();
+    !value.is_private()
+        && !value.is_loopback()
+        && !value.is_link_local()
+        && !value.is_unspecified()
+        && !value.is_multicast()
+        && !value.is_broadcast()
+        && !(first == 100 && (64..=127).contains(&second))
+        && !(first == 198 && matches!(second, 18 | 19))
+        && first < 224
 }
 
 fn endpoint(origin: &Url, target: &str) -> Result<Url> {
@@ -317,6 +343,7 @@ mod tests {
             "executorCommit": "a".repeat(40),
             "stateHome": STATE_HOME,
             "origin": "https://packages-p5-e1-1234abcd.agentmesh360.com",
+            "originIpv4": "203.0.113.10",
             "scenario": scenario,
             "faultToken": "x".repeat(43),
             "rootKeys": [
@@ -362,6 +389,10 @@ mod tests {
                 "https://packages-p5-e1-1234abcd.agentmesh360.com"
             );
             assert_eq!(
+                runtime.origin_socket_addr,
+                "203.0.113.10:443".parse().expect("socket address")
+            );
+            assert_eq!(
                 runtime
                     .default_headers
                     .get(FAULT_HEADER)
@@ -390,6 +421,17 @@ mod tests {
         assert!(
             parse_document(
                 &serde_json::to_vec(&value).expect("serialize"),
+                Path::new(STATE_HOME),
+                now
+            )
+            .is_err()
+        );
+        let mut fake_ip: serde_json::Value =
+            serde_json::from_slice(&document("baseline")).expect("document");
+        fake_ip["originIpv4"] = json!("198.18.1.1");
+        assert!(
+            parse_document(
+                &serde_json::to_vec(&fake_ip).expect("serialize"),
                 Path::new(STATE_HOME),
                 now
             )

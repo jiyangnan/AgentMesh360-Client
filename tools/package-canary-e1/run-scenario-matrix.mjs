@@ -205,6 +205,9 @@ function validatePublication(publication, origin, executorCommit) {
     || !/^packages-p5-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
       origin.dns?.hostname || '',
     )
+    || !/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(
+      origin.droplet?.publicIpv4 || '',
+    )
     || !/^[A-Za-z0-9_-]{43}$/u.test(origin.origin?.faultToken || '')
   ) {
     throw new Error('P5 scenario publication boundary is incomplete');
@@ -290,6 +293,7 @@ function buildDriverInput({
     environment: 'e1',
     executorCommit,
     origin: `https://${origin.dns.hostname}`,
+    originIpv4: origin.droplet.publicIpv4,
     faultToken: origin.origin.faultToken,
     rootKeys: roots,
     stopsAt: HARD_STOP,
