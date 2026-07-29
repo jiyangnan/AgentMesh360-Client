@@ -6047,3 +6047,40 @@ Droplet、DNS、Origin 对象、测试 Root/Publisher 或 Package
   已冻结的 `prepare`/`create`：创建唯一 `SGP1`、`s-1vcpu-1gb`、Ubuntu 24.04
   Droplet，再创建一个 TTL 60、DNS-only 的 P5 A 记录。两者复验通过前不部署
   Origin、不生成测试签名 key、不运行 Builder 或 21 场景，P6 继续关闭。
+
+### 循环 107：P5 唯一 Droplet 与 DNS-only Origin 地址实际落地
+
+状态：唯一 P5 Droplet 与唯一 Cloudflare A 记录已创建并通过冻结执行器复验；尚未
+部署 Origin、生成本轮测试签名 key、上传正式对象或运行 21 场景
+
+实际执行：
+
+1. 基于 clean pushed executor `435d706...` 依次通过 `prepare` 与 `create`，在
+   DigitalOcean `SGP1` 创建唯一 `am360-p5-e1-9aa7c042` Droplet；规格固定为
+   `s-1vcpu-1gb`、Ubuntu 24.04，备份与 monitoring 关闭，生产 Droplet 未触碰；
+2. staging hostname 固定为
+   `packages-p5-e1-9aa7c042.agentmesh360.com`，Cloudflare 只创建一条指向该
+   Droplet 当前公网 IPv4 的 A 记录；Proxy 关闭，TTL 为 60 秒；
+3. Cloudflare 当前域名行提供的真实 Zone ID、该 A 记录 ID、hostname、IPv4、
+   `proxied=false` 与 `ttlSeconds=60` 只写入固定
+   `/private/tmp/agentmesh360-p5-e1-cloudflare-state.json`，文件模式为 `0600`；
+   未创建 API Token，未把账号 ID 误作 Zone ID，未将 IP 或标识写入仓库；
+4. 冻结的 `infrastructure-boundary.mjs record-dns` 对 live state 与 Cloudflare
+   receipt 做逐值复验并通过；Zone ID 同账号 ID、record ID 均不同，记录与唯一
+   Droplet 的 hostname/IP 精确一致；
+5. 自动销毁截止时间仍为 `2026-07-31T17:48:33Z`；本轮没有生成第二台 Droplet、
+   第二条 DNS、额外 Bucket/Key，也没有部署或上传 Origin 对象。
+
+自主验证与计划复盘：
+
+- `prepare`、`create`、`record-dns` 均基于同一 clean pushed executor 通过；
+  live state、凭据、Cloudflare receipt 与基础设施目录继续留在固定本机隔离路径，
+  权限边界不变；
+- 当前实际外部资源与 P5 预检精确一致：两个 SGP1 Standard Bucket、两把
+  bucket-scoped limited Key、一台最小 SGP1 Droplet、一条 DNS-only/TTL 60 A 记录；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 对 Droplet 唯一性、规格、DNS
+  hostname/IP、proxy、TTL、Zone/record 标识独立性和 receipt 模式自主复核；
+- 产品蓝图下一项仍是已冻结的 Origin 部署，不提前生成 Root/Publisher、不运行
+  Builder/publisher/21 场景；下一轮先冻结推送本状态并升级同一保留式隔离 Client，
+  再运行 P5 Origin 部署器，要求 systemd/Caddy active、公网 HTTPS health 与只读
+  Spaces 路由全部通过。P6 继续关闭。
