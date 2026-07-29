@@ -6155,6 +6155,45 @@ Spaces 路由均通过；尚未生成测试 Root/Publisher、构建或发布 Rel
 - Kimi 继续按用户要求暂停，本轮由主 Agent 对非特权服务、只读 principal、Caddy
   TLS、公网路由、fault token 不上 argv 和 state 双 provenance 自主复核；
 - 产品蓝图下一项严格是已冻结的双代 Release Chain Builder：先冻结推送本状态并
-  升级同一隔离 Client，再生成本轮临时两把 Root/两把 Publisher、执行四 Agent
-  baseline/variant 双构建与逐字节复现；Builder 全部通过前不调用 publisher 或
-  21 场景，P6 继续关闭。
+  升级同一隔离 Client，再生成本轮临时两把 Publisher、执行四 Agent
+  baseline/variant 双构建与逐字节复现；两把 Root 留在后续 publisher 模块生成，
+  Builder 全部通过前不调用 publisher 或 21 场景，P6 继续关闭。
+
+### 循环 110：P5 双代 Release Chain 实际构建通过
+
+状态：Generation A/B 的六个 Release 均完成双构建、双签名复验与 10/10 逐字节
+一致；两把临时 Publisher 私钥保留待发布，Root 与 Spaces 正式对象尚未生成
+
+实际执行：
+
+1. Cycle 109 提交 `42ff4ca...` 推送后，同一保留式隔离 Client 与正式 Host 已
+   升级到该提交；三个首方源仓库均 clean，Deploy、Job、LectureCast 的冻结 commit
+   object 均存在，Builder 只创建这些历史 commit 的 detached worktree；
+2. 前两次受限沙箱执行均在 `builder A offline executor build` 阶段失败，完整诊断
+   确认为 macOS 沙箱拒绝 `protoc` 写 `/dev/stdout`；失败发生在生成 Publisher Key
+   前，runner 已移除 candidate/source worktree、target 与隔离 boundary；
+3. 诊断 target 随后删除；同一 `--offline --locked` Builder 在沙箱外重跑，只解除
+   本机 `/dev/stdout` 限制，不开放网络、不改变 candidate/source/lock 或构建参数；
+4. Generation A 固定 Deploy `0.1.1`、Future `1.0.0`、Job `0.4.7`、
+   LectureCast `0.4.0`；Generation B 固定 Job `0.4.8-e1.1` 同权限更新与
+   `0.4.9-e1.1` 权限扩张变体；
+5. 六个 Agent Release 均完成 builder A/B 两次构建、两次签名复验和 Artifact、
+   signing request、Host projection、Envelope、Release Manifest 等十类输出
+   10/10 逐字节一致；
+6. 两代分别生成一把临时测试 Publisher 私钥；各自 boundary 为 `0700`，
+   private/public key 文件为 `0600`，代际与 key ID 不复用；构建 state 为 `0600`，
+   生产 authority 为 false、cleanupRequired 为 true；
+7. 本模块没有生成 Root 私钥，没有上传 Trust/Registry/Release 对象，没有调用
+   Provider、扣除 credits 或修改正常 Package 状态。
+
+自主验证与计划复盘：
+
+- `/private/tmp/agentmesh360-p5-e1-release-chain-state.json` 精确为
+  `release_chain_built`，executor 为 `42ff4ca...`、两代、4+2 个 Agent，全部
+  `buildCount=2`、`signatureVerificationCount=2`、十类比较全为 byte-identical；
+- 失败路径与成功路径均没有仓库根 `target/`；诊断 target 已删除，source repos
+  保持 clean；Kimi 继续暂停，由主 Agent 复核冻结源码、lock、边界权限、代际隔离、
+  私钥数量与未上传状态；
+- 产品蓝图下一项严格是 Registry-last publisher：先冻结推送本状态并升级同一
+  隔离 Client，再生成两把临时 Root、按两代上传 Release/Trust，最后上传 Registry
+  并从公网逐字节复验。发布通过前不运行 21 场景，P6 继续关闭。
