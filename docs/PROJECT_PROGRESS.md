@@ -6345,3 +6345,40 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
 - 产品计划不变：下一轮冻结推送、升级同一隔离 Client，然后从空 namespace
   重新生成两把 Root 并运行一次 Registry-last publisher。完整 61/61 与公网
   Trust/Registry/Release 复验通过前不运行 21 场景，P6 继续关闭。
+
+### 循环 115：P5 双代 Release Chain Registry-last 实际发布通过
+
+状态：61/61 对象全部发布并回读复验，Registry 最后上线；公网 Trust、Registry
+与真实 Release 均通过，21 场景尚未启动
+
+实际执行：
+
+1. Cycle 114 提交 `5700589...` 推送并升级保留式 Client 后，publisher 从已清空
+   namespace 重新生成两把临时 Root；两把既有 Publisher 与双代 Release Build
+   不变；
+2. 61 个计划对象全部按唯一顺序完成 Publisher HEAD=404、PUT 和 Origin Reader
+   GET 摘要复验；publication state 为 mode `0600`、`published`，61 条 receipt
+   与 61 条计划在 bucket class、object key、typed SHA-256 上逐项一致；
+3. 四段 Trust sequence 固定为 1/2/3/4，五版 Registry revision 固定为
+   1/2/3/4/5；`metadata/registry.v2.json` 是第 61 个且最后一个 receipt，
+   `registryPublishedLast=true`；
+4. 两把 Root 私钥与两把 Publisher 私钥继续分别位于两个 `0700` generation
+   boundary，文件为 `0600`，等待场景完成后由 Registry-first 清理器统一销毁；
+5. 独立公网复验：`/v1/trust-bundle.json` 与 `/v2/registry.json` 均为
+   200 `application/json`；随机选取一个真实 Release 对象为 200、MIME 在批准
+   白名单、无 redirect，下载字节 typed SHA-256 与 publication plan 完全一致；
+6. 本轮没有新增 Droplet、DNS、Bucket 或 limited key，没有 Provider 请求或
+   AgentMesh credits；生产 Trust、Registry 常量和 endpoint 仍为空。
+
+自主验证与计划复盘：
+
+- 第二次 publisher 明确返回 `two-generation Release Chain published
+  Registry-last`；61/61、Root mode、双 provenance、Trust/Registry monotonic
+  序列和公网三类对象独立复验全部通过；
+- 首次部分发布的非秘密 rollback receipt 保留；失败 Root/对象已销毁，新 publication
+  state 只描述本次成功发布，不混合旧 receipt；
+- Kimi 继续暂停，本轮由主 Agent 对 Registry-last、逐项 plan/receipt、两代 key、
+  公网 HTTP/MIME/redirect/摘要和生产关闭态自主复核；
+- 产品蓝图下一项严格是 21 场景矩阵：先冻结推送本状态并升级同一隔离 Client，
+  再运行 14 项真实 Host 场景和 7 项已绑定的订阅/BYOK/预算证据。矩阵必须全部通过
+  且恢复最终 canary Package 状态，才进入 Registry-first 全清场；P6 继续关闭。
