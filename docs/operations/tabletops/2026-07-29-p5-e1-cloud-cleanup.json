@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "authorizationId": "package_canary_e1_20260729_0002",
+  "environment": "e1",
+  "workPackage": "p5_package_canary",
+  "executionStatus": "cloud_resources_withdrawn",
+  "dnsRecordAbsent": true,
+  "exactDropletCount": 0,
+  "operatorPrivateKeyAbsent": true,
+  "limitedAccessKeyCount": 0,
+  "bucketDeletionScheduledCount": 2,
+  "bucketObjectCount": 0,
+  "billableBucketCount": 0,
+  "productionMutationCount": 0,
+  "providerInferenceOperationsAdded": 0,
+  "agentMeshCreditsUsed": 0,
+  "estimatedInfrastructureCostUsdUpperBound": 0.1,
+  "invoiceFinal": false,
+  "approvedInfrastructureBudgetHardCapUsd": 3,
+  "completedAt": "2026-07-29T12:39:57.000Z"
+}

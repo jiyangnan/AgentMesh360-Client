@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain、61/61 Registry-last 发布与 21/21 Package canary 场景均已真实通过；场景还暴露并修复 P5-only Fake-IP DNS、签名 expiry 毫秒缓存精度、Package receipt camelCase/JS 安全整数和矩阵预算字段映射问题 | 严格执行 Registry-first Release Chain 清场，再销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider/隔离 Client 状态；完成非秘密验收后关闭 P5，不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary 场景、Registry-first 对象/私钥清理和全部云资源撤回均已真实通过；场景还暴露并修复四项真实合同问题 | 实现并冻结 P5 本机 finalizer，删除临时 Provider Profile/Assignment/Binding/Keychain credential、整个隔离 Client/build 和全部 P5 secret/state；随后完成非秘密验收关闭 P5，不推进 P6 |
 
 ## 开发循环记录
 
@@ -6669,3 +6669,39 @@ ReferenceError 已修复并完成完整回归，Host/Driver/Package 状态未重
   P5 Droplet、撤销 Publisher/Origin limited key、删除两个空 Bucket；完成云端
   计数复验后才删除本机 credential、SSH key、OAuth/BYOK 隔离状态和 build，不进入
   P6。
+
+### 循环 124：P5 云基础设施与 limited credentials 实际清场
+
+状态：P5 DNS、Droplet、SSH 私钥、两个 limited key 和两个 billable Bucket
+均已撤回；两个空 Bucket 进入 Provider 永久删除队列且停止计费，本机
+credential、隔离 Client/state/build 尚待 finalizer 销毁
+
+实际执行与复验：
+
+1. Cloudflare 只删除固定
+   `packages-p5-e1-9aa7c042.agentmesh360.com` DNS-only A record；确认对话框精确
+   显示该 hostname、A、DNS only、1 min，删除后 Records 列表匹配为 0；
+2. 固定 `agentmesh360-p5-e1` tag 下唯一 Droplet 由 approved destroy runner
+   销毁；doctl 删除后精确匹配数为 0；
+3. destroy runner 同时覆盖删除本机临时 operator SSH 私钥，文件已不存在；
+4. 两个 P5 Bucket 删除前均为 `0 Bytes / 0 items`；删除后 active link/menu
+   均 absent，各自只保留 Provider 的永久删除排队状态，并明确不再计费；
+5. 先对新 Origin Reader 与 Publisher key 的名称、两 Bucket grant 逐项复验，
+   再按 Access ID 永久删除；DigitalOcean Access Keys 页面两个精确名称匹配均为
+   0。删除最后一个 Key 后 doctl list 返回 Provider 空集合的 404，页面独立复验
+   消除歧义；
+6. 非秘密 cloud cleanup evidence 只记录 DNS/Droplet/key/billable bucket 计数、
+   预算与时间；不含 IP、record ID、Access ID、Secret、路径或账户标识；
+7. 从资源创建到撤回约 4 小时，保守基础设施成本上界 `0.10 USD`，低于 `3 USD`
+   硬上限；最终 invoice 尚未结算，不冒充实际账单。
+
+自主验证与计划复盘：
+
+- Cloudflare target count 0、doctl tagged Droplet count 0、operator private key absent、
+  Access Keys target count 0、两个 active Bucket link 0 均独立通过；
+- Kimi 继续暂停，本轮由主 Agent 复核 DNS 精确目标、Droplet tag、Key 名称/grant、
+  Bucket 0 items 与删除后停止计费；生产 mutation 0；
+- 下一步实现 P5 专用本机 finalizer：只接受上述仓库 cloud evidence、21/21 matrix
+  receipt 和 Registry-first cleanup receipt；精确删除临时 Keychain credential、
+  Provider Profile/Assignment/Binding、隔离 Client/build 以及剩余 P5
+  credential/state，保留正常用户状态与源 Gemini Key；完成前不进入 P6。
