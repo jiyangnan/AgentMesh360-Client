@@ -6084,3 +6084,37 @@ Droplet、DNS、Origin 对象、测试 Root/Publisher 或 Package
   Builder/publisher/21 场景；下一轮先冻结推送本状态并升级同一保留式隔离 Client，
   再运行 P5 Origin 部署器，要求 systemd/Caddy active、公网 HTTPS health 与只读
   Spaces 路由全部通过。P6 继续关闭。
+
+### 循环 108：P5 基础设施与 Origin 执行提交 provenance 分离
+
+状态：Origin 首次调用在联网前失败关闭；错误的同提交约束已修复并完成回归，等待
+冻结推送后重新升级隔离 Host 与部署同一 Origin
+
+执行前发现与修复：
+
+1. Cycle 107 推送后，保留式隔离 Client 已成功从 `435d706...` 升级到
+   `a10acad...`，正式 Host 为 `grok 0.2.106 (a10acad)`；state、userData、
+   加密 OAuth/BYOK 状态均保留，执行器未读取凭据；
+2. Origin 部署器在任何 DNS/SSH/Spaces 请求前以
+   `live origin state differs from the approved P5 E1 boundary` 失败关闭；
+   Droplet、DNS、Bucket、Key 和 Package 对象均未新增或修改；
+3. 根因是 DNS state 正确记录基础设施创建提交 `435d706...`，当前 Origin 部署
+   提交则为后继的 `a10acad...`；旧验证错误要求两者字节相同，与每模块记录进展、
+   提交推送、再运行下一模块的既定闭环互相冲突；
+4. 修复后不改写历史 receipt，也不把后继提交冒充基础设施创建提交：P5 部署器先
+   要求 DNS state 中的 infrastructure executor 为合法 40 位提交，再用
+   `git merge-base --is-ancestor` 证明它是当前 clean pushed deployment executor
+   的祖先；基础设施顶层 provenance 与 `origin.executorCommit` 继续分别保留；
+5. P4 的原有精确提交验证保持不变；未知、反向、无关或格式错误的提交仍失败关闭，
+   wrapper 的固定路径、凭据、网络和生产 authority 边界没有扩大。
+
+自主验证与计划复盘：
+
+- Origin/P5 定向 20/20；P4/P5 Package 与 Distribution 工具链在沙箱外重跑
+  135/135，通过本机回环 Origin 的四项真实服务测试；
+- Node 语法、`git diff --check` 通过；Kimi 继续按用户要求暂停，本轮由主 Agent
+  复核未修改 live receipt、未放宽当前 executor 的 clean pushed 门、未引入
+  任意分支或时间替代 ancestry；
+- 产品蓝图下一项没有变化，仍只部署当前唯一 Droplet 上的 Spaces-backed HTTPS
+  Origin；下一轮冻结推送本修复、升级同一保留式 Client 后重试部署。Origin 通过前
+  不生成测试 Root/Publisher、不运行 Builder/publisher/21 场景，P6 继续关闭。

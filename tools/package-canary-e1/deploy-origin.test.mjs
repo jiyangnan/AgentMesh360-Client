@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
+  assertP5ExecutorAncestry,
   caddyfile,
   checkFaultToken,
   checkHttpsHealth,
@@ -78,6 +80,43 @@ test('accepts only the active dedicated P5 DNS boundary', () => {
     mutate(value);
     assert.throws(() => validateLiveState(value, COMMIT, 'p5'));
   }
+});
+
+test('preserves infrastructure provenance across a pushed descendant deploy', () => {
+  const infrastructureCommit = 'a'.repeat(40);
+  const deploymentCommit = 'b'.repeat(40);
+  let invocation;
+  assert.doesNotThrow(() => assertP5ExecutorAncestry(
+    infrastructureCommit,
+    deploymentCommit,
+    (command, args, label, options) => {
+      invocation = { command, args, label, options };
+      return '';
+    },
+  ));
+  assert.equal(invocation.command, 'git');
+  assert.deepEqual(invocation.args, [
+    'merge-base',
+    '--is-ancestor',
+    infrastructureCommit,
+    deploymentCommit,
+  ]);
+  assert.match(invocation.label, /ancestry/u);
+  assert.ok(path.isAbsolute(invocation.options.cwd));
+  assert.throws(
+    () => assertP5ExecutorAncestry(
+      deploymentCommit,
+      infrastructureCommit,
+      () => {
+        throw new Error('not an ancestor');
+      },
+    ),
+    /not an ancestor/u,
+  );
+  assert.throws(
+    () => assertP5ExecutorAncestry('invalid', deploymentCommit),
+    /provenance is invalid/u,
+  );
 });
 
 test('P5 hostname uses the same hardened TLS and fault probes', () => {

@@ -251,6 +251,30 @@ async function assertExecutorCommit(executorCommit) {
   }
 }
 
+function assertP5ExecutorAncestry(
+  infrastructureExecutorCommit,
+  deploymentExecutorCommit,
+  runCommand = run,
+) {
+  if (
+    !/^[0-9a-f]{40}$/u.test(infrastructureExecutorCommit ?? '')
+    || !/^[0-9a-f]{40}$/u.test(deploymentExecutorCommit ?? '')
+  ) {
+    throw new Error('P5 origin executor provenance is invalid');
+  }
+  runCommand(
+    'git',
+    [
+      'merge-base',
+      '--is-ancestor',
+      infrastructureExecutorCommit,
+      deploymentExecutorCommit,
+    ],
+    'P5 infrastructure executor ancestry inspection',
+    { cwd: REPOSITORY_ROOT },
+  );
+}
+
 function originConfig(credentials, faultToken) {
   return strictConfig({
     schemaVersion: 1,
@@ -656,9 +680,19 @@ async function deployOrigin(
       if (error?.code !== 'ENOENT') throw error;
     }
   }
+  const rawLiveState = await readMode0600Json(
+    liveStatePath,
+    'live origin state',
+  );
+  if (scope === 'p5') {
+    assertP5ExecutorAncestry(
+      rawLiveState.executorCommit,
+      executorCommit,
+    );
+  }
   const liveState = validateLiveState(
-    await readMode0600Json(liveStatePath, 'live origin state'),
-    executorCommit,
+    rawLiveState,
+    scope === 'p5' ? rawLiveState.executorCommit : executorCommit,
     scope,
   );
   const suffix = credentials.releasesBucket.split('-').at(-1);
@@ -961,6 +995,7 @@ if (isMainModule()) {
 
 export {
   approvedHostname,
+  assertP5ExecutorAncestry,
   caddyfile,
   checkFaultToken,
   checkHttpsHealth,
