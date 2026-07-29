@@ -1312,3 +1312,32 @@ Publisher 并移除保留边界。
 下一步实现并冻结 P5 专用 Droplet/Spaces/DNS/Origin 执行器；通过完整回归前不创建
 staging。随后才允许按序创建唯一 E1 边界、运行双代 Builder、Registry-last 发布和
 21 场景；P6 继续关闭。
+
+## 51. Cycle 101 P5 隔离基础设施边界
+
+冻结提交 `eb6a6fd...` 新增 P5-only 基础设施执行器，并把共享 Spaces/Origin
+解析严格扩展到独立 `am360-p5-e1-*` namespace。P4 的 bucket/key binding 不变；
+跨 P4/P5 principal 或 suffix 会在网络前失败关闭。
+
+除 `destroy` 外，所有动作都必须同时满足 v2 授权仍在原 72 小时窗口、授权文件
+摘要与 Cycle 99 preflight 一致、executor 为 clean pushed `main` 且 preflight
+为祖先。prepared state 保存不可延长的停止点。`destroy` 刻意不依赖有效时窗或
+clean tree，确保异常与过期后仍能清理。
+
+Droplet 固定为 SGP1 单台 1 GiB/1 vCPU/25 GB Ubuntu 24.04，不启用 backups 或
+monitoring。创建前先保存 cleanup receipt；若创建命令或返回 ID 异常，可按专用
+tag 与精确名称恢复发现。销毁验证记录 ID、精确名称和 tag 清零，并覆写删除临时
+SSH 私钥。
+
+Cloudflare API 权限没有进入源码或本地凭据契约。DNS 由既有认证控制面创建后，
+执行器只接收 `0600` receipt，并验证固定 hostname、Droplet IPv4、DNS-only、
+TTL 60、zone/record ID。Spaces 仍要求两个 bucket 使用独立 Publisher/Origin
+least-privilege principal。
+
+定向 15/15、完整 Node 325/3/0、语法/diff/秘密扫描通过。本轮未调用云 mutation
+动作，因此 Droplet、bucket、DNS、Provider、credits、Package/Keychain mutation
+和新增费用仍为 0。
+
+计划复盘后，下一模块保持原顺序：先实现并冻结 P5 Origin 部署与 Release 发布适配；
+其完整回归通过后才允许创建唯一 staging，再运行 Builder、Registry-last 发布、
+21 场景及 Registry-first 清场。P6 不开放。

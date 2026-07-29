@@ -928,3 +928,21 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   云资源和费用均为 0；
 - 下一步实现并冻结 P5 专用基础设施执行器，通过后才创建唯一 staging。P5 仍为
   executing，P6 关闭。
+
+## 56. 循环 101 P5 隔离基础设施执行器
+
+- 新增固定 P5 namespace、`/private/tmp` 边界、单 SGP1 1 GiB Droplet、双 Spaces
+  bucket 和单 DNS-only 记录的执行器；
+- P4 Spaces/Origin 路径保持兼容；任何 P4/P5 principal、bucket 或 suffix 混用均
+  在网络前失败关闭；
+- probe、prepare、create、record-dns 必须绑定有效 v2 时窗、授权摘要、clean
+  pushed executor 和 Cycle 99 preflight ancestor；destroy 始终保留；
+- 创建前先保存清理 receipt，异常时可按专用 tag 与精确名称恢复；销毁要求 tag
+  清零并覆写删除临时 SSH 私钥；
+- Cloudflare token 不进入执行器；只验证控制面产生的 `0600` DNS receipt 与固定
+  hostname、Droplet IPv4、DNS-only、TTL 60 一致；
+- 定向 15/15、完整 Node 325 passed / 3 skipped / 0 failed，提交 `eb6a6fd`
+  已推送；
+- 本轮云资源、Provider、credits、Package/Keychain mutation 和新增费用均为 0；
+- 下一步按序实现并冻结 P5 Origin 部署与发布适配，再创建唯一 staging。P5 保持
+  executing，P6 关闭。

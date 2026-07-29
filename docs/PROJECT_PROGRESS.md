@@ -5805,3 +5805,44 @@ Assignment、Binding 和系统凭据保留给 P5 后续门，完整 canary 尚�
   credits、云资源和费用均为 0；
 - 下一轮实现并冻结 P5 专用 Droplet/Spaces/DNS/Origin 执行器。该执行器通过完整
   回归前仍不创建 staging，之后才运行本 Builder、发布和 21 场景。
+
+### 循环 101：P5 隔离基础设施边界执行器
+
+状态：源码、负向测试、完整回归和冻结推送完成；尚未创建本轮 Droplet、Spaces
+bucket 或 Cloudflare DNS
+
+已经实现：
+
+1. 新增 P5 专用基础设施执行器，固定 `/private/tmp` 下唯一 `0700` 边界、`0600`
+   状态/凭据、SGP1、`s-1vcpu-1gb`、Ubuntu 24.04、单 Droplet、双 Spaces bucket
+   与单 DNS-only 记录；
+2. P4 Spaces SigV4 client 与 Origin 配置解析只扩展到独立 `am360-p5-e1-*`
+   namespace；P4 原 namespace 与 principal binding 保持兼容，P4/P5 混用会
+   fail-close；
+3. `probe-spaces`、`prepare`、`create`、`record-dns` 都必须绑定仍有效的 72 小时
+   v2 授权、授权文件逐字节摘要、clean pushed executor 与 Cycle 99 preflight
+   ancestor；只有 `destroy` 可在授权过期或工作区变化后继续调用；
+4. Droplet 创建前先落盘 cleanup receipt；创建返回异常、ID 输出异常或后续验证失败
+   时，可按专用 tag 与精确名称重新发现资源。销毁只接受匹配 ID/名称，并要求专用
+   tag 最终清零；
+5. cloud-init 禁止 root/password 登录，只安装 Origin 所需最小依赖并启用
+   22/80/443 防火墙；不启用 backups/monitoring，临时 SSH 私钥在销毁时覆写并删除；
+6. Cloudflare 不由脚本持有 API token；执行器只接受由已认证控制面写入的固定
+   `0600` DNS receipt，且必须与 Droplet IPv4、DNS-only、TTL 60 和固定 hostname
+   完全一致；
+7. 授权停止点写入 prepared state；过期后任何新 probe、创建或 DNS 绑定都被阻断，
+   但清理通道保持可用。
+
+验证与计划复盘：
+
+- P5 基础设施与共享 Spaces 定向 15/15；完整 Node 325 passed / 3 skipped /
+  0 failed；
+- 语法、diff、P4/P5 namespace、凭据/邮箱/私钥模式扫描通过；
+- 提交 `eb6a6fd feat: gate p5 isolated infrastructure` 已推送 `main`；
+- Kimi 仍按用户要求暂停，本轮由主 Agent 复核授权时窗、孤儿资源恢复、tag 清零、
+  P4 兼容和销毁路径；
+- 本轮只冻结执行器，没有创建 Droplet、bucket、DNS 或密钥，没有 Provider 请求、
+  credits、Package/Keychain mutation 或新增费用；
+- 下一轮按序实现并冻结 P5 Origin 部署与发布适配；在该模块完成回归前不调用本轮
+  云 mutation 动作。之后才创建唯一 staging、运行双代 Builder、Registry-last
+  发布、21 场景和 Registry-first 清场；P6 继续关闭。
