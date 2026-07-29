@@ -173,7 +173,7 @@ Scheduler、Subagent 或 Agent 专属 UI。通用工作区增量至此按计划�
 | R1 Root 与 Publisher authority | Agent Package | 未满足（P2 preflight 与 E0 测试 key 技术演练已完成） | 独立审查的生产 Root key ceremony；生产私钥不进入仓库、客户端、日志或普通 CI；批准的 custody、轮换、retire、revoke 流程演练 |
 | R2 Release provenance | Agent Package | 未满足（P3 R2 E0 技术演练已完成） | 已有四 Agent 双构建、测试签名与十类输出可复验证据；仍需生产 Publisher authority、受控生产发布流水线及与 R3/R6 联动的生产证据 |
 | R3 分发服务 | Agent Package | 未满足（P4 preflight/授权、隔离 Origin/TLS 子项已完成） | 已通过 bucket-scoped 权限探针、唯一 1 GiB origin 主机、DNS-only staging、Caddy TLS 和 HTTPS health；仍需实际 Release Set、非生产 Trust/Registry、故障注入与完整清理 |
-| R4 桌面正式分发 | 桌面客户端 | 未满足 | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
+| R4 桌面正式分发 | 桌面客户端 | 未满足（P6 no-authority preflight 已完成） | Developer ID 签名与公证；签名安装包 Login Item 注册/批准/升级 E2E；自动更新、卸载和受控 Host shutdown |
 | R5 灰度与恢复 | 共同 | 未满足 | 内部账户 canary；真实订阅与 BYOK；Package 安装/权限扩张/rollback；Root/Publisher 轮换与 Registry 回滚故障演练 |
 | R6 可观测与响应 | 共同 | 未满足（P1 本地基线已完成） | Release Event/证据模板/静态扫描/Runbook/E0 tabletop 已有；仍需 E1/E2 技术演练、真实观测存储、撤回/吊销/最低版本与官方安装器恢复 |
 
@@ -229,8 +229,9 @@ flowchart TD
    随后直接授权改用其现有线上账号，v2 授权链、baseline、隔离客户端、owner
    OAuth/订阅、Gemini BYOK、双代 Release Chain、21/21 Package canary、
    Registry-first 撤回以及云端/本机资源归零均已通过，旧 v1 保持 aborted。
-   P5 已完成但不关闭生产门；下一顺序 P6 的 Developer ID、Apple 签名/公证、
-   自动更新渠道和恢复矩阵仍各自等待独立授权。
+   P5 已完成但不关闭生产门；P6 no-authority preflight 已固定当前 unsigned
+   打包差距、R4 合同、18 项场景和未来批准卡。下一步真实候选的 Developer ID、
+   Apple 签名/公证、自动更新渠道和恢复矩阵仍各自等待独立授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -998,3 +999,20 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   基础设施保守成本上界 0.10 USD，最终账单尚未结算；
 - P5 状态为完成，但生产 R1-R6 未因此关闭。P6 R4 必须等待 Developer ID、Apple
   签名/公证、自动更新渠道和安装恢复矩阵的独立批准；本轮不启动 P6-P8。
+
+## 60. 循环 127 P6 R4 no-authority preflight
+
+- 新增 strict P6 Schema、blocked 模板、中文清单与无依赖 validator/CLI，绑定 P5
+  清场证据和当前桌面 manifest/lock；
+- 审计确认当前只有 `0.1.0`、固定 bundle ID、DMG/ZIP、Host extra resource、
+  Login Item 与持久 Host 开发基础；没有 Developer ID、公证、entitlement、
+  `electron-updater`、更新渠道或 Release workflow；
+- 固定 18 项 build/signing/notarization/Gatekeeper/install/Login Item/Host/update/
+  rollback/uninstall 场景，以及 unsigned update 禁止、LKG 和兼容用户状态合同；
+- validator 没有 network、Keychain、subprocess 或 Apple capability；本轮没有读取
+  签名身份/凭据，没有构建、签名、公证、安装、上传、Provider、credits 或费用；
+- 定向 15/15、完整发布工具链 266/266、桌面 114 passed / 3 个真实 Host 环境门
+  skipped / 0 failed；Kimi 按用户要求继续暂停，由主 Agent 加强自主复核；
+- 本轮只关闭 P6 阻断式预检，不关闭 R4。真实 Desktop Candidate 必须等待
+  Developer ID/notarization、更新渠道、候选版本/commit/架构/macOS floor、测试
+  设备/cohort、rollback、窗口、预算和 evidence retention 的独立批准。

@@ -1,0 +1,676 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/desktop-candidate-preflight-v1.json",
+  "title": "AgentMesh360 P6 R4 Desktop Candidate Preflight v1",
+  "description": "No-authority preflight for a future signed and notarized macOS desktop candidate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "preflightId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "evidenceInput",
+    "prerequisiteGates",
+    "currentDesktopAudit",
+    "requiredP6Contract",
+    "scenarioMatrix",
+    "approvalCard",
+    "networkBoundary",
+    "evidencePolicy",
+    "stopConditions",
+    "nextAction"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "preflightId": {
+      "type": "string",
+      "pattern": "^desktop_candidate_p6_e0_[a-z0-9][a-z0-9_-]{7,63}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e0"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p6_r4_desktop_candidate"
+    },
+    "authority": {
+      "type": "string",
+      "const": "none"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "not_approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "blocked"
+    },
+    "evidenceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p5AuthorizationId",
+        "p5LocalCleanupSha256",
+        "p5ExecutionStatus",
+        "p5TemporaryEntryCount",
+        "p5RetainedHostProcessCount",
+        "p5ProductionMutationCount",
+        "p5ProductionPackageConstantsEmpty",
+        "desktopPackageJsonSha256",
+        "desktopPackageLockSha256",
+        "p6Authorized"
+      ],
+      "properties": {
+        "p5AuthorizationId": {
+          "type": "string",
+          "const": "package_canary_e1_20260729_0002"
+        },
+        "p5LocalCleanupSha256": {
+          "type": "string",
+          "const": "sha256:fba45863add9d8eb5e2bef3510c0048cf27d08f20c46b09d83917b5314f52701"
+        },
+        "p5ExecutionStatus": {
+          "type": "string",
+          "const": "local_secret_state_destroyed"
+        },
+        "p5TemporaryEntryCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "p5RetainedHostProcessCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "p5ProductionMutationCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "p5ProductionPackageConstantsEmpty": {
+          "type": "boolean",
+          "const": true
+        },
+        "desktopPackageJsonSha256": {
+          "type": "string",
+          "const": "sha256:5322c76bfe79b3dca1ff2feff3a814167c7859a6738ace8759ed82fe05f1c6ac"
+        },
+        "desktopPackageLockSha256": {
+          "type": "string",
+          "const": "sha256:657dc0d703596c87f840af376b66b797cca31f5e372320cdcba0a9e914a70ecc"
+        },
+        "p6Authorized": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "prerequisiteGates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p5PackageCanaryEvidence",
+        "r4DesktopDistributionEvidence",
+        "r6OperationalReadiness",
+        "p6ApprovalRequired",
+        "p6ApprovalPresent",
+        "productionGatesClosed"
+      ],
+      "properties": {
+        "p5PackageCanaryEvidence": {
+          "type": "string",
+          "const": "e1_passed_and_cleaned"
+        },
+        "r4DesktopDistributionEvidence": {
+          "type": "string",
+          "const": "not_started"
+        },
+        "r6OperationalReadiness": {
+          "type": "string",
+          "const": "local_baseline_only"
+        },
+        "p6ApprovalRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "p6ApprovalPresent": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionGatesClosed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "currentDesktopAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "desktopVersion",
+        "bundleId",
+        "productName",
+        "electronVersion",
+        "electronBuilderVersion",
+        "packageTargets",
+        "localBuildScriptPresent",
+        "hostExtraResourcePackaged",
+        "loginItemLifecycleSourcePresent",
+        "persistentHostLifecycleSourcePresent",
+        "appleDeveloperProgramVerified",
+        "developerIdIdentityInspected",
+        "developerIdSigningConfigured",
+        "notarizationConfigured",
+        "hardenedRuntimeExplicitlyConfigured",
+        "entitlementsConfigured",
+        "publishProviderConfigured",
+        "electronUpdaterDependencyPresent",
+        "updateChannelConfigured",
+        "updateRollbackImplemented",
+        "repositoryReleaseWorkflowPresent",
+        "candidateBuildExecuted",
+        "appleCredentialRead",
+        "preflightExecutionNetworkRequestPerformed"
+      ],
+      "properties": {
+        "desktopVersion": {
+          "type": "string",
+          "const": "0.1.0"
+        },
+        "bundleId": {
+          "type": "string",
+          "const": "com.agentmesh360.client"
+        },
+        "productName": {
+          "type": "string",
+          "const": "AgentMesh360"
+        },
+        "electronVersion": {
+          "type": "string",
+          "const": "43.2.0"
+        },
+        "electronBuilderVersion": {
+          "type": "string",
+          "const": "26.15.3"
+        },
+        "packageTargets": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "string",
+              "const": "dmg"
+            },
+            {
+              "type": "string",
+              "const": "zip"
+            }
+          ],
+          "items": false
+        },
+        "localBuildScriptPresent": {
+          "type": "boolean",
+          "const": true
+        },
+        "hostExtraResourcePackaged": {
+          "type": "boolean",
+          "const": true
+        },
+        "loginItemLifecycleSourcePresent": {
+          "type": "boolean",
+          "const": true
+        },
+        "persistentHostLifecycleSourcePresent": {
+          "type": "boolean",
+          "const": true
+        },
+        "appleDeveloperProgramVerified": {
+          "type": "boolean",
+          "const": false
+        },
+        "developerIdIdentityInspected": {
+          "type": "boolean",
+          "const": false
+        },
+        "developerIdSigningConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "notarizationConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "hardenedRuntimeExplicitlyConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "entitlementsConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "publishProviderConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "electronUpdaterDependencyPresent": {
+          "type": "boolean",
+          "const": false
+        },
+        "updateChannelConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "updateRollbackImplemented": {
+          "type": "boolean",
+          "const": false
+        },
+        "repositoryReleaseWorkflowPresent": {
+          "type": "boolean",
+          "const": false
+        },
+        "candidateBuildExecuted": {
+          "type": "boolean",
+          "const": false
+        },
+        "appleCredentialRead": {
+          "type": "boolean",
+          "const": false
+        },
+        "preflightExecutionNetworkRequestPerformed": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "requiredP6Contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixedSourceCommitRequired",
+        "fixedDesktopVersionRequired",
+        "fixedBundleIdRequired",
+        "fixedArchitectureSetRequired",
+        "fixedMinimumMacOSVersionRequired",
+        "developerIdApplicationRequired",
+        "nestedCodeSignatureRequired",
+        "hardenedRuntimeRequired",
+        "leastPrivilegeEntitlementsRequired",
+        "notarizationRequired",
+        "stapledTicketRequired",
+        "gatekeeperAssessmentRequired",
+        "updateMetadataRequired",
+        "updateArtifactAuthenticityRequired",
+        "unsignedUpdateAllowed",
+        "silentDowngradeAllowed",
+        "lastKnownGoodRollbackRequired",
+        "loginItemUpgradeRecoveryRequired",
+        "persistentHostUpgradeRecoveryRequired",
+        "uninstallUserStatePolicyRequired"
+      ],
+      "properties": {
+        "fixedSourceCommitRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "fixedDesktopVersionRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "fixedBundleIdRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "fixedArchitectureSetRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "fixedMinimumMacOSVersionRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "developerIdApplicationRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "nestedCodeSignatureRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "hardenedRuntimeRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "leastPrivilegeEntitlementsRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "notarizationRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "stapledTicketRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "gatekeeperAssessmentRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "updateMetadataRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "updateArtifactAuthenticityRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "unsignedUpdateAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "silentDowngradeAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "lastKnownGoodRollbackRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "loginItemUpgradeRecoveryRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "persistentHostUpgradeRecoveryRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "uninstallUserStatePolicyRequired": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "scenarioMatrix": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "executionStatus",
+          "expectedOutcome"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "executionStatus": {
+            "type": "string",
+            "const": "blocked"
+          },
+          "expectedOutcome": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,95}$"
+          }
+        }
+      }
+    },
+    "approvalCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "targetEnvironment",
+        "candidateVersion",
+        "sourceCommit",
+        "bundleIdApproval",
+        "architectureSet",
+        "minimumMacOSVersion",
+        "developerIdCertificate",
+        "notarizationCredential",
+        "updateProvider",
+        "updateChannel",
+        "rollbackTarget",
+        "testDevicesAndCohort",
+        "startStopWindow",
+        "abortOwnerRole",
+        "evidenceRetention",
+        "maximumNetworkRequests",
+        "maximumCurrencyCost",
+        "approvalReceipt"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "const": "execute_p6_r4_desktop_candidate"
+        },
+        "targetEnvironment": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "candidateVersion": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "sourceCommit": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "bundleIdApproval": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "architectureSet": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "minimumMacOSVersion": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "developerIdCertificate": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "notarizationCredential": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "updateProvider": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "updateChannel": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "rollbackTarget": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "testDevicesAndCohort": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "startStopWindow": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "abortOwnerRole": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "evidenceRetention": {
+          "type": "string",
+          "const": "requires_approval"
+        },
+        "maximumNetworkRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maximumCurrencyCost": {
+          "type": "integer",
+          "const": 0
+        },
+        "approvalReceipt": {
+          "type": "string",
+          "const": "not_present"
+        }
+      }
+    },
+    "networkBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "externalNetworkAllowed",
+        "appleServiceRequestsAllowed",
+        "updateProviderRequestsAllowed",
+        "providerInferenceAllowed",
+        "keychainReadsAllowed",
+        "appleCredentialsMayBeRead",
+        "externalResourcesMayBeCreated",
+        "signedArtifactsMayBeProduced",
+        "candidateMayBeUploaded",
+        "productionConstantsMutable"
+      ],
+      "properties": {
+        "externalNetworkAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "appleServiceRequestsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "updateProviderRequestsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "providerInferenceAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "keychainReadsAllowed": {
+          "type": "boolean",
+          "const": false
+        },
+        "appleCredentialsMayBeRead": {
+          "type": "boolean",
+          "const": false
+        },
+        "externalResourcesMayBeCreated": {
+          "type": "boolean",
+          "const": false
+        },
+        "signedArtifactsMayBeProduced": {
+          "type": "boolean",
+          "const": false
+        },
+        "candidateMayBeUploaded": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionConstantsMutable": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordAppleAccount",
+        "recordTeamId",
+        "recordCertificateIdentity",
+        "recordCredentials",
+        "recordAuthorizationHeaders",
+        "recordEmails",
+        "recordDeviceIdentifiers",
+        "recordUserContent",
+        "recordEndpointUrls",
+        "recordAbsolutePaths",
+        "recordRawNotarizationCredentials",
+        "recordRawUpdateMetadata",
+        "typedDigestPrefix"
+      ],
+      "properties": {
+        "recordAppleAccount": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordTeamId": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordCertificateIdentity": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordCredentials": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAuthorizationHeaders": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordEmails": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordDeviceIdentifiers": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordUserContent": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordEndpointUrls": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordAbsolutePaths": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawNotarizationCredentials": {
+          "type": "boolean",
+          "const": false
+        },
+        "recordRawUpdateMetadata": {
+          "type": "boolean",
+          "const": false
+        },
+        "typedDigestPrefix": {
+          "type": "string",
+          "const": "sha256:"
+        }
+      }
+    },
+    "stopConditions": {
+      "type": "array",
+      "minItems": 24,
+      "maxItems": 24,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{2,95}$"
+      }
+    },
+    "nextAction": {
+      "type": "string",
+      "const": "obtain_separate_p6_signing_notarization_and_update_authorization"
+    }
+  }
+}

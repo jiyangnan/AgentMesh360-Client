@@ -13,7 +13,8 @@ mutation 和云端资源创建前中止 P5 E1，并销毁隔离客户端、构�
 Cycle 93 已取得账号所有者对其现有线上账号的直接授权，并新建严格 v2 授权链；
 旧 v1 继续保持 aborted。Cycle 94-126 已完成 owner OAuth/订阅、Gemini BYOK、
 双代 Release Chain、21/21 Package 场景、Registry-first 撤回和云端/本机资源
-归零；P5 状态为完成。E2、生产候选和 Apple 签名公证均未授权。
+归零；P5 状态为完成。Cycle 127 已完成 P6 R4 no-authority preflight，但 E2、
+生产候选、Developer ID 使用和 Apple 签名公证仍未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -437,7 +438,7 @@ flowchart TD
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
 | P5 Package canary | **v2 已完成并完整清场**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭、加密重启恢复、双代 Release Chain、21/21 场景、Registry-first 撤回以及云端/本机资源归零全部通过；旧内部账号 v1 保持 aborted | 只关闭 E1 Package canary，不关闭生产 R1-R6；P6 需要 Apple 凭据、签名/公证和更新渠道的独立授权 |
-| P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
+| P6 R4 | **no-authority preflight 已完成，真实候选仍 blocked**：当前 unsigned DMG/ZIP、Developer ID/公证/entitlement/update 缺口、18 项安装/生命周期/更新/rollback/卸载矩阵和未来批准卡均已固化 | 需要 Apple 凭据、签名/公证、更新渠道、候选版本/架构/最低 macOS 和测试设备的独立授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
 
@@ -1412,3 +1413,26 @@ P5 Provider inference 历史使用 4/12、本机/清场阶段新增 0，AgentMes
 Package canary，不关闭生产 R1-R6。下一顺序为 P6 R4 Desktop Candidate，但
 Developer ID、Apple 签名/公证、自动更新渠道与安装恢复矩阵均需新的独立授权；在此
 之前 P6-P8 保持关闭。
+
+## 55. Cycle 127 P6 R4 Desktop Candidate 阻断式预检
+
+新增 strict P6 Schema、默认 blocked 模板、中文清单和无依赖 Node validator/CLI。
+模板逐字节绑定 P5 本机清场证据与当前 `desktop/package.json`/lock，固定当前
+`0.1.0`、bundle ID、Electron/electron-builder 和 DMG/ZIP 事实，同时明确：
+
+- Developer ID membership/identity 未验证且未读取；
+- signing、notarization、显式 Hardened Runtime、entitlements 均未配置；
+- `electron-updater`、publish provider、update channel、rollback 与 Release
+  workflow 均不存在；
+- 本轮没有构建、签名、安装、Apple service 请求、Keychain 读取、上传或费用。
+
+R4 合同固定 source/version/bundle/architecture/macOS floor、nested signatures、
+Hardened Runtime、最小 entitlement、notarization/stapling/Gatekeeper、更新真实性、
+LKG rollback、Login Item/Host 恢复和卸载状态策略。18 项真实候选场景全部保持
+`blocked`；15/15 定向测试覆盖事实绑定、authority/credential/network/build
+升级拒绝、场景顺序、留存安全、重复 JSON key、symlink、UTF-8、大小和安全 CLI。
+
+本检查点只关闭 P6 no-authority preflight，不关闭 R4，也不允许沿用 P5 授权。下一步
+必须先取得 Developer ID、notarization、更新渠道、候选版本/commit/架构/macOS floor、
+测试设备/cohort、rollback、窗口、预算和 evidence retention 的独立批准；否则
+P6-P8 继续关闭。

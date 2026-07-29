@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "preflightId": "desktop_candidate_p6_e0_template_0001",
+  "environment": "e0",
+  "workPackage": "p6_r4_desktop_candidate",
+  "authority": "none",
+  "approvalStatus": "not_approved",
+  "executionStatus": "blocked",
+  "evidenceInput": {
+    "p5AuthorizationId": "package_canary_e1_20260729_0002",
+    "p5LocalCleanupSha256": "sha256:fba45863add9d8eb5e2bef3510c0048cf27d08f20c46b09d83917b5314f52701",
+    "p5ExecutionStatus": "local_secret_state_destroyed",
+    "p5TemporaryEntryCount": 0,
+    "p5RetainedHostProcessCount": 0,
+    "p5ProductionMutationCount": 0,
+    "p5ProductionPackageConstantsEmpty": true,
+    "desktopPackageJsonSha256": "sha256:5322c76bfe79b3dca1ff2feff3a814167c7859a6738ace8759ed82fe05f1c6ac",
+    "desktopPackageLockSha256": "sha256:657dc0d703596c87f840af376b66b797cca31f5e372320cdcba0a9e914a70ecc",
+    "p6Authorized": false
+  },
+  "prerequisiteGates": {
+    "p5PackageCanaryEvidence": "e1_passed_and_cleaned",
+    "r4DesktopDistributionEvidence": "not_started",
+    "r6OperationalReadiness": "local_baseline_only",
+    "p6ApprovalRequired": true,
+    "p6ApprovalPresent": false,
+    "productionGatesClosed": false
+  },
+  "currentDesktopAudit": {
+    "desktopVersion": "0.1.0",
+    "bundleId": "com.agentmesh360.client",
+    "productName": "AgentMesh360",
+    "electronVersion": "43.2.0",
+    "electronBuilderVersion": "26.15.3",
+    "packageTargets": [
+      "dmg",
+      "zip"
+    ],
+    "localBuildScriptPresent": true,
+    "hostExtraResourcePackaged": true,
+    "loginItemLifecycleSourcePresent": true,
+    "persistentHostLifecycleSourcePresent": true,
+    "appleDeveloperProgramVerified": false,
+    "developerIdIdentityInspected": false,
+    "developerIdSigningConfigured": false,
+    "notarizationConfigured": false,
+    "hardenedRuntimeExplicitlyConfigured": false,
+    "entitlementsConfigured": false,
+    "publishProviderConfigured": false,
+    "electronUpdaterDependencyPresent": false,
+    "updateChannelConfigured": false,
+    "updateRollbackImplemented": false,
+    "repositoryReleaseWorkflowPresent": false,
+    "candidateBuildExecuted": false,
+    "appleCredentialRead": false,
+    "preflightExecutionNetworkRequestPerformed": false
+  },
+  "requiredP6Contract": {
+    "fixedSourceCommitRequired": true,
+    "fixedDesktopVersionRequired": true,
+    "fixedBundleIdRequired": true,
+    "fixedArchitectureSetRequired": true,
+    "fixedMinimumMacOSVersionRequired": true,
+    "developerIdApplicationRequired": true,
+    "nestedCodeSignatureRequired": true,
+    "hardenedRuntimeRequired": true,
+    "leastPrivilegeEntitlementsRequired": true,
+    "notarizationRequired": true,
+    "stapledTicketRequired": true,
+    "gatekeeperAssessmentRequired": true,
+    "updateMetadataRequired": true,
+    "updateArtifactAuthenticityRequired": true,
+    "unsignedUpdateAllowed": false,
+    "silentDowngradeAllowed": false,
+    "lastKnownGoodRollbackRequired": true,
+    "loginItemUpgradeRecoveryRequired": true,
+    "persistentHostUpgradeRecoveryRequired": true,
+    "uninstallUserStatePolicyRequired": true
+  },
+  "scenarioMatrix": [
+    {
+      "scenario": "reproducible_candidate_build",
+      "executionStatus": "blocked",
+      "expectedOutcome": "fixed_commit_version_and_bundle"
+    },
+    {
+      "scenario": "architecture_matrix",
+      "executionStatus": "blocked",
+      "expectedOutcome": "every_approved_architecture_passes"
+    },
+    {
+      "scenario": "nested_code_signature",
+      "executionStatus": "blocked",
+      "expectedOutcome": "every_nested_executable_is_valid"
+    },
+    {
+      "scenario": "hardened_runtime",
+      "executionStatus": "blocked",
+      "expectedOutcome": "enabled_for_all_macos_executables"
+    },
+    {
+      "scenario": "least_privilege_entitlements",
+      "executionStatus": "blocked",
+      "expectedOutcome": "only_reviewed_runtime_exceptions"
+    },
+    {
+      "scenario": "notarization_acceptance",
+      "executionStatus": "blocked",
+      "expectedOutcome": "accepted_with_reviewed_log"
+    },
+    {
+      "scenario": "staple_and_offline_gatekeeper",
+      "executionStatus": "blocked",
+      "expectedOutcome": "ticket_attached_and_offline_accepted"
+    },
+    {
+      "scenario": "clean_install_and_first_launch",
+      "executionStatus": "blocked",
+      "expectedOutcome": "gatekeeper_accepts_clean_install"
+    },
+    {
+      "scenario": "second_launch_and_single_instance",
+      "executionStatus": "blocked",
+      "expectedOutcome": "existing_window_restored_without_duplicate_host"
+    },
+    {
+      "scenario": "login_item_registration",
+      "executionStatus": "blocked",
+      "expectedOutcome": "system_state_matches_user_choice"
+    },
+    {
+      "scenario": "background_launch_and_window_restore",
+      "executionStatus": "blocked",
+      "expectedOutcome": "background_host_then_visible_window"
+    },
+    {
+      "scenario": "persistent_host_crash_and_restart",
+      "executionStatus": "blocked",
+      "expectedOutcome": "fixed_main_session_recovers"
+    },
+    {
+      "scenario": "normal_and_forced_quit",
+      "executionStatus": "blocked",
+      "expectedOutcome": "host_policy_is_bounded_and_recoverable"
+    },
+    {
+      "scenario": "signed_update_check_and_download",
+      "executionStatus": "blocked",
+      "expectedOutcome": "only_approved_channel_and_artifact"
+    },
+    {
+      "scenario": "tampered_or_unsigned_update",
+      "executionStatus": "blocked",
+      "expectedOutcome": "rejected_before_install"
+    },
+    {
+      "scenario": "interrupted_update",
+      "executionStatus": "blocked",
+      "expectedOutcome": "last_known_good_remains_bootable"
+    },
+    {
+      "scenario": "version_rollback_and_user_state",
+      "executionStatus": "blocked",
+      "expectedOutcome": "approved_rollback_preserves_compatible_state"
+    },
+    {
+      "scenario": "uninstall_cleanup",
+      "executionStatus": "blocked",
+      "expectedOutcome": "host_and_login_item_removed_by_policy"
+    }
+  ],
+  "approvalCard": {
+    "action": "execute_p6_r4_desktop_candidate",
+    "targetEnvironment": "requires_approval",
+    "candidateVersion": "requires_approval",
+    "sourceCommit": "requires_approval",
+    "bundleIdApproval": "requires_approval",
+    "architectureSet": "requires_approval",
+    "minimumMacOSVersion": "requires_approval",
+    "developerIdCertificate": "requires_approval",
+    "notarizationCredential": "requires_approval",
+    "updateProvider": "requires_approval",
+    "updateChannel": "requires_approval",
+    "rollbackTarget": "requires_approval",
+    "testDevicesAndCohort": "requires_approval",
+    "startStopWindow": "requires_approval",
+    "abortOwnerRole": "requires_approval",
+    "evidenceRetention": "requires_approval",
+    "maximumNetworkRequests": 0,
+    "maximumCurrencyCost": 0,
+    "approvalReceipt": "not_present"
+  },
+  "networkBoundary": {
+    "externalNetworkAllowed": false,
+    "appleServiceRequestsAllowed": false,
+    "updateProviderRequestsAllowed": false,
+    "providerInferenceAllowed": false,
+    "keychainReadsAllowed": false,
+    "appleCredentialsMayBeRead": false,
+    "externalResourcesMayBeCreated": false,
+    "signedArtifactsMayBeProduced": false,
+    "candidateMayBeUploaded": false,
+    "productionConstantsMutable": false
+  },
+  "evidencePolicy": {
+    "recordAppleAccount": false,
+    "recordTeamId": false,
+    "recordCertificateIdentity": false,
+    "recordCredentials": false,
+    "recordAuthorizationHeaders": false,
+    "recordEmails": false,
+    "recordDeviceIdentifiers": false,
+    "recordUserContent": false,
+    "recordEndpointUrls": false,
+    "recordAbsolutePaths": false,
+    "recordRawNotarizationCredentials": false,
+    "recordRawUpdateMetadata": false,
+    "typedDigestPrefix": "sha256:"
+  },
+  "stopConditions": [
+    "approval_missing",
+    "apple_program_membership_unverified",
+    "developer_id_certificate_unapproved",
+    "notarization_credential_unapproved",
+    "candidate_version_or_commit_unfrozen",
+    "bundle_architecture_or_macos_floor_unapproved",
+    "signing_or_entitlement_plan_unreviewed",
+    "update_provider_or_channel_unapproved",
+    "rollback_target_unapproved",
+    "test_device_or_cohort_unapproved",
+    "start_stop_window_unapproved",
+    "abort_owner_unapproved",
+    "evidence_retention_unapproved",
+    "secret_or_identity_in_repository_or_log",
+    "unsigned_or_invalid_nested_code",
+    "hardened_runtime_or_entitlement_failure",
+    "notarization_or_stapling_failure",
+    "gatekeeper_assessment_failure",
+    "update_authenticity_or_replay_failure",
+    "host_or_login_item_recovery_failure",
+    "uninstall_or_user_state_policy_unapproved",
+    "production_upload_or_external_visibility",
+    "scenario_matrix_incomplete",
+    "cleanup_failure"
+  ],
+  "nextAction": "obtain_separate_p6_signing_notarization_and_update_authorization"
+}

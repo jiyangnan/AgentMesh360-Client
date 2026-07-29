@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 Apple 签名/公证仍关闭，需独立授权后才能启动 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 no-authority preflight 已完成，真实 Apple 签名/公证和 Desktop Candidate 仍需独立授权 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P5 已完成；P5 v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary、Registry-first 清理以及云端/本机资源归零均已真实通过；场景还暴露并修复四项真实合同问题 | P5 已关闭；保持生产 Trust/Registry 常量为空，未取得 P6 独立授权前不启动 Apple 签名、公证或 Desktop Candidate |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P5 已完成；P5 v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary、Registry-first 清理以及云端/本机资源归零均已真实通过；场景还暴露并修复四项真实合同问题 | P5 已关闭且生产 Trust/Registry 常量为空；P6 只完成 blocked preflight，未取得新授权前不签名、公证、上传或发布 Desktop Candidate |
 
 ## 开发循环记录
 
@@ -6785,3 +6785,47 @@ credential、隔离 Client/state/build 尚待 finalizer 销毁
   PASS 写成生产 R1-R6 关闭；下一顺序仍是 P6 R4 Desktop Candidate，但它需要
   Developer ID、Apple 公证、更新渠道与恢复矩阵的独立授权。本轮在 P5 关闭处停止，
   不自行生成凭据、不签名、不公证、不发布 Desktop Candidate。
+
+### 循环 127：P6 R4 Desktop Candidate 阻断式预检
+
+状态：已完成 no-authority preflight；R4、Developer ID、Apple 签名/公证、更新渠道
+和真实 Desktop Candidate 继续保持 blocked
+
+实际实现与现状审计：
+
+1. 新增 strict `agentmesh360-desktop-candidate-preflight-v1` Schema、默认 blocked
+   JSON 模板、中文清单和无依赖 Node validator/CLI；
+2. 模板逐字节绑定 P5 本机清场 evidence 与当前 `desktop/package.json`/lock，
+   固定实际 `0.1.0`、bundle ID、Electron/electron-builder、DMG/ZIP、Host extra
+   resource、Login Item 与持久 Host 开发基础；
+3. 同时固定真实缺口：未验证 Apple membership/Developer ID identity，未读取
+   Keychain 或 Apple credential，未配置 signing、notarization、显式 Hardened
+   Runtime、entitlements、`electron-updater`、publish provider、update channel、
+   rollback 或仓库 Release workflow；
+4. R4 合同要求固定 commit/version/bundle/architecture/macOS floor、所有 nested
+   executable 签名、Hardened Runtime、最小 entitlement、notarization/stapling/
+   Gatekeeper、更新 artifact 真实性、禁止 unsigned update/静默 downgrade、LKG、
+   Login Item/Host 恢复和卸载用户状态策略；
+5. 固定 18 项 build/signing/notarization/install/lifecycle/update/rollback/uninstall
+   矩阵，每项均为 `blocked`，不能从模板推断执行或通过；
+6. future approval card 必须明确 candidate environment/version/commit、bundle、
+   architecture、最低 macOS、Developer ID、notarization credential、更新
+   provider/channel、rollback、设备/cohort、窗口、Abort Owner、预算和安全 evidence
+   retention；
+7. 本轮只读查阅 Apple/electron-builder 当前官方要求；产品预检执行器本身 network
+   请求 0，且没有 subprocess、Keychain、Apple service、签名、构建、安装、上传、
+   Provider、credits 或费用能力。
+
+自主验证与计划复盘：
+
+- 定向 15/15，覆盖 P5/manifest/lock 字节绑定、当前 unsigned 事实、完整 R4 合同、
+  authority/credential/network/build 升级拒绝、18 场景顺序、留存安全、重复 JSON
+  key、symlink、UTF-8、大小与 CLI 路径脱敏；
+- 完整发布工具链 266/266；沙箱内 262/266，四项 loopback Origin 测试按既定方法
+  在沙箱外 5/5；桌面语法通过，桌面测试 114 passed / 3 个真实 Host 环境门
+  skipped / 0 failed；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 完成 diff、Schema/模板、源码现状、
+  官方要求、权限边界、负向测试和计划顺序加强自主复核；
+- 对照产品蓝图与生产准备计划，本轮没有把“继续开发”扩大解释为 Apple credential
+  或发布 authority，只关闭 P6 no-authority preflight。下一步真实候选必须先取得
+  单独批准；P7/P8、生产发布和外部 cohort 继续关闭。

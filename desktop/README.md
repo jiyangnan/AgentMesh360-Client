@@ -182,6 +182,9 @@ npm run build:mac
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
 签名安装包中的 macOS Login Item 注册/批准/升级、Electron 主进程自身守护以及受控
 Host shutdown 仍是发布门槛；源码和开发 smoke 通过不等于生产安装链已验收。
+P6 R4 no-authority preflight 已把现有 unsigned 打包事实、18 项验收矩阵和未来批准卡
+固化为默认 blocked 契约；运行方法和停止边界见
+[`P6_DESKTOP_CANDIDATE_PREFLIGHT_CHECKLIST.md`](../docs/operations/P6_DESKTOP_CANDIDATE_PREFLIGHT_CHECKLIST.md)。
 
 Cycle 57 已完成零生产 authority 的 P1 R6 本地基线：Release Event、证据模板、
 静态验证器、事故响应 Runbook 与 E0 tabletop。它不代表 R6、桌面分发或 canary
