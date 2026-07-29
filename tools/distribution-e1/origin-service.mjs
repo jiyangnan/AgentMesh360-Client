@@ -58,6 +58,18 @@ function strictConfig(value) {
     'schemaVersion',
   ];
   const principalKeys = ['accessKeyId', 'keyName', 'secretAccessKey'];
+  const metadataMatch =
+    /^am360-(e1|p5-e1)-metadata-([0-9a-f]{8})$/u.exec(
+      value?.metadataBucket,
+    );
+  const releasesMatch =
+    /^am360-(e1|p5-e1)-releases-([0-9a-f]{8})$/u.exec(
+      value?.releasesBucket,
+    );
+  const originMatch =
+    /^am360-(p4-e1|p5-e1)-origin-([0-9a-f]{8})$/u.exec(
+      value?.originReader?.keyName,
+    );
   if (
     !value
     || typeof value !== 'object'
@@ -66,8 +78,8 @@ function strictConfig(value) {
     || value.schemaVersion !== 1
     || value.region !== 'sgp1'
     || value.endpoint !== 'sgp1.digitaloceanspaces.com'
-    || !/^am360-e1-metadata-[0-9a-f]{8}$/u.test(value.metadataBucket)
-    || !/^am360-e1-releases-[0-9a-f]{8}$/u.test(value.releasesBucket)
+    || !metadataMatch
+    || !releasesMatch
     || !/^[A-Za-z0-9_-]{43}$/u.test(value.faultToken)
     || !value.originReader
     || typeof value.originReader !== 'object'
@@ -78,18 +90,19 @@ function strictConfig(value) {
     || !/^[A-Za-z0-9/+]{40,50}$/u.test(
       value.originReader.secretAccessKey,
     )
-    || !/^am360-p4-e1-origin-[0-9a-f]{8}$/u.test(
-      value.originReader.keyName,
-    )
+    || !originMatch
   ) {
     throw new Error('origin configuration boundary is invalid');
   }
-  const metadataSuffix = value.metadataBucket.split('-').at(-1);
-  const releasesSuffix = value.releasesBucket.split('-').at(-1);
-  const keySuffix = value.originReader.keyName.split('-').at(-1);
   if (
-    metadataSuffix !== releasesSuffix
-    || metadataSuffix !== keySuffix
+    metadataMatch[1] !== releasesMatch[1]
+    || metadataMatch[2] !== releasesMatch[2]
+    || metadataMatch[2] !== originMatch[2]
+    || (
+      metadataMatch[1] === 'e1'
+        ? originMatch[1] !== 'p4-e1'
+        : originMatch[1] !== 'p5-e1'
+    )
   ) {
     throw new Error('origin configuration resources are not bound');
   }

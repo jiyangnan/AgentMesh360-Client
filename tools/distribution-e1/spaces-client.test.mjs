@@ -42,6 +42,15 @@ function credentials() {
   };
 }
 
+function p5Credentials() {
+  const value = credentials();
+  value.releasesBucket = 'am360-p5-e1-releases-1234abcd';
+  value.metadataBucket = 'am360-p5-e1-metadata-1234abcd';
+  value.publisher.keyName = 'am360-p5-e1-publisher-1234abcd';
+  value.originReader.keyName = 'am360-p5-e1-origin-1234abcd';
+  return value;
+}
+
 async function withTempDirectory(run) {
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'agentmesh360-spaces-client-test-'),
@@ -175,6 +184,21 @@ test('loads only strict mode-0600 distinct-principal credentials', async () => {
     duplicate.originReader.accessKeyId = duplicate.publisher.accessKeyId;
     await writeFile(file, JSON.stringify(duplicate), { mode: 0o600 });
     await assert.rejects(readCredentialFile(file), /distinct access keys/u);
+  });
+});
+
+test('accepts the separate P5 bucket and principal namespace', async () => {
+  await withTempDirectory(async (directory) => {
+    const file = path.join(directory, 'credentials.json');
+    await writeFile(file, JSON.stringify(p5Credentials()), {
+      mode: 0o600,
+      flag: 'wx',
+    });
+    assert.deepEqual(await readCredentialFile(file), p5Credentials());
+    const mixed = p5Credentials();
+    mixed.publisher.keyName = 'am360-p4-e1-publisher-1234abcd';
+    await writeFile(file, JSON.stringify(mixed), { mode: 0o600 });
+    await assert.rejects(readCredentialFile(file), /principal binding/u);
   });
 });
 

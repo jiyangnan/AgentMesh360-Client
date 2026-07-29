@@ -24,6 +24,14 @@ function config() {
   };
 }
 
+function p5Config() {
+  const value = config();
+  value.releasesBucket = 'am360-p5-e1-releases-1234abcd';
+  value.metadataBucket = 'am360-p5-e1-metadata-1234abcd';
+  value.originReader.keyName = 'am360-p5-e1-origin-1234abcd';
+  return value;
+}
+
 async function withServer(run, options = {}) {
   const requests = [];
   const logs = [];
@@ -59,6 +67,7 @@ async function withServer(run, options = {}) {
 
 test('strict config binds reader key to both approved E1 buckets', () => {
   assert.deepEqual(strictConfig(config()), config());
+  assert.deepEqual(strictConfig(p5Config()), p5Config());
   for (const mutate of [
     (value) => {
       value.region = 'nyc3';

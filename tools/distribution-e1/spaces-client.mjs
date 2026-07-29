@@ -14,7 +14,7 @@ const EXPECTED_ENDPOINT = 'sgp1.digitaloceanspaces.com';
 const KEY_ID_PATTERN = /^[A-Z0-9]{20}$/u;
 const SECRET_PATTERN = /^[A-Za-z0-9/+]{40,50}$/u;
 const BUCKET_PATTERN =
-  /^am360-e1-(releases|metadata)-([0-9a-f]{8})$/u;
+  /^am360-(e1|p5-e1)-(releases|metadata)-([0-9a-f]{8})$/u;
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
 
 function sha256Hex(bytes) {
@@ -201,12 +201,14 @@ async function readCredentialFile(filePath) {
   const releasesMatch = BUCKET_PATTERN.exec(value.releasesBucket);
   const metadataMatch = BUCKET_PATTERN.exec(value.metadataBucket);
   if (
-    releasesMatch?.[1] !== 'releases'
-    || metadataMatch?.[1] !== 'metadata'
-    || releasesMatch[2] !== metadataMatch[2]
+    releasesMatch?.[2] !== 'releases'
+    || metadataMatch?.[2] !== 'metadata'
+    || releasesMatch[1] !== metadataMatch[1]
+    || releasesMatch[3] !== metadataMatch[3]
   ) {
     throw new Error('Spaces bucket binding is invalid');
   }
+  const keyScope = releasesMatch[1] === 'e1' ? 'p4-e1' : 'p5-e1';
   for (const [name, principal] of [
     ['publisher', value.publisher],
     ['originReader', value.originReader],
@@ -225,8 +227,8 @@ async function readCredentialFile(filePath) {
       || !KEY_ID_PATTERN.test(principal.accessKeyId)
       || !SECRET_PATTERN.test(principal.secretAccessKey)
       || principal.keyName
-        !== `am360-p4-e1-${name === 'publisher' ? 'publisher' : 'origin'}-${
-          releasesMatch[2]
+        !== `am360-${keyScope}-${name === 'publisher' ? 'publisher' : 'origin'}-${
+          releasesMatch[3]
         }`
     ) {
       throw new Error('Spaces principal binding is invalid');
