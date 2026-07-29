@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "preflightId": "package_canary_e1_release_chain_preflight_20260729_0002",
+  "authorizationId": "package_canary_e1_20260729_0002",
+  "environment": "e1",
+  "workPackage": "p5_package_canary",
+  "executionStatus": "release_chain_preflight_passed",
+  "executorCommit": "7a46455124edf28efe397f45605d31240403b813",
+  "recordedAt": "2026-07-29T05:43:05.501Z",
+  "inputDigests": {
+    "authorizationSha256": "sha256:b75523503f8d6d40c2ddc916f399f514d3b39dc51bfd298ac6eb4d0a251cac33",
+    "oauthEvidenceSha256": "sha256:fd1cbec66f3465ef21e633dd27889186caf8e3e254ae8bbd9bd776c978a04823",
+    "byokEvidenceSha256": "sha256:25a157029d778f3bcd615f41cbc1988ed91274cf23c749d665d6b730affe84cf"
+  },
+  "authority": {
+    "productionAuthorityGranted": false,
+    "productionConstantsMutable": false,
+    "productionDropletReusable": false,
+    "p4PrivateMaterialReusable": false
+  },
+  "releaseChain": {
+    "candidateCommit": "e1ef8db19dc58a2c9cec19ac34f7e1966d741b7c",
+    "sourceSet": "frozen_p4_four_agent_set",
+    "dualBuildRequired": true,
+    "buildRootLocation": "isolated_private_tmp_boundary",
+    "repositoryRootTargetAllowed": false,
+    "generations": [
+      {
+        "generation": "a",
+        "rootKeyAlias": "p5-e1-root-a",
+        "publisherKeyAlias": "p5-e1-publisher-a",
+        "releases": [
+          "deploy-agent@0.1.1",
+          "future-agent@1.0.0",
+          "job-agent@0.4.7",
+          "lecturecast-agent@0.4.0"
+        ]
+      },
+      {
+        "generation": "b",
+        "rootKeyAlias": "p5-e1-root-b",
+        "publisherKeyAlias": "p5-e1-publisher-b",
+        "releases": [
+          "job-agent@0.4.8-e1.1",
+          "job-agent@0.4.9-e1.1"
+        ]
+      }
+    ],
+    "variantPlan": {
+      "baselineVersion": "0.4.7",
+      "samePermissionVersion": "0.4.8-e1.1",
+      "permissionExpansionVersion": "0.4.9-e1.1",
+      "addedPermission": "process_execution",
+      "sourceMutationAllowed": false,
+      "variantDefinitionsOnlyInEphemeralBoundary": true
+    }
+  },
+  "infrastructure": {
+    "provider": "digitalocean",
+    "region": "sgp1",
+    "stagingDropletCount": 1,
+    "stagingDropletSize": "s-1vcpu-1gb",
+    "spacesBucketCount": 2,
+    "cloudflareDnsRecordCount": 1,
+    "productionRecordMutable": false,
+    "expectedCostUsd": 1.15,
+    "hardCapUsd": 3,
+    "destroyAtEnd": true
+  },
+  "scenarios": [
+    {
+      "scenario": "active_subscription",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "inactive_subscription",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "account_switch",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "byok_selected_route",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "provider_auth_failure",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "provider_transient_failure",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "provider_capability_mismatch",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "budget_limit_reached",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "new_agent_install",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "same_permission_update",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "permission_expansion_rejected",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "permission_expansion_approved",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "artifact_or_metadata_tamper",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "registry_rollback_or_equivocation",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "trust_expiry_or_publisher_revocation",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "interrupted_install",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "package_rollback",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "host_skill_projection",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "root_rotation",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "publisher_rotation_or_revocation",
+      "executionStatus": "pending"
+    },
+    {
+      "scenario": "registry_withdrawal",
+      "executionStatus": "pending"
+    }
+  ],
+  "cleanup": {
+    "registryFirst": true,
+    "destroyDroplet": true,
+    "destroyBuckets": true,
+    "removeDnsRecord": true,
+    "revokeSpacesKeys": true,
+    "destroyEphemeralSigningKeys": true,
+    "removeTemporaryProviderBindings": true,
+    "deleteTemporaryKeychainCredential": true,
+    "destroyIsolatedCanaryState": true,
+    "preserveSavedSourceCredential": true
+  },
+  "gates": {
+    "releaseBuildAllowed": true,
+    "cloudCreationAllowed": true,
+    "packageMutationAllowedOnlyInIsolatedState": true,
+    "p6Allowed": false
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "resourceIdsRetained": false,
+    "endpointUrlsRetained": false,
+    "accountIdentifiersRetained": false,
+    "absolutePathsRetained": false,
+    "promptOrResponseRetained": false
+  }
+}

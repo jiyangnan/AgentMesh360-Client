@@ -434,7 +434,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭与加密重启恢复通过；旧内部账号 v1 保持 aborted | 下一门重建 frozen E1 Release Chain 并创建唯一隔离 staging；完整清场前不推进 P6 |
+| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭、加密重启恢复与 Release Chain 无网络预检通过；旧内部账号 v1 保持 aborted | 下一门先实现、测试并冻结 P5 专用 Release/21 场景/清场执行器；之后才创建唯一隔离 staging，完整清场前不推进 P6 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1272,3 +1272,23 @@ active 订阅、Profile/Assignment、系统加密凭据、固定 Main Session �
 P5 临时主 Profile、Assignment、Binding 和 Keychain 凭据按批准保留给后续门；
 完整清场仍为强制退出条件。下一门按序重建 frozen E1 Release Chain 并创建唯一
 隔离 staging，不复用生产 Droplet/Trust、不改生产常量、不推进 P6。
+
+## 49. Cycle 99 P5 E1 Release Chain 无网络预检
+
+冻结执行器 `7a46455124edf28efe397f45605d31240403b813` 已推送并在 clean
+`main == origin/main` 上通过真实预检。预检逐字节绑定 P5 v2 授权、owner OAuth/
+订阅和 Gemini BYOK receipt，同时确认授权仍在 72 小时窗口、仓库根 `target/`
+absent、生产 Trust/Registry 常量为空。
+
+输出固定两代全新临时 Root/Publisher、四 Agent baseline、Job Agent 同权限与
+`process_execution` 权限扩张版本、21 项场景、`$3` 基础设施硬上限和
+Registry-first 清场。首次错误 commit 输入在输出前失败关闭；精确 commit 生成的
+`0600` 原件与入库非秘密 receipt 一致。
+
+定向 17/17、完整 Node 310/3/0、语法/diff/秘密扫描通过。Kimi 继续按用户指示暂停，
+由主 Agent 完成加强自主复核。本轮没有网络、Provider、credits、Keychain、
+Package 或云 mutation，也没有新增费用。
+
+本门只关闭 Release Chain 的执行前证据，不关闭 Release Chain、21 场景或 P5。
+下一步必须先实现、测试并冻结 P5 专用 Release/场景/清场执行器；冻结前不得创建
+Droplet、Spaces bucket 或 Cloudflare DNS，不复用 P4 私钥或生产资源，不推进 P6。

@@ -226,9 +226,11 @@ flowchart TD
    Trust、Registry-last、14 项故障矩阵和完整清场；P5 已完成零权限阻断式
    preflight。其 E1 历史批准卡错误假定已有专用内部测试账号；用户纠正后已在
    订阅复验、Keychain/Package mutation 和云资源创建前中止并完整清场。账号所有者
-   随后直接授权改用其现有线上账号，v2 授权链已实现且旧 v1 保持 aborted。下一步
-   冻结 v2 后重做 baseline/隔离客户端；这不关闭生产门，生产 key、外部 cohort、
-   签名和公证仍各自等待授权。
+   随后直接授权改用其现有线上账号，v2 授权链、baseline、隔离客户端、owner
+   OAuth/订阅、Gemini BYOK 与 Release Chain 无网络预检均已通过，旧 v1 保持
+   aborted。下一步先实现、测试并冻结 P5 专用 Release/21 场景/清场执行器，之后
+   才创建唯一隔离 staging；这不关闭生产门，生产 key、外部 cohort、签名和公证
+   仍各自等待授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -896,3 +898,19 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   AgentMesh credits 和基础设施费用 0；Provider 精确费用不可见，不虚报；
 - 下一门按授权重建 frozen E1 Release Chain 并创建唯一隔离 staging；临时主
   Profile/Binding/Keychain 凭据必须在 P5 完整清场时删除，不能推进 P6。
+
+## 54. 循环 99 P5 E1 Release Chain 无网络预检
+
+- 新增只读预检执行器，绑定 v2 授权、OAuth/订阅与 BYOK receipt；
+- 只接受 clean 且已推送的精确 executor commit、有效 72 小时窗口、空生产
+  Trust/Registry 常量和 absent 的仓库根 `target/`；
+- 固定两代临时 Root/Publisher、四 Agent baseline、两种 Job canary 版本、21 项
+  场景、`$3` 硬上限和 Registry-first 清场；
+- 错误 commit 在写文件前失败关闭；冻结 `7a46455...` 的真实预检通过，原件
+  `0600` 且留存证据不含 secret、资源 ID、URL、账号、路径或模型内容；
+- 定向 17/17、完整 Node 310 passed / 3 skipped / 0 failed，语法、diff 和秘密
+  扫描通过；Kimi 暂停期间由主 Agent 完成加强自主复核；
+- 本轮没有网络、Provider、credits、Keychain、Package 或云 mutation，也没有
+  新增费用；
+- P5 仍为 executing，P6 关闭。下一步先实现并冻结 P5 专用 Release/21 场景/清场
+  执行器，之后才允许创建唯一隔离 staging。
