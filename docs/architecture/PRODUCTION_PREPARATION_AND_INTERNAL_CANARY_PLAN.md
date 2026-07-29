@@ -10,7 +10,8 @@ P4 E1 状态为 `isolated_distribution_rehearsal_passed`；生产 R1-R6 仍未�
 固化为默认 blocked 契约；Cycle 87 的批准卡错误假定已有专用内部测试账号。
 Cycle 92 在用户纠正该账号并不存在后，于订阅复验、Keychain 写入、Package
 mutation 和云端资源创建前中止 P5 E1，并销毁隔离客户端、构建缓存和 worktree。
-P5 继续 blocked；E2、生产候选和 Apple 签名公证均未授权。
+Cycle 93 已取得账号所有者对其现有线上账号的直接授权，并新建严格 v2 授权链；
+旧 v1 继续保持 aborted。E2、生产候选和 Apple 签名公证均未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -433,7 +434,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **已中止并清场**：历史批准卡假定的专用内部测试账号实际不存在；未进行订阅复验、Keychain 写入、Package mutation、Provider 请求或云资源创建 | 先取得新的账号策略授权并准备真实存在的专用测试账号；禁止使用管理员个人账号替代 |
+| P5 Package canary | **v2 已重新授权，尚未执行**：账号所有者直接批准使用其现有线上账号；旧内部账号 v1 保持 aborted，BYOK/预算/单 Mac/零生产权限不变 | 冻结推送 v2 后重做只读 baseline 和隔离客户端；订阅双门通过前不创建云资源 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1168,3 +1169,21 @@ P5 保持 `aborted_missing_prerequisite`，不进入 P6。下一步必须先取�
 
 P5 定向测试 22/22、全部留存 JSON 解析、文档一致性、secret 与 diff 检查通过。
 下一轮保持 pending，直到账号策略和订阅准备获得新的明确授权。
+
+## 43. Cycle 93 P5 E1 owner 线上账号 v2 重新授权
+
+账号所有者直接授权 P5 使用其现有线上账号。v2 receipt 只保留脱敏 alias，不保留
+邮箱或账号 ID，并逐字节绑定旧 v1 authorization 与 abort receipt。旧授权不回写，
+也不能复活。
+
+v2 继续固定单账号、单 Mac、原 72 小时停止点、Gemini BYOK 最多 12 次、Provider
+`$1`、基础设施 `$3`、AgentMesh credits 0 和零生产权限。用户允许 credits 不代表
+测试必须消耗，BYOK happy path 仍是默认执行方式。
+
+validator 可按 schemaVersion 严格选择 v1/v2；assembler 只接受 v2 和重新捕获的
+匹配 baseline，旧 v1 即使带旧 baseline 也失败关闭。Electron marker 同步升级为
+schema v2 和新 authorization/boundary ID，普通客户端不受影响。
+
+P5 定向 23/23、Electron canary 4/4、Desktop 105/105（真实 Host 3 项按环境门跳过）；
+本轮账号登录、Provider、credits、Keychain、Package、云资源和费用均为 0。下一步
+冻结推送 v2，再重做只读 baseline 与隔离装配。

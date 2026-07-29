@@ -24,8 +24,9 @@ const APPROVED_TEMP_ROOT = '/private/tmp';
 const BOUNDARY_NAME = 'agentmesh360-p5-e1-client';
 const BASELINE_PATH = path.join(
   REPOSITORY_ROOT,
-  'docs/operations/tabletops/2026-07-29-p5-local-baseline.json',
+  'docs/operations/tabletops/2026-07-29-p5-owner-account-local-baseline.json',
 );
+const CURRENT_AUTHORIZATION_ID = 'package_canary_e1_20260729_0002';
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
 
 function typedSha256(bytes) {
@@ -85,6 +86,7 @@ async function makePrivateDirectory(directory) {
 
 export async function prepareIsolatedClient({
   authorizationPath,
+  baselinePath = BASELINE_PATH,
   expectedExecutorCommit,
   repositoryProbe = localRepositoryState,
   approvedTempRoot = APPROVED_TEMP_ROOT,
@@ -100,13 +102,16 @@ export async function prepareIsolatedClient({
     'P5 E1 authorization',
   );
   const baselineRecord = await strictJson(
-    BASELINE_PATH,
+    baselinePath,
     'P5 local baseline',
   );
   const authorization = authorizationRecord.value;
   const baseline = baselineRecord.value;
   if (
-    baseline.authorizationId !== authorization.authorizationId
+    authorization.schemaVersion !== 2
+    || authorization.authorizationId !== CURRENT_AUTHORIZATION_ID
+    || authorization.authorizationHistory?.priorAuthorizationReusable !== false
+    || baseline.authorizationId !== authorization.authorizationId
     || baseline.authorizationSha256 !== typedSha256(authorizationRecord.bytes)
     || baseline.gate?.localBaselinePassed !== true
     || baseline.gate?.cloudAssemblyAllowed !== false
@@ -147,9 +152,9 @@ export async function prepareIsolatedClient({
     await makePrivateDirectory(path.join(boundary, 'state'));
     await makePrivateDirectory(path.join(boundary, 'user-data'));
     const marker = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       authorizationId: authorization.authorizationId,
-      boundaryId: 'p5-e1-isolated-client-01',
+      boundaryId: 'p5-e1-isolated-client-02',
       executorCommit: repository.head,
       productionAuthorityGranted: false,
       normalStateReadable: false,
@@ -182,13 +187,17 @@ export async function prepareIsolatedClient({
 function usage() {
   process.stderr.write(
     'usage: node prepare-isolated-client.mjs '
-      + '<authorization.json> <executor-commit>\n',
+      + '<authorization.json> <baseline.json> <executor-commit>\n',
   );
 }
 
 async function main() {
-  const [authorizationPath, expectedExecutorCommit] = process.argv.slice(2);
-  if (!authorizationPath || !expectedExecutorCommit) {
+  const [
+    authorizationPath,
+    baselinePath,
+    expectedExecutorCommit,
+  ] = process.argv.slice(2);
+  if (!authorizationPath || !baselinePath || !expectedExecutorCommit) {
     usage();
     process.exitCode = 2;
     return;
@@ -196,6 +205,7 @@ async function main() {
   try {
     await prepareIsolatedClient({
       authorizationPath: path.resolve(authorizationPath),
+      baselinePath: path.resolve(baselinePath),
       expectedExecutorCommit,
     });
     process.stdout.write('isolated P5 client boundary prepared\n');

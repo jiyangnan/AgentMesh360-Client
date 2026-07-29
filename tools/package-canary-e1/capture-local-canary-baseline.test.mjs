@@ -21,7 +21,7 @@ const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = path.join(TEST_DIRECTORY, 'capture-local-canary-baseline.mjs');
 const AUTHORIZATION = path.resolve(
   TEST_DIRECTORY,
-  '../../docs/operations/tabletops/2026-07-29-p5-package-canary-e1-authorization.json',
+  '../../docs/operations/tabletops/2026-07-29-p5-owner-account-e1-authorization.json',
 );
 const REPOSITORY_ROOT = path.resolve(TEST_DIRECTORY, '../..');
 const HEAD = spawnSync('git', ['rev-parse', 'HEAD'], {

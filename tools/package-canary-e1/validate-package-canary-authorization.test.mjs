@@ -25,7 +25,15 @@ const VALIDATOR = path.join(
 );
 const AUTHORIZATION = path.resolve(
   TEST_DIRECTORY,
+  '../../docs/operations/tabletops/2026-07-29-p5-owner-account-e1-authorization.json',
+);
+const PRIOR_AUTHORIZATION = path.resolve(
+  TEST_DIRECTORY,
   '../../docs/operations/tabletops/2026-07-29-p5-package-canary-e1-authorization.json',
+);
+const PRIOR_ABORT = path.resolve(
+  TEST_DIRECTORY,
+  '../../docs/operations/tabletops/2026-07-29-p5-e1-abort.json',
 );
 const PREFLIGHT = path.resolve(
   TEST_DIRECTORY,
@@ -92,12 +100,32 @@ test('binds the preflight, P4 authorization, and P4 acceptance bytes', () => {
     authorization.releaseChain.p4AuthorizationSha256,
     typedSha256(P4_AUTHORIZATION),
   );
+  assert.equal(
+    authorization.authorizationHistory.supersedesAuthorizationSha256,
+    typedSha256(PRIOR_AUTHORIZATION),
+  );
+  assert.equal(
+    authorization.authorizationHistory.supersedesAbortSha256,
+    typedSha256(PRIOR_ABORT),
+  );
 });
 
 test('pins one account, one Mac, 72 hours, and no production authority', () => {
   const authorization = validAuthorization();
   assert.equal(authorization.cohort.accountCount, 1);
   assert.equal(authorization.cohort.deviceCount, 1);
+  assert.equal(
+    authorization.subscriptionPlan.source,
+    'existing_owner_online_account',
+  );
+  assert.equal(
+    authorization.authorizationHistory.supersedesAbortId,
+    'package_canary_e1_abort_20260729_0001',
+  );
+  assert.equal(
+    authorization.authorizationHistory.priorAuthorizationReusable,
+    false,
+  );
   assert.equal(authorization.authorizationWindow.maximumHours, 72);
   assert.equal(
     Date.parse(authorization.authorizationWindow.stopsAt)
@@ -180,6 +208,12 @@ test('rejects authority, execution, production, or cohort escalation', () => {
     },
     (value) => {
       value.cohort.externalCohortAllowed = true;
+    },
+    (value) => {
+      value.subscriptionPlan.source = 'existing_dedicated_internal_account';
+    },
+    (value) => {
+      value.authorizationHistory.priorAuthorizationReusable = true;
     },
   ]) {
     const authorization = validAuthorization();
@@ -311,8 +345,8 @@ test('rejects duplicate JSON keys, symlinks, invalid UTF-8, and oversized input'
     await writeFile(
       duplicatePath,
       JSON.stringify(validAuthorization()).replace(
-        '"schemaVersion":1',
-        '"schemaVersion":1,"schemaVersion":1',
+        '"schemaVersion":2',
+        '"schemaVersion":2,"schemaVersion":2',
       ),
     );
     await assert.rejects(

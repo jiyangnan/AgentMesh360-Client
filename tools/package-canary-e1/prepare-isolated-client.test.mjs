@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   mkdtemp,
@@ -6,6 +7,7 @@ import {
   realpath,
   rm,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +19,10 @@ import { prepareIsolatedClient } from './prepare-isolated-client.mjs';
 const TEST_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = path.join(TEST_DIRECTORY, 'prepare-isolated-client.mjs');
 const AUTHORIZATION = path.resolve(
+  TEST_DIRECTORY,
+  '../../docs/operations/tabletops/2026-07-29-p5-owner-account-e1-authorization.json',
+);
+const ABORTED_AUTHORIZATION = path.resolve(
   TEST_DIRECTORY,
   '../../docs/operations/tabletops/2026-07-29-p5-package-canary-e1-authorization.json',
 );
@@ -33,11 +39,41 @@ async function withTempDirectory(run) {
   }
 }
 
+async function writeBaseline(directory, authorizationPath = AUTHORIZATION) {
+  const authorizationBytes = readFileSync(authorizationPath);
+  const authorization = JSON.parse(authorizationBytes);
+  const baselinePath = path.join(directory, 'baseline.json');
+  await writeFile(
+    baselinePath,
+    JSON.stringify({
+      authorizationId: authorization.authorizationId,
+      authorizationSha256: `sha256:${createHash('sha256')
+        .update(authorizationBytes)
+        .digest('hex')}`,
+      gate: {
+        localBaselinePassed: true,
+        cloudAssemblyAllowed: false,
+      },
+      execution: {
+        externalNetworkRequestsUsed: 0,
+        keychainWritesPerformed: 0,
+        packageMutationsPerformed: 0,
+      },
+      normalState: {
+        unchangedDuringCapture: true,
+      },
+    }),
+  );
+  return baselinePath;
+}
+
 test('prepares one private isolated client boundary without side effects', async () => {
   await withTempDirectory(async (directory) => {
     const canonicalDirectory = await realpath(directory);
+    const baselinePath = await writeBaseline(directory);
     const result = await prepareIsolatedClient({
       authorizationPath: AUTHORIZATION,
+      baselinePath,
       expectedExecutorCommit: EXECUTOR,
       repositoryProbe: () => ({
         head: EXECUTOR,
@@ -48,7 +84,7 @@ test('prepares one private isolated client boundary without side effects', async
       boundaryName: 'boundary',
     });
     assert.deepEqual(result, {
-      boundaryId: 'p5-e1-isolated-client-01',
+      boundaryId: 'p5-e1-isolated-client-02',
       executorCommit: EXECUTOR,
       productionAuthorityGranted: false,
       networkRequestPerformed: false,
@@ -66,8 +102,10 @@ test('prepares one private isolated client boundary without side effects', async
 test('refuses an existing or symlinked boundary', async () => {
   await withTempDirectory(async (directory) => {
     const canonicalDirectory = await realpath(directory);
+    const baselinePath = await writeBaseline(directory);
     const common = {
       authorizationPath: AUTHORIZATION,
+      baselinePath,
       expectedExecutorCommit: EXECUTOR,
       repositoryProbe: () => ({
         head: EXECUTOR,
@@ -85,12 +123,14 @@ test('refuses an existing or symlinked boundary', async () => {
   });
   await withTempDirectory(async (directory) => {
     const canonicalDirectory = await realpath(directory);
+    const baselinePath = await writeBaseline(directory);
     const target = path.join(canonicalDirectory, 'target');
     const boundary = path.join(canonicalDirectory, 'boundary');
     await symlink(target, boundary);
     await assert.rejects(
       prepareIsolatedClient({
         authorizationPath: AUTHORIZATION,
+        baselinePath,
         expectedExecutorCommit: EXECUTOR,
         repositoryProbe: () => ({
           head: EXECUTOR,
@@ -108,6 +148,7 @@ test('refuses an existing or symlinked boundary', async () => {
 test('refuses an unfrozen, dirty, or mismatched executor', async () => {
   await withTempDirectory(async (directory) => {
     const canonicalDirectory = await realpath(directory);
+    const baselinePath = await writeBaseline(directory);
     for (const repository of [
       { head: EXECUTOR, originMain: '4'.repeat(40), clean: true },
       { head: EXECUTOR, originMain: EXECUTOR, clean: false },
@@ -116,6 +157,7 @@ test('refuses an unfrozen, dirty, or mismatched executor', async () => {
       await assert.rejects(
         prepareIsolatedClient({
           authorizationPath: AUTHORIZATION,
+          baselinePath,
           expectedExecutorCommit: EXECUTOR,
           repositoryProbe: () => repository,
           approvedTempRoot: canonicalDirectory,
@@ -124,6 +166,28 @@ test('refuses an unfrozen, dirty, or mismatched executor', async () => {
         /frozen pushed commit/u,
       );
     }
+  });
+});
+
+test('refuses the superseded and aborted v1 authorization', async () => {
+  await withTempDirectory(async (directory) => {
+    const canonicalDirectory = await realpath(directory);
+    const baselinePath = await writeBaseline(directory, ABORTED_AUTHORIZATION);
+    await assert.rejects(
+      prepareIsolatedClient({
+        authorizationPath: ABORTED_AUTHORIZATION,
+        baselinePath,
+        expectedExecutorCommit: EXECUTOR,
+        repositoryProbe: () => ({
+          head: EXECUTOR,
+          originMain: EXECUTOR,
+          clean: true,
+        }),
+        approvedTempRoot: canonicalDirectory,
+        boundaryName: 'boundary',
+      }),
+      /does not authorize isolated assembly/u,
+    );
   });
 });
 

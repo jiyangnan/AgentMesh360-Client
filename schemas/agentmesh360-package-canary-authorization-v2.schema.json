@@ -1,0 +1,513 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/package-canary-authorization-v2.json",
+  "title": "AgentMesh360 P5 E1 Package Canary Authorization v2",
+  "description": "Retention-safe direct user authorization for one bounded E1 Package canary. It does not grant production authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorizationId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "approvalReceipt",
+    "authorizationHistory",
+    "authorizationWindow",
+    "executionFreeze",
+    "cohort",
+    "subscriptionPlan",
+    "providerPlan",
+    "infrastructurePlan",
+    "releaseChain",
+    "scenarioPlan",
+    "rollbackPlan",
+    "requestLimits",
+    "cleanupPlan",
+    "roleAliases",
+    "evidencePolicy"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 2 },
+    "authorizationId": {
+      "type": "string",
+      "const": "package_canary_e1_20260729_0002"
+    },
+    "environment": { "type": "string", "const": "e1" },
+    "workPackage": { "type": "string", "const": "p5_package_canary" },
+    "authority": { "type": "string", "const": "direct_user_authority" },
+    "approvalStatus": { "type": "string", "const": "approved" },
+    "executionStatus": {
+      "type": "string",
+      "const": "authorized_not_started"
+    },
+    "approvalReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receiptId",
+        "authorizedScope",
+        "recordedAt",
+        "productionAuthorityGranted"
+      ],
+      "properties": {
+        "receiptId": {
+          "type": "string",
+          "const": "approval_p5_e1_20260729_0002"
+        },
+        "authorizedScope": {
+          "type": "string",
+          "const": "p5_e1_owner_account_one_mac_package_canary"
+        },
+        "recordedAt": {
+          "type": "string",
+          "const": "2026-07-29T03:47:18Z"
+        },
+        "productionAuthorityGranted": { "type": "boolean", "const": false }
+      }
+    },
+    "authorizationHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supersedesAuthorizationId",
+        "supersedesAuthorizationSha256",
+        "supersedesAbortId",
+        "supersedesAbortSha256",
+        "reasonCode",
+        "priorAuthorizationReusable"
+      ],
+      "properties": {
+        "supersedesAuthorizationId": {
+          "type": "string",
+          "const": "package_canary_e1_20260729_0001"
+        },
+        "supersedesAuthorizationSha256": {
+          "type": "string",
+          "const": "sha256:f6faac58a90a712a82c6526486cf8bc05bbfedef3b95a1f4efb3b47eb86ae463"
+        },
+        "supersedesAbortId": {
+          "type": "string",
+          "const": "package_canary_e1_abort_20260729_0001"
+        },
+        "supersedesAbortSha256": {
+          "type": "string",
+          "const": "sha256:48ff7333b5b6b08c7899ecb73b231300ceeb75fff171135e5974c1ce87820704"
+        },
+        "reasonCode": {
+          "type": "string",
+          "const": "owner_authorized_existing_online_account"
+        },
+        "priorAuthorizationReusable": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "authorizationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "startsAt",
+        "stopsAt",
+        "maximumHours",
+        "automaticExtensionAllowed"
+      ],
+      "properties": {
+        "startsAt": {
+          "type": "string",
+          "const": "2026-07-28T17:48:33Z"
+        },
+        "stopsAt": {
+          "type": "string",
+          "const": "2026-07-31T17:48:33Z"
+        },
+        "maximumHours": { "type": "integer", "const": 72 },
+        "automaticExtensionAllowed": { "type": "boolean", "const": false }
+      }
+    },
+    "executionFreeze": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preflightCommit",
+        "authorizationCommit",
+        "preflightSha256",
+        "p4AcceptanceSha256",
+        "executeOnlyAfterCommit"
+      ],
+      "properties": {
+        "preflightCommit": {
+          "type": "string",
+          "const": "4f1d8f8cb7ec4eab0c90daea0c2db45f48d28bdc"
+        },
+        "authorizationCommit": {
+          "type": "string",
+          "const": "requires_freeze_after_commit"
+        },
+        "preflightSha256": {
+          "type": "string",
+          "const": "sha256:cb2881c02d163e2bc4476044b7fcb4d451d61a2e441116c43bdc9ea5e07b7154"
+        },
+        "p4AcceptanceSha256": {
+          "type": "string",
+          "const": "sha256:4d2a7f530bd988ef0ac1bb5f9b38d44e3ee8f0f246f627678380c1b6205a7a74"
+        },
+        "executeOnlyAfterCommit": { "type": "boolean", "const": true }
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountAlias",
+        "deviceAlias",
+        "accountCount",
+        "deviceCount",
+        "realIdentifiersRetained",
+        "externalCohortAllowed"
+      ],
+      "properties": {
+        "accountAlias": {
+          "type": "string",
+          "const": "p5-owner-online-account-01"
+        },
+        "deviceAlias": { "type": "string", "const": "p5-mac-01" },
+        "accountCount": { "type": "integer", "const": 1 },
+        "deviceCount": { "type": "integer", "const": 1 },
+        "realIdentifiersRetained": { "type": "boolean", "const": false },
+        "externalCohortAllowed": { "type": "boolean", "const": false }
+      }
+    },
+    "subscriptionPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "liveActiveSubscriptionRequired",
+        "accountCreationAllowed",
+        "subscriptionMutationAllowed",
+        "maximumAgentMeshCredits"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "existing_owner_online_account"
+        },
+        "liveActiveSubscriptionRequired": { "type": "boolean", "const": true },
+        "accountCreationAllowed": { "type": "boolean", "const": false },
+        "subscriptionMutationAllowed": { "type": "boolean", "const": false },
+        "maximumAgentMeshCredits": { "type": "integer", "const": 0 }
+      }
+    },
+    "providerPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "presetId",
+        "modelId",
+        "credentialSource",
+        "sourceEnvironmentVariable",
+        "environmentSecretReadAllowed",
+        "keychainReadAllowed",
+        "temporaryKeychainWriteAllowed",
+        "temporaryKeychainCredentialRequired",
+        "secretExportAllowed",
+        "maximumInferenceRequests",
+        "maximumAgentMeshCredits",
+        "maximumProviderCostUsd",
+        "silentFallbackAllowed",
+        "temporaryCanaryBindingsRequired",
+        "removeTemporaryBindingsAtEnd",
+        "deleteTemporaryKeychainCredentialAtEnd",
+        "preserveSavedSourceCredential"
+      ],
+      "properties": {
+        "presetId": { "type": "string", "const": "google-gemini" },
+        "modelId": {
+          "type": "string",
+          "const": "gemini-3.5-flash-lite"
+        },
+        "credentialSource": {
+          "type": "string",
+          "const": "existing_process_environment_gemini_test_key"
+        },
+        "sourceEnvironmentVariable": {
+          "type": "string",
+          "const": "GEMINI_API_KEY"
+        },
+        "environmentSecretReadAllowed": { "type": "boolean", "const": true },
+        "keychainReadAllowed": { "type": "boolean", "const": true },
+        "temporaryKeychainWriteAllowed": { "type": "boolean", "const": true },
+        "temporaryKeychainCredentialRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "secretExportAllowed": { "type": "boolean", "const": false },
+        "maximumInferenceRequests": { "type": "integer", "const": 12 },
+        "maximumAgentMeshCredits": { "type": "integer", "const": 0 },
+        "maximumProviderCostUsd": { "type": "integer", "const": 1 },
+        "silentFallbackAllowed": { "type": "boolean", "const": false },
+        "temporaryCanaryBindingsRequired": { "type": "boolean", "const": true },
+        "removeTemporaryBindingsAtEnd": { "type": "boolean", "const": true },
+        "deleteTemporaryKeychainCredentialAtEnd": {
+          "type": "boolean",
+          "const": true
+        },
+        "preserveSavedSourceCredential": { "type": "boolean", "const": true }
+      }
+    },
+    "infrastructurePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "accountMode",
+        "region",
+        "existingProductionDropletReusable",
+        "stagingDropletCount",
+        "stagingDropletSize",
+        "spacesBucketCount",
+        "cloudflareDnsRecordCount",
+        "productionRecordMutable",
+        "paidBackupAllowed",
+        "paidSnapshotAllowed",
+        "expectedCostUsd",
+        "hardCapUsd",
+        "destroyAtEnd"
+      ],
+      "properties": {
+        "provider": { "type": "string", "const": "digitalocean" },
+        "accountMode": {
+          "type": "string",
+          "const": "reuse_existing_account"
+        },
+        "region": { "type": "string", "const": "sgp1" },
+        "existingProductionDropletReusable": {
+          "type": "boolean",
+          "const": false
+        },
+        "stagingDropletCount": { "type": "integer", "const": 1 },
+        "stagingDropletSize": {
+          "type": "string",
+          "const": "s-1vcpu-1gb"
+        },
+        "spacesBucketCount": { "type": "integer", "const": 2 },
+        "cloudflareDnsRecordCount": { "type": "integer", "const": 1 },
+        "productionRecordMutable": { "type": "boolean", "const": false },
+        "paidBackupAllowed": { "type": "boolean", "const": false },
+        "paidSnapshotAllowed": { "type": "boolean", "const": false },
+        "expectedCostUsd": { "type": "number", "const": 1.15 },
+        "hardCapUsd": { "type": "integer", "const": 3 },
+        "destroyAtEnd": { "type": "boolean", "const": true }
+      }
+    },
+    "releaseChain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p4AuthorizationId",
+        "p4AuthorizationSha256",
+        "mode",
+        "agentCount",
+        "freshEphemeralRootKeyCount",
+        "freshEphemeralPublisherKeyCount",
+        "p4PrivateMaterialReusable",
+        "productionKeyAllowed",
+        "stagingClientInjection",
+        "productionConstantsMutable",
+        "jobBaselineVersion",
+        "jobSamePermissionVersion",
+        "jobPermissionExpansionVersion",
+        "addedCanaryPermission"
+      ],
+      "properties": {
+        "p4AuthorizationId": {
+          "type": "string",
+          "const": "distribution_service_e1_20260728_0001"
+        },
+        "p4AuthorizationSha256": {
+          "type": "string",
+          "const": "sha256:26dbff3609d3520cc598d6d98d6dc7f94431f8180c1736be6e15f06ef2b9ee79"
+        },
+        "mode": {
+          "type": "string",
+          "const": "rebuild_frozen_p4_release_set_with_canary_variants"
+        },
+        "agentCount": { "type": "integer", "const": 4 },
+        "freshEphemeralRootKeyCount": { "type": "integer", "const": 2 },
+        "freshEphemeralPublisherKeyCount": { "type": "integer", "const": 2 },
+        "p4PrivateMaterialReusable": { "type": "boolean", "const": false },
+        "productionKeyAllowed": { "type": "boolean", "const": false },
+        "stagingClientInjection": {
+          "type": "string",
+          "const": "explicit_authorized_e1_runtime_boundary"
+        },
+        "productionConstantsMutable": { "type": "boolean", "const": false },
+        "jobBaselineVersion": { "type": "string", "const": "0.4.7" },
+        "jobSamePermissionVersion": {
+          "type": "string",
+          "const": "0.4.8-e1.1"
+        },
+        "jobPermissionExpansionVersion": {
+          "type": "string",
+          "const": "0.4.9-e1.1"
+        },
+        "addedCanaryPermission": {
+          "type": "string",
+          "const": "process_execution"
+        }
+      }
+    },
+    "scenarioPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioCount",
+        "allScenariosRequired",
+        "realSubscriptionHappyPathRequired",
+        "realByokHappyPathRequired",
+        "failureInjectionMode",
+        "productionMutationAllowed"
+      ],
+      "properties": {
+        "scenarioCount": { "type": "integer", "const": 21 },
+        "allScenariosRequired": { "type": "boolean", "const": true },
+        "realSubscriptionHappyPathRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "realByokHappyPathRequired": { "type": "boolean", "const": true },
+        "failureInjectionMode": {
+          "type": "string",
+          "const": "isolated_local_or_e1_fault_boundary"
+        },
+        "productionMutationAllowed": { "type": "boolean", "const": false }
+      }
+    },
+    "rollbackPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capturePreCanaryPackageState",
+        "isolatedCanaryStateHomeRequired",
+        "restoreExactPreCanaryPackageState",
+        "stopOnUnknownMutationOutcome",
+        "automaticMutationRetryAllowed",
+        "abortBeforeCohortExpansion"
+      ],
+      "properties": {
+        "capturePreCanaryPackageState": { "type": "boolean", "const": true },
+        "isolatedCanaryStateHomeRequired": { "type": "boolean", "const": true },
+        "restoreExactPreCanaryPackageState": {
+          "type": "boolean",
+          "const": true
+        },
+        "stopOnUnknownMutationOutcome": { "type": "boolean", "const": true },
+        "automaticMutationRetryAllowed": { "type": "boolean", "const": false },
+        "abortBeforeCohortExpansion": { "type": "boolean", "const": true }
+      }
+    },
+    "requestLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximumExternalNetworkRequests",
+        "maximumProviderInferenceRequests",
+        "maximumAgentMeshCredits",
+        "maximumProviderCostUsd",
+        "maximumInfrastructureCostUsd",
+        "maximumCombinedCostUsd"
+      ],
+      "properties": {
+        "maximumExternalNetworkRequests": { "type": "integer", "const": 750 },
+        "maximumProviderInferenceRequests": { "type": "integer", "const": 12 },
+        "maximumAgentMeshCredits": { "type": "integer", "const": 0 },
+        "maximumProviderCostUsd": { "type": "integer", "const": 1 },
+        "maximumInfrastructureCostUsd": { "type": "integer", "const": 3 },
+        "maximumCombinedCostUsd": { "type": "integer", "const": 4 }
+      }
+    },
+    "cleanupPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "withdrawRegistryFirst",
+        "destroyDroplet",
+        "destroyBuckets",
+        "removeDnsRecord",
+        "revokeSpacesKeys",
+        "destroyEphemeralSigningKeys",
+        "removeTemporaryProviderBindings",
+        "destroyIsolatedCanaryState",
+        "deleteTemporaryKeychainCredential",
+        "preserveSavedSourceCredential",
+        "retainOnlyNonSecretEvidence",
+        "failureRequiresRollbackAndCleanupBeforeRetry"
+      ],
+      "properties": {
+        "withdrawRegistryFirst": { "type": "boolean", "const": true },
+        "destroyDroplet": { "type": "boolean", "const": true },
+        "destroyBuckets": { "type": "boolean", "const": true },
+        "removeDnsRecord": { "type": "boolean", "const": true },
+        "revokeSpacesKeys": { "type": "boolean", "const": true },
+        "destroyEphemeralSigningKeys": { "type": "boolean", "const": true },
+        "removeTemporaryProviderBindings": { "type": "boolean", "const": true },
+        "destroyIsolatedCanaryState": { "type": "boolean", "const": true },
+        "deleteTemporaryKeychainCredential": {
+          "type": "boolean",
+          "const": true
+        },
+        "preserveSavedSourceCredential": { "type": "boolean", "const": true },
+        "retainOnlyNonSecretEvidence": { "type": "boolean", "const": true },
+        "failureRequiresRollbackAndCleanupBeforeRetry": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "roleAliases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "type": "string", "const": "release_owner" },
+        { "type": "string", "const": "canary_operator" },
+        { "type": "string", "const": "abort_owner" }
+      ],
+      "items": false
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recordCredentials",
+        "recordAuthorizationHeaders",
+        "recordRawTrustDocuments",
+        "recordRawRegistryDocuments",
+        "recordEndpointUrls",
+        "recordResourceIds",
+        "recordIpAddresses",
+        "recordAbsolutePaths",
+        "recordPersonalIdentity",
+        "recordUserOrProviderContent",
+        "typedDigestPrefix"
+      ],
+      "properties": {
+        "recordCredentials": { "type": "boolean", "const": false },
+        "recordAuthorizationHeaders": { "type": "boolean", "const": false },
+        "recordRawTrustDocuments": { "type": "boolean", "const": false },
+        "recordRawRegistryDocuments": { "type": "boolean", "const": false },
+        "recordEndpointUrls": { "type": "boolean", "const": false },
+        "recordResourceIds": { "type": "boolean", "const": false },
+        "recordIpAddresses": { "type": "boolean", "const": false },
+        "recordAbsolutePaths": { "type": "boolean", "const": false },
+        "recordPersonalIdentity": { "type": "boolean", "const": false },
+        "recordUserOrProviderContent": { "type": "boolean", "const": false },
+        "typedDigestPrefix": { "type": "string", "const": "sha256:" }
+      }
+    }
+  }
+}

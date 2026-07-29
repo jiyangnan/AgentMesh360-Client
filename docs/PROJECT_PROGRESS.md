@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 因不存在专用内部测试账号而中止，取得新的账号策略授权前不继续 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 已由账号所有者重新授权使用其现有线上账号，下一门是冻结 v2 后重做只读 baseline |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；P5 E1 的历史批准卡错误假定已有专用内部测试账号，真实执行已在订阅复验前中止并完整清理；生产 endpoint/root/bundle 仍为空 | 先单独决定并授权如何取得专用测试账号及有效订阅；禁止使用管理员个人账号代替，未满足前不重建 E1 release chain |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；错误假定内部账号的 v1 已中止，v2 已按用户直接授权改为单一现有 owner 线上账号，并继续固定 BYOK、0 credits、单 Mac、原窗口和零生产权限 | 先冻结推送 v2，重做只读 baseline 和隔离客户端；实时订阅双门通过前不重建 E1 release chain |
 
 ## 开发循环记录
 
@@ -5531,3 +5531,35 @@ Cycle 92 已纠正并中止
   专用测试账号及有效订阅；
 - 未获新授权前，不创建账号、不修改订阅、不使用管理员个人账号、不重建 P5 E1
   release chain。
+
+### 循环 93：P5 E1 owner 线上账号 v2 重新授权
+
+状态：账号范围已重新授权并实现 fail-close 授权链；尚未登录、读取订阅或产生费用
+
+已经实现：
+
+1. 用户直接授权 P5 使用其现有线上账号；仓库只保存
+   `p5-owner-online-account-01` 脱敏 alias，不保存邮箱或真实账号 ID；
+2. 新增 strict `agentmesh360-package-canary-authorization-v2` 与独立 v2 receipt，
+   逐字节绑定旧 v1 authorization 和 Cycle 92 abort receipt；
+3. v2 固定原单账号、单 Mac、72 小时停止点、Gemini BYOK 12 请求、Provider `$1`、
+   基础设施 `$3`、AgentMesh credits 0 和零生产 authority；用户允许使用 credits
+   不等于必须消耗，当前 happy path 仍默认 BYOK；
+4. 历史 v1 与 abort 不修改；v2 明确 `priorAuthorizationReusable=false`，禁止把
+   旧批准卡直接复活；
+5. baseline capture 自动按 schemaVersion 选择 v1/v2 Schema；v2 额外绑定 prior
+   authorization/abort 字节；
+6. 隔离客户端 assembler 只接受 v2 和与其逐字节匹配的新 baseline；v1 即使配套
+   旧 baseline 也 fail-close；
+7. Electron canary marker 升级到 schema v2、authorization `...0002` 和 boundary
+   `...-02`；普通客户端启动路径不变。
+
+验证与计划复盘：
+
+- P5 authorization/baseline/assembler：23/23；
+- Electron canary runtime：4/4；Desktop 全套：105/105，3 项真实 Host 环境门跳过；
+- v2 CLI、JSON、历史证据 digest、diff 检查通过；
+- 本轮账号登录、Core/Provider 请求、credits、Keychain 写入、Package mutation、
+  云资源和费用仍为 0；
+- 下一步先提交推送本 v2 freeze，再在 clean executor 上重做正常状态只读 baseline
+  和隔离装配；实时订阅双门前仍不创建云资源。

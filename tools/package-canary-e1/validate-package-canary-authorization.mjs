@@ -10,9 +10,13 @@ import { fileURLToPath } from 'node:url';
 
 const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(MODULE_DIRECTORY, '../..');
-const DEFAULT_SCHEMA_PATH = path.join(
+const V1_SCHEMA_PATH = path.join(
   REPOSITORY_ROOT,
   'schemas/agentmesh360-package-canary-authorization-v1.schema.json',
+);
+const V2_SCHEMA_PATH = path.join(
+  REPOSITORY_ROOT,
+  'schemas/agentmesh360-package-canary-authorization-v2.schema.json',
 );
 const PREFLIGHT_PATH = path.join(
   REPOSITORY_ROOT,
@@ -25,6 +29,14 @@ const P4_AUTHORIZATION_PATH = path.join(
 const P4_ACCEPTANCE_PATH = path.join(
   REPOSITORY_ROOT,
   'docs/operations/tabletops/2026-07-28-p4-distribution-e1-acceptance.json',
+);
+const PRIOR_AUTHORIZATION_PATH = path.join(
+  REPOSITORY_ROOT,
+  'docs/operations/tabletops/2026-07-29-p5-package-canary-e1-authorization.json',
+);
+const PRIOR_ABORT_PATH = path.join(
+  REPOSITORY_ROOT,
+  'docs/operations/tabletops/2026-07-29-p5-e1-abort.json',
 );
 const MAX_AUTHORIZATION_BYTES = 256 * 1024;
 const MAX_ERRORS = 64;
@@ -212,7 +224,7 @@ async function readStrictJsonFile(filePath, label) {
 }
 
 export function loadPackageCanaryAuthorizationSchema(
-  schemaPath = DEFAULT_SCHEMA_PATH,
+  schemaPath = V1_SCHEMA_PATH,
 ) {
   const schema = readStrictJsonFileSync(
     schemaPath,
@@ -229,6 +241,16 @@ export function loadPackageCanaryAuthorizationSchema(
     );
   }
   return Object.freeze(schema);
+}
+
+function schemaForAuthorization(value) {
+  if (value?.schemaVersion === 1) {
+    return loadPackageCanaryAuthorizationSchema(V1_SCHEMA_PATH);
+  }
+  if (value?.schemaVersion === 2) {
+    return loadPackageCanaryAuthorizationSchema(V2_SCHEMA_PATH);
+  }
+  throw new Error('package canary authorization schema version is unsupported');
 }
 
 function validateSchemaValue(value, definition, location, errors) {
@@ -366,6 +388,20 @@ function inputBindingErrors(value) {
       'releaseChain.p4AuthorizationSha256',
     ],
   ];
+  if (value.schemaVersion === 2) {
+    bindings.push(
+      [
+        value.authorizationHistory?.supersedesAuthorizationSha256,
+        typedSha256(readFileSync(PRIOR_AUTHORIZATION_PATH)),
+        'authorizationHistory.supersedesAuthorizationSha256',
+      ],
+      [
+        value.authorizationHistory?.supersedesAbortSha256,
+        typedSha256(readFileSync(PRIOR_ABORT_PATH)),
+        'authorizationHistory.supersedesAbortSha256',
+      ],
+    );
+  }
   for (const [actual, expected, field] of bindings) {
     if (actual !== expected) {
       addError(errors, `${field} does not bind the retained evidence bytes`);
@@ -376,10 +412,22 @@ function inputBindingErrors(value) {
 
 export function validatePackageCanaryAuthorization(
   value,
-  schema = loadPackageCanaryAuthorizationSchema(),
+  schema,
 ) {
   const errors = [];
-  validateSchemaValue(value, schema, 'authorization', errors);
+  let effectiveSchema = schema;
+  if (!effectiveSchema) {
+    try {
+      effectiveSchema = schemaForAuthorization(value);
+    } catch (error) {
+      addError(
+        errors,
+        error instanceof Error ? error.message : String(error),
+      );
+      return errors;
+    }
+  }
+  validateSchemaValue(value, effectiveSchema, 'authorization', errors);
   if (!value || typeof value !== 'object' || Array.isArray(value)) return errors;
 
   const startsAt = Date.parse(value.authorizationWindow?.startsAt);
@@ -423,7 +471,7 @@ export function validatePackageCanaryAuthorization(
 
 export async function validatePackageCanaryAuthorizationFile(
   filePath,
-  schema = loadPackageCanaryAuthorizationSchema(),
+  schema,
 ) {
   const value = await readStrictJsonFile(
     filePath,

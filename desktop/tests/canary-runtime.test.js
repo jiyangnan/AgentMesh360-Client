@@ -38,7 +38,7 @@ test('exact private P5 marker isolates Electron userData', () => {
   ]);
   assert.deepEqual(result, {
     enabled: true,
-    boundaryId: 'p5-e1-isolated-client-01',
+    boundaryId: 'p5-e1-isolated-client-02',
     authorizationId: CANARY_AUTHORIZATION_ID,
     executorCommit: EXECUTOR,
     normalStateReadable: false,
@@ -113,9 +113,9 @@ function canaryEnv() {
 function fixtureFs({ directoryMode = 0o700, markerPatch = {} } = {}) {
   const markerPath = path.join(CANARY_BOUNDARY, MARKER_FILE);
   const marker = JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     authorizationId: CANARY_AUTHORIZATION_ID,
-    boundaryId: 'p5-e1-isolated-client-01',
+    boundaryId: 'p5-e1-isolated-client-02',
     executorCommit: EXECUTOR,
     productionAuthorityGranted: false,
     normalStateReadable: false,

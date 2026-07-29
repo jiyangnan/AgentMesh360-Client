@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const CANARY_FLAG = 'AGENTMESH360_P5_E1_CANARY';
-const CANARY_AUTHORIZATION_ID = 'package_canary_e1_20260729_0001';
+const CANARY_AUTHORIZATION_ID = 'package_canary_e1_20260729_0002';
 const CANARY_BOUNDARY = '/private/tmp/agentmesh360-p5-e1-client';
 const MARKER_FILE = 'canary-boundary.json';
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
@@ -60,9 +60,9 @@ function configureP5CanaryRuntime({
     throw new Error('P5 canary marker cannot be read');
   }
   if (
-    marker?.schemaVersion !== 1
+    marker?.schemaVersion !== 2
     || marker?.authorizationId !== CANARY_AUTHORIZATION_ID
-    || marker?.boundaryId !== 'p5-e1-isolated-client-01'
+    || marker?.boundaryId !== 'p5-e1-isolated-client-02'
     || marker?.productionAuthorityGranted !== false
     || marker?.normalStateReadable !== false
     || marker?.keychainWritePerformed !== false

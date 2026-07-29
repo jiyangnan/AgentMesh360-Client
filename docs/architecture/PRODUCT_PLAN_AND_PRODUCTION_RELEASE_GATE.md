@@ -225,9 +225,10 @@ flowchart TD
    R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 E1 隔离 Release Set、非生产
    Trust、Registry-last、14 项故障矩阵和完整清场；P5 已完成零权限阻断式
    preflight。其 E1 历史批准卡错误假定已有专用内部测试账号；用户纠正后已在
-   订阅复验、Keychain/Package mutation 和云资源创建前中止并完整清场。下一步
-   必须先取得新的账号策略授权并准备真实存在的专用测试账号；这不关闭生产门，
-   生产 key、外部 cohort、签名和公证仍各自等待授权。
+   订阅复验、Keychain/Package mutation 和云资源创建前中止并完整清场。账号所有者
+   随后直接授权改用其现有线上账号，v2 授权链已实现且旧 v1 保持 aborted。下一步
+   冻结 v2 后重做 baseline/隔离客户端；这不关闭生产门，生产 key、外部 cohort、
+   签名和公证仍各自等待授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -814,3 +815,14 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - P5 状态为 `aborted_missing_prerequisite`，不得进入 P6；
 - 下一步必须另行决定并授权专用测试账号及有效订阅的取得方式；禁止使用管理员个人
   账号替代，也不得沿用禁止创建账号/修改订阅的旧授权继续执行。
+
+## 48. 循环 93 P5 owner 线上账号 v2 重新授权
+
+- 账号所有者直接授权改用其现有线上账号，仓库仅保存脱敏 alias；
+- v2 逐字节绑定旧 v1 authorization 与 abort receipt，旧 v1 不修改且不可复活；
+- 保持单账号、单 Mac、原 72 小时、BYOK 12 请求、0 AgentMesh credits、Provider
+  `$1`、基础设施 `$3` 和零生产权限；
+- assembler 只接受 v2 与新 baseline，旧 v1 即使配套旧 baseline 也 fail-close；
+- Electron canary marker 升级到 v2，普通客户端路径不变；
+- P5 定向 23/23、Electron 4/4、Desktop 105/105（真实 Host 3 项按环境门跳过）；
+- 下一步冻结推送 v2 后重做 baseline/隔离装配，订阅双门前不创建云资源。
