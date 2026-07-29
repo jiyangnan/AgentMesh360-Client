@@ -827,3 +827,14 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 首次 v2 baseline capture 发现 receipt ID 复用 v1，已阻断并修为 `...0002`；
 - P5 定向 23/23、Electron 4/4、Desktop 105/105（真实 Host 3 项按环境门跳过）；
 - 下一步冻结推送 v2 后重做 baseline/隔离装配，订阅双门前不创建云资源。
+
+## 49. 循环 94 P5 owner 账号只读 baseline
+
+- v2 executor 与 `origin/main` 一致、工作区 clean 后真实 capture 通过；
+- 错误 commit 输入在输出前 fail-close；
+- 新 receipt ID 与 v2 authorization 字节绑定；
+- 正常 schema v10 的账号作用域/Profile/Registry/Trust/Fetch 均为 0，Package
+  tree absent 且前后未变；
+- 源 Gemini Key present、产品 Keychain empty，不保留 secret 或个人标识；
+- 本轮 Provider、credits、Keychain/Package/账号/订阅 mutation、云资源和费用为 0；
+- 下一步冻结 receipt 后重新装配隔离客户端，实时订阅通过前不进入 release chain。

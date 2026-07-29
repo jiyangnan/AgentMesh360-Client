@@ -1188,3 +1188,16 @@ schema v2 和新 authorization/boundary ID，普通客户端不受影响。首�
 P5 定向 23/23、Electron canary 4/4、Desktop 105/105（真实 Host 3 项按环境门跳过）；
 本轮账号登录、Provider、credits、Keychain、Package、云资源和费用均为 0。下一步
 冻结推送 v2，再重做只读 baseline 与隔离装配。
+
+## 44. Cycle 94 P5 E1 owner 账号只读 baseline
+
+冻结 v2 上的真实 capture 已通过。错误 executor 输入会在写文件前失败关闭；精确
+HEAD/origin/main 三者一致后，生成 `...baseline...0002` receipt。源 Gemini Key
+present、产品 Provider Keychain empty；正常 schema v10 的账号作用域、Provider
+Profile、Package Registry、Trust Cache 和 Registry Fetch 均为 0，Package tree
+absent，读取前后未变化。
+
+receipt 不含邮箱、真实账号 ID、路径或 secret，临时 `0600` 原件与入库文件逐字节
+相同。本轮账号/订阅、Keychain、Provider、credits、Package、云资源、费用和生产
+mutation 均为 0。下一步冻结 baseline 后重建 v2 隔离客户端，实时订阅双门前不
+进入 E1 release chain。

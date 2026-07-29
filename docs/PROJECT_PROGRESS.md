@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 已由账号所有者重新授权使用其现有线上账号，下一门是冻结 v2 后重做只读 baseline |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 owner 账号 v2 baseline 已通过，下一门是冻结 receipt 后重新装配隔离客户端 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；错误假定内部账号的 v1 已中止，v2 已按用户直接授权改为单一现有 owner 线上账号，并继续固定 BYOK、0 credits、单 Mac、原窗口和零生产权限 | 先冻结推送 v2，重做只读 baseline 和隔离客户端；实时订阅双门通过前不重建 E1 release chain |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；错误假定内部账号的 v1 已中止，v2 已按用户直接授权改为单一现有 owner 线上账号；新 baseline 已确认正常 Package/Profile/Trust 仍为 0 且产品 Keychain 为空 | 冻结推送 baseline 后重新装配隔离客户端；实时订阅双门通过前不重建 E1 release chain |
 
 ## 开发循环记录
 
@@ -5566,3 +5566,30 @@ Cycle 92 已纠正并中止
   云资源和费用仍为 0；
 - 下一步先提交推送本 v2 freeze，再在 clean executor 上重做正常状态只读 baseline
   和隔离装配；实时订阅双门前仍不创建云资源。
+
+### 循环 94：P5 E1 owner 账号只读 baseline
+
+状态：冻结 v2 上的真实 baseline capture 已通过；receipt 等待提交推送
+
+执行与证据：
+
+1. executor `232818e...` 与 `origin/main` 一致且工作区 clean；
+2. 首次命令因手工提供的完整 commit 与真实 HEAD 不一致而 fail-close，未生成输出；
+   使用 Git 返回的精确 40 位 commit 后重新执行通过；
+3. receipt ID 为 `package_canary_e1_local_baseline_20260729_0002`，authorization
+   与 v2 receipt 字节摘要匹配；
+4. 源 Gemini 测试 Key present，但未读取、输出或保存其值；产品 Provider Keychain
+   在装配前仍 empty；
+5. 正常 state 仍为 schema v10，账号作用域、Provider Profile、Package Registry、
+   Trust Cache 和 Registry Fetch 均为 0，Package tree absent；
+6. capture 前后正常状态未变化；账号/订阅 mutation、Keychain 写入、Provider
+   请求、credits、Package mutation、云资源、费用和生产 mutation 均为 0；
+7. 临时 `0600` 原件与入库 receipt 逐字节相同，未保留邮箱、真实账号 ID、路径或
+   secret。
+
+计划复盘与下一轮：
+
+- baseline 只关闭本机只读前置门，不代表实时订阅通过或 P5 通过；
+- 下一步提交推送 receipt，在新的 clean executor 上运行 v2 assembler；
+- 隔离客户端先验证线上账号登录与 Core/Host 双 active，之后才允许临时 BYOK
+  Keychain 装配或 E1 云资源。
