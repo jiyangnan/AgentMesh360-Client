@@ -6118,3 +6118,43 @@ Droplet、DNS、Origin 对象、测试 Root/Publisher 或 Package
 - 产品蓝图下一项没有变化，仍只部署当前唯一 Droplet 上的 Spaces-backed HTTPS
   Origin；下一轮冻结推送本修复、升级同一保留式 Client 后重试部署。Origin 通过前
   不生成测试 Root/Publisher、不运行 Builder/publisher/21 场景，P6 继续关闭。
+
+### 循环 109：P5 Spaces-backed HTTPS Origin 实际通过
+
+状态：唯一 P5 Origin、Caddy TLS、公网 health、受保护 fault probe 与只读
+Spaces 路由均通过；尚未生成测试 Root/Publisher、构建或发布 Release Chain
+
+实际执行：
+
+1. Cycle 108 修复提交 `fb51833...` 推送后，同一保留式隔离 Client 与正式 Host
+   成功升级到 `grok 0.2.106 (fb51833)`；state、userData、加密 OAuth/BYOK
+   状态保留，凭据未读取；
+2. 冻结的 P5 Origin 部署器通过 ancestry 证明 Cycle 107 的基础设施 executor
+   是当前 deployment executor 的祖先，随后只连接既有唯一 Droplet；没有创建或
+   替换 Droplet、DNS、Bucket、Key；
+3. cloud-init 完成后安装 Caddy；Origin service 以非特权 `agentmesh-e1` 账号
+   运行，配置只含 Origin Reader principal，不含 Publisher；systemd 与 Caddy
+   均通过 active 检查；
+4. Caddy 为固定 P5 hostname 获取托管 TLS，公网 `/healthz` 精确返回
+   `{"environment":"e1","status":"ok"}`；direct-to-approved-IP、stdin token 的
+   fault probe 同时通过；
+5. 公网 `/v1/trust-bundle.json` 在尚未发布 Trust 时精确返回
+   `404 application/json`，证明固定 HTTPS 路由已到达只读 Spaces-backed Origin，
+   没有伪造预置对象或提前进入发布；
+6. `/private/tmp/agentmesh360-p5-e1-infrastructure/origin-state.json` 为 mode
+   `0600`：顶层继续保留基础设施创建提交，`origin.executorCommit` 单独记录本次
+   部署提交，TLS 为 `caddy_managed_lets_encrypt`，生产 authority 仍为 false。
+
+自主验证与计划复盘：
+
+- P5 部署器完整返回 `Spaces-backed HTTPS origin passed`；公网 health 与 Trust
+  404 另行无 redirect 复验通过，Origin state 的权限、双 provenance 和部署字段
+  逐值复核通过；
+- 当前新增 Package/Trust/Registry 对象仍为 0，Root/Publisher 私钥为 0，
+  Provider 请求仍为 4/12、AgentMesh credits 为 0；没有扩大费用或生产权限；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 对非特权服务、只读 principal、Caddy
+  TLS、公网路由、fault token 不上 argv 和 state 双 provenance 自主复核；
+- 产品蓝图下一项严格是已冻结的双代 Release Chain Builder：先冻结推送本状态并
+  升级同一隔离 Client，再生成本轮临时两把 Root/两把 Publisher、执行四 Agent
+  baseline/variant 双构建与逐字节复现；Builder 全部通过前不调用 publisher 或
+  21 场景，P6 继续关闭。
