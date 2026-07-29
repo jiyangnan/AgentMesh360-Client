@@ -6636,3 +6636,36 @@ ReferenceError 已修复并完成完整回归，Host/Driver/Package 状态未重
   首先撤回公开 Registry、验证 404，随后反序删除其余对象并销毁两 Root、两
   Publisher 与两个 Release boundary；清场通过前不删 Droplet/Reader，也不进入
   P6。
+
+### 循环 123：P5 Registry、对象与临时签名材料实际销毁
+
+状态：Registry-first 撤回、61 个对象删除、四把临时私钥与两个 Release boundary
+销毁全部完成；DNS、Droplet、limited key、Bucket 和本机隔离 Client 仍待删除
+
+实际执行与证据：
+
+1. Cycle 122 进展提交 `34e8e95...` 推送后，清理器验证
+   `Origin → Builder → Publisher → Scenario → Cleanup` 完整 ancestry、21/21
+   matrix receipt 和 61/61 publication inventory；
+2. 首先删除固定 Registry 对象，并通过 direct-to-approved-IP HTTPS Origin 验证
+   `404 application/json`；独立复验同样返回 404，没有 redirect；
+3. 其余对象按 publication inventory 反序删除；最终 planned、deleted 和
+   verified absent 均为 61，没有跳过或额外对象；
+4. 两把临时 Root 与两把临时 Publisher 私钥均通过隔离 signer destroy；两个
+   Release boundary 删除，`/private/tmp` 对应 retained boundary 计数为 0；
+5. mode `0600` cleanup receipt 为 `release_chain_withdrawn`，
+   `registryWithdrawnFirst=true`、Root 2、Publisher 2、Release boundary 2，
+   Provider 新增 0、credits 0、生产 mutation 0；
+6. publication/release state 只作为下一阶段固定清理 inventory 暂时保留，不含
+   仍可用私钥；Droplet 与 Reader 尚在，便于本模块完成前执行独立公网 404 复验。
+
+自主验证与计划复盘：
+
+- 正式清理器返回 `P5 Registry withdrawn first; 61 objects and four private keys
+  destroyed`；receipt 计数、boundary absence 与公网 Registry 404 独立复核通过；
+- Kimi 继续暂停，本轮由主 Agent 复核 Registry-first 顺序、61/61、一共四把
+  私钥、两个 boundary 和生产零 mutation；
+- 下一步先冻结、提交、推送本进展，再按固定顺序删除 Cloudflare DNS、销毁唯一
+  P5 Droplet、撤销 Publisher/Origin limited key、删除两个空 Bucket；完成云端
+  计数复验后才删除本机 credential、SSH key、OAuth/BYOK 隔离状态和 build，不进入
+  P6。
