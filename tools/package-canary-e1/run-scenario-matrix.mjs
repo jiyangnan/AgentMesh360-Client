@@ -195,7 +195,7 @@ function validatePublication(publication, origin, executorCommit) {
     || origin?.authorizationId !== AUTHORIZATION_ID
     || origin.origin?.deployed !== true
     || origin.origin?.executorCommit !== executorCommit
-    || !/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
+    || !/^packages-p5-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
       origin.dns?.hostname || '',
     )
     || !/^[A-Za-z0-9_-]{43}$/u.test(origin.origin?.faultToken || '')

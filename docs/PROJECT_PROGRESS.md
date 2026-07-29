@@ -5975,3 +5975,33 @@ Root/Publisher、上传对象或执行真实场景
 - 下一轮只执行已冻结顺序：提交并推送 Cycle 104，升级保留式隔离 Client，创建唯一
   DigitalOcean/Spaces/Cloudflare staging，运行双代 Builder、Registry-last 发布和
   21 场景；通过后立即进入 Registry-first 全清场。P6 继续关闭。
+
+### 循环 105：P5 staging hostname 执行值纠偏
+
+状态：云资源创建前 fail-close；hostname 已与既定基础设施契约统一，等待冻结推送后
+重新升级隔离 Host
+
+执行前复核与修复：
+
+1. Cycle 104 提交推送后，保留式隔离 Client 已成功从 `19e9121...` 升级到
+   `f66ae01...`；正式 Host 版本为 `grok 0.2.106 (f66ae01)`，marker 原子前移，
+   state/userData 和加密 OAuth/BYOK 状态保留，凭据未读取；
+2. 第一项 Spaces 权限探针因固定 P5 凭据文件尚不存在而在网络请求前失败关闭；没有
+   创建 Bucket、Droplet、DNS、key、对象或费用；
+3. 准备进入 DigitalOcean 已登录控制台前，对实际基础设施 state 值再次对账，发现
+   既定 Origin 为 `packages-p5-e1-<suffix>.agentmesh360.com`，而 Cycle 104 的
+   Host runtime、Electron driver 和场景编排器误写为 `packages-e1-<suffix>`；
+4. 三层消费者和测试夹具现已统一为精确 P5 hostname；不扩大到 P4 hostname、
+   production hostname、任意端口、query、fragment 或 redirect，生产常量仍为空；
+5. 该错误若未纠正会在真实 Host 前正确 fail-close，但会造成已创建 staging 的无谓
+   清理；本轮在第一个付费/外部资源 mutation 前发现并关闭。
+
+验证与计划复盘：
+
+- hostname/基础设施/发布/场景定向 Node 21/21；Rust P5 runtime 2/2；
+- Node 语法、`git diff --check`、仓库根 `target/` absent；
+- Kimi 继续暂停，本轮由主 Agent 对基础设施 state、Origin/publisher、Electron
+  input 与 Rust exact-origin 做逐值对账；
+- 下一步提交推送本纠偏，删除旧的非秘密 advance 临时 receipt，再把同一隔离 Client
+  和 Host 前移到新提交；之后才创建两个 P5 Bucket、两组 bucket-scoped key、唯一
+  Droplet 与 DNS。21 场景和 Registry-first 清场顺序不变，P6 关闭。

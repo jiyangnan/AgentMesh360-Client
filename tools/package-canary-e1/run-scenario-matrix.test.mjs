@@ -82,7 +82,7 @@ function origin() {
       faultToken: 'x'.repeat(43),
     },
     dns: {
-      hostname: 'packages-e1-1234abcd.agentmesh360.com',
+      hostname: 'packages-p5-e1-1234abcd.agentmesh360.com',
     },
   };
 }
@@ -153,7 +153,10 @@ test('builds only the fixed P5 driver authority', () => {
     roots,
   });
   assert.equal(input.authorizationId, AUTHORIZATION_ID);
-  assert.equal(input.origin, 'https://packages-e1-1234abcd.agentmesh360.com');
+  assert.equal(
+    input.origin,
+    'https://packages-p5-e1-1234abcd.agentmesh360.com',
+  );
   assert.equal(input.stopsAt, HARD_STOP);
   assert.equal(input.productionAuthorityGranted, false);
   assert.equal(CLIENT_BOUNDARY, '/private/tmp/agentmesh360-p5-e1-client');

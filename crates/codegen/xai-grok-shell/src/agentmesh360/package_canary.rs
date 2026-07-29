@@ -277,7 +277,7 @@ fn scenario_paths(scenario: &str) -> Result<(&'static str, &'static str)> {
 }
 
 fn approved_hostname(value: &str) -> bool {
-    let Some(suffix) = value.strip_prefix("packages-e1-") else {
+    let Some(suffix) = value.strip_prefix("packages-p5-e1-") else {
         return false;
     };
     let Some(identifier) = suffix.strip_suffix(".agentmesh360.com") else {
@@ -316,7 +316,7 @@ mod tests {
             "environment": "e1",
             "executorCommit": "a".repeat(40),
             "stateHome": STATE_HOME,
-            "origin": "https://packages-e1-1234abcd.agentmesh360.com",
+            "origin": "https://packages-p5-e1-1234abcd.agentmesh360.com",
             "scenario": scenario,
             "faultToken": "x".repeat(43),
             "rootKeys": [
@@ -359,7 +359,7 @@ mod tests {
                 .expect("approved P5 canary document");
             assert_eq!(
                 runtime.allowed_origin,
-                "https://packages-e1-1234abcd.agentmesh360.com"
+                "https://packages-p5-e1-1234abcd.agentmesh360.com"
             );
             assert_eq!(
                 runtime

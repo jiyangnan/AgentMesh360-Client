@@ -63,7 +63,7 @@ function validateInput(value) {
     'executor_invalid',
   );
   requireCondition(
-    /^https:\/\/packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
+    /^https:\/\/packages-p5-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
       value.origin || '',
     ),
     'origin_invalid',
