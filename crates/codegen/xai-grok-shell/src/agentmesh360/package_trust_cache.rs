@@ -183,11 +183,11 @@ impl PackageTrustCacheStore {
                     positive_i64("trust sequence", trust_audit.trust_sequence)?,
                     trust_document,
                     trust_document_sha256,
-                    format_timestamp(trust_expires_at),
+                    format_signed_timestamp(trust_expires_at),
                     positive_i64("registry revision", registry.revision)?,
                     registry_document,
                     registry_document_sha256,
-                    format_timestamp(registry.expires_at),
+                    format_signed_timestamp(registry.expires_at),
                     verified_at_text,
                 ],
             )
@@ -428,6 +428,10 @@ fn format_timestamp(timestamp: DateTime<Utc>) -> String {
     timestamp.to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
+fn format_signed_timestamp(timestamp: DateTime<Utc>) -> String {
+    timestamp.to_rfc3339_opts(SecondsFormat::AutoSi, true)
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
 
@@ -530,6 +534,45 @@ mod tests {
             })
             .expect("cache row count");
         assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn preserves_signed_subsecond_expiry_across_cache_reload() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = SigningKey::from_bytes(&[52_u8; 32]);
+        let roots = roots(&root);
+        let store = PackageTrustCacheStore::in_home_with_roots(temp.path(), roots.clone());
+        let current_access = access();
+        let trust = trust_document(&root, 7, "2026-08-01T00:00:00.064Z", 61);
+        let registry = registry_document(&root, 42, 7, '1');
+
+        let accepted = store
+            .accept_documents(&trust, &registry, &current_access)
+            .expect("accept signed package trust with subsecond expiry");
+        assert_eq!(
+            accepted.trust_expires_at,
+            DateTime::parse_from_rfc3339("2026-08-01T00:00:00.064Z")
+                .expect("subsecond timestamp")
+                .with_timezone(&Utc)
+        );
+
+        let connection = state::open(temp.path()).expect("open cache database");
+        let stored_expiry: String = connection
+            .query_row(
+                "SELECT trust_expires_at FROM package_trust_cache WHERE singleton_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stored trust expiry");
+        assert_eq!(stored_expiry, "2026-08-01T00:00:00.064Z");
+
+        let restarted = PackageTrustCacheStore::in_home_with_roots(temp.path(), roots);
+        assert_eq!(
+            restarted
+                .load_verified_audit(&current_access)
+                .expect("reload cache with subsecond expiry"),
+            Some(accepted)
+        );
     }
 
     #[test]

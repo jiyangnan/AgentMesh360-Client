@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；场景首次启动在 Package mutation 前识别本机 TUN Fake-IP 与 Rust 直连不兼容，P5-only Origin IPv4 覆写已完成回归 | 冻结并升级同一隔离 Client 后重跑 21 场景；全部通过且恢复最终 canary Package 状态后，严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；场景前两次启动均在 Package mutation 前失败关闭，已分别修复 P5-only Fake-IP DNS 兼容和签名 expiry 毫秒缓存精度 | 冻结并升级同一隔离 Client 后重跑 21 场景；全部通过且恢复最终 canary Package 状态后，严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
 
 ## 开发循环记录
 
@@ -6450,3 +6450,39 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
   功能，不扩大到 P4/生产，不新增场景或云资源。下一轮先提交推送并升级同一隔离
   Client/Host，清除首次失败遗留的未消费 Driver 输入，再重跑 21 场景；全 PASS
   前不得执行 Registry-first 清场，P6 继续关闭。
+
+### 循环 118：签名 Package 缓存保留 expiry 精度
+
+状态：第二次场景启动在任何 Package 安装前安全停止；缓存精度 bug 已修复并完成
+回归，21 场景等待冻结提交与同一隔离 Host 升级后重跑
+
+执行证据与根因：
+
+1. Cycle 117 提交 `1e75099...` 推送并升级同一 Client/Host 后，baseline Trust 与
+   Registry 网络获取、Root/Publisher 验签和 revision/sequence 校验均成功；
+2. 隔离 `state.db` 只读核对显示 Trust/Registry cache 各 1 行而
+   `agent_package_registry` 仍为 0 行；Driver 在 `new_agent_not_discovered` 处停止，
+   没有 Package 安装、Host receipt 或 matrix receipt；
+3. 安全诊断进一步确认 discovery 为 `cache_rejected`，内部原因是
+   `Agent Package trust cache metadata does not match signed documents`；
+4. 已发布 Trust/Registry 的签名 `expiresAt` 为毫秒精度，而 cache 写入统一使用
+   `SecondsFormat::Secs`，把 `.064Z` 截断成整秒。首次接受返回内存中的原值，但随后
+   discovery 从 SQLite 重验时，签名值与缓存元数据不再相等，因此正确地失败关闭；
+5. 修复后只有来自签名文档的 Trust/Registry expiry 使用
+   `SecondsFormat::AutoSi` 保留有效小数精度；本地 `verifiedAt/updatedAt` 继续固定
+   整秒，避免把本机经过时间噪声混入既有审计语义；
+6. 新增毫秒 expiry 的接受、SQLite 精确落盘和“模拟进程重启后重新验签”回归；
+   整秒旧文档、反回滚、equivocation、过期、缓存摘要损坏和生产空 Root 行为不变。
+
+自主验证与计划复盘：
+
+- Package Trust Cache 6/6（新增毫秒跨重启用例）、Registry fetcher 4/4；
+  P4/P5 Package + Distribution Node 142/142；
+- `cargo fmt --check` 与 `git diff --check` 通过；为诊断临时创建的 17GB target 在
+  触发磁盘硬门槛后立即销毁，项目根目录仍无 `target`，P5 保留式 build/state 未删；
+- 临时详细日志与诊断脚本均已撤销，不进入仓库；Kimi 继续暂停，本轮由主 Agent 对
+  精度分流、签名值不变、旧整秒兼容、零 Package mutation 和磁盘边界自主复核；
+- 产品计划与场景顺序不变，本轮只修复 H2d4 已有签名缓存的确定性跨重启语义，不增加
+  新协议、网络或生产 authority。下一轮提交推送并升级同一隔离 Client/Host，
+  清除第二次失败遗留输入，再从 baseline 重跑 21 场景；全 PASS 前仍不清场，
+  P6 继续关闭。
