@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "abortId": "package_canary_e1_abort_20260729_0001",
+  "authorizationId": "package_canary_e1_20260729_0001",
+  "recordedAt": "2026-07-29T03:16:26Z",
+  "trigger": {
+    "reasonCode": "dedicated_internal_account_absent",
+    "source": "direct_user_correction",
+    "authorizationAssumption": "existing_dedicated_internal_account",
+    "authorizationExecutable": false,
+    "replacementAccountAuthorized": false
+  },
+  "executionBoundary": {
+    "stoppedBeforeSubscriptionRevalidation": true,
+    "isolatedClientStopped": true,
+    "detachedWorktreeRemoved": true,
+    "isolatedClientBoundaryDestroyed": true,
+    "temporaryBaselineCopyDestroyed": true,
+    "repositoryRootTargetPresent": false
+  },
+  "normalState": {
+    "schemaVersion": 10,
+    "ownerAccountCount": 0,
+    "providerProfileCount": 0,
+    "packageRegistryCount": 0,
+    "trustCacheCount": 0,
+    "registryFetchCount": 0,
+    "providerKeychainCredentialPresent": false,
+    "packageStateMatchesPreCanaryBaseline": true,
+    "stateDirectoryMode": "0755",
+    "stateDatabaseMode": "0644"
+  },
+  "usage": {
+    "productionCoreRequestsUsed": 0,
+    "providerInferenceRequestsUsed": 0,
+    "agentMeshCreditsUsed": 0,
+    "providerCostUsd": 0,
+    "infrastructureResourcesCreated": 0,
+    "infrastructureCostUsd": 0,
+    "keychainWritesPerformed": 0,
+    "packageMutationsPerformed": 0,
+    "accountMutationsPerformed": 0,
+    "subscriptionMutationsPerformed": 0,
+    "productionMutationsPerformed": 0
+  },
+  "gate": {
+    "status": "aborted_missing_prerequisite",
+    "packageCanaryPassed": false,
+    "cloudAssemblyAllowed": false,
+    "p6Allowed": false,
+    "nextRequiredDecision": "provision_dedicated_internal_test_account_or_explicitly_reauthorize_cohort"
+  },
+  "retrospective": {
+    "mistakenAssumptionRecorded": true,
+    "historicalAuthorizationPreserved": true,
+    "historicalPreloginEvidencePreserved": true,
+    "abortReceiptSupersedesExecutionGuidance": true
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "accountIdentifiersRetained": false,
+    "pathsRetained": false,
+    "providerContentRetained": false,
+    "rawProcessListRetained": false
+  }
+}

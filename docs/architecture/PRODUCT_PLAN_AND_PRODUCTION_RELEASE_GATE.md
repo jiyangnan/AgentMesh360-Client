@@ -224,10 +224,10 @@ flowchart TD
    生产候选与 E3 正式生产，并区分 Package、Desktop 和 Combined canary；P1 已建立
    R6 基线，P2/P3 已完成 E0 技术演练，P4 已完成 E1 隔离 Release Set、非生产
    Trust、Registry-last、14 项故障矩阵和完整清场；P5 已完成零权限阻断式
-   preflight；P5 已取得 1 账号、1 Mac、12 次 Gemini、0 credits、Provider `$1`、
-   基础设施 `$3`、72 小时的 E1 精确批准。下一步只在 authorization commit 冻结后
-   检查账号/Keychain/Package baseline，再受控执行；这不关闭生产门，生产 key、
-   外部 cohort、签名和公证仍各自等待授权。
+   preflight。其 E1 历史批准卡错误假定已有专用内部测试账号；用户纠正后已在
+   订阅复验、Keychain/Package mutation 和云资源创建前中止并完整清场。下一步
+   必须先取得新的账号策略授权并准备真实存在的专用测试账号；这不关闭生产门，
+   生产 key、外部 cohort、签名和公证仍各自等待授权。
 
 这一路线优先完成用户真正能持续使用的客户端，再进入不可逆、需要私钥和外部服务的
 生产发布阶段。
@@ -797,4 +797,20 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   同权限/权限扩张 canary 版本；
 - mutation 只在隔离 state，未知结果不重试，结束完整 rollback/cleanup；
 - 定向 13/13，本轮无 Keychain、Provider、外部资源或费用动作；
-- 下一步冻结推送 authorization，再验证账号/credential/device/Package baseline。
+- 历史批准卡保留审计，但 Cycle 92 已确认其假定的现有专用内部测试账号不存在，
+  因此前提不成立且不可继续执行。
+
+## 47. 循环 88-92 P5 本机准备、错误前提纠正与中止
+
+- Cycle 88-91 只完成凭据来源纠正、本机只读 baseline、隔离客户端装配、真实 Host
+  契约和登录页检查，没有通过实时订阅门；
+- Cycle 92 根据用户纠正确认专用内部测试账号不存在，立即停止 P5；
+- 隔离 Electron、worktree、state/userData、临时 baseline 与约 10 GiB build
+  cache 已销毁，仓库根 `target/` absent；
+- 正常 schema v10 的账号作用域、Provider Profile、Package Registry、Trust
+  Cache、Registry Fetch 仍全部为 0，产品 Provider Keychain 项 absent；
+- Provider 请求、credits、Keychain/Package/账号/订阅 mutation、云资源、费用
+  和生产 mutation 全部为 0；
+- P5 状态为 `aborted_missing_prerequisite`，不得进入 P6；
+- 下一步必须另行决定并授权专用测试账号及有效订阅的取得方式；禁止使用管理员个人
+  账号替代，也不得沿用禁止创建账号/修改订阅的旧授权继续执行。

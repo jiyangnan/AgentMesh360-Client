@@ -7,9 +7,10 @@
 
 P4 E1 状态为 `isolated_distribution_rehearsal_passed`；生产 R1-R6 仍未关闭，
 生产 Trust/Registry 常量保持为空。Cycle 86 把 P5 前置门、21 项场景和批准卡
-固化为默认 blocked 契约；Cycle 87 已取得并机器固定 1 账号、1 Mac、12 次 Gemini、
-0 credits、Provider `$1`、基础设施 `$3`、72 小时的 P5 E1 精确授权。外部执行仍
-等待 authorization commit 冻结推送；E2、生产候选和 Apple 签名公证均未授权。
+固化为默认 blocked 契约；Cycle 87 的批准卡错误假定已有专用内部测试账号。
+Cycle 92 在用户纠正该账号并不存在后，于订阅复验、Keychain 写入、Package
+mutation 和云端资源创建前中止 P5 E1，并销毁隔离客户端、构建缓存和 worktree。
+P5 继续 blocked；E2、生产候选和 Apple 签名公证均未授权。
 
 本文档把
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)
@@ -432,7 +433,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **精确 E1 授权已固定，尚未开始**：1 账号、1 Mac、Gemini 12 请求、0 credits、Provider `$1`、基础设施 `$3`、72 小时、隔离 rollback/cleanup | 先冻结推送 authorization，再验证账号/Keychain/设备/Package baseline；失败不创建资源，生产门保持关闭 |
+| P5 Package canary | **已中止并清场**：历史批准卡假定的专用内部测试账号实际不存在；未进行订阅复验、Keychain 写入、Package mutation、Provider 请求或云资源创建 | 先取得新的账号策略授权并准备真实存在的专用测试账号；禁止使用管理员个人账号替代 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1145,11 +1146,25 @@ Provider、Package mutation 和云资源均为 0；脱敏 assembly receipt 已�
 
 Cycle 91 在同一 boundary 内构建 `grok 0.2.106 (308ee14)` 真实 Host，根
 `target/` 保持 absent；3 个真实 Host 契约全部通过。隔离 Electron 已启动并显示
-专用账号登录页，但 canary refresh token 和 Provider Keychain 均为空。管理端
-登录态不能替代专用账号，故当前唯一人工门是用户在该窗口完成专用内部测试账号
-登录；Core/Host 双 active 前，临时 Keychain、E1 云资源和 Package mutation 均
-保持 0。
+登录页，但 canary refresh token 和 Provider Keychain 均为空。该轮误把专用账号
+当成等待登录的现有资产；Cycle 92 已确认账号并不存在，不能继续要求登录，也不能
+使用管理员个人账号替代。
 
-定向 13/13、输入 receipt 字节绑定、权限/预算/cleanup 负向和 diff 检查通过。本轮
-未读 Keychain、未访问外部服务、未产生费用。下一步冻结推送 authorization 后只读
-验证账号、credential ref、Mac 与 Package baseline；通过后才允许进入 E1 资源。
+## 42. Cycle 92 P5 E1 错误前提纠正与中止
+
+用户纠正当前没有专用内部测试账号后，P5 立即按异常停止条款中止。历史批准卡仍保留
+为审计记录，但其中 `existing_dedicated_internal_account` 前提已被
+`2026-07-29-p5-e1-abort.json` 判定为不成立，原授权不可继续执行。
+
+隔离 Electron 已停止；detached worktree、隔离 state/userData、临时 baseline
+原件及约 10 GiB build cache 已销毁。正常 state 仍为 schema v10，账号作用域、
+Provider Profile、Package Registry、Trust Cache、Registry Fetch 均为 0，产品
+Provider Keychain 项 absent。Provider 请求、credits、Keychain/Package/账号/
+订阅 mutation、云资源、费用和生产 mutation 全部为 0。
+
+P5 保持 `aborted_missing_prerequisite`，不进入 P6。下一步必须先取得新的账号策略
+授权并准备真实存在的专用测试账号与有效订阅；原授权禁止创建账号和修改订阅，
+管理员个人账号也不得代替专用 cohort。
+
+P5 定向测试 22/22、全部留存 JSON 解析、文档一致性、secret 与 diff 检查通过。
+下一轮保持 pending，直到账号策略和订阅准备获得新的明确授权。

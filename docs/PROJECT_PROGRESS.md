@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-28
+最近更新：2026-07-29
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b、Package P0-P4、P5 preflight 与 P5 E1 精确批准卡已按原顺序推进；下一验收点是冻结授权 commit 后的一账号/一设备/零 credits 基线，不自动扩大 cohort 或生产权限 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 因不存在专用内部测试账号而中止，取得新的账号策略授权前不继续 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通 | OAuth 不是当前 Provider 主线前置条件 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4、P5 阻断式预检与 P5 E1 精确授权已完成；授权固定 1 账号、1 Mac、Gemini 12 请求、0 credits、Provider `$1`、基础设施 `$3`、72 小时、隔离 state 与完整回滚/清场，生产 endpoint/root/bundle 仍为空 | 已发现测试 Key 实际由受控进程环境保存、产品 Keychain 为空；先冻结推送凭据来源纠正，再检查专用账号、临时 Keychain 装配边界和 Package 基线，通过才重建非生产 E1 release chain |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；P5 E1 的历史批准卡错误假定已有专用内部测试账号，真实执行已在订阅复验前中止并完整清理；生产 endpoint/root/bundle 仍为空 | 先单独决定并授权如何取得专用测试账号及有效订阅；禁止使用管理员个人账号代替，未满足前不重建 E1 release chain |
 
 ## 开发循环记录
 
@@ -5310,7 +5310,8 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 
 ### 循环 87：P5 E1 精确批准卡
 
-状态：P5 E1 已授权但尚未开始；任何外部动作等待授权 commit 冻结推送
+状态：历史批准记录；Cycle 92 已确认其中“现有专用内部测试账号”前提不成立，
+该授权不可继续执行
 
 已经实现：
 
@@ -5465,7 +5466,8 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
 
 ### 循环 91：P5 E1 真实 Host 与专用账号登录门
 
-状态：真实 Host/隔离客户端通过；实时订阅门等待专用内部测试账号手动登录
+状态：真实 Host/隔离客户端通过；当时误把不存在的专用内部测试账号当成待登录资产，
+Cycle 92 已纠正并中止
 
 已经完成：
 
@@ -5491,6 +5493,41 @@ boundary 销毁全部完成；E1 云资源和本机临时状态仍待删除
   `docs/operations/tabletops/2026-07-29-p5-real-host-prelogin.json`；
 - Provider 请求 0/12、AgentMesh credits 0、Provider 费用 `$0/$1`、云资源
   `0`、基础设施费用 `$0/$3`；
-- 当前唯一前置是用户在已打开的隔离 AgentMesh360 窗口登录专用内部测试账号；
-- 登录并由 Core/Host 双重返回 active 后，才允许创建临时 Provider Keychain
-  credential；该项通过后再进入 E1 Trust/Release/Origin，顺序不变。
+- 不能要求用户登录一个不存在的专用内部测试账号，也不能用管理员个人账号替代；
+- Cycle 92 已停止该客户端并销毁隔离 boundary；必须先取得新的账号策略授权，才能
+  决定是否重新进入 P5。
+
+### 循环 92：P5 E1 错误前提纠正、中止与清场
+
+状态：P5 E1 已在订阅复验前中止；隔离运行态和约 10 GiB 临时构建均已清理，
+正常 Package 状态复验未变
+
+纠正事实：
+
+1. 用户明确指出当前并不存在“专用内部测试账号”；Cycle 87 authorization 中
+   `existing_dedicated_internal_account` 是执行方把目标条件误当成现有资产；
+2. 历史 authorization 与 prelogin evidence 保留，不回写伪造历史；新增
+   `2026-07-29-p5-e1-abort.json`，将其标记为
+   `aborted_missing_prerequisite` 并取代原执行指引；
+3. 原授权禁止创建账号和修改订阅，因此不能自行补建账号，也不能使用管理员个人
+   账号绕过 cohort 边界。
+
+清场与复验：
+
+- 已停止隔离 Electron，进程列表中无 P5 Electron 或 Host 残留；
+- detached worktree、隔离 boundary、临时 baseline 原件和约 10 GiB Cargo
+  build cache 均已删除；仓库根 `target/` 仍 absent；
+- 正常 `state.db` 仍为 schema v10，账号作用域、Provider Profile、Package
+  Registry、Trust Cache、Registry Fetch 计数均为 0；
+- 产品 Provider Keychain 项仍 absent；Keychain 写入、Package/账号/订阅 mutation、
+  Provider 请求、AgentMesh credits、云资源、费用和生产 mutation 均为 0；
+- Kimi 继续按用户要求暂停；本轮执行完整状态复验、证据/diff/secret 检查，由主
+  Agent 加强自主复核。
+
+计划复盘与下一轮：
+
+- P0-P4 的完成状态不变，P5 未通过且不得进入 P6；
+- 下一步不是继续登录或创建云资源，而是先取得新的账号策略授权并准备真实存在的
+  专用测试账号及有效订阅；
+- 未获新授权前，不创建账号、不修改订阅、不使用管理员个人账号、不重建 P5 E1
+  release chain。
