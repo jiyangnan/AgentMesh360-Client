@@ -864,5 +864,20 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   和 token pair，继续复用 `safeStorage` 与 Core/Host 双订阅门；
 - 本地 Core 全量 300/3、共享注册表 4/4、Desktop 复用隔离真实 Grok Host 后
   117/117，登录页视觉 smoke 通过；
-- 当前只完成本地实现，生产 Core 仍是旧契约。下一步按顺序完成文档/证据、自复核、
-  两仓提交推送，再经过共享 Core 发布批准与全产品回归，之后恢复 P5 owner 登录。
+- Core build `30423443698`、最终 deploy `30423914020` 与全产品 live regression
+  20/20 已通过；中间 deploy `30423565215` 因锁定 image/fallback 不一致在部署前
+  失败关闭。Cycle 96 的生产发布门已经关闭，随后恢复 P5 owner 登录。
+
+## 52. 循环 97 P5 owner Google 登录与加密恢复
+
+- 官方 assembler 在 Client `19e9121...` 上重建唯一 v2 boundary；仓库根
+  `target/` absent；
+- `grok 0.2.106 (19e9121)` dev Host 构建成功，435,634,896 bytes，
+  SHA-256 `7828dcdc...17db`；三项真实 Host 合同 3/3；
+- 系统浏览器完成用户授权 Google 账号登录，Core/Host 均返回 active，客户端进入
+  ready 并加载 3 个 Agent；
+- 新进程只依赖操作系统安全存储内的加密 Refresh Token 恢复，同样为 ready/active；
+- evidence 不保存真实邮箱、token、余额、endpoint、绝对路径或 Provider 内容；
+- 本门 Provider 推理、AgentMesh credits、费用和 Package/账号/订阅 mutation 为 0；
+- 下一步只执行授权范围内的 Gemini BYOK happy path；通过前不创建 E1 云资源、
+  不进入 Package release chain、不推进 P6。

@@ -434,7 +434,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **v2 已重新授权，尚未执行**：账号所有者直接批准使用其现有线上账号；旧内部账号 v1 保持 aborted，BYOK/预算/单 Mac/零生产权限不变 | 冻结推送 v2 后重做只读 baseline 和隔离客户端；订阅双门通过前不创建云资源 |
+| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner Google OAuth、Core/Host 双 active 与加密重启恢复通过；旧内部账号 v1 保持 aborted | 下一门仅执行 Gemini BYOK happy path；通过前不创建 E1 云资源或进入 release chain |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1233,6 +1233,23 @@ Package 或生产 authority。Core/Client 使用 RFC 8252 loopback 与 S256 PKCE
    然后复用原 Core/Host 双订阅门。
 
 本地 Core 300/3、共享注册表 4/4 和登录页视觉 smoke 已通过；Desktop 复用隔离
-真实 Grok Host 后为 117/117，不再保留真实 Host skip。
-生产 Core 尚未发布，P5 仍停在登录前；共享 Core 发布与全产品 live regression
-必须作为独立受控动作，成功后才复用保留的隔离 Host build 恢复 owner Google 登录。
+真实 Grok Host 后为 117/117，不再保留真实 Host skip。Core 已通过 build
+`30423443698`、最终 deploy `30423914020` 发布；中间 deploy `30423565215`
+因 image/fallback 锁不一致在部署前失败关闭。最终全产品 live regression 20/20。
+
+## 47. Cycle 97 P5 owner Google 登录与恢复门
+
+使用官方 assembler 在冻结 Client `19e9121...` 上重建 v2 隔离客户端；新的
+`grok 0.2.106 (19e9121)` Host 为 435,634,896 bytes，SHA-256
+`7828dcdc...17db`，三项真实 Host 合同 3/3。仓库根 `target/` absent，约 10 GiB
+构建缓存只在可销毁 boundary 中保留。
+
+系统浏览器完成用户授权 Google 账号登录，Core/Host 返回 `ready`、
+`active_subscription`、可进入客户端和 3 个 Agent；新进程随后只依赖操作系统
+加密保存的 Refresh Token 得到同一结果。证据不保留真实邮箱、token、余额、
+endpoint 或绝对路径。
+
+本门 Provider 推理、AgentMesh credits、Provider/基础设施费用、
+Package/账号/订阅 mutation 均为 0。P5 仍是 executing，不等于 Package canary
+完成；下一门严格为已批准的 Gemini BYOK happy path，通过前不创建 E1 云资源、
+不进入 release chain、不推进 P6。

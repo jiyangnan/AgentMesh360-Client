@@ -37,8 +37,8 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 隔离客户端和真实 Host 已通过，owner 账号要求 Google OAuth，先完成共享 Core/Client 登录契约再恢复 P5 |
-| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已完成实现和全量回归；Client `8545bc1` 已推送 `main`，Core `1b6e34f` 只推送非生产分支 | 完成共享 Core 受控发布后，用 owner Google 账号验证 Core/Host 双 active |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 隔离客户端、真实 Host、owner Google 登录和重启恢复均通过，下一门只验证真实 BYOK 主路径 |
+| 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；P5 后续只复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；真实 Gemini 契约、thought signature 保真、重启 Tool Loop 和官方 Catalog 预设已通过自主验证与 Kimi 四级清零 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
@@ -5629,8 +5629,8 @@ Cycle 92 已纠正并中止
 ### 循环 96：Google/GitHub 桌面 OAuth 根因修复
 
 状态：Core 与 Client 实现、全量测试和登录页视觉检查通过；Client 提交 `8545bc1`
-已推送 `main`，Core 提交 `1b6e34f` 已推送不触发生产的
-`codex/native-desktop-oauth` 分支；共享 Core 尚未部署，P5 继续停在登录前
+已推送 `main`，Core 提交 `1b6e34f` 先经非生产分支冻结，随后已受控合并、部署并
+完成共享产品回归；真实登录结果见 Cycle 97
 
 根因与计划纠正：
 
@@ -5663,7 +5663,47 @@ Cycle 92 已纠正并中止
 - Desktop OAuth/identity/Core-client 23/23；复用隔离真实 Grok Host 后全套
   117/117，subscription、Session replay 与 persistent Leader recovery 均真实通过；
 - Electron 登录页视觉 smoke 确认 Google/GitHub、邮箱密码和订阅提示均正确显示；
-- 当前生产 Core 尚未发布新 exchange，真实 Google 登录仍不可验收；Client 已推送，
-  Core 已停在非生产分支，下一步只执行共享 Core 受控发布门和部署后全产品回归；
-- 发布和实时登录前，Provider 请求、credits、Keychain/Package/账号/订阅 mutation、
-  云资源与费用继续为 0，P5 不进入 BYOK 或 release chain。
+- Core 构建 run `30423443698`、首次部署 run `30423443686` 通过；并发产品合并后的
+  中间部署 `30423565215` 因目标 image 不存在且 fallback 与锁定输入不一致，在部署
+  前失败关闭；镜像锁定修复后最终 run `30423914020` 通过；
+- 最终生产 commit 为 `0ba3db3`，共享产品 live regression 20/20；Cycle 96 的
+  “生产未发布”边界已经关闭；
+- 本循环仍未执行 Provider 请求、credits、Package/账号/订阅 mutation、云资源或
+  费用；随后按计划回到 P5 owner 登录门。
+
+### 循环 97：P5 owner Google 登录、订阅与加密恢复
+
+状态：真实 Google OAuth、Core/Host 双 active 与新进程恢复均通过；P5 下一门为
+Gemini BYOK 主路径
+
+执行与证据：
+
+1. 使用官方 assembler 在新冻结 commit `19e9121...` 上重建唯一 v2 boundary，
+   detached worktree、Cargo target 和约 10 GiB 构建缓存均保留在可销毁隔离目录；
+   仓库根 `target/` absent；
+2. 构建 `grok 0.2.106 (19e9121)` dev Host，435,634,896 bytes，SHA-256 为
+   `7828dcdc...17db`；首次构建只因沙箱禁止 `protoc` 写 `/dev/stdout` 失败，使用
+   相同输入在允许该本机构建动作的边界内重跑成功；
+3. 三项真实 Host 合同 3/3：subscription state、Session replay 和 persistent
+   Leader recovery 均通过；
+4. 隔离客户端使用系统浏览器完成用户授权的 Google 账号登录；未出现新的权限同意
+   页面，Core 与 Host 返回 `ready` / `active_subscription`，可进入客户端，并加载
+   3 个当前产品 Agent；
+5. Refresh Token 只通过 Electron `safeStorage` 写入操作系统凭据存储；证据仅记录
+   backend、文件模式和布尔状态，不读取或保存明文、密文、真实邮箱、余额或 URL；
+6. 关闭首进程后由新进程只依赖加密 Refresh Token 恢复，同样得到 `ready`、
+   `active_subscription`、可进入客户端和 3 个 Agent；
+7. 非秘密 receipt：
+   `docs/operations/tabletops/2026-07-29-p5-owner-account-oauth-active.json`。
+
+验证与计划复盘：
+
+- Desktop OAuth/identity/Core-client 23/23；完整 Desktop + 真实 Host 117/117；
+  新 boundary 三项真实 Host 3/3；
+- 生产 Core 最终部署 run `30423914020` 通过，最终全产品 live regression 20/20；
+- 本门 Provider 推理 0、AgentMesh credits 0、Provider/基础设施费用 0，
+  Package/账号/订阅 mutation 0；
+- 真实 Google 登录证明登录方式缺口已经关闭，邮箱密码只保留兼容入口，不再作为
+  owner 账号 P5 前提；
+- 下一轮严格进入已批准的 Gemini BYOK happy path；不提前创建 E1 云资源、不进入
+  Package release chain，也不扩大账号、设备、请求次数或费用上限。

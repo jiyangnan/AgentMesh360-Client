@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "executionId": "package_canary_e1_owner_account_oauth_active_20260729_0002",
+  "authorizationId": "package_canary_e1_20260729_0002",
+  "baselineId": "package_canary_e1_local_baseline_20260729_0002",
+  "boundaryId": "p5-e1-isolated-client-02",
+  "recordedAt": "2026-07-29T05:17:58Z",
+  "source": {
+    "clientCommit": "19e912197db3587f8dfd9b5def955a36e99f7aab",
+    "clientOAuthCommit": "8545bc1",
+    "coreOAuthCommit": "1b6e34f",
+    "coreProductionCommit": "0ba3db352473b5c598fd1969f44284b3741ff3c5",
+    "coreImageLockCommit": "2fd6aa6"
+  },
+  "coreRelease": {
+    "buildRunId": "30423443698",
+    "initialDeployRunId": "30423443686",
+    "blockedIntermediateDeployRunId": "30423565215",
+    "finalDeployRunId": "30423914020",
+    "blockedBeforeDeployment": true,
+    "blockedReason": "unavailable_merge_image_and_mismatched_locked_fallback",
+    "finalDeploymentPassed": true,
+    "allProductLiveRegression": {
+      "required": 20,
+      "passed": 20,
+      "failed": 0
+    }
+  },
+  "isolatedClient": {
+    "accountAlias": "p5-owner-online-account-01",
+    "deviceAlias": "p5-mac-01",
+    "sourceCommit": "19e912197db3587f8dfd9b5def955a36e99f7aab",
+    "hostVersion": "0.2.106",
+    "hostByteCount": 435634896,
+    "hostSha256": "sha256:7828dcdc86453e21359da3b70f5da88ee9ab853b0ed1da72110b32393bf417db",
+    "buildProfile": "dev",
+    "buildBoundaryRetainedForNextGate": true,
+    "repositoryRootTargetPresent": false,
+    "realHostContractTests": {
+      "required": 3,
+      "passed": 3,
+      "failed": 0,
+      "subscriptionStateContractPassed": true,
+      "sessionReplayContractPassed": true,
+      "persistentLeaderRecoveryPassed": true
+    }
+  },
+  "oauthLogin": {
+    "provider": "google",
+    "systemBrowserUsed": true,
+    "newConsentScreenObserved": false,
+    "phase": "ready",
+    "subscriptionStatus": "active",
+    "canEnterClient": true,
+    "accessReason": "active_subscription",
+    "agentCount": 3,
+    "refreshTokenStored": true,
+    "accountIdentifierRetained": false
+  },
+  "restartRecovery": {
+    "newProcessUsed": true,
+    "phase": "ready",
+    "subscriptionStatus": "active",
+    "canEnterClient": true,
+    "accessReason": "active_subscription",
+    "agentCount": 3,
+    "restoredFromEncryptedRefreshToken": true
+  },
+  "secureStorage": {
+    "schemaVersion": 1,
+    "backend": "os-credential-store",
+    "fileMode": "0600",
+    "ciphertextRetainedInEvidence": false,
+    "plaintextTokenObserved": false
+  },
+  "execution": {
+    "providerInferenceRequestsUsed": 0,
+    "agentMeshCreditsUsed": 0,
+    "providerCostUsd": 0,
+    "infrastructureCostUsd": 0,
+    "packageMutationsPerformed": 0,
+    "accountMutationsPerformed": 0,
+    "subscriptionMutationsPerformed": 0
+  },
+  "gate": {
+    "desktopOAuthProductionPassed": true,
+    "ownerAccountLoginPassed": true,
+    "liveSubscriptionPassed": true,
+    "restartRecoveryPassed": true,
+    "cloudAssemblyAllowed": false,
+    "nextRequiredGate": "real_byok_gemini_happy_path"
+  },
+  "retention": {
+    "credentialsRetained": false,
+    "credentialDigestsRetained": false,
+    "accountIdentifiersRetained": false,
+    "emailRetained": false,
+    "endpointUrlsRetained": false,
+    "absolutePathsRetained": false,
+    "providerContentRetained": false
+  }
+}
