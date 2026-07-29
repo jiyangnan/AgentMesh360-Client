@@ -73,6 +73,11 @@ const PRIVATE_FILE_EXTENSIONS = new Set([
   '.pk8',
 ]);
 const MAX_COMMAND_OUTPUT_BYTES = 16 * 1024 * 1024;
+const RETAINED_BOUNDARY_PREFIX = 'agentmesh360-release-provenance-e1-';
+const AGENT_PLANS = Object.freeze({
+  baseline: 'baseline-four-agent',
+  p5JobVariants: 'p5-job-variants',
+});
 
 function usage() {
   return [
@@ -477,7 +482,7 @@ function validateBuildReceipt(receipt, agent) {
 }
 
 async function buildAgent(binary, label, agent, outputRoot, keyId) {
-  const output = path.join(outputRoot, agent.agentId);
+  const output = path.join(outputRoot, agent.outputId ?? agent.agentId);
   const stdout = run(
     binary,
     packageBuildArguments(agent, output, keyId),
@@ -576,7 +581,7 @@ async function assembleAgent(
   keyId,
   releaseBaseUrl,
 ) {
-  const output = path.join(releaseRoot, agent.agentId);
+  const output = path.join(releaseRoot, agent.outputId ?? agent.agentId);
   const stdout = run(
     binary,
     [
@@ -705,9 +710,177 @@ async function removeDetachedWorktree(repository, worktree, label) {
   }
 }
 
+function replaceExactlyOnce(source, before, after, label) {
+  const first = source.indexOf(before);
+  if (first < 0 || source.indexOf(before, first + before.length) >= 0) {
+    throw new Error(`${label} definition drift`);
+  }
+  return `${source.slice(0, first)}${after}${source.slice(first + before.length)}`;
+}
+
+async function createP5JobVariantDefinitions(candidateRoot, boundary) {
+  const baselineRoot = path.join(
+    candidateRoot,
+    'crates/codegen/xai-grok-shell/src/agentmesh360/packages/job-agent',
+  );
+  const baselineManifest = await readFile(
+    path.join(baselineRoot, 'agentmesh-agent.toml'),
+    'utf8',
+  );
+  const authoring = await readFile(
+    path.join(baselineRoot, 'agentmesh-authoring.toml'),
+  );
+  const requiredPermissions = [
+    '  "browser_control",',
+    '  "external_actions",',
+    '  "local_files",',
+    '  "network_access",',
+  ];
+  if (
+    !baselineManifest.includes('version = "0.4.7"')
+    || requiredPermissions.some(
+      (permission) => !baselineManifest.includes(permission),
+    )
+    || baselineManifest.includes('"process_execution"')
+  ) {
+    throw new Error('P5 Job baseline definition drift');
+  }
+  const variantsRoot = path.join(boundary, 'variant-definitions');
+  await mkdir(variantsRoot, { mode: 0o700 });
+  const definitions = [];
+  for (const variant of [
+    {
+      outputId: 'job-agent-0.4.8-e1.1',
+      version: '0.4.8-e1.1',
+      permissionExpansion: false,
+    },
+    {
+      outputId: 'job-agent-0.4.9-e1.1',
+      version: '0.4.9-e1.1',
+      permissionExpansion: true,
+    },
+  ]) {
+    const definition = path.join(variantsRoot, variant.outputId);
+    await mkdir(definition, { mode: 0o700 });
+    let manifest = replaceExactlyOnce(
+      baselineManifest,
+      'version = "0.4.7"',
+      `version = "${variant.version}"`,
+      'P5 Job version',
+    );
+    if (variant.permissionExpansion) {
+      manifest = replaceExactlyOnce(
+        manifest,
+        '  "network_access",\n]',
+        '  "network_access",\n  "process_execution",\n]',
+        'P5 Job permission',
+      );
+    }
+    await writeFile(
+      path.join(definition, 'agentmesh-agent.toml'),
+      manifest,
+      { flag: 'wx', mode: 0o600 },
+    );
+    await writeFile(
+      path.join(definition, 'agentmesh-authoring.toml'),
+      authoring,
+      { flag: 'wx', mode: 0o600 },
+    );
+    definitions.push({
+      ...variant,
+      definition,
+    });
+  }
+  return definitions;
+}
+
+async function agentsForPlan({
+  agentPlan,
+  candidateRoot,
+  boundary,
+  sources,
+}) {
+  const packageRoot = path.join(
+    candidateRoot,
+    'crates/codegen/xai-grok-shell/src/agentmesh360/packages',
+  );
+  if (agentPlan === AGENT_PLANS.baseline) {
+    return [
+      {
+        agentId: 'deploy-agent',
+        packageId: 'com.agentmesh360.deploy-agent',
+        version: '0.1.1',
+        sourceClass: 'first_party',
+        hostBundleCount: 0,
+        definition: path.join(packageRoot, 'deploy-agent'),
+        source: sources.deploy,
+      },
+      {
+        agentId: 'future-agent',
+        packageId: 'com.agentmesh360.future-agent',
+        version: '1.0.0',
+        sourceClass: 'dynamic_fixture',
+        hostBundleCount: 2,
+        definition: path.join(
+          REPOSITORY_ROOT,
+          'fixtures/release-provenance/future-agent',
+        ),
+        source: path.join(
+          REPOSITORY_ROOT,
+          'fixtures/release-provenance/future-agent',
+        ),
+      },
+      {
+        agentId: 'job-agent',
+        packageId: 'com.agentmesh360.job-agent',
+        version: '0.4.7',
+        sourceClass: 'first_party',
+        hostBundleCount: 2,
+        definition: path.join(packageRoot, 'job-agent'),
+        source: sources.job,
+      },
+      {
+        agentId: 'lecturecast-agent',
+        packageId: 'com.agentmesh360.lecturecast-agent',
+        version: '0.4.0',
+        sourceClass: 'first_party',
+        hostBundleCount: 3,
+        definition: path.join(packageRoot, 'lecturecast-agent'),
+        source: sources.lecturecast,
+      },
+    ];
+  }
+  if (agentPlan !== AGENT_PLANS.p5JobVariants) {
+    throw new Error('release provenance Agent plan is not approved');
+  }
+  return (await createP5JobVariantDefinitions(candidateRoot, boundary)).map(
+    (variant) => ({
+      agentId: 'job-agent',
+      packageId: 'com.agentmesh360.job-agent',
+      version: variant.version,
+      sourceClass: 'first_party_canary_variant',
+      hostBundleCount: 2,
+      definition: variant.definition,
+      source: sources.job,
+      outputId: variant.outputId,
+      permissionExpansion: variant.permissionExpansion,
+    }),
+  );
+}
+
 async function runRehearsal(options) {
   await access(WORKER);
   if (!options.retainBoundary) await assertNewOutput(options.outputPath);
+  const agentPlan = options.agentPlan ?? AGENT_PLANS.baseline;
+  if (
+    agentPlan !== AGENT_PLANS.baseline
+    && (
+      agentPlan !== AGENT_PLANS.p5JobVariants
+      || options.retainBoundary !== true
+    )
+  ) {
+    throw new Error('release provenance Agent plan is not approved');
+  }
   await assertRepositoryBoundary(options);
   const sourceRepositories = {
     deploy: await assertSourceRepository(
@@ -734,7 +907,7 @@ async function runRehearsal(options) {
     path.join(
       os.tmpdir(),
       options.retainBoundary
-        ? 'agentmesh360-release-provenance-e1-'
+        ? RETAINED_BOUNDARY_PREFIX
         : 'agentmesh360-release-provenance-e0-',
     ),
   );
@@ -832,54 +1005,12 @@ async function runRehearsal(options) {
     await buildExecutorBinary('builder B', buildRoots[1], binaries[1]);
     await rm(buildRoots[1], { recursive: true, force: true });
 
-    const packageRoot = path.join(
+    agents = await agentsForPlan({
+      agentPlan,
       candidateRoot,
-      'crates/codegen/xai-grok-shell/src/agentmesh360/packages',
-    );
-    agents = [
-      {
-        agentId: 'deploy-agent',
-        packageId: 'com.agentmesh360.deploy-agent',
-        version: '0.1.1',
-        sourceClass: 'first_party',
-        hostBundleCount: 0,
-        definition: path.join(packageRoot, 'deploy-agent'),
-        source: sources.deploy,
-      },
-      {
-        agentId: 'future-agent',
-        packageId: 'com.agentmesh360.future-agent',
-        version: '1.0.0',
-        sourceClass: 'dynamic_fixture',
-        hostBundleCount: 2,
-        definition: path.join(
-          REPOSITORY_ROOT,
-          'fixtures/release-provenance/future-agent',
-        ),
-        source: path.join(
-          REPOSITORY_ROOT,
-          'fixtures/release-provenance/future-agent',
-        ),
-      },
-      {
-        agentId: 'job-agent',
-        packageId: 'com.agentmesh360.job-agent',
-        version: '0.4.7',
-        sourceClass: 'first_party',
-        hostBundleCount: 2,
-        definition: path.join(packageRoot, 'job-agent'),
-        source: sources.job,
-      },
-      {
-        agentId: 'lecturecast-agent',
-        packageId: 'com.agentmesh360.lecturecast-agent',
-        version: '0.4.0',
-        sourceClass: 'first_party',
-        hostBundleCount: 3,
-        definition: path.join(packageRoot, 'lecturecast-agent'),
-        source: sources.lecturecast,
-      },
-    ];
+      boundary: resolvedBoundary,
+      sources,
+    });
     const packageOutputs = [
       path.join(resolvedBoundary, 'packages-a'),
       path.join(resolvedBoundary, 'packages-b'),
@@ -980,7 +1111,7 @@ async function runRehearsal(options) {
         );
       }
     }
-    if (signatureOperations !== 8) {
+    if (signatureOperations !== agents.length * 2) {
       throw new Error('test Publisher signature operation count is invalid');
     }
 
@@ -1064,6 +1195,7 @@ async function runRehearsal(options) {
       publicEvidence,
       publicKeyPath,
       agents,
+      agentPlan,
       builds: builds[0],
       assembled: assembled[0],
       agentResults,
@@ -1214,6 +1346,41 @@ async function runRehearsal(options) {
   );
 }
 
+async function destroyRetainedRehearsal(result) {
+  if (
+    !result
+    || typeof result !== 'object'
+    || typeof result.boundary !== 'string'
+    || typeof result.privateKeyPath !== 'string'
+  ) {
+    throw new Error('retained release boundary is invalid');
+  }
+  const boundary = await realpath(result.boundary);
+  const privateKeyPath = await realpath(result.privateKeyPath);
+  if (
+    !path.basename(boundary).startsWith(RETAINED_BOUNDARY_PREFIX)
+    || path.dirname(path.dirname(privateKeyPath)) !== boundary
+    || path.basename(path.dirname(privateKeyPath)) !== 'private'
+  ) {
+    throw new Error('retained release boundary escaped the E1 temporary root');
+  }
+  const destroyed = callWorker(boundary, {
+    action: 'destroy',
+    target: privateKeyPath,
+  });
+  if (destroyed.destroyed !== true) {
+    throw new Error('retained Publisher destruction was not confirmed');
+  }
+  await rm(boundary, { recursive: true, force: true });
+  try {
+    await lstat(boundary);
+    throw new Error('retained release boundary still exists');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return { destroyed: true };
+}
+
 function isMainModule() {
   return process.argv[1]
     && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
@@ -1242,9 +1409,12 @@ if (isMainModule()) {
 }
 
 export {
+  AGENT_PLANS,
   CANDIDATE_COMMIT,
   OUTPUT_CLASSES,
   assertSourceRepository,
+  createP5JobVariantDefinitions,
+  destroyRetainedRehearsal,
   packageBuildArguments,
   parseArguments,
   runRehearsal,
