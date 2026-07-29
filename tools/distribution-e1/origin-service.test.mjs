@@ -170,7 +170,7 @@ test('rejects methods, queries, traversal, missing objects, and bad MIME', async
 });
 
 test('implements every approved fault route behind the exact token', async () => {
-  assert.equal(FAULT_SCENARIOS.size, 14);
+  assert.equal(FAULT_SCENARIOS.size, 21);
   await withServer(async (base) => {
     const denied = await fetch(`${base}/_e1/fault/not_found/registry`);
     assert.equal(denied.status, 404);
@@ -180,6 +180,14 @@ test('implements every approved fault route behind the exact token', async () =>
     };
     assert.equal(
       (await fetch(`${base}/_e1/fault/not_found/registry`, { headers })).status,
+      404,
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/_e1/fault/registry_withdrawal/registry`, {
+          headers,
+        })
+      ).status,
       404,
     );
     assert.equal(

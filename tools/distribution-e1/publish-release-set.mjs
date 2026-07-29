@@ -57,9 +57,12 @@ async function assertExecutorBoundary(executorCommit) {
   if (
     !/^[0-9a-f]{40}$/u.test(executorCommit)
     || runGit(['rev-parse', 'HEAD']) !== executorCommit
+    || runGit(['rev-parse', 'origin/main']) !== executorCommit
     || runGit(['status', '--porcelain=v1', '--untracked-files=all']) !== ''
   ) {
-    throw new Error('publication executor is not the approved clean commit');
+    throw new Error(
+      'publication executor is not the approved clean pushed commit',
+    );
   }
   const trustSource = await readFile(path.join(
     REPOSITORY_ROOT,
@@ -89,6 +92,10 @@ function plainSha256(bytes) {
 }
 
 async function readMode0600Json(filePath, label, maximum = 8 * 1024 * 1024) {
+  const direct = await lstat(filePath);
+  if (direct.isSymbolicLink()) {
+    throw new Error(`${label} must be a bounded mode-0600 regular file`);
+  }
   const resolved = await realpath(filePath);
   const stat = await lstat(resolved);
   if (
@@ -108,6 +115,10 @@ async function readMode0600Json(filePath, label, maximum = 8 * 1024 * 1024) {
 }
 
 async function readBoundedFile(filePath) {
+  const direct = await lstat(filePath);
+  if (direct.isSymbolicLink()) {
+    throw new Error('Release object is not a bounded regular file');
+  }
   const resolved = await realpath(filePath);
   const stat = await lstat(resolved);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) {
@@ -791,10 +802,18 @@ if (isMainModule()) {
 }
 
 export {
+  assertExecutorBoundary,
   canonicalRegistryPayload,
+  invokeSigner,
   objectKeyFromUrl,
   parseArguments,
+  putNewObject,
   publicationWindow,
+  readBoundedFile,
+  readMode0600Json,
+  releaseObjects,
+  signDocument,
   strictRegistryRecord,
+  typedSha256,
   verifyRawSignature,
 };

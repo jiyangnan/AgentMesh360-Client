@@ -29,6 +29,13 @@ const FAULT_SCENARIOS = new Set([
   'valid_lkg_transport_failure',
   'invalid_or_expired_lkg',
   'partial_publication_before_registry',
+  'same_permission_update',
+  'permission_expansion_rejected',
+  'permission_expansion_approved',
+  'root_rotation',
+  'publisher_rotation',
+  'publisher_revocation',
+  'registry_withdrawal',
 ]);
 const CONTENT_TYPES = new Set([
   'application/json',
@@ -270,6 +277,7 @@ async function serveFault(
     route.scenario === 'not_found'
     || route.scenario === 'valid_lkg_transport_failure'
     || route.scenario === 'partial_publication_before_registry'
+    || route.scenario === 'registry_withdrawal'
   ) {
     writeResponse(response, 404, { 'content-type': 'application/json' });
     return 404;
