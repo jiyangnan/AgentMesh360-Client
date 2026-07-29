@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain 与 61/61 Registry-last 发布已真实通过；14 项 Host 场景已通过并保留严格回执，场景还真实暴露并修复 P5-only Fake-IP DNS、签名 expiry 毫秒缓存精度，以及 Package receipt camelCase/JS 安全整数契约问题 | 冻结并推送 Host 回执恢复收口器，把 14 项真实 Host 回执与 7 项既有契约证据固化为 21/21 矩阵；随后严格 Registry-first 清场并销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider 状态；不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；P5 唯一 Droplet、DNS-only Origin、双代 Release Chain、61/61 Registry-last 发布与 21/21 Package canary 场景均已真实通过；场景还暴露并修复 P5-only Fake-IP DNS、签名 expiry 毫秒缓存精度、Package receipt camelCase/JS 安全整数和矩阵预算字段映射问题 | 严格执行 Registry-first Release Chain 清场，再销毁 Droplet、DNS、Bucket、临时 Root/Publisher、limited key 与本机临时 Provider/隔离 Client 状态；完成非秘密验收后关闭 P5，不推进 P6 |
 
 ## 开发循环记录
 
@@ -6598,3 +6598,41 @@ ReferenceError 已修复并完成完整回归，Host/Driver/Package 状态未重
 - 下一轮只冻结、提交、推送该一行双分支修复，再以相同 Host receipt 执行一次
   恢复收口；成功生成 21/21 matrix receipt 后立即更新进展并进入
   Registry-first 清场，不延伸到 P6。
+
+### 循环 122：P5 Package Canary 21 场景矩阵实际通过
+
+状态：14 项真实 Host 场景与 7 项既有订阅/BYOK/预算证据已合并为严格
+21/21 PASS matrix receipt；最终 canary Package 状态符合计划，等待 Registry-first
+清场
+
+实际执行与证据：
+
+1. Cycle 121 提交 `b541e97...` 推送后，恢复器以 `dd7030c...` Host executor 和
+   当前 finalizer executor 执行；完整提交、clean/pushed、固定 Client/source、
+   Driver input、Host receipt、Origin/Builder/Publisher ancestry 全部通过；
+2. mode `0600` matrix receipt 精确记录 `scenarioCount=21`、21 个唯一
+   `status=passed`，execution status 为 `scenario_matrix_passed`；
+3. input digests 同时绑定 authorization、OAuth、BYOK、61/61 publication state、
+   原 Driver input 和 live Host receipt；Host executor 与 finalizer executor
+   分开记录，没有改写历史 provenance；
+4. Provider inference 保持历史 `4/12`，本场景新增 0；AgentMesh credits 0，
+   Package mutation 5，账号/订阅/生产 mutation 0，生产 authority false，
+   receipt 不记录账户标识、凭据或 prompt/response；
+5. 隔离数据库最终 Package 状态为 Future `1.0.0`；Job active
+   `0.4.8-e1.1`、previous `0.4.9-e1.1`；Trust sequence 4、Registry revision 5，
+   恰好对应矩阵定义的安装、同权限更新、权限扩张批准、回滚、Publisher/Root
+   轮换与 Registry withdrawal 后 LKG 状态；
+6. 本轮没有再次启动 Electron，没有重复 Package mutation，没有新增 Provider、
+   云资源、Root/Publisher 或生产常量。
+
+自主验证与计划复盘：
+
+- 正式 runner 返回 `P5 E1 21-scenario matrix passed with no additional
+  Provider inference`；receipt mode、场景唯一性、预算、mutation 和六类输入摘要
+  逐项复核通过；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 对 14+7 覆盖、最终 DB 状态、预算、
+  provenance 和无秘密留存自主复核；
+- P5 唯一下一步是既定 Registry-first 清场：先冻结、提交、推送本进展，再由清理器
+  首先撤回公开 Registry、验证 404，随后反序删除其余对象并销毁两 Root、两
+  Publisher 与两个 Release boundary；清场通过前不删 Droplet/Reader，也不进入
+  P6。
