@@ -6231,3 +6231,51 @@ Spaces 路由均通过；尚未生成测试 Root/Publisher、构建或发布 Rel
 - 当前外部 Package 对象与新增 Root 仍为 0。下一轮冻结推送该修复、升级同一
   隔离 Client，再执行一次 Registry-last publisher；发布 PASS 和公网逐字节复验
   前不运行 21 场景，P6 继续关闭。
+
+### 循环 112：P5 部分发布失败边界与 Registry-first 回滚器
+
+状态：第一次 Registry-last 发布在 11/61 对象后失败；Registry 从未发布，第 12 个
+对象不存在；严格部分回滚器已实现并完成回归，等待冻结推送后执行清场
+
+实际失败状态：
+
+1. Cycle 111 提交 `dd0d006...` 推送并升级保留式 Client 后，publisher 通过
+   `Origin → Builder → Publisher` ancestry，生成两把临时 Root 并开始逐对象 PUT；
+2. publication state 为 mode `0600`、`executionStatus=publishing`，计划 61 个
+   唯一对象，已完成并回执 11 个；最后一个完成对象是 Release，Registry-last 标记
+   仍为 false；
+3. 对失败点第 12 个 Release 对象执行只读 HEAD，结果为不存在；因此失败发生在该
+   对象 PUT 前，未留下未回执对象。固定 Registry 对象从未进入发布，正常客户端没有
+   可消费的半成 Registry；
+4. 两把临时 Root 已生成并留在各自 `0700` generation boundary；两把 Publisher
+   和完整双代 Release Build 保留。21 场景、Package mutation、Provider、credits
+   均未启动或增加。
+
+回滚与清理修复：
+
+1. 既有最终清理器只接受 `61/61 published + 21/21 scenarios`，不能处理
+   `publishing` 前缀；现新增同一受权清理器的固定
+   `rollback-partial --executor-commit <commit>`，不接收 bucket、key、路径或
+   inventory 参数；
+2. 部分 inventory 必须是完整 Registry-last 计划的严格回执前缀；rollback 首先
+   HEAD/校验/删除可能存在的 Registry，并用 direct-to-approved-IP HTTPS 确认公开
+   404，随后检查可能未回执的下一个对象，再反序删除已回执对象并由 Origin Reader
+   对每个验证 404；
+3. 如果下一个对象已存在，必须先由 Origin Reader 回读并与计划 SHA-256 一致才能
+   删除；未知内容失败关闭。当前实际 HEAD 已证明下一个对象不存在；
+4. 回滚只销毁两把本次 Root、移除失败 publication state；两把已完成验证的
+   Publisher、两个 Release boundary 和 build state 保留，以便重新生成 Root 并
+   从空 Bucket namespace 重试；
+5. 最终 P5 清理器同时修正旧 P4 hostname 正则，并改为
+   `Origin → Builder → Publisher → Scenario → Cleanup` 有序 ancestry；所有阶段
+   的真实 executor 继续分别保留，不改写历史 state。
+
+自主验证与计划复盘：
+
+- 部分清理、Publisher、Origin 定向 20/20；P4/P5 Package + Distribution 沙箱外
+  138/138；Node 语法和 `git diff --check` 通过；
+- Kimi 继续暂停，本轮由主 Agent 复核 Registry-first、回执前缀、未回执对象摘要
+  门、Root-only 销毁、Publisher/Release 保留和 P5 hostname；
+- 下一轮先冻结推送本回滚器并升级同一隔离 Client，再执行部分回滚；必须得到
+  Registry 公网 404、11 个对象删除/缺失复验、两把 Root 销毁与 publication state
+  移除证据后，才重新运行 publisher。21 场景和 P6 继续关闭。

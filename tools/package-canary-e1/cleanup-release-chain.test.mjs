@@ -4,12 +4,15 @@ import test from 'node:test';
 
 import {
   OUTPUT_STATE_PATH,
+  PARTIAL_ROLLBACK_STATE_PATH,
   REGISTRY_OBJECT_KEY,
+  assertCleanupExecutorAncestry,
   parseArguments,
   registryIsWithdrawn,
   registryProbeConfig,
   safeObjectKey,
   strictInventory,
+  strictPartialInventory,
 } from './cleanup-release-chain.mjs';
 
 const COMMIT = 'a'.repeat(40);
@@ -51,6 +54,25 @@ test('accepts only a complete unique Registry-last inventory', () => {
   assert.throws(() => strictInventory(duplicate));
 });
 
+test('accepts only an incomplete receipt prefix for partial rollback', () => {
+  const partial = publication();
+  partial.executionStatus = 'publishing';
+  partial.registryPublishedLast = false;
+  partial.temporaryRootPrivateKeyCount = 2;
+  partial.objectReceipts = partial.objectReceipts.slice(0, 11);
+  const inventory = strictPartialInventory(partial);
+  assert.equal(inventory.recorded.length, 11);
+  assert.deepEqual(inventory.next, partial.plannedObjects[11]);
+  const outOfOrder = structuredClone(partial);
+  outOfOrder.objectReceipts[5] = structuredClone(
+    outOfOrder.plannedObjects[6],
+  );
+  assert.throws(() => strictPartialInventory(outOfOrder));
+  const complete = structuredClone(partial);
+  complete.objectReceipts = structuredClone(complete.plannedObjects);
+  assert.throws(() => strictPartialInventory(complete));
+});
+
 test('validates safe object keys without accepting path escapes', () => {
   assert.equal(safeObjectKey('metadata/registry.v2.json'), true);
   assert.equal(safeObjectKey('releases/job/0.4.7/artifact.tar.zst'), true);
@@ -62,7 +84,7 @@ test('validates safe object keys without accepting path escapes', () => {
 
 test('Registry withdrawal probe is direct HTTPS, fixed-host, and no-redirect', () => {
   const config = registryProbeConfig(
-    'packages-e1-1234abcd.agentmesh360.com',
+    'packages-p5-e1-1234abcd.agentmesh360.com',
     '203.0.113.10',
   );
   assert.match(config, /proto = "=https"/u);
@@ -76,7 +98,7 @@ test('Registry withdrawal probe is direct HTTPS, fixed-host, and no-redirect', (
 });
 
 test('accepts only an exact public Registry 404 response', () => {
-  const hostname = 'packages-e1-1234abcd.agentmesh360.com';
+  const hostname = 'packages-p5-e1-1234abcd.agentmesh360.com';
   const ipAddress = '203.0.113.10';
   assert.equal(registryIsWithdrawn(
     hostname,
@@ -101,9 +123,17 @@ test('pins the cleanup state and executor-only CLI', () => {
     OUTPUT_STATE_PATH,
     '/private/tmp/agentmesh360-p5-e1-release-cleanup-state.json',
   );
+  assert.equal(
+    PARTIAL_ROLLBACK_STATE_PATH,
+    '/private/tmp/agentmesh360-p5-e1-partial-publication-rollback.json',
+  );
   assert.deepEqual(
     parseArguments(['--executor-commit', COMMIT]),
     { executorCommit: COMMIT },
+  );
+  assert.deepEqual(
+    parseArguments(['rollback-partial', '--executor-commit', COMMIT]),
+    { action: 'rollback-partial', executorCommit: COMMIT },
   );
   assert.throws(() => parseArguments([COMMIT]));
   assert.throws(() => parseArguments([
@@ -112,6 +142,28 @@ test('pins the cleanup state and executor-only CLI', () => {
     '--credentials',
     '/tmp/other',
   ]));
+});
+
+test('requires ordered provenance through scenario and cleanup executors', () => {
+  const commits = ['a', 'b', 'c', 'd', 'e'].map(
+    (value) => value.repeat(40),
+  );
+  const pairs = [];
+  assertCleanupExecutorAncestry({
+    originExecutorCommit: commits[0],
+    releaseExecutorCommit: commits[1],
+    publicationExecutorCommit: commits[2],
+    scenarioExecutorCommit: commits[3],
+    cleanupExecutorCommit: commits[4],
+  }, (ancestor, descendant) => {
+    pairs.push([ancestor, descendant]);
+  });
+  assert.deepEqual(pairs, [
+    [commits[0], commits[1]],
+    [commits[1], commits[2]],
+    [commits[2], commits[3]],
+    [commits[3], commits[4]],
+  ]);
 });
 
 test('source enforces Registry-first, two Roots, two Publishers, and staged follow-up', async () => {
@@ -131,6 +183,8 @@ test('source enforces Registry-first, two Roots, two Publishers, and staged foll
   assert.match(source, /publisherPrivateMaterialDestroyedCount/u);
   assert.match(source, /remove_cloudflare_dns/u);
   assert.match(source, /delete_spaces_buckets_and_revoke_keys/u);
+  assert.match(source, /rollbackPartialPublication/u);
+  assert.match(source, /publisherPrivateMaterialPreservedCount: 2/u);
   assert.match(source, /assertCleanupAuthority/u);
   assert.match(source, /CLEANUP_AUTHORITY_FILES/u);
   assert.match(source, /infrastructure-boundary\.mjs/u);

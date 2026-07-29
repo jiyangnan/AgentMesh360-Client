@@ -7,6 +7,7 @@ import {
   readFile,
   realpath,
   rm,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import os from 'node:os';
@@ -15,9 +16,15 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import {
+  typedSha256,
+} from '../distribution-e1/publish-release-set.mjs';
+import {
   readCredentialFile,
   requestSpaces,
 } from '../distribution-e1/spaces-client.mjs';
+import {
+  assertP5ExecutorAncestry,
+} from '../distribution-e1/deploy-origin.mjs';
 import {
   AUTHORIZATION_ID,
   CREDENTIAL_PATH,
@@ -47,11 +54,14 @@ const CLEANUP_AUTHORITY_FILES = Object.freeze([
   'tools/package-canary-e1/infrastructure-boundary.mjs',
   'tools/package-canary-e1/publish-release-chain.mjs',
   'tools/package-canary-e1/run-scenario-matrix.mjs',
+  'tools/distribution-e1/deploy-origin.mjs',
   'tools/distribution-e1/spaces-client.mjs',
   'tools/release-provenance/e0-release-signer.mjs',
 ]);
 const OUTPUT_STATE_PATH =
   '/private/tmp/agentmesh360-p5-e1-release-cleanup-state.json';
+const PARTIAL_ROLLBACK_STATE_PATH =
+  '/private/tmp/agentmesh360-p5-e1-partial-publication-rollback.json';
 const REGISTRY_OBJECT_KEY = 'metadata/registry.v2.json';
 const MAX_STATE_BYTES = 8 * 1024 * 1024;
 
@@ -72,6 +82,11 @@ async function assertCleanupAuthority(executorCommit) {
     !/^[0-9a-f]{40}$/u.test(executorCommit || '')
     || runGit(['rev-parse', 'HEAD']) !== executorCommit
     || runGit(['rev-parse', 'origin/main']) !== executorCommit
+    || runGit([
+      'status',
+      '--porcelain=v1',
+      '--untracked-files=all',
+    ]) !== ''
   ) {
     throw new Error('P5 Release cleanup executor is not the pushed commit');
   }
@@ -171,9 +186,65 @@ function strictInventory(publication) {
   return publication.plannedObjects;
 }
 
+function strictPartialInventory(publication) {
+  if (
+    publication?.schemaVersion !== 1
+    || publication.authorizationId !== AUTHORIZATION_ID
+    || publication.executionStatus !== 'publishing'
+    || publication.registryPublishedLast !== false
+    || publication.cleanupRequired !== true
+    || publication.temporaryRootPrivateKeyCount !== 2
+    || !Array.isArray(publication.plannedObjects)
+    || publication.plannedObjects.length < 20
+    || !Array.isArray(publication.objectReceipts)
+    || publication.objectReceipts.length >= publication.plannedObjects.length
+  ) {
+    throw new Error('P5 partial publication is not rollback-safe');
+  }
+  const seen = new Set();
+  for (let index = 0; index < publication.plannedObjects.length; index += 1) {
+    const planned = publication.plannedObjects[index];
+    const identity = `${planned?.bucketClass}/${planned?.objectKey}`;
+    if (
+      !['release', 'metadata'].includes(planned?.bucketClass)
+      || !safeObjectKey(planned.objectKey)
+      || !/^sha256:[0-9a-f]{64}$/u.test(planned.sha256 || '')
+      || seen.has(identity)
+    ) {
+      throw new Error('P5 partial publication plan is invalid');
+    }
+    seen.add(identity);
+    if (index < publication.objectReceipts.length) {
+      const receipt = publication.objectReceipts[index];
+      if (
+        receipt?.bucketClass !== planned.bucketClass
+        || receipt.objectKey !== planned.objectKey
+        || receipt.sha256 !== planned.sha256
+      ) {
+        throw new Error('P5 partial publication receipt is not a plan prefix');
+      }
+    }
+  }
+  const registry = publication.plannedObjects.at(-1);
+  if (
+    registry.bucketClass !== 'metadata'
+    || registry.objectKey !== REGISTRY_OBJECT_KEY
+  ) {
+    throw new Error('P5 partial publication plan is not Registry-last');
+  }
+  return {
+    next: publication.plannedObjects[publication.objectReceipts.length],
+    planned: publication.plannedObjects,
+    recorded: publication.objectReceipts,
+    registry,
+  };
+}
+
 function registryProbeConfig(hostname, ipAddress) {
   if (
-    !/^packages-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(hostname || '')
+    !/^packages-p5-e1-[0-9a-f]{8}\.agentmesh360\.com$/u.test(
+      hostname || '',
+    )
     || !/^(?:\d{1,3}\.){3}\d{1,3}$/u.test(ipAddress || '')
   ) {
     throw new Error('P5 Registry withdrawal probe boundary is invalid');
@@ -232,6 +303,37 @@ async function deleteAndVerify(credentials, item) {
     expectedStatuses: [404],
   });
   await absence.response.body?.cancel();
+}
+
+async function deleteIfPresentAndVerify(credentials, item) {
+  const bucket = item.bucketClass === 'release'
+    ? credentials.releasesBucket
+    : credentials.metadataBucket;
+  const inspection = await requestSpaces({
+    credentials,
+    principal: 'publisher',
+    bucket,
+    method: 'HEAD',
+    objectKey: item.objectKey,
+    expectedStatuses: [200, 404],
+  });
+  const exists = inspection.response.status === 200;
+  await inspection.response.body?.cancel();
+  if (!exists) return false;
+  const readback = await requestSpaces({
+    credentials,
+    principal: 'origin-reader',
+    bucket,
+    method: 'GET',
+    objectKey: item.objectKey,
+    expectedStatuses: [200],
+  });
+  const returned = Buffer.from(await readback.response.arrayBuffer());
+  if (typedSha256(returned) !== item.sha256) {
+    throw new Error('P5 unrecorded object differs from the publication plan');
+  }
+  await deleteAndVerify(credentials, item);
+  return true;
 }
 
 function invokeSigner(boundary, target) {
@@ -317,6 +419,137 @@ async function writeState(state, flag = 'w') {
   await chmod(OUTPUT_STATE_PATH, 0o600);
 }
 
+async function writePartialRollbackState(state, flag = 'w') {
+  await writeFile(
+    PARTIAL_ROLLBACK_STATE_PATH,
+    `${JSON.stringify(state)}\n`,
+    { mode: 0o600, flag },
+  );
+  await chmod(PARTIAL_ROLLBACK_STATE_PATH, 0o600);
+}
+
+function assertCleanupExecutorAncestry({
+  cleanupExecutorCommit,
+  originExecutorCommit,
+  publicationExecutorCommit,
+  releaseExecutorCommit,
+  scenarioExecutorCommit,
+}, assertAncestry = assertP5ExecutorAncestry) {
+  assertAncestry(originExecutorCommit, releaseExecutorCommit);
+  assertAncestry(releaseExecutorCommit, publicationExecutorCommit);
+  assertAncestry(publicationExecutorCommit, scenarioExecutorCommit);
+  assertAncestry(scenarioExecutorCommit, cleanupExecutorCommit);
+}
+
+async function rollbackPartialPublication(executorCommit) {
+  await assertCleanupAuthority(executorCommit);
+  try {
+    await lstat(PARTIAL_ROLLBACK_STATE_PATH);
+    throw new Error('P5 partial rollback state already exists');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  const [credentials, origin, publication, release] = await Promise.all([
+    readCredentialFile(CREDENTIAL_PATH),
+    readMode0600Json(ORIGIN_STATE_PATH, 'P5 origin state'),
+    readMode0600Json(PUBLICATION_STATE_PATH, 'P5 publication state'),
+    readMode0600Json(RELEASE_STATE_PATH, 'P5 Release Chain state'),
+  ]);
+  const inventory = strictPartialInventory(publication);
+  const privateMaterial = await privateInventory(release, publication);
+  assertP5ExecutorAncestry(
+    origin.origin?.executorCommit,
+    release.executorCommit,
+  );
+  assertP5ExecutorAncestry(
+    release.executorCommit,
+    publication.executorCommit,
+  );
+  assertP5ExecutorAncestry(publication.executorCommit, executorCommit);
+  if (
+    !/^am360-p5-e1-metadata-[0-9a-f]{8}$/u.test(
+      credentials.metadataBucket || '',
+    )
+    || !/^am360-p5-e1-releases-[0-9a-f]{8}$/u.test(
+      credentials.releasesBucket || '',
+    )
+  ) {
+    throw new Error('P5 partial rollback credentials escaped the namespace');
+  }
+  const state = {
+    schemaVersion: 1,
+    authorizationId: AUTHORIZATION_ID,
+    executorCommit,
+    failedPublicationExecutorCommit: publication.executorCommit,
+    executionStatus: 'withdrawing_possible_registry',
+    recordedObjectCount: inventory.recorded.length,
+    unrecordedNextObjectDeleted: false,
+    registryWithdrawnFirst: false,
+    deletedObjectCount: 0,
+    verifiedAbsentObjectCount: 0,
+    rootPrivateMaterialDestroyedCount: 0,
+    publisherPrivateMaterialPreservedCount: 2,
+    releaseBoundaryPreservedCount: 2,
+    productionMutationCount: 0,
+    cleanupRequired: true,
+    startedAt: new Date().toISOString(),
+  };
+  await writePartialRollbackState(state, 'wx');
+
+  const registryDeleted = await deleteIfPresentAndVerify(
+    credentials,
+    inventory.registry,
+  );
+  if (!registryIsWithdrawn(
+    origin.dns.hostname,
+    origin.droplet.publicIpv4,
+  )) {
+    throw new Error('P5 partial Registry is not publicly withdrawn');
+  }
+  state.registryWithdrawnFirst = true;
+  state.deletedObjectCount += registryDeleted ? 1 : 0;
+  state.verifiedAbsentObjectCount += 1;
+  state.executionStatus = 'deleting_partial_objects';
+  state.lastUpdatedAt = new Date().toISOString();
+  await writePartialRollbackState(state);
+
+  if (inventory.next.objectKey !== REGISTRY_OBJECT_KEY) {
+    state.unrecordedNextObjectDeleted = await deleteIfPresentAndVerify(
+      credentials,
+      inventory.next,
+    );
+    state.deletedObjectCount += state.unrecordedNextObjectDeleted ? 1 : 0;
+    state.verifiedAbsentObjectCount += 1;
+    state.lastUpdatedAt = new Date().toISOString();
+    await writePartialRollbackState(state);
+  }
+  for (const item of [...inventory.recorded].reverse()) {
+    await deleteAndVerify(credentials, item);
+    state.deletedObjectCount += 1;
+    state.verifiedAbsentObjectCount += 1;
+    state.lastUpdatedAt = new Date().toISOString();
+    await writePartialRollbackState(state);
+  }
+
+  state.executionStatus = 'destroying_partial_roots';
+  state.lastUpdatedAt = new Date().toISOString();
+  await writePartialRollbackState(state);
+  for (const item of privateMaterial) {
+    invokeSigner(item.boundary, item.rootPath);
+    state.rootPrivateMaterialDestroyedCount += 1;
+    state.lastUpdatedAt = new Date().toISOString();
+    await writePartialRollbackState(state);
+  }
+  await unlink(PUBLICATION_STATE_PATH);
+  state.executionStatus = 'partial_publication_rolled_back';
+  state.cleanupRequired = false;
+  state.publicationStateRemoved = true;
+  state.completedAt = new Date().toISOString();
+  state.lastUpdatedAt = state.completedAt;
+  await writePartialRollbackState(state);
+  return state;
+}
+
 async function cleanupReleaseChain(executorCommit) {
   await assertCleanupAuthority(executorCommit);
   try {
@@ -340,12 +573,15 @@ async function cleanupReleaseChain(executorCommit) {
   ]);
   const inventory = strictInventory(publication);
   const privateMaterial = await privateInventory(release, publication);
+  assertCleanupExecutorAncestry({
+    cleanupExecutorCommit: executorCommit,
+    originExecutorCommit: origin.origin?.executorCommit,
+    publicationExecutorCommit: publication.executorCommit,
+    releaseExecutorCommit: release.executorCommit,
+    scenarioExecutorCommit: scenarios.executorCommit,
+  });
   if (
-    publication.executorCommit !== executorCommit
-    || release.executorCommit !== executorCommit
-    || origin.origin?.executorCommit !== executorCommit
-    || scenarios.executorCommit !== executorCommit
-    || scenarios.executionStatus !== 'scenario_matrix_passed'
+    scenarios.executionStatus !== 'scenario_matrix_passed'
     || scenarios.scenarioCount !== 21
     || scenarios.results?.length !== 21
     || scenarios.results.some((result) => result.status !== 'passed')
@@ -442,8 +678,20 @@ function parseArguments(argv) {
     || argv[0] !== '--executor-commit'
     || !/^[0-9a-f]{40}$/u.test(argv[1] || '')
   ) {
+    if (
+      argv.length === 3
+      && argv[0] === 'rollback-partial'
+      && argv[1] === '--executor-commit'
+      && /^[0-9a-f]{40}$/u.test(argv[2] || '')
+    ) {
+      return {
+        action: 'rollback-partial',
+        executorCommit: argv[2],
+      };
+    }
     throw new Error(
-      'usage: cleanup-release-chain.mjs --executor-commit <commit>',
+      'usage: cleanup-release-chain.mjs '
+      + '[rollback-partial] --executor-commit <commit>',
     );
   }
   return { executorCommit: argv[1] };
@@ -463,11 +711,20 @@ if (isMainModule()) {
     process.exitCode = 2;
   }
   if (options) {
-    cleanupReleaseChain(options.executorCommit)
+    const operation = options.action === 'rollback-partial'
+      ? rollbackPartialPublication
+      : cleanupReleaseChain;
+    operation(options.executorCommit)
       .then((state) => {
-        process.stdout.write(
-          `P5 Registry withdrawn first; ${state.deletedObjectCount} objects and four private keys destroyed\n`,
-        );
+        if (options.action === 'rollback-partial') {
+          process.stdout.write(
+            `P5 partial publication rolled back; ${state.deletedObjectCount} objects and two Root keys destroyed\n`,
+          );
+        } else {
+          process.stdout.write(
+            `P5 Registry withdrawn first; ${state.deletedObjectCount} objects and four private keys destroyed\n`,
+          );
+        }
       })
       .catch(() => {
         process.stderr.write('P5 Registry-first Release cleanup failed\n');
@@ -478,11 +735,15 @@ if (isMainModule()) {
 
 export {
   OUTPUT_STATE_PATH,
+  PARTIAL_ROLLBACK_STATE_PATH,
   REGISTRY_OBJECT_KEY,
+  assertCleanupExecutorAncestry,
   cleanupReleaseChain,
   parseArguments,
   registryIsWithdrawn,
   registryProbeConfig,
+  rollbackPartialPublication,
   safeObjectKey,
   strictInventory,
+  strictPartialInventory,
 };
