@@ -42,7 +42,7 @@ Provider 分阶段计划以
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；双代 Builder、唯一基础设施、Origin、Registry-last 发布、21 场景与 Registry-first 清场执行器均已冻结但尚未实际运行 | 下一门按固定顺序升级保留式隔离 Client，创建唯一 staging，双构建/签名/发布并执行 21 场景；随后先撤 Registry、再销毁其余 E1/本机临时状态；不复用生产 Droplet/Trust，不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 均通过；双代 Builder、唯一基础设施、Origin、Registry-last 发布、21 场景与 Registry-first 清场执行器均已冻结；P5 两个隔离 Spaces Bucket、Publisher/Origin 最小权限 Key 与真实权限探针已落地并通过 | 下一门按固定顺序只创建唯一 SGP1 Droplet 和 DNS-only 测试记录，再部署 Origin、双构建/签名/发布并执行 21 场景；随后先撤 Registry、再销毁其余 E1/本机临时状态；不复用生产 Droplet/Trust，不推进 P6 |
 
 ## 开发循环记录
 
@@ -6005,3 +6005,45 @@ Root/Publisher、上传对象或执行真实场景
 - 下一步提交推送本纠偏，删除旧的非秘密 advance 临时 receipt，再把同一隔离 Client
   和 Host 前移到新提交；之后才创建两个 P5 Bucket、两组 bucket-scoped key、唯一
   Droplet 与 DNS。21 场景和 Registry-first 清场顺序不变，P6 关闭。
+
+### 循环 106：P5 Spaces 与最小权限 principal 实际落地
+
+状态：两个 P5 隔离 Bucket、两把 bucket-scoped Key 和真实权限探针已通过；尚未创建
+Droplet、DNS、Origin 对象、测试 Root/Publisher 或 Package
+
+实际执行：
+
+1. 在 DigitalOcean `SGP1` 创建
+   `am360-p5-e1-releases-9aa7c042` 与
+   `am360-p5-e1-metadata-9aa7c042`；两者均为 Standard Storage、CDN 关闭，
+   未触碰两个处于待删除状态的 P4 Bucket；
+2. 创建 `am360-p5-e1-publisher-9aa7c042`，只绑定上述两个 Bucket，权限为
+   Read/Write/Delete；创建 `am360-p5-e1-origin-9aa7c042`，只绑定上述两个
+   Bucket，权限为 Read；
+3. Access ID/Secret 只经已登录控制台进入固定
+   `/private/tmp/agentmesh360-p5-e1-spaces-credentials.json`，文件模式为 `0600`；
+   未输出秘密、未写仓库、未写项目文档；
+4. 首次 Origin Key 生成期间，控制台仍展示上一把 Publisher Secret；执行器用
+   `SignatureDoesNotMatch` 在 Origin read 阶段失败关闭，Publisher 创建的探针对象
+   仍由 `finally` 清除，未进入 Droplet/DNS/发布阶段；
+5. 经用户动作前确认后只轮换该 Origin Key；新 Access ID 与 Secret 均不同于旧值，
+   Key 名称、两个 Bucket scope 和 Read-only 权限保持不变；
+6. 再次运行冻结的 `probe-spaces` 真实通过：Publisher write/read/delete 成功，
+   Origin read 成功且 write 得到预期拒绝；探针对象已删除。
+
+自主验证与计划复盘：
+
+- `infrastructure-boundary.mjs probe-spaces` 基于 clean pushed executor
+  `1b963e8...` 通过；凭据文件、隔离基础设施目录和 Cloudflare receipt 的固定路径
+  与 Cycle 101 契约一致；
+- 当前新增外部状态只有两个 P5 Bucket 和两把 limited Key；Droplet、DNS、Spaces
+  正式对象、Root/Publisher、Provider 请求、AgentMesh credits 与 Package mutation
+  仍为 0；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 对 Bucket namespace、scope、权限、
+  失败清理、轮换后 Key 独立性和 mode `0600` 做执行后复核；
+- 本轮没有扩大到生产 Droplet、生产 Trust、P4 Bucket、CDN 或第二套对象存储；
+  仍符合 P5 预检的唯一 staging 与 Registry-last/Registry-first 顺序；
+- 下一轮只把当前进展冻结推送并升级同一保留式隔离 Client，然后执行 Cycle 101
+  已冻结的 `prepare`/`create`：创建唯一 `SGP1`、`s-1vcpu-1gb`、Ubuntu 24.04
+  Droplet，再创建一个 TTL 60、DNS-only 的 P5 A 记录。两者复验通过前不部署
+  Origin、不生成测试签名 key、不运行 Builder 或 21 场景，P6 继续关闭。
