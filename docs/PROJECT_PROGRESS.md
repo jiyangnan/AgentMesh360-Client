@@ -6316,3 +6316,32 @@ Publisher 和双代 Release Build 保留，客户端正常 Package 状态未改�
   HEAD/PUT/readback 增加有界、摘要证明的幂等恢复：未知 PUT 结果必须先 HEAD+GET
   验证计划摘要，绝不盲目覆盖；回归与冻结推送后才重新生成 Root 并发布。21 场景
   与 P6 继续关闭。
+
+### 循环 114：Spaces 单对象有界重试与不确定 PUT 摘要恢复
+
+状态：发布传输恢复已实现并完成完整回归；尚未重新生成 Root 或上传对象
+
+实现与安全边界：
+
+1. HEAD 与 GET 仅对明确的 timeout、fetch/network/socket 错误以及
+   408/425/429/500/502/503/504 做最多三次有界重试；403、签名错误、对象已存在、
+   非预期 4xx 和摘要错误不重试；
+2. PUT 不盲目重放：如果请求结果不确定，先用 Publisher HEAD 判断对象是否存在；
+   若存在，再由 Origin Reader GET 并与计划 typed SHA-256 逐字节核对；只有摘要
+   完全一致才把第一次 PUT 视为成功；
+3. 不确定 PUT 后对象仍不存在时，最多重试到三次；若存在但摘要不同，立即失败关闭，
+   绝不覆盖已经出现的 immutable object；
+4. PUT 成功或摘要恢复后，仍执行独立 Origin Reader GET 与摘要核对，原有
+   Registry-last 和每对象 receipt 顺序不变；
+5. 该恢复位于 P4/P5 共用的单对象发布原语，不引入并行 PUT、resume state、覆盖
+   语义、生产 endpoint、Provider 或额外云资源。
+
+自主验证与计划复盘：
+
+- Spaces/Publisher/Cleanup 定向 29/29；P4/P5 Package + Distribution 沙箱外
+  141/141；覆盖 transient HEAD 三次、未知 PUT 后同摘要恢复、不同摘要拒绝覆盖；
+- Node 语法、`git diff --check` 通过；Kimi 继续暂停，本轮由主 Agent 对重试分类、
+  次数上限、unknown PUT 分支、Origin Reader 独立摘要和非瞬时错误自主复核；
+- 产品计划不变：下一轮冻结推送、升级同一隔离 Client，然后从空 namespace
+  重新生成两把 Root 并运行一次 Registry-last publisher。完整 61/61 与公网
+  Trust/Registry/Release 复验通过前不运行 21 场景，P6 继续关闭。

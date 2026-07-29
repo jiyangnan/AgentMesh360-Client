@@ -435,35 +435,141 @@ function publicationWindow(originState) {
   };
 }
 
-async function putNewObject(credentials, bucket, object) {
-  const absent = await requestSpaces({
+function isTransientSpacesFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    ['AbortError', 'TimeoutError'].includes(error?.name)
+    || error instanceof TypeError
+    || /\b(?:408|425|429|500|502|503|504)\b/u.test(message)
+    || /(?:fetch failed|network|socket|timed? ?out|ECONNRESET|ETIMEDOUT)/iu
+      .test(message)
+  );
+}
+
+async function requestWithTransientRetries(
+  operation,
+  {
+    attempts = 3,
+    sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
+  } = {},
+) {
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (
+        !isTransientSpacesFailure(error)
+        || attempt + 1 >= attempts
+      ) {
+        throw error;
+      }
+      await sleep(250 * (2 ** attempt));
+    }
+  }
+  throw lastError;
+}
+
+async function storedObjectMatches({
+  credentials,
+  principal,
+  bucket,
+  object,
+  request,
+  retry,
+}) {
+  const inspection = await retry(() => request({
+    credentials,
+    principal,
+    bucket,
+    method: 'HEAD',
+    objectKey: object.objectKey,
+    expectedStatuses: [200, 404],
+  }));
+  const exists = inspection.response.status === 200;
+  await inspection.response.body?.cancel();
+  if (!exists) return false;
+  const readback = await retry(() => request({
+    credentials,
+    principal,
+    bucket,
+    method: 'GET',
+    objectKey: object.objectKey,
+    expectedStatuses: [200],
+  }));
+  const returned = Buffer.from(await readback.response.arrayBuffer());
+  if (typedSha256(returned) !== object.digest) {
+    throw new Error(
+      'Spaces uncertain PUT resolved to a different immutable object',
+    );
+  }
+  return true;
+}
+
+async function putNewObject(
+  credentials,
+  bucket,
+  object,
+  {
+    request = requestSpaces,
+    retryOptions,
+  } = {},
+) {
+  const retry = (operation) =>
+    requestWithTransientRetries(operation, retryOptions);
+  const absent = await retry(() => request({
     credentials,
     principal: 'publisher',
     bucket,
     method: 'HEAD',
     objectKey: object.objectKey,
     expectedStatuses: [404],
-  });
+  }));
   await absent.response.body?.cancel();
-  const put = await requestSpaces({
-    credentials,
-    principal: 'publisher',
-    bucket,
-    method: 'PUT',
-    objectKey: object.objectKey,
-    body: object.bytes,
-    contentType: object.contentType,
-    expectedStatuses: [200],
-  });
-  await put.response.body?.cancel();
-  const readback = await requestSpaces({
+  let stored = false;
+  let lastPutError;
+  for (let attempt = 0; attempt < 3 && !stored; attempt += 1) {
+    try {
+      const put = await request({
+        credentials,
+        principal: 'publisher',
+        bucket,
+        method: 'PUT',
+        objectKey: object.objectKey,
+        body: object.bytes,
+        contentType: object.contentType,
+        expectedStatuses: [200],
+      });
+      await put.response.body?.cancel();
+      stored = true;
+    } catch (error) {
+      lastPutError = error;
+      if (!isTransientSpacesFailure(error)) throw error;
+      stored = await storedObjectMatches({
+        credentials,
+        principal: 'origin-reader',
+        bucket,
+        object,
+        request,
+        retry,
+      });
+      if (!stored && attempt < 2) {
+        await (retryOptions?.sleep ?? (
+          (delay) => new Promise((resolve) => setTimeout(resolve, delay))
+        ))(250 * (2 ** attempt));
+      }
+    }
+  }
+  if (!stored) throw lastPutError;
+  const readback = await retry(() => request({
     credentials,
     principal: 'origin-reader',
     bucket,
     method: 'GET',
     objectKey: object.objectKey,
     expectedStatuses: [200],
-  });
+  }));
   const returned = Buffer.from(await readback.response.arrayBuffer());
   if (typedSha256(returned) !== object.digest) {
     throw new Error('Spaces readback digest mismatch');
@@ -805,10 +911,12 @@ export {
   assertExecutorBoundary,
   canonicalRegistryPayload,
   invokeSigner,
+  isTransientSpacesFailure,
   objectKeyFromUrl,
   parseArguments,
   putNewObject,
   publicationWindow,
+  requestWithTransientRetries,
   readBoundedFile,
   readMode0600Json,
   releaseObjects,

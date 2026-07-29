@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import {
   canonicalRegistryPayload,
+  isTransientSpacesFailure,
   objectKeyFromUrl,
   parseArguments,
+  putNewObject,
   publicationWindow,
+  requestWithTransientRetries,
   strictRegistryRecord,
 } from './publish-release-set.mjs';
 
@@ -32,6 +36,17 @@ function record() {
       bundleUrl: `${base}/codex.tar.zst`,
       bundleSha256: '5'.repeat(64),
     }],
+  };
+}
+
+function response(status, bytes = Buffer.alloc(0)) {
+  return {
+    response: {
+      status,
+      body: { cancel: async () => {} },
+      arrayBuffer: async () =>
+        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
+    },
   };
 }
 
@@ -110,4 +125,115 @@ test('parses only four absolute publication boundaries', () => {
     '--credentials',
     'relative',
   ]));
+});
+
+test('retries only bounded transient Spaces failures', async () => {
+  assert.equal(isTransientSpacesFailure(
+    Object.assign(new Error('timed out'), { name: 'TimeoutError' }),
+  ), true);
+  assert.equal(isTransientSpacesFailure(
+    new Error('Spaces request returned unexpected status 503'),
+  ), true);
+  assert.equal(isTransientSpacesFailure(
+    new Error('Spaces request returned unexpected status 403'),
+  ), false);
+
+  let attempts = 0;
+  const result = await requestWithTransientRetries(
+    async () => {
+      attempts += 1;
+      if (attempts < 3) throw new TypeError('fetch failed');
+      return 'ok';
+    },
+    { sleep: async () => {} },
+  );
+  assert.equal(result, 'ok');
+  assert.equal(attempts, 3);
+});
+
+test('recovers an uncertain PUT only after exact readback', async () => {
+  const bytes = Buffer.from('immutable payload');
+  const object = {
+    bytes,
+    contentType: 'application/octet-stream',
+    digest: `sha256:${
+      createHash('sha256')
+        .update(bytes)
+        .digest('hex')
+    }`,
+    objectKey: 'releases/object.bin',
+  };
+  const credentials = {
+    releasesBucket: 'am360-e1-releases-1234abcd',
+  };
+  const methods = [];
+  let putAttempts = 0;
+  const receipt = await putNewObject(
+    credentials,
+    credentials.releasesBucket,
+    object,
+    {
+      request: async ({ method, expectedStatuses }) => {
+        methods.push(method);
+        if (method === 'HEAD' && expectedStatuses.length === 1) {
+          return response(404);
+        }
+        if (method === 'PUT') {
+          putAttempts += 1;
+          throw Object.assign(
+            new Error('network timed out'),
+            { name: 'TimeoutError' },
+          );
+        }
+        if (method === 'HEAD') return response(200);
+        if (method === 'GET') return response(200, bytes);
+        throw new Error('unexpected request');
+      },
+      retryOptions: { sleep: async () => {} },
+    },
+  );
+  assert.equal(putAttempts, 1);
+  assert.equal(receipt.objectKey, object.objectKey);
+  assert.deepEqual(methods, ['HEAD', 'PUT', 'HEAD', 'GET', 'GET']);
+});
+
+test('never overwrites an uncertain PUT with a different digest', async () => {
+  const bytes = Buffer.from('planned');
+  const object = {
+    bytes,
+    contentType: 'application/octet-stream',
+    digest: `sha256:${
+      createHash('sha256')
+        .update(bytes)
+        .digest('hex')
+    }`,
+    objectKey: 'releases/object.bin',
+  };
+  let putAttempts = 0;
+  await assert.rejects(
+    putNewObject(
+      { releasesBucket: 'am360-e1-releases-1234abcd' },
+      'am360-e1-releases-1234abcd',
+      object,
+      {
+        request: async ({ method, expectedStatuses }) => {
+          if (method === 'HEAD' && expectedStatuses.length === 1) {
+            return response(404);
+          }
+          if (method === 'PUT') {
+            putAttempts += 1;
+            throw new TypeError('fetch failed');
+          }
+          if (method === 'HEAD') return response(200);
+          if (method === 'GET') {
+            return response(200, Buffer.from('different'));
+          }
+          throw new Error('unexpected request');
+        },
+        retryOptions: { sleep: async () => {} },
+      },
+    ),
+    /different immutable object/u,
+  );
+  assert.equal(putAttempts, 1);
 });
