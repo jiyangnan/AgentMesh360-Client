@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 的真实 Host、owner OAuth/订阅、BYOK 与 Release Chain 预检均通过，下一门只实现并冻结隔离执行器 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P4 已按原顺序推进；P5 E1 v2 的真实 Host、owner OAuth/订阅、BYOK、预检与双代 Release Builder 均已关闭源码门，下一门实现隔离基础设施执行器 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；P5 后续只复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容；P5 临时凭据与绑定在完整清场前保留 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 与 Release Chain 无网络预检均通过 | 下一门先实现、测试并冻结 P5 专用 Release/21 场景/清场执行器；冻结前不创建 staging，不复用生产 Droplet/Trust，不推进 P6 |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P4 与 P5 阻断式预检已完成；v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK 与 Release Chain 无网络预检均通过；P5 双代 Release Builder 已冻结但尚未执行 | 下一门实现并冻结唯一 P5 Droplet/Spaces/DNS/Origin 执行器，再串联发布、21 场景与清场；不复用生产 Droplet/Trust，不推进 P6 |
 
 ## 开发循环记录
 
@@ -5774,3 +5774,34 @@ Assignment、Binding 和系统凭据保留给 P5 后续门，完整 canary 尚�
 - 预检只允许进入执行器实现，不等于 Release Chain、21 场景或 P5 完成。下一轮先
   实现并冻结 P5 专用 Release/场景/清场执行器，冻结前不得创建 DigitalOcean、
   Spaces 或 Cloudflare staging。
+
+### 循环 100：P5 双代 Release Builder
+
+状态：源码、负向测试、完整回归和冻结推送完成；尚未生成本轮 Publisher key 或运行构建
+
+已经实现：
+
+1. P3/P4 的确定性双构建器增加受限 `p5-job-variants` 计划；默认四 Agent 行为不变，
+   该计划只允许在保留式 E1 隔离边界中调用；
+2. Generation A 固定 Deploy `0.1.1`、Future `1.0.0`、Job `0.4.7` 和
+   LectureCast `0.4.0`；Generation B 固定 Job `0.4.8-e1.1` 与 `0.4.9-e1.1`；
+3. 同权限版本保持四项原权限，权限扩张版本只增加 `process_execution`；variant
+   definition 只写可销毁边界，不修改源仓或冻结 candidate；
+4. 两代各使用一个不同的临时 Publisher；每个版本独立双构建、双签名并逐字节比较
+   artifact、Envelope、receipt、Host bundle/projection、file manifest、Registry
+   record、Release Manifest、signature result 和 signing request 共 10 类输出；
+5. 任一代失败或最终状态写入失败，会先销毁此前已生成的 Publisher 私钥，再移除隔离
+   build/worktree 边界；状态文件只能写入固定 `/private/tmp` P5 路径；
+6. Builder 只接受 P5 专用 DNS-only Origin、一台 Droplet、两个 Spaces bucket、
+   clean pushed executor 和 Cycle 99 preflight ancestor；不具备创建云资源的能力。
+
+验证与计划复盘：
+
+- 新增定向 6/6；完整 Node 316 passed / 3 skipped / 0 failed；
+- 语法、diff、固定路径、秘密模式和 P3/P4 回归检查通过；
+- 提交 `6a7fded feat: build p5 two-generation release chain` 已推送 `main`；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 复核失败清理、权限差异和旧路径兼容；
+- 本轮没有运行真实 Builder，因此新增签名 key、Package mutation、网络、Provider、
+  credits、云资源和费用均为 0；
+- 下一轮实现并冻结 P5 专用 Droplet/Spaces/DNS/Origin 执行器。该执行器通过完整
+  回归前仍不创建 staging，之后才运行本 Builder、发布和 21 场景。

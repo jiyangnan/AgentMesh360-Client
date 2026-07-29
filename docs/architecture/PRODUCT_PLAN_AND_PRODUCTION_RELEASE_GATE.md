@@ -914,3 +914,17 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
   新增费用；
 - P5 仍为 executing，P6 关闭。下一步先实现并冻结 P5 专用 Release/21 场景/清场
   执行器，之后才允许创建唯一隔离 staging。
+
+## 55. 循环 100 P5 双代 Release Builder
+
+- 默认 P3/P4 四 Agent 构建路径保持不变；新增 P5-only Job variant 计划；
+- Generation A 固定四 Agent baseline，Generation B 固定 Job 同权限与只增加
+  `process_execution` 的权限扩张版本；
+- 两个不同临时 Publisher、每版本双构建/双签名/10 类输出逐字节比较；
+- variant definition 只存在可销毁边界，不修改源仓、candidate 或生产常量；
+- 错误或状态写入失败会销毁已生成 Publisher 并移除隔离边界；
+- 定向 6/6、完整 Node 316 passed / 3 skipped / 0 failed，提交 `6a7fded` 已推送；
+- 本轮没有运行 Builder，key、网络、Provider、credits、Package/Keychain mutation、
+  云资源和费用均为 0；
+- 下一步实现并冻结 P5 专用基础设施执行器，通过后才创建唯一 staging。P5 仍为
+  executing，P6 关闭。

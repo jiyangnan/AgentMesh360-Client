@@ -434,7 +434,7 @@ flowchart TD
 | P2 R1 E0 | **已完成 E0 技术演练**：preflight、receipt Schema/验证器、隔离 worker/runner、16 场景、sequence 1-5、失败关闭与销毁证据 | 只关闭 E0 子项；生产 custody/key/ceremony 仍需独立批准 |
 | P3 R2 E0 | **已完成 E0 技术演练**：固定 commit/toolchain/lock、双隔离 build root、四 Agent、一个临时测试 Publisher、8 次签名、十类输出逐字节复验、销毁与非秘密 receipt | 只关闭 E0 子项；生产 R2、生产 Publisher、外部分发与 P4-P8 仍需分别批准 |
 | P4 R3 E1 | **隔离演练已通过并清场**：四 Agent 双构建、Trust/Registry-last、14 项故障矩阵、Registry-first 撤回、云端和本机资源归零 | 只关闭 E1 演练；生产 R3 未关闭，P5 仍需独立授权 |
-| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭、加密重启恢复与 Release Chain 无网络预检通过；旧内部账号 v1 保持 aborted | 下一门先实现、测试并冻结 P5 专用 Release/21 场景/清场执行器；之后才创建唯一隔离 staging，完整清场前不推进 P6 |
+| P5 Package canary | **v2 执行中**：隔离客户端、真实 Host、owner OAuth/订阅、Gemini BYOK、真实 Agent Turn Route、失败关闭、加密重启恢复与 Release Chain 无网络预检通过；双代 Release Builder 已冻结但未执行；旧内部账号 v1 保持 aborted | 下一门实现并冻结 P5 专用 Droplet/Spaces/DNS/Origin 执行器；之后才创建唯一隔离 staging、运行 Builder/发布/21 场景，完整清场前不推进 P6 |
 | P6 R4 | Developer ID、公证、自动更新、签名安装恢复矩阵 | 需要 Apple 凭据、签名/公证和分发渠道授权 |
 | P7 Desktop canary | 内部设备安装/升级/Login Item/shutdown/卸载 | 需要设备/cohort 与更新窗口授权 |
 | P8 Combined canary | 正式候选桌面 + Package + 订阅 + BYOK 全链恢复 | 需要生产候选 authority、费用与 cohort 授权 |
@@ -1292,3 +1292,23 @@ Package 或云 mutation，也没有新增费用。
 本门只关闭 Release Chain 的执行前证据，不关闭 Release Chain、21 场景或 P5。
 下一步必须先实现、测试并冻结 P5 专用 Release/场景/清场执行器；冻结前不得创建
 Droplet、Spaces bucket 或 Cloudflare DNS，不复用 P4 私钥或生产资源，不推进 P6。
+
+## 50. Cycle 100 P5 双代 Release Builder
+
+冻结提交 `6a7fded...` 新增 P5 专用 Builder。Generation A 保持四 Agent baseline；
+Generation B 从冻结 Job `0.4.7` 在隔离边界生成 `0.4.8-e1.1` 同权限定义和
+`0.4.9-e1.1` 权限扩张定义，后者只增加 `process_execution`。源仓和 candidate
+均不修改。
+
+两代使用不同 Publisher；每个版本完成双构建、双签名和 10 类输出逐字节比较。
+Builder 只接受固定 P5 Origin/state 路径、clean pushed executor、Cycle 99
+preflight ancestor 与一台 Droplet/两个 bucket 的边界。任一代失败会销毁已生成
+Publisher 并移除保留边界。
+
+定向 6/6、完整 Node 316/3/0、语法/diff/秘密扫描通过。Kimi 暂停期间由主 Agent
+完成加强自主复核。本轮只冻结源码，没有运行 Builder，没有生成 key、访问网络、
+修改 Package/Keychain、使用 Provider/credits、创建云资源或产生费用。
+
+下一步实现并冻结 P5 专用 Droplet/Spaces/DNS/Origin 执行器；通过完整回归前不创建
+staging。随后才允许按序创建唯一 E1 边界、运行双代 Builder、Registry-last 发布和
+21 场景；P6 继续关闭。
