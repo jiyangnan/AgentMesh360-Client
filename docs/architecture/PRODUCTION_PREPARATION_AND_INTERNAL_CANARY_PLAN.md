@@ -1476,3 +1476,24 @@ DMG 只读检查确认它没有 Developer ID 或 Team ID，主二进制的 linke
 下一检查点冻结并执行隔离安装/生命周期矩阵：不覆盖既有系统安装，不修改全局
 Gatekeeper，逐项验证首次打开边界、UI 退出与重开、持久 Host、Login Item 状态以及
 测试状态清理。公开分发的签名、公证、更新真实性与 rollback 仍不进入本检查点。
+
+## 58. Cycle 130 P6 未签名内部安装/生命周期
+
+冻结 executor `15507ae...` 已对 Artifact `9db201f...` 在真实 arm64 Mac 完成
+11/11 自动矩阵：DMG/ZIP、Bundle/Host、未签名边界、signed-out 首启、第二实例恢复、
+Login Item 往返、signed-out 后台退出、三个持久 Agent 的 Leader detach/替换恢复和
+完整清场全部通过。
+
+执行器在标准 Applications 任一同名 App 存在时拒绝运行；真实 App/Host 只在
+`/private/tmp` 私有边界活动，子进程不继承秘密环境，DevTools 只绑定临时 IPv4
+loopback。成功前必须确认 Login Item 关闭与 DMG 卸载，最终测试前缀进程、socket、
+mount 和目录均为 0。
+
+Provider 请求、AgentMesh credits、Apple service、上传、外部 cohort 和生产 mutation
+均为 0。由于本地 build/copy 不带浏览器 quarantine，下载后的单应用“仍要打开”仍需
+种子用户人工验证，且不得全局关闭 Gatekeeper。
+
+该结果只关闭 unsigned internal 自动安装子阶段，不关闭 R4。P7/P8 仍要求正式候选
+及独立的设备/cohort、更新窗口、rollback 与清理 authority；在没有 Developer ID、
+notarization 和更新真实性之前不能按生产 P7 前进。若新增内部下载 canary，也必须
+先冻结渠道和范围，不能沿用本轮本机执行 authority。

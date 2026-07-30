@@ -1060,3 +1060,26 @@ credential、Apple service、上传、自动更新和生产 R4 均为 false。Pr
 与 Login Item 生命周期及清理恢复。不得覆盖已存在的 `/Applications/AgentMesh360.app`，
 不得要求全局关闭 Gatekeeper，也不得把内部安装通过升级成生产 R4。Developer ID、
 notarization、真实更新/rollback 和公开 cohort 仍按 Cycle 127 保持 blocked。
+
+## 63. 循环 130 P6 unsigned internal install/lifecycle
+
+冻结 commit `15507ae...` 新增严格隔离执行器，并对 commit `9db201f...` 的首份
+arm64 DMG/ZIP 完成真实 11/11 自动矩阵：
+
+- strict receipt、DMG verify/只读复制、ZIP 解压及 Host/`app.asar` 一致性；
+- Bundle、可执行 Host、Developer ID 缺失与 Gatekeeper 手动放行边界；
+- 独立 HOME/userData/state 下的 signed-out 首启、窗口关闭与第二实例恢复；
+- packaged Login Item 开启/读取/关闭并确认最终移除；
+- signed-out 后台启动自动退出且不创建 Host；
+- packaged Host 的三个产品 Agent 固定 Main Session、Bridge detach、Leader 重连/
+  崩溃替换与恢复；
+- App/Helper/Host、socket、挂载和隔离目录完整清理。
+
+执行器拒绝覆盖系统或用户 Applications，子进程采用环境白名单，调试只在运行期随机
+`127.0.0.1` 端口。Provider、credits、Apple service、上传和生产 mutation 均为 0。
+
+本地构建没有浏览器 quarantine，所以“官网下载后在隐私与安全性中对单应用仍要打开”
+继续是明确的人工体验项；自动结果不能冒充这一交互或 Apple 签名。P6 生产 R4、
+Developer ID/notarization、更新/rollback、P7 Desktop canary 和 P8 Combined canary
+均继续 blocked。下一步若要给种子用户实际下载，必须先冻结受控下载渠道、Artifact
+摘要、设备/cohort、执行窗口、Abort Owner 与清理边界，不从本轮推断上传 authority。

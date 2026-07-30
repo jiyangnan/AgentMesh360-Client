@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP 已构建并完成字节、镜像、Bundle 与未签名边界复验；下一步只执行隔离安装、首次打开与持久 Host/Login Item 生命周期矩阵，真实 Apple 签名/公证和生产 Desktop Candidate 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP 及 11/11 隔离安装/生命周期矩阵已通过；官网下载 quarantine 后的单应用“仍要打开”保留人工体验项，真实 Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -6925,3 +6925,62 @@ DMG/ZIP。该阶段不关闭生产 R4
 - 下一轮只执行隔离安装/首次启动检查点：先冻结安装与恢复矩阵，再在不覆盖既有
   `/Applications/AgentMesh360.app`、不关闭全局 Gatekeeper 的前提下验证 DMG/ZIP
   安装、单应用放行边界、后台 Host、UI detach/reopen、Login Item 状态和清理恢复。
+
+### 循环 130：P6 未签名内部版隔离安装与生命周期
+
+状态：已完成；冻结执行器在真实 Mac 上 11/11 通过并清场，不关闭生产 R4 或 P7
+
+执行器与安全边界：
+
+1. 新增 `run-isolated-lifecycle.mjs` 和中文操作清单；执行器只接受 clean pushed
+   commit、绝对 strict build receipt、四文件 Artifact 边界和普通 macOS 登录用户；
+2. `/Applications/AgentMesh360.app` 或 `~/Applications/AgentMesh360.app` 任一存在
+   就停止，不覆盖系统安装；本轮两处均为 absent；
+3. 子进程只取得 HOME、userData、AgentMesh state、PATH、locale 和固定 loopback
+   Core 等白名单环境，不继承 Provider、Apple、发布或其他秘密；
+4. DevTools 只绑定运行期随机 `127.0.0.1` 端口，用来调用 preload 已有的脱敏 IPC；
+   不进入产品配置，App 退出后端口关闭；
+5. Login Item 只有“开启 → 读取 → 关闭”一个有界往返；未确认关闭时执行器失败关闭，
+   不会先输出成功；
+6. DMG 只读挂载，失败会停止；第二实例、后台实例和前台 App 均有超时终止，成功后
+   卸载镜像并删除完整隔离边界；
+7. 本机直接构建文件通常没有浏览器 quarantine，因此自动矩阵只验证 Developer ID/
+   Team ID 缺失、deep codesign/Gatekeeper assessment 不通过和必须人工单应用放行；
+   不伪造官网下载后的“仍要打开”人工体验通过。
+
+真实 11/11 结果：
+
+- executor commit `15507ae62a58317b8bc91b39a4f98f20e1e97dd7`，Artifact commit
+  `9db201f43a49d0cc58dd466a500d40f48c8fe933`；
+- strict build receipt、DMG verify/只读复制、ZIP 解压、Host 与 `app.asar` 双摘要、
+  Bundle ID/版本/可执行位全部通过；
+- 未签名边界按预期成立：没有 Developer ID/Team ID/notarization，deep codesign 与
+  Gatekeeper assessment 均不通过，人工单应用放行仍为 true，全局关闭 Gatekeeper
+  为 false；
+- 隔离首次启动为 `signed_out`，Host 未在身份准入前运行；关闭窗口后第二实例快速
+  退出并由原主进程恢复新窗口，没有第二个 Host；
+- 打包 App 的 Login Item 返回 supported，开启后为 enabled，关闭后为
+  not-registered；最终明确恢复关闭；
+- 未登录 `--agentmesh360-background` 无 Host/socket 并自动退出；
+- 打包 Host 对 Job、Lecturecast、Deploy 三个 Agent 的不同固定 Main Session、
+  Bridge detach、同一 Leader 恢复、Leader SIGKILL 后替代 Leader 与原 Session 恢复
+  真实通过；
+- 自动场景 11/11，Provider 请求 0、AgentMesh credits 0、Apple service 请求 0、
+  上传 0、生产 mutation 0；Login Item 关闭、测试进程/挂载/socket/目录为 0，仓库
+  根 `target/` absent，系统/用户 Applications 仍 absent；
+- 终态进程复核发现一个本轮之前已运行约 22 小时的旧
+  `desktop/dist/mac-arm64/AgentMesh360.app`，它不含本轮临时前缀且未被修改或终止。
+
+自主验证与计划复盘：
+
+- 新执行器 6/6，P6 合计 37/37；完整工具链 288 项中沙箱内 284 passed，四项
+  loopback Origin 在沙箱外对应文件 5/5；桌面 114 passed / 3 个真实 Host 环境门
+  skipped / 0 failed，语法和离线依赖审计 0 vulnerability；
+- Kimi 继续按用户要求暂停，本轮为非 Kimi 独立审查；主 Agent 复核 subprocess
+  参数、环境白名单、loopback 限制、Login Item 补偿、超时进程、成功输出时序、
+  DMG detach、临时状态清理、秘密扫描和执行后终态；
+- 对照产品蓝图和 P0-P8，本轮只完成 P6 unsigned internal 自动矩阵。它不满足 R4 的
+  Developer ID/notarization/更新真实性，也不能跳到 P7/P8；
+- 当前无 authority 可安全继续的 P6 自动工程项已收口。下一实际体验点是从受控下载
+  渠道取得带 quarantine 的同一内部版，并由明确知情的种子用户只对单应用执行
+  “仍要打开”；上传渠道、设备/cohort、窗口和清理边界必须在执行前另行冻结。

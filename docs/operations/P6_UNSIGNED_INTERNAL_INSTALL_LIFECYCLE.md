@@ -67,3 +67,17 @@ PID、端口或凭据的单行 JSON。
 步骤不得用 `spctl --master-disable`、不得启用全局“任何来源”，也不得记录用户系统
 设置或其他已安装 App。它是内部体验版的已知交互，不是生产签名/公证通过。
 
+## 首次真实执行结果
+
+2026-07-30，冻结 executor commit `15507ae62a58...` 对 Artifact commit
+`9db201f43a49...` 的 arm64 `0.1.0` 完成正式执行：
+
+- 自动矩阵 11/11；
+- Login Item 最终关闭；
+- 测试 App/Helper/Host、socket、DMG mount 和隔离目录为 0；
+- Provider 请求、AgentMesh credits、Apple service、上传和生产 mutation 为 0；
+- Developer ID、notarization 与生产 R4 仍为 false；
+- `manualGatekeeperActionRequired=true`，
+  `globalGatekeeperDisableRequired=false`。
+
+该结果绑定上述两个 commit；未来 Artifact 或执行器变化后必须重新执行，不能沿用。

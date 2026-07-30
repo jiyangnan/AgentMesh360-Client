@@ -189,6 +189,11 @@ npm run build:mac
 receipt/SHA-256、DMG checksum 与未签名边界复验。下一检查点是隔离安装和
 Host/Login Item 生命周期；尚未完成前不能把“能够打包”写成“安装链已验收”。
 
+隔离安装与生命周期已由冻结 executor `15507ae...` 完成 11/11：DMG/ZIP 一致、
+signed-out 首启和单实例恢复、Login Item 开启后移除、后台无身份退出，以及打包
+Host 的三个持久 Agent detach/Leader 替换恢复均通过，测试状态已清场。真实官网下载
+后的 quarantine“仍要打开”仍需人工确认；该结果不关闭生产 R4。
+
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
 签名安装包中的 macOS Login Item 注册/批准/升级、Electron 主进程自身守护以及受控
 Host shutdown 仍是发布门槛；源码和开发 smoke 通过不等于生产安装链已验收。
