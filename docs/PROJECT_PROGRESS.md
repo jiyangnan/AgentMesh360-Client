@@ -7321,7 +7321,7 @@ DMG/ZIP。该阶段不关闭生产 R4
 
 ### 循环 137：动态模型发现与主流 Provider 一等支持
 
-状态：代码与全量回归完成，等待 commit、push 和单版本内部包交付
+状态：完成
 
 owner UAT 问题与产品判断：
 
@@ -7365,11 +7365,30 @@ owner UAT 问题与产品判断：
 - Kimi 独立复核继续按 owner 要求暂停，本轮由主 Agent 自主检查跨层合同、安全边界、
   官方端点、UI 状态机、完整 diff 和既定产品顺序。
 
+提交、推送与内部包：
+
+- 功能与文档 commit：`9e6ea87439d606f87a651fc364c0c443313d73cf`，已推送
+  `origin/main`；
+- 从该 clean pushed commit 构建
+  `desktop_internal_p6_9e6ea87439d6_arm64`，receipt verifier、构建目录双
+  `SHA256SUMS`、`hdiutil verify` 和 Downloads 交付副本逐字节复验全部通过；
+- DMG：181397339 bytes，
+  `1143297c8b86c338febc7c12104bed7a6678834025cb0dadb4da72722e4d4668`；
+- ZIP：181182416 bytes，
+  `6686908b0d001ea7e34855ad79f5be092c4a9f557da269292c9795975c27408d`；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-30-9e6ea87-arm64/`；
+- 已删除上一份 `1fe769f` Downloads 包、上一份构建证据和本轮 24GB 隔离 Rust
+  target；仓库根 `target/` 仍不存在；
+- 最终只保留一份 Downloads 交付包和一份对应的 `desktop/dist/internal` 构建证据，
+  `desktop/dist/` 根没有重复 DMG、ZIP、blockmap、unpacked App 或调试文件；
+- 构建与复验没有 Provider 请求、AgentMesh credits、Apple service、上传或费用。
+
 计划复盘与下一轮：
 
 - 本轮是 Cycle 135 Provider 配置简化的直接 UAT 完善，没有改变订阅有效才能进入、
   BYOK 默认、Key 本机保存、持久 Agent、Package 或未签名内部发行边界；
 - owner 本轮明确扩展 Provider 范围，因此新增官方预设属于已授权产品范围，不是自行
   延伸；价格比较、余额读取、自动模型推荐与 capability 推断没有加入；
-- 完成本轮 commit/push/单包替换后，下一产品切片仍回到首次使用引导，呈现“配置
+- 本轮 commit/push/单包替换已经完成；下一产品切片仍回到首次使用引导，呈现“配置
   Provider → 激活/打开 Agent → 开始对话”，不提前启动 P7/P8 或在线分发。

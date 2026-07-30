@@ -1159,5 +1159,6 @@ GLM/Kimi Coding Plan 使用独立端点和专项提示；技术兼容不代表�
 
 本轮没有加入模型价格比较、余额读取、自动路由推荐、无确认付费请求或通过模型名称
 猜测 capability。订阅门、BYOK、本机 Vault、Agent Package、unsigned internal
-发行和生产 R4 边界不变。Provider UAT 切片完成并交付后，原定下一产品工作仍是首次
-使用引导；P7/P8、在线分发和生产更新继续关闭。
+发行和生产 R4 边界不变。Provider UAT 切片已由 clean pushed commit
+`9e6ea87439d6...` 完成单版本本地交付；原定下一产品工作仍是首次使用引导；
+P7/P8、在线分发和生产更新继续关闭。
