@@ -243,6 +243,7 @@ export async function verifyPackagedHostAndPrune({
     'builder-debug.yml',
     'builder-effective-config.yaml',
   ]);
+  const allowedAuxiliaryDirectories = new Set(['.icon-icns']);
   const entries = await readdir(outputDirectory, { withFileTypes: true });
   const artifactNames = entries
     .filter((entry) => entry.isFile() && /\.(dmg|zip)$/u.test(entry.name))
@@ -250,17 +251,28 @@ export async function verifyPackagedHostAndPrune({
   const allowedBlockmaps = new Set(
     artifactNames.map((name) => `${name}.blockmap`),
   );
-  const unpacked = entries.filter((entry) => entry.isDirectory());
+  const unpacked = entries.filter(
+    (entry) =>
+      entry.isDirectory()
+      && !allowedAuxiliaryDirectories.has(entry.name),
+  );
   const unexpected = entries.filter(
     (entry) =>
-      !entry.isDirectory()
-      && !/\.(dmg|zip)$/u.test(entry.name)
-      && (
-        (
-          !allowedAuxiliaryFiles.has(entry.name)
-          && !allowedBlockmaps.has(entry.name)
+      (
+        entry.isDirectory()
+        && !allowedAuxiliaryDirectories.has(entry.name)
+        && entry.name !== expectedDirectory
+      )
+      || (
+        !entry.isDirectory()
+        && !/\.(dmg|zip)$/u.test(entry.name)
+        && (
+          (
+            !allowedAuxiliaryFiles.has(entry.name)
+            && !allowedBlockmaps.has(entry.name)
+          )
+          || !entry.isFile()
         )
-        || !entry.isFile()
       ),
   );
   if (
@@ -300,8 +312,12 @@ export async function verifyPackagedHostAndPrune({
     if (
       allowedAuxiliaryFiles.has(entry.name)
       || allowedBlockmaps.has(entry.name)
+      || allowedAuxiliaryDirectories.has(entry.name)
     ) {
-      await rm(path.join(outputDirectory, entry.name), { force: true });
+      await rm(path.join(outputDirectory, entry.name), {
+        recursive: allowedAuxiliaryDirectories.has(entry.name),
+        force: true,
+      });
     }
   }
 }

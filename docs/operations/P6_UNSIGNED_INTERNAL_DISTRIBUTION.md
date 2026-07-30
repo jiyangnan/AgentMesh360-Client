@@ -20,7 +20,7 @@ macOS 客户端使用未签名、未公证的内部体验版。该阶段服务�
 - 构建使用的 Cargo 临时目录在结束后删除，不恢复仓库根 `target/`。
 - DMG 明确关闭 `writeUpdateInfo`；Electron Builder 对 ZIP 强制生成的临时
   `.blockmap`、unpacked `.app` 与 builder 调试文件在核验后删除，只保留分发所需
-  四个文件。
+  四个文件；固定 `.icon-icns/` 图标转换缓存也会删除，其他未知目录继续失败关闭。
 
 默认命令：
 
