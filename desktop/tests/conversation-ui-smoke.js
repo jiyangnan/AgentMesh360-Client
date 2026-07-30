@@ -116,6 +116,33 @@ app.whenReady().then(async () => {
   assert.equal(openedDom.body.includes('private-session-id'), false);
   assert.equal(openedDom.body.includes('/private/account-7'), false);
 
+  await window.webContents.executeJavaScript(`
+    (() => {
+      document.querySelector('#conversation-form [name="message"]').value =
+        '未发送的对话草稿';
+      document.querySelector('.conversation-back').click();
+      document.getElementById('nav-conversation').click();
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value === '未发送的对话草稿'",
+  ));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.documentElement.innerHTML.includes('未发送的对话草稿')",
+  ), false);
+  window.webContents.send('conversation:state', {
+    ...currentConversation,
+    planEntries: [
+      { planId: 'plan-draft-refresh', content: '保持草稿', status: 'in_progress' },
+    ],
+  });
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value === '未发送的对话草稿'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]').value = ''",
+  );
+
   await window.webContents.executeJavaScript(
     "document.querySelector('.conversation-back').click()",
   );

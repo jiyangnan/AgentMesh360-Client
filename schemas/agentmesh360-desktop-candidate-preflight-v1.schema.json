@@ -99,11 +99,11 @@
         },
         "desktopPackageJsonSha256": {
           "type": "string",
-          "const": "sha256:ee99484cbc757b296f9a82f23781b5bc58d11f1acbb9a79f626a354bffe83f64"
+          "const": "sha256:5fa1f535622e041d13864b7804b758908b69fbee87d6488a782340df1119f6b4"
         },
         "desktopPackageLockSha256": {
           "type": "string",
-          "const": "sha256:657dc0d703596c87f840af376b66b797cca31f5e372320cdcba0a9e914a70ecc"
+          "const": "sha256:2d574f850bb26297b635f38442b4d2b991cee2ade9105dc2e16574ed3976a477"
         },
         "p6Authorized": {
           "type": "boolean",
@@ -181,7 +181,7 @@
       "properties": {
         "desktopVersion": {
           "type": "string",
-          "const": "0.1.0"
+          "const": "0.1.1"
         },
         "bundleId": {
           "type": "string",

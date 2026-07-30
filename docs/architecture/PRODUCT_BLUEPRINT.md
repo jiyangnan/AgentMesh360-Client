@@ -511,7 +511,11 @@ Cycle 134 修复了 Cycle 133 后台复验与 Host 授权更新之间的竞态�
 过期的旧授权，并在失败结果落定后立即失败关闭。Provider 页面因此不会再误报
 `Authentication required`，也不会重新引入全屏 loading 或丢失未保存表单；订阅硬门、
 注销和 Core/Host 双重验证边界不变。Cycle 135 已按计划完成 Provider 配置简化与
-测试后保存闭环；下一产品切片回到首次使用引导，不扩展 Provider Catalog 或生产发布。
+测试后保存闭环；Cycle 137/138 又完成十个官方 Provider 的动态模型发现和新包接管
+旧持久 Host。Cycle 139 把安装、认证、订阅、持久 Agent、对话、Provider、Package、
+后台 Host 与本地交付整理为 45 条结构化用户旅程，修复 GLM 5.2 默认思考导致的短连接
+空内容误判，并补齐侧栏切换后的 Provider/对话草稿恢复。下一产品切片仍回到首次使用
+引导，不扩展价格、余额、自动 fallback、P7/P8 或生产发布。
 
 Job Agent、LectureCast Agent 和 Deploy Agent 已从相同的 Manifest v1 载入，不再
 分别硬编码 Registry 元数据与 Agent Profile。Host 现在会在启动时复验并合并本地

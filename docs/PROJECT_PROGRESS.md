@@ -7482,3 +7482,62 @@ owner UAT 事实：
   安装新包 → 新 Leader 接管 → 十个 Provider 可见”已完成，Cycle 138 关闭；
 - 下一产品切片仍是首次使用引导，不提前进入价格、余额、自动路由、
   P7/P8 或在线分发。
+
+### 循环 139：产品用户旅程测试基线、GLM 5.2 连接修复与草稿恢复
+
+状态：功能与自动化已完成；等待 clean pushed commit 的单包构建、安装复验和最终留存
+
+owner UAT 与根因：
+
+1. owner 使用真实 GLM Coding Plan Key 已成功动态读取 8 个模型，但选择
+   `glm-5.2` 后，连接测试收到 Provider 响应却判为没有有效内容；
+2. 智谱官方合同显示 GLM Coding Plan 的 OpenAI Chat Base URL 为
+   `https://open.bigmodel.cn/api/coding/paas/v4`，`glm-5.2` 默认开启思考，可用
+   `reasoning_effort=none` 关闭；原连接测试只有 16 个输出 token，可能全部消耗在
+   `reasoning_content`，没有可见 `content`；
+3. 这说明此前测试按模块堆叠，但缺少“真实用户故事 → 输入 → 交互 → 预期输出 →
+   失败恢复”的全产品基线，owner 才会成为首个发现产品断点的人。
+
+本轮实现：
+
+1. `docs/test-cases/test-cases.md` 已重写为 45 条核心旅程，覆盖安装、登录、订阅、
+   持久 Agent、会话、Provider、Package、后台 Host 和本地交付 9 个领域；
+2. 每条用例固定用户故事、优先级、设计状态、前置条件、输入、交互步骤、预期输出、
+   失败恢复、验证层和本轮结果；新增机器校验器，低于 30 条、缺字段、缺领域或状态
+   非法都会失败；
+3. GLM 修复只对 Catalog 复验后的官方 `glm` / `glm-coding-plan` 与精确
+   `glm-5.2` 连接测试注入 `reasoning_effort=none`，仍使用短提示、无工具和 16-token
+   上限；其他模型、Provider 与自定义端点完全不变；
+4. 新增 wire 回归，真实解析一次本机 SSE 请求，证明请求包含
+   `"reasoning_effort":"none"`、模型 `glm-5.2` 和有界输出，并且可见 `content`
+   才判通过；
+5. 按新用例进行真实客户端操作时，又发现 Provider 与对话草稿在侧栏切换后被清空；
+   已加入账户内 Renderer 内存草稿恢复，账户切换、注销和成功提交时清理；
+   Provider Key 只恢复到 password input 的 value property，不进入 HTML markup、
+   Host、日志、SQLite 或构建证据。
+
+当前验证：
+
+- AgentMesh360 Rust：197 passed / 1 ignored / 0 failed；
+- GLM 定向单元与本机 wire：2 passed / 0 failed；
+- `xai-grok-shell --lib` Clippy `-D warnings` 与 `cargo fmt --all -- --check` 通过；
+- Desktop Node：122 passed / 3 个显式 real-Host 环境门 skipped / 0 failed；
+- Repository 工具链：306 passed / 0 failed；
+- Provider、Conversation、Package 三组 Electron UI smoke 全部通过；新增复验证明
+  Provider 名称、协议、地址、模型、假 Key 和对话草稿跨侧栏切换保留，假 Key/草稿
+  不出现在 HTML markup；
+- 真实安装版只用本地假 Key 完成供应商目录和草稿失败复现，没有点击模型发现或连接
+  测试，没有 Provider 请求、AgentMesh credits 或费用；
+- 修复后真实 GLM `glm-5.2` 付费最小请求仍需本轮明确费用授权，而且 Host/Vault
+  不提供 secret readback；因此当前只保留为外部真实服务阻断，不借用旧授权、不读取
+  owner Key，也不把 loopback 回归冒充真实 Provider 通过；
+- Kimi 按 owner 指示继续暂停，本轮由主 Agent 自主复核。
+
+计划复盘与下一步：
+
+- 本轮没有新增 Provider、改变 BYOK/订阅硬门、实现 fallback、读取真实 Key、触碰
+  Package 生产 Trust、P7/P8、Apple Developer ID、公证或在线分发；
+- 当前只剩从 clean pushed commit 构建 unsigned internal arm64 包、覆盖安装验证
+  新 Host 接管与草稿修复、确认唯一包留存，再回填最终 receipt 和摘要；
+- 包交付后下一产品切片仍是首次使用引导，把“配置 Provider → 激活/打开 Agent →
+  开始对话”的路径直接展示给首次用户；不会因本轮测试体系建设改变既定产品顺序。

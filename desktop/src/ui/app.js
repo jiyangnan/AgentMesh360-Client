@@ -13,6 +13,8 @@ let providerUi = {
   busy: false,
   editingProfileId: null,
 };
+let providerDraft = null;
+let conversationDrafts = new Map();
 let packageUi = {
   phase: 'idle',
   snapshot: null,
@@ -53,6 +55,8 @@ function render(state) {
     return;
   }
   if (currentState.phase === 'ready' && currentState.account?.id !== readyAccountId) {
+    document.getElementById('provider-profile-form')?.remove();
+    document.getElementById('conversation-form')?.remove();
     readyAccountId = currentState.account?.id ?? null;
     workspaceView = 'agents';
     providerUi = {
@@ -63,6 +67,8 @@ function render(state) {
       busy: false,
       editingProfileId: null,
     };
+    providerDraft = null;
+    conversationDrafts = new Map();
     packageUi = {
       phase: 'idle',
       snapshot: null,
@@ -87,6 +93,8 @@ function render(state) {
     workspaceView = 'agents';
     providerUi.snapshot = null;
     providerUi.phase = 'idle';
+    providerDraft = null;
+    conversationDrafts = new Map();
     packageUi.snapshot = null;
     packageUi.phase = 'idle';
     packageUi.pendingApproval = null;
@@ -278,6 +286,7 @@ function renderUnavailable(state) {
 }
 
 function renderReady(state) {
+  captureRendererDrafts();
   const account = state.account || {};
   root.innerHTML = `
     <section class="shell workspace">
@@ -334,6 +343,61 @@ function renderReady(state) {
   for (const button of document.querySelectorAll('[data-open-conversation]')) {
     button.addEventListener('click', () => openConversation(button.dataset.openConversation));
   }
+}
+
+function captureRendererDrafts() {
+  captureProviderDraft();
+  const conversationForm = document.getElementById('conversation-form');
+  const draftKey = conversationDraftKey();
+  if (conversationForm && draftKey) {
+    const value = String(conversationForm.elements.message?.value || '');
+    if (value) conversationDrafts.set(draftKey, value);
+    else conversationDrafts.delete(draftKey);
+  }
+}
+
+function captureProviderDraft() {
+  const form = document.getElementById('provider-profile-form');
+  if (!form) return;
+  const modelSelect = form.elements.enabledModels;
+  const modelStatus = form.querySelector('#model-discovery-status');
+  const connectionStatus = form.querySelector('#connection-test-status');
+  providerDraft = {
+    editingProfileId: providerUi.editingProfileId || null,
+    presetId: String(form.elements.presetId?.value || ''),
+    displayName: String(form.elements.displayName?.value || ''),
+    protocol: String(form.elements.protocol?.value || 'openai_chat'),
+    authKind: String(form.elements.authKind?.value || 'bearer_api_key'),
+    baseUrl: String(form.elements.baseUrl?.value || ''),
+    apiKey: String(form.elements.apiKey?.value || ''),
+    manualModel: String(form.elements.manualModel?.value || ''),
+    modelOptions: [...(modelSelect?.options || [])]
+      .filter((optionElement) => optionElement.value)
+      .map((optionElement) => ({
+        value: optionElement.value,
+        label: optionElement.textContent || optionElement.value,
+      })),
+    selectedModel: String(modelSelect?.value || ''),
+    modelDiscoveryPassed: form.dataset.modelDiscoveryPassed === 'true',
+    connectionTestPassed: form.dataset.connectionTestPassed === 'true',
+    configRevision: String(form.dataset.configRevision || '0'),
+    modelStatus: {
+      status: modelStatus?.dataset.status || 'idle',
+      title: modelStatus?.querySelector('strong')?.textContent || '',
+      detail: modelStatus?.querySelector('span')?.textContent || '',
+    },
+    connectionStatus: {
+      status: connectionStatus?.dataset.status || 'idle',
+      title: connectionStatus?.querySelector('strong')?.textContent || '',
+      detail: connectionStatus?.querySelector('span')?.textContent || '',
+    },
+  };
+}
+
+function conversationDraftKey() {
+  const agentId = conversationUi?.agentId;
+  if (!readyAccountId || !agentId) return null;
+  return `${readyAccountId}:${agentId}`;
 }
 
 function conversationView() {
@@ -880,16 +944,21 @@ function wireConversation() {
   const transcript = document.getElementById('conversation-transcript');
   if (transcript) transcript.scrollTop = transcript.scrollHeight;
   const form = document.getElementById('conversation-form');
+  const restoredDraft = conversationDrafts.get(conversationDraftKey()) || '';
+  if (form?.elements.message && restoredDraft) form.elements.message.value = restoredDraft;
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const textarea = form.elements.message;
     const text = textarea.value.trim();
     if (!text) return;
+    const draftKey = conversationDraftKey();
     textarea.value = '';
     try {
       const state = await bridge.sendConversationMessage(text);
       conversationUi = state;
+      if (draftKey) conversationDrafts.delete(draftKey);
     } catch (error) {
+      if (draftKey) conversationDrafts.set(draftKey, text);
       conversationUi = {
         ...conversationUi,
         error: publicError(error, '消息发送失败'),
@@ -1521,19 +1590,49 @@ function providerLoadingView() {
 
 function providerProfileEditor(catalog, profiles) {
   const editing = profiles.find((item) => item.profileId === providerUi.editingProfileId) || null;
+  const editingProfileId = providerUi.editingProfileId || null;
+  const draft = providerDraft?.editingProfileId === editingProfileId ? providerDraft : null;
   const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
-  const selectedPreset = editing ? (editing.presetId || '__custom__') : '';
+  const selectedPreset = draft?.presetId ?? (editing ? (editing.presetId || '__custom__') : '');
   const selectedProvider = providers.find((provider) => provider.presetId === selectedPreset) || null;
   const managed = selectedProvider?.classification === 'official';
   const officialProviders = providers.filter((provider) => provider.classification === 'official');
   const advancedProviders = providers.filter((provider) => provider.classification !== 'official');
   const savedModels = Array.isArray(editing?.enabledModels) ? editing.enabledModels : [];
+  const modelOptions = draft?.modelOptions
+    ?? savedModels.map((model) => ({ value: model, label: model }));
+  const modelDiscoveryPassed = draft
+    ? draft.modelDiscoveryPassed
+    : Boolean(editing && managed);
+  const connectionTestPassed = draft
+    ? draft.connectionTestPassed
+    : Boolean(editing);
+  const displayName = draft?.displayName ?? editing?.displayName ?? '';
+  const protocol = draft?.protocol ?? editing?.protocol;
+  const authKind = draft?.authKind ?? editing?.authKind;
+  const baseUrl = draft?.baseUrl ?? editing?.baseUrl ?? '';
+  const manualModel = draft?.manualModel ?? (savedModels[0] || '');
+  const selectedModel = draft?.selectedModel ?? (savedModels[0] || '');
+  const modelStatus = draft?.modelStatus ?? {
+    status: editing && managed ? 'passed' : 'idle',
+    title: editing && managed ? '当前显示已保存模型' : '尚未读取可用模型',
+    detail: editing && managed
+      ? '重新输入 Key 可从供应商刷新模型列表。'
+      : '模型读取不执行推理，通常不会产生 Provider 费用。',
+  };
+  const connectionStatus = draft?.connectionStatus ?? {
+    status: editing ? 'passed' : 'idle',
+    title: editing ? '当前已保存配置可继续使用' : '保存前需要先测试连接',
+    detail: editing
+      ? '若更换 Key、模型或接口设置，需要重新测试。'
+      : '测试会尝试调用第一个模型，可能产生极小 Provider 费用；不消耗 AgentMesh credits，也不会保存 Key。',
+  };
   const advanced = selectedPreset === '__custom__' || Boolean(selectedProvider && !managed);
   return `
     <form class="control-panel provider-form" id="provider-profile-form"
-      data-connection-test-passed="${editing ? 'true' : 'false'}"
-      data-model-discovery-passed="${editing && managed ? 'true' : 'false'}"
-      data-config-revision="0">
+      data-connection-test-passed="${connectionTestPassed ? 'true' : 'false'}"
+      data-model-discovery-passed="${modelDiscoveryPassed ? 'true' : 'false'}"
+      data-config-revision="${escapeHtml(draft?.configRevision || '0')}">
       <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑供应商' : '添加模型供应商'}</strong><small>选择供应商 → 填 Key 获取模型 → 选择模型 → 测试 → 保存</small></div></div>
       <div class="form-grid two">
         <label class="field"><span>供应商</span>
@@ -1548,7 +1647,7 @@ function providerProfileEditor(catalog, profiles) {
             <option value="__custom__" ${selectedPreset === '__custom__' ? 'selected' : ''}>其他自定义接口（高级）</option>
           </select>
         </label>
-        <label class="field"><span>名称 <em>方便你自己区分</em></span><input name="displayName" maxlength="80" required value="${escapeHtml(editing?.displayName || '')}" placeholder="例如：我的 Gemini"></label>
+        <label class="field"><span>名称 <em>方便你自己区分</em></span><input name="displayName" maxlength="80" required value="${escapeHtml(displayName)}" placeholder="例如：我的 Gemini"></label>
       </div>
       <div class="managed-provider-card" id="managed-provider-card" ${managed ? '' : 'hidden'}>
         <i aria-hidden="true"></i>
@@ -1568,19 +1667,19 @@ function providerProfileEditor(catalog, profiles) {
         <div class="form-grid two">
           <label class="field"><span>接口兼容方式</span>
             <select name="protocol" required>
-              ${option('openai_responses', 'OpenAI Responses 兼容', editing?.protocol)}
-              ${option('openai_chat', 'OpenAI Chat Completions 兼容（最常见）', editing?.protocol)}
-              ${option('anthropic_messages', 'Anthropic Messages 兼容', editing?.protocol)}
+              ${option('openai_responses', 'OpenAI Responses 兼容', protocol)}
+              ${option('openai_chat', 'OpenAI Chat Completions 兼容（最常见）', protocol)}
+              ${option('anthropic_messages', 'Anthropic Messages 兼容', protocol)}
             </select>
           </label>
           <label class="field"><span>Key 发送方式</span>
             <select name="authKind" required>
-              ${option('bearer_api_key', 'Authorization: Bearer', editing?.authKind)}
-              ${option('x_api_key', 'x-api-key Header', editing?.authKind)}
+              ${option('bearer_api_key', 'Authorization: Bearer', authKind)}
+              ${option('x_api_key', 'x-api-key Header', authKind)}
             </select>
           </label>
         </div>
-        <label class="field"><span>接口地址</span><input name="baseUrl" type="url" required value="${escapeHtml(editing?.baseUrl || '')}" placeholder="https://api.example.com/v1"></label>
+        <label class="field"><span>接口地址</span><input name="baseUrl" type="url" required value="${escapeHtml(baseUrl)}" placeholder="https://api.example.com/v1"></label>
       </details>
       <div class="credential-action-row">
         <label class="field secret-field"><span>${editing ? '替换 API Key（可留空）' : 'API Key'}</span><input name="apiKey" type="password" autocomplete="off" ${editing ? '' : 'required'} placeholder="${editing ? '重新获取模型或替换 Key 时填写' : '粘贴供应商 API Key'}"><i>仅交给本机 Host</i></label>
@@ -1588,35 +1687,35 @@ function providerProfileEditor(catalog, profiles) {
       </div>
       <section class="model-discovery-panel" id="official-model-discovery" ${managed ? '' : 'hidden'}>
         <label class="field"><span>可用模型 <em>由当前 Key 从供应商实时读取</em></span>
-          <select name="enabledModels" id="provider-model-select" required ${editing && managed ? '' : 'disabled'}>
-            <option value="" ${savedModels.length ? '' : 'selected'} disabled>${savedModels.length ? '请选择模型' : '请先验证 Key 并获取模型'}</option>
-            ${savedModels.map((model, index) => `<option value="${escapeHtml(model)}" ${index === 0 ? 'selected' : ''}>${escapeHtml(model)}</option>`).join('')}
+          <select name="enabledModels" id="provider-model-select" required ${modelDiscoveryPassed ? '' : 'disabled'}>
+            <option value="" ${modelOptions.length ? '' : 'selected'} disabled>${modelOptions.length ? '请选择模型' : '请先验证 Key 并获取模型'}</option>
+            ${modelOptions.map((model) => `<option value="${escapeHtml(model.value)}" ${selectedModel === model.value ? 'selected' : ''}>${escapeHtml(model.label)}</option>`).join('')}
           </select>
         </label>
-        <div class="model-discovery-status" id="model-discovery-status" data-status="${editing && managed ? 'passed' : 'idle'}" role="status">
+        <div class="model-discovery-status" id="model-discovery-status" data-status="${escapeHtml(modelStatus.status)}" role="status">
           <i aria-hidden="true"></i>
           <div>
-            <strong>${editing && managed ? '当前显示已保存模型' : '尚未读取可用模型'}</strong>
-            <span>${editing && managed ? '重新输入 Key 可从供应商刷新模型列表。' : '模型读取不执行推理，通常不会产生 Provider 费用。'}</span>
+            <strong>${escapeHtml(modelStatus.title)}</strong>
+            <span>${escapeHtml(modelStatus.detail)}</span>
           </div>
         </div>
       </section>
       <label class="field manual-model-field" id="manual-model-field" ${advanced ? '' : 'hidden'}>
         <span>模型 ID <em>兼容与本地接口需要手工填写</em></span>
-        <input name="manualModel" ${advanced ? 'required' : 'disabled'} value="${escapeHtml(advanced ? (savedModels[0] || '') : '')}" placeholder="例如：local-model">
+        <input name="manualModel" ${advanced ? 'required' : 'disabled'} value="${escapeHtml(advanced ? manualModel : '')}" placeholder="例如：local-model">
       </label>
-      <div class="connection-test-status" id="connection-test-status" data-status="${editing ? 'passed' : 'idle'}" role="status">
+      <div class="connection-test-status" id="connection-test-status" data-status="${escapeHtml(connectionStatus.status)}" role="status">
         <i aria-hidden="true"></i>
         <div>
-          <strong>${editing ? '当前已保存配置可继续使用' : '保存前需要先测试连接'}</strong>
-          <span>${editing ? '若更换 Key、模型或接口设置，需要重新测试。' : '测试会尝试调用第一个模型，可能产生极小 Provider 费用；不消耗 AgentMesh credits，也不会保存 Key。'}</span>
+          <strong>${escapeHtml(connectionStatus.title)}</strong>
+          <span>${escapeHtml(connectionStatus.detail)}</span>
         </div>
       </div>
       <div class="panel-actions">
         ${editing ? '<button class="ghost" id="cancel-profile-edit" type="button">取消编辑</button>' : '<span></span>'}
         <div class="provider-save-actions">
           <button class="secondary connection-test-button" id="provider-test-connection" type="button" ${providerUi.busy ? 'disabled' : ''}>测试连接</button>
-          <button class="secondary provider-save-button" type="submit" ${providerUi.busy || !editing ? 'disabled' : ''}>安全保存</button>
+          <button class="secondary provider-save-button" type="submit" ${providerUi.busy || !connectionTestPassed ? 'disabled' : ''}>安全保存</button>
         </div>
       </div>
     </form>`;
@@ -1733,11 +1832,20 @@ function providerAssignmentList(assignments, profiles) {
 function wireProviderSettings() {
   document.querySelector('.retry-providers')?.addEventListener('click', () => refreshProviderSnapshot());
   document.getElementById('cancel-profile-edit')?.addEventListener('click', () => {
+    document.getElementById('provider-profile-form')?.remove();
+    providerDraft = null;
     providerUi.editingProfileId = null;
     renderReady(currentState);
   });
   document.getElementById('provider-preset')?.addEventListener('change', applySelectedPreset);
   const providerForm = document.getElementById('provider-profile-form');
+  if (
+    providerForm?.elements.apiKey
+    && providerDraft?.editingProfileId === (providerUi.editingProfileId || null)
+    && providerDraft.apiKey
+  ) {
+    providerForm.elements.apiKey.value = providerDraft.apiKey;
+  }
   providerForm?.addEventListener('submit', submitProviderProfile);
   providerForm?.addEventListener('input', invalidateProviderConnectionTest);
   providerForm?.addEventListener('change', invalidateProviderConnectionTest);
@@ -1749,6 +1857,8 @@ function wireProviderSettings() {
   syncAssignmentScope();
   for (const button of document.querySelectorAll('[data-edit-profile]')) {
     button.addEventListener('click', () => {
+      document.getElementById('provider-profile-form')?.remove();
+      providerDraft = null;
       providerUi.editingProfileId = button.dataset.editProfile;
       providerUi.message = null;
       renderReady(currentState);
@@ -1808,7 +1918,7 @@ async function submitProviderProfile(event) {
   const apiKey = String(data.get('apiKey') || '').trim();
   const profile = providerProfileFromForm(data);
   form.elements.apiKey.value = '';
-  await runProviderOperation(async () => {
+  const saved = await runProviderOperation(async () => {
     if (editingProfileId) {
       await bridge.updateProviderProfile({ profileId: editingProfileId, profile });
       if (apiKey) await bridge.replaceProviderSecret({ profileId: editingProfileId, apiKey });
@@ -1817,6 +1927,11 @@ async function submitProviderProfile(event) {
     }
     providerUi.editingProfileId = null;
   }, editingProfileId ? 'Provider 已更新，Key 输入已清空。' : 'Provider 已安全保存，Key 输入已清空。');
+  if (saved) {
+    document.getElementById('provider-profile-form')?.remove();
+    providerDraft = null;
+    if (workspaceView === 'providers' && currentState.phase === 'ready') renderReady(currentState);
+  }
 }
 
 async function discoverProviderModels(event) {
@@ -2065,6 +2180,7 @@ async function runProviderOperation(operation, successMessage) {
   try {
     await operation();
     await refreshProviderSnapshot(successMessage);
+    return true;
   } catch (error) {
     providerUi = {
       ...providerUi,
@@ -2074,6 +2190,7 @@ async function runProviderOperation(operation, successMessage) {
       message: null,
     };
     renderReady(currentState);
+    return false;
   }
 }
 

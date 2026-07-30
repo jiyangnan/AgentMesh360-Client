@@ -97,6 +97,11 @@ Provider 配置不应要求普通用户理解协议、认证 Header 或 Base URL
 - Anthropic 使用 Messages、`x-api-key`，并强制注入
   `anthropic-version: 2023-06-01`；
 - 请求最多输出 16 tokens，不使用工具，不写 Agent 会话；
+- 智谱官方文档确认 `glm-5.2` 默认开启思考，而 16-token 的连接测试可能只收到
+  `reasoning_content`、来不及产生可见 `content`。因此只有经过 Catalog 复验的
+  `glm` / `glm-coding-plan` 官方路由在测试 `glm-5.2` 时注入
+  `reasoning_effort=none`；其他 Provider、其他 GLM 模型和自定义兼容端点不接收该
+  专属参数；
 - 测试结果区分 Key 被拒绝、权限不足、模型不存在、限流、网络、超时和空响应；
 - 任何失败都保持保存按钮禁用。
 
@@ -143,6 +148,8 @@ UI 根据稳定错误码给出中文行动建议，不依赖可能变化且可�
 - [Google Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)
 - [DeepSeek List Models](https://api-docs.deepseek.com/api/list-models/)
 - [GLM Coding Plan 快速开始](https://docs.bigmodel.cn/cn/coding-plan/quick-start)
+- [GLM 深度思考](https://docs.bigmodel.cn/cn/guide/capabilities/thinking)
+- [GLM 对话补全](https://docs.bigmodel.cn/api-reference/%E6%A8%A1%E5%9E%8B-api/%E5%AF%B9%E8%AF%9D%E8%A1%A5%E5%85%A8)
 - [Kimi API Overview](https://platform.kimi.ai/docs/api/overview)
 - [Kimi List Models](https://platform.kimi.ai/docs/api/list-models)
 - [Kimi Code membership guide](https://www.kimi.com/help/kimi-code/membership-guide)

@@ -14,8 +14,8 @@
     "p5RetainedHostProcessCount": 0,
     "p5ProductionMutationCount": 0,
     "p5ProductionPackageConstantsEmpty": true,
-    "desktopPackageJsonSha256": "sha256:ee99484cbc757b296f9a82f23781b5bc58d11f1acbb9a79f626a354bffe83f64",
-    "desktopPackageLockSha256": "sha256:657dc0d703596c87f840af376b66b797cca31f5e372320cdcba0a9e914a70ecc",
+    "desktopPackageJsonSha256": "sha256:5fa1f535622e041d13864b7804b758908b69fbee87d6488a782340df1119f6b4",
+    "desktopPackageLockSha256": "sha256:2d574f850bb26297b635f38442b4d2b991cee2ade9105dc2e16574ed3976a477",
     "p6Authorized": false
   },
   "prerequisiteGates": {
@@ -27,7 +27,7 @@
     "productionGatesClosed": false
   },
   "currentDesktopAudit": {
-    "desktopVersion": "0.1.0",
+    "desktopVersion": "0.1.1",
     "bundleId": "com.agentmesh360.client",
     "productName": "AgentMesh360",
     "electronVersion": "43.2.0",

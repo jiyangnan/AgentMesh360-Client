@@ -11,7 +11,9 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
-use xai_grok_sampling_types::{ConversationItem, ConversationRequest, SamplingError};
+use xai_grok_sampling_types::{
+    ConversationItem, ConversationRequest, ReasoningEffort, SamplingError,
+};
 use zeroize::Zeroizing;
 
 use super::credential_lease::{CredentialLeaseResolver, prepare_ephemeral_probe};
@@ -445,6 +447,10 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
         let endpoint_origin = endpoint_origin(&profile.base_url)?;
         let endpoint_classification =
             self.input_endpoint_classification(&profile, &endpoint_origin);
+        let preset_id = (endpoint_classification == ProviderClassification::Official)
+            .then_some(profile.preset_id.as_deref())
+            .flatten()
+            .map(str::to_owned);
         let protocol = profile.protocol;
         let leased = prepare_ephemeral_probe(profile, &model_id, request.api_key)?;
         let client = leased
@@ -452,7 +458,7 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
             .context("prepare Provider connection test client")?;
 
         require_access()?;
-        let request = minimal_inference_request(&model_id, "connection-test");
+        let request = minimal_inference_request(&model_id, "connection-test", preset_id.as_deref());
         let (status, summary_code, summary_message) = run_minimal_inference(client, request).await;
         Ok(ProviderConnectionTestResult {
             model_id,
@@ -593,7 +599,10 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
                 };
                 require_access()?;
                 result.network_attempted = true;
-                let request = minimal_inference_request(model_id, "provider-probe");
+                let preset_id = (endpoint_classification == ProviderClassification::Official)
+                    .then_some(profile.preset_id.as_deref())
+                    .flatten();
+                let request = minimal_inference_request(model_id, "provider-probe", preset_id);
                 let (status, summary_code, summary_message) =
                     run_minimal_inference(client, request).await;
                 result.status = status;
@@ -923,14 +932,27 @@ fn normalized_model_display_name(value: &str) -> Option<String> {
     Some(value.to_owned())
 }
 
-fn minimal_inference_request(model_id: &str, purpose: &str) -> ConversationRequest {
+fn minimal_inference_request(
+    model_id: &str,
+    purpose: &str,
+    preset_id: Option<&str>,
+) -> ConversationRequest {
     ConversationRequest {
-        items: vec![ConversationItem::user(
-            "Reply with a short acknowledgement. Do not use tools.",
-        )],
+        items: vec![ConversationItem::user("Reply exactly: OK")],
         model: Some(model_id.to_owned()),
         max_output_tokens: Some(16),
         temperature: Some(0.0),
+        // GLM 5.2 defaults to deep thinking. With this intentionally tiny
+        // connection-test budget it can otherwise spend every token in
+        // `reasoning_content` and return no visible `content`, which is a
+        // healthy response that the UI would misdiagnose as an empty model
+        // response. Zhipu's Chat Completion contract explicitly maps `none`
+        // to no thinking for GLM 5.2. Scope the extension to a catalog-
+        // verified official GLM route so arbitrary compatible endpoints do
+        // not receive provider-specific fields.
+        reasoning_effort: (matches!(preset_id, Some("glm" | "glm-coding-plan"))
+            && model_id == "glm-5.2")
+            .then_some(ReasoningEffort::None),
         x_grok_req_id: Some(format!(
             "agentmesh360-{purpose}-{}",
             Uuid::new_v4().simple()
@@ -1416,6 +1438,136 @@ mod tests {
         assert_eq!(models[0].display_name, "model-control");
         assert_eq!(models[1].display_name, "model-long");
         assert_eq!(models[2].display_name, "Safe Model");
+    }
+
+    #[test]
+    fn glm_5_2_minimal_inference_disables_default_thinking_only_for_glm_presets() {
+        for preset_id in ["glm", "glm-coding-plan"] {
+            let request = minimal_inference_request("glm-5.2", "connection-test", Some(preset_id));
+            assert_eq!(request.reasoning_effort, Some(ReasoningEffort::None));
+            assert_eq!(request.max_output_tokens, Some(16));
+            assert_eq!(request.items.len(), 1);
+        }
+
+        assert_eq!(
+            minimal_inference_request("glm-4.7", "connection-test", Some("glm-coding-plan"))
+                .reasoning_effort,
+            None,
+            "models without the documented GLM 5.2 effort contract remain untouched"
+        );
+        assert_eq!(
+            minimal_inference_request("glm-5.2", "connection-test", Some("deepseek"))
+                .reasoning_effort,
+            None,
+            "other official Providers must not receive GLM-specific tuning"
+        );
+        assert_eq!(
+            minimal_inference_request("glm-5.2", "connection-test", None).reasoning_effort,
+            None,
+            "custom endpoints must not receive GLM-specific tuning"
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_glm_coding_plan_connection_test_sends_reasoning_effort_none() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let read = stream.read(&mut buffer).await.expect("read");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let text = String::from_utf8_lossy(&request);
+                    let content_length = text
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|value| value.trim().parse::<usize>().ok())
+                        })
+                        .unwrap_or_default();
+                    let header_end = request
+                        .windows(4)
+                        .position(|window| window == b"\r\n\r\n")
+                        .map(|index| index + 4)
+                        .unwrap_or(request.len());
+                    if request.len() >= header_end + content_length {
+                        break;
+                    }
+                }
+            }
+            let completed = r#"{"id":"chatcmpl-glm","object":"chat.completion.chunk","created":0,"model":"glm-5.2","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+            let body = format!("data: {completed}\n\ndata: [DONE]\n\n");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.expect("write");
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut service =
+            ProviderProbeService::in_home(temp.path(), MemoryCredentialVault::default());
+        let trusted_catalog = format!(
+            r#"{{
+              "schemaVersion": 1,
+              "catalogRevision": 99,
+              "providers": [{{
+                "presetId": "glm-coding-plan",
+                "displayName": "GLM Coding Plan",
+                "classification": "official",
+                "protocol": "openai_chat",
+                "defaultBaseUrl": "http://{address}/v1",
+                "authKind": "bearer_api_key",
+                "allowedEndpointOrigins": ["http://{address}"],
+                "quirks": [],
+                "models": []
+              }}]
+            }}"#
+        );
+        service.catalog = ProviderCatalog::from_trusted_document_or_builtin(&trusted_catalog).0;
+
+        let result = service
+            .test_connection(
+                TestProviderConnectionRequest {
+                    profile: ProviderProfileInput {
+                        preset_id: Some("glm-coding-plan".into()),
+                        display_name: "GLM Coding Plan".into(),
+                        protocol: ProviderProtocol::OpenaiChat,
+                        base_url: format!("http://{address}/v1"),
+                        auth_kind: ProviderAuthKind::BearerApiKey,
+                        enabled_models: vec!["glm-5.2".into()],
+                    },
+                    api_key: SECRET.into(),
+                    model_id: "glm-5.2".into(),
+                    confirm_paid_inference: true,
+                },
+                &|| Ok(()),
+            )
+            .await
+            .expect("GLM Coding Plan connection test");
+        let wire = server.await.expect("server");
+
+        assert_eq!(result.status, ProviderProbeStatus::Passed);
+        assert_eq!(
+            result.endpoint_classification,
+            ProviderClassification::Official
+        );
+        assert!(wire.starts_with("POST /v1/chat/completions HTTP/1.1"));
+        assert!(wire.contains("\"model\":\"glm-5.2\""));
+        assert!(wire.contains("\"reasoning_effort\":\"none\""));
+        assert!(wire.contains("\"max_tokens\":16"));
+        assert!(!wire.contains("reasoning_content"));
     }
 
     #[tokio::test]

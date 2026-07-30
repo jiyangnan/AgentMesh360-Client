@@ -167,6 +167,77 @@ app.whenReady().then(async () => {
 
   await window.webContents.executeJavaScript(`
     (() => {
+      document.getElementById('nav-agents').click();
+      document.getElementById('nav-providers').click();
+    })()
+  `);
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.getElementById('provider-profile-form') !== null",
+  ));
+  const preservedAfterNavigation = await window.webContents.executeJavaScript(`(() => {
+    const form = document.getElementById('provider-profile-form');
+    return {
+      presetId: form?.elements.presetId.value,
+      displayName: form?.elements.displayName.value,
+      baseUrl: form?.elements.baseUrl.value,
+      manualModel: form?.elements.manualModel.value,
+      apiKey: form?.elements.apiKey.value,
+      secretInMarkup: document.documentElement.innerHTML.includes('sk-unsaved-draft'),
+    };
+  })()`);
+  assert.deepEqual(preservedAfterNavigation, {
+    presetId: '__custom__',
+    displayName: '尚未保存的 Provider',
+    baseUrl: 'https://draft.example.com/v1',
+    manualModel: 'draft-model',
+    apiKey: 'sk-unsaved-draft',
+    secretInMarkup: false,
+  });
+
+  window.webContents.send('identity:state', {
+    ...readyState(),
+    account: { id: 8, email: 'other@example.com', displayName: 'Other Account' },
+    validationRevision: 1,
+  });
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('[data-ready-account-name]')?.textContent === 'Other Account'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('nav-providers').click()",
+  );
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.getElementById('provider-profile-form') !== null",
+  ));
+  const isolatedAccountDraft = await window.webContents.executeJavaScript(`(() => {
+    const form = document.getElementById('provider-profile-form');
+    return {
+      presetId: form?.elements.presetId.value,
+      displayName: form?.elements.displayName.value,
+      apiKey: form?.elements.apiKey.value,
+    };
+  })()`);
+  assert.deepEqual(isolatedAccountDraft, {
+    presetId: '',
+    displayName: '',
+    apiKey: '',
+  });
+
+  window.webContents.send('identity:state', {
+    ...readyState(),
+    validationRevision: 3,
+  });
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('[data-ready-account-name]')?.textContent === 'Ferdinand'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('nav-providers').click()",
+  );
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.getElementById('provider-profile-form') !== null",
+  ));
+
+  await window.webContents.executeJavaScript(`
+    (() => {
       const form = document.getElementById('provider-profile-form');
       form.elements.presetId.value = 'openai';
       form.elements.presetId.dispatchEvent(new Event('change', { bubbles: true }));
@@ -247,10 +318,29 @@ app.whenReady().then(async () => {
   ));
   const publicDom = await window.webContents.executeJavaScript(`({
     apiKeyValue: document.querySelector('[name="apiKey"]').value,
+    presetId: document.querySelector('[name="presetId"]').value,
+    displayName: document.querySelector('[name="displayName"]').value,
+    secretInMarkup: document.documentElement.innerHTML.includes('sk-renderer-one-shot'),
     bodyText: document.body.innerText,
   })`);
   assert.equal(publicDom.apiKeyValue, '');
+  assert.equal(publicDom.presetId, '');
+  assert.equal(publicDom.displayName, '');
+  assert.equal(publicDom.secretInMarkup, false);
   assert.equal(publicDom.bodyText.includes('sk-renderer-one-shot'), false);
+
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-edit-profile=\"pp_openai\"]').click()",
+  );
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('[name=\"displayName\"]')?.value === 'Personal OpenAI'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('cancel-profile-edit').click()",
+  );
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('[name=\"presetId\"]').value",
+  ), '');
 
   await window.webContents.executeJavaScript(`
     (() => {
