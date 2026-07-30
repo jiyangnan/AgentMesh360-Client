@@ -138,6 +138,27 @@ stateDiagram-v2
 5. 注册时比较 Leader/客户端协议与二进制版本门槛；
 6. 不兼容的旧 Leader 被请求让位，再由当前打包二进制拉起替代实例。
 
+内部 macOS 包不能只沿用上游固定 crate 版本来表示 Host 运行时代码。否则两个
+AgentMesh360 commit 都显示为同一 `0.2.106` 时，新 Bridge 会合法采用安装前仍在内存
+中的旧 Leader，造成新 `app.asar` 与旧 Catalog/Session runtime 混用。
+
+因此内部构建从 Desktop SemVer 和 source commit 时间派生专属、单调 Host runtime
+SemVer：
+
+```text
+1000 + desktopMajor . desktopMinor . commitEpochSeconds * 1000 + desktopPatch
+```
+
+该版本只通过 `AGENTMESH360_HOST_RUNTIME_VERSION` 注入 AgentMesh360 打包 Host，
+不复用 `GROK_VERSION`，避免改变上游 Grok 的 folder-trust 或发布语义。构建器必须
+运行打包 Host 的 `--version` 并逐字核对 runtime SemVer 与 commit；不一致就拒绝
+生成 DMG/ZIP。
+
+新包 Bridge 连接专属 socket 时会把旧 runtime 识别为严格更低版本，复用现有
+`connect_or_spawn` 的有界让位、锁和重连流程拉起新 Host。旧包连接到较新 Leader
+时只采用新 Leader，不能反向驱逐或降级。轮换不修改 `~/.agentmesh360` 的 Registry、
+Vault、Agent、Session 或工作区数据。
+
 AgentMesh360 不在这套机制之外再维护另一份 PID 文件或版本协议。
 
 ### 5. 诊断与秘密边界

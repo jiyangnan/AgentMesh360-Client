@@ -14,6 +14,8 @@ macOS 客户端使用未签名、未公证的内部体验版。该阶段服务�
 - `electron-builder` 固定 `identity: null`、`--publish never`；
 - 只生成当前架构的一份 DMG 和一份 ZIP；
 - 在删除 unpacked `.app` 前逐字节核对其中的 Host 与 release Host；
+- 每个包必须注入单调 AgentMesh360 Host runtime SemVer，并用打包 Host
+  `--version` 逐字核对版本与 commit，确保安装后自动替换旧常驻 Leader；
 - 同目录生成 `unsigned-internal-build-v1.json` 与 `SHA256SUMS`；
 - receipt 明确记录 Developer ID、公证、自动更新、外部上传和生产 R4 均为 false；
 - 不请求 Provider，不消耗 AgentMesh credits，不访问 Apple 公证服务；

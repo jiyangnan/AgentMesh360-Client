@@ -15,8 +15,10 @@ import { fileURLToPath } from 'node:url';
 
 import {
   assertFrozenInternalSource,
+  assertHostRuntimeVersionOutput,
   assertSafeInternalEnvironment,
   createUnsignedInternalReceipt,
+  deriveHostRuntimeVersion,
   readDesktopManifest,
   verifyPackagedHostAndPrune,
 } from './build-unsigned-internal.mjs';
@@ -121,6 +123,49 @@ test('requires a clean commit already pushed to origin/main', () => {
     originMain: COMMIT,
     status: ' M desktop/package.json',
   }));
+});
+
+test('derives a monotonic AgentMesh Host runtime version from the desktop release and commit', () => {
+  const older = deriveHostRuntimeVersion({
+    desktopVersion: '0.1.0',
+    commitEpochSeconds: 1_785_400_000,
+  });
+  const newerCommit = deriveHostRuntimeVersion({
+    desktopVersion: '0.1.0',
+    commitEpochSeconds: 1_785_400_001,
+  });
+  const newerDesktopPatch = deriveHostRuntimeVersion({
+    desktopVersion: '0.1.1',
+    commitEpochSeconds: 1_785_400_001,
+  });
+  assert.equal(older, '1000.1.1785400000000');
+  assert.equal(newerCommit, '1000.1.1785400001000');
+  assert.equal(newerDesktopPatch, '1000.1.1785400001001');
+  assert.ok(BigInt(newerCommit.split('.')[2]) > BigInt(older.split('.')[2]));
+  assert.ok(BigInt(newerDesktopPatch.split('.')[2]) > BigInt(newerCommit.split('.')[2]));
+  assert.throws(
+    () => deriveHostRuntimeVersion({
+      desktopVersion: '0.1.1000',
+      commitEpochSeconds: 1_785_400_001,
+    }),
+    /version boundary/u,
+  );
+});
+
+test('requires the compiled Host to expose the exact runtime version and commit', () => {
+  assert.doesNotThrow(() => assertHostRuntimeVersionOutput({
+    output: 'grok 1000.1.1785400001001 (abcdef0)',
+    runtimeVersion: '1000.1.1785400001001',
+    commit: 'abcdef0123456789abcdef0123456789abcdef01',
+  }));
+  assert.throws(
+    () => assertHostRuntimeVersionOutput({
+      output: 'grok 0.2.106 (abcdef0)',
+      runtimeVersion: '1000.1.1785400001001',
+      commit: 'abcdef0123456789abcdef0123456789abcdef01',
+    }),
+    /was not embedded/u,
+  );
 });
 
 test('refuses signing and publishing credentials in internal mode', () => {

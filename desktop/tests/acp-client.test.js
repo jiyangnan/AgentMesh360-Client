@@ -100,6 +100,7 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.equal(sessionPlan.entries[0].content, '核对岗位要求');
   assert.equal(received[0].method, 'initialize');
   assert.equal(received[0].params._meta.clientIdentifier, 'agentmesh360-desktop');
+  assert.equal(received[0].params._meta.clientVersion, require('../package.json').version);
   assert.equal(received[1].method, '_x.agentmesh360/account/bootstrap');
   assert.deepEqual(received[1].params, { accessToken: 'access-token-private' });
   assert.equal(received[3].method, '_x.agentmesh360/agents/artifacts/list');

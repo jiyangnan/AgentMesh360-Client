@@ -10,6 +10,7 @@ const {
   publicHostRuntime,
   resolveHostRuntime,
 } = require('./runtime');
+const { version: DESKTOP_VERSION } = require('../../package.json');
 
 const INITIALIZE_PARAMS = Object.freeze({
   protocolVersion: 1,
@@ -24,7 +25,7 @@ const INITIALIZE_PARAMS = Object.freeze({
       skipProjectLayout: true,
     },
     clientType: 'agentmesh360-desktop',
-    clientVersion: '0.1.0',
+    clientVersion: DESKTOP_VERSION,
     clientIdentifier: 'agentmesh360-desktop',
   },
 });

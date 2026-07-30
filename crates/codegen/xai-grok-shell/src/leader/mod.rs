@@ -1551,6 +1551,8 @@ mod tests {
         assert!(!leader_is_older_than("0.2.0", "0.2.0"));
         assert!(!leader_is_older_than("unknown", "0.2.0"));
         assert!(!leader_is_older_than("0.1.0", "not-a-version"));
+        assert!(leader_is_older_than("0.2.106", "1000.1.1785400001001"));
+        assert!(!leader_is_older_than("1000.1.1785400001001", "0.2.106"));
     }
     /// Evicted only when strictly older than the client (anti-thrash).
     #[test]

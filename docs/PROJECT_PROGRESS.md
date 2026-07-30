@@ -7392,3 +7392,47 @@ owner UAT 问题与产品判断：
   延伸；价格比较、余额读取、自动模型推荐与 capability 推断没有加入；
 - 本轮 commit/push/单包替换已经完成；下一产品切片仍回到首次使用引导，呈现“配置
   Provider → 激活/打开 Agent → 开始对话”，不提前启动 P7/P8 或在线分发。
+
+### 循环 138：内部包安装后旧持久 Host 未轮换
+
+状态：代码与定向回归完成，等待真实安装升级复验和单包替换
+
+owner UAT 事实：
+
+1. `9e6ea87` DMG 与 `/Applications/AgentMesh360.app` 的 `app.asar`、打包 Host
+   均包含 DeepSeek、GLM 与 Kimi；
+2. 新 Electron 于 22:35 启动，但专属 Leader 仍是 21:50 启动的旧进程；
+3. 新 stdio Bridge 因新旧 Host 都报告上游固定 `0.2.106`，合法采用了旧 Leader，
+   Provider Catalog 因而仍显示上一包内容；
+4. 受控终止旧 PID 后，当前安装包立即于 22:41 拉起新 Leader，证明 Artifact 和
+   Provider 实现正确，缺陷位于常驻 Host 的升级传播。
+
+修复：
+
+- Desktop 版本提升至 `0.1.1`，ACP `clientVersion` 改为直接读取 `package.json`，
+  后续不再手工漂移；
+- 内部构建从 Desktop 版本与 source commit 时间派生 `1000.x.y` 单调 Host runtime
+  SemVer，并使用专属 `AGENTMESH360_HOST_RUNTIME_VERSION` 编译 Host；
+- 构建器在 electron-builder 前实际运行 release Host `--version`，必须逐字匹配
+  派生版本与 commit，否则失败关闭；
+- 新 Bridge 复用 Grok 现有严格版本方向、锁、有界让位和重连流程替换旧 Leader；
+  旧客户端不能驱逐更高版本 Leader；
+- 没有读取或迁移账户、Provider Key、Agent、Session、Workspace；本机旧 Leader
+  轮换后持久数据路径保持不变。
+
+当前验证：
+
+- 桌面 Node：122 passed / 3 个真实 Host 环境门 skipped / 0 failed；
+- 内部构建器：18 passed / 0 failed；
+- Leader Rust：30 passed / 0 failed；
+- 专属 runtime version 方向定向测试：1 passed / 0 failed；
+- `xai-grok-version` 与 `xai-grok-shell` Clippy `-D warnings` 通过；
+- `cargo fmt --all`、桌面语法检查和 `git diff --check` 通过；
+- 所有自动测试均为本机隔离环境，没有 Provider 请求、credits 或费用。
+
+计划复盘：
+
+- 这是 Cycle 137 的真实安装回归，不新增产品能力；只有修复包完成真实“旧 Leader
+  运行 → 安装新包 → 新 Leader 自动接管 → 十个 Provider 可见”后才关闭；
+- 修复交付后下一产品切片仍是首次使用引导，不提前进入价格、余额、自动路由、
+  P7/P8 或在线分发。

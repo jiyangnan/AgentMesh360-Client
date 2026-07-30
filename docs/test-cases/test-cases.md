@@ -73,3 +73,32 @@
 - Provider、名称、Key 和模型控件高度不低于 48px，正文与输入文字清晰可读；
 - 模型从多行手填框变成单选控件，流程提示与按钮动作一致；
 - 1180px 窗口和窄窗口下不溢出，按钮仍可操作。
+
+## TC-PROVIDER-006：安装新客户端后自动替换旧持久 Host
+
+### 测试场景
+
+- 场景 1：旧版本 AgentMesh360 Leader 保持运行时安装新客户端；
+- 场景 2：新旧包使用不同 Desktop 版本和单调 Host runtime SemVer；
+- 场景 3：旧客户端不能反向驱逐新 Leader；
+- 场景 4：Leader 轮换后保留账户、Agent、Provider 和 Session 数据。
+
+### 测试步骤
+
+1. 启动上一内部包并记录 AgentMesh360 专属 Leader PID、Host runtime 版本与 Catalog；
+2. 保持 Leader 运行，退出 Electron UI，再安装当前新包；
+3. 启动新客户端，等待 Bridge 连接专属 socket；
+4. 检查旧 PID 退出、新 PID 接管，且新 Leader 版本严格高于旧版本；
+5. 登录后进入 Provider 设置并读取 Catalog；
+6. 确认十个官方入口包含 DeepSeek、GLM API、GLM Coding Plan、Kimi 国际/中国 API
+   与 Kimi Coding Plan；
+7. 检查原账户、已激活 Agent、Provider Profile、Session 与工作区仍可恢复；
+8. 用较旧 runtime 版本客户端连接，确认它采用新 Leader 而不触发降级替换。
+
+### 验收标准
+
+- [ ] 每个内部构建派生并嵌入可审计、单调递增的 Host runtime SemVer；
+- [ ] 新 Bridge 自动请求旧 Leader 让位并由当前打包 Host 接管；
+- [ ] 轮换不删除或重建用户持久数据；
+- [ ] Provider Catalog 来自新 Leader，十个官方入口完整可见；
+- [ ] 降级客户端不能替换较新 Leader。

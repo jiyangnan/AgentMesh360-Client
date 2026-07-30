@@ -49,6 +49,7 @@ const FORBIDDEN_ENVIRONMENT_KEYS = Object.freeze([
   'WIN_CSC_LINK',
 ]);
 const MAX_COMMAND_OUTPUT_BYTES = 4 * 1024 * 1024;
+const AGENTMESH_HOST_VERSION_MAJOR_BASE = 1000;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -97,6 +98,48 @@ export function assertFrozenInternalSource({
     throw new Error(
       'internal desktop build requires a clean commit already pushed to origin/main',
     );
+  }
+}
+
+export function deriveHostRuntimeVersion({
+  desktopVersion,
+  commitEpochSeconds,
+}) {
+  const match = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u
+    .exec(desktopVersion);
+  const commitEpoch = Number(commitEpochSeconds);
+  if (
+    !match
+    || !Number.isSafeInteger(commitEpoch)
+    || commitEpoch < 1_000_000_000
+    || commitEpoch > 9_999_999_999
+  ) {
+    throw new Error('internal desktop Host runtime version input is invalid');
+  }
+  const [desktopMajor, desktopMinor, desktopPatch] = match
+    .slice(1)
+    .map(Number);
+  if (
+    desktopMajor > 8999
+    || desktopMinor > 999_999
+    || desktopPatch > 999
+  ) {
+    throw new Error('internal desktop version exceeds the Host runtime version boundary');
+  }
+  const runtimeMajor = AGENTMESH_HOST_VERSION_MAJOR_BASE + desktopMajor;
+  const runtimePatch = (commitEpoch * 1000) + desktopPatch;
+  return `${runtimeMajor}.${desktopMinor}.${runtimePatch}`;
+}
+
+export function assertHostRuntimeVersionOutput({
+  output,
+  runtimeVersion,
+  commit,
+}) {
+  if (
+    output !== `grok ${runtimeVersion} (${commit.slice(0, 7)})`
+  ) {
+    throw new Error('internal desktop Host runtime version was not embedded');
   }
 }
 
@@ -339,6 +382,10 @@ async function build() {
   const packageJsonBytes = await readFile(packageJsonPath);
   const packageLockBytes = await readFile(packageLockPath);
   const manifest = readDesktopManifest(packageJsonBytes);
+  const hostRuntimeVersion = deriveHostRuntimeVersion({
+    desktopVersion: manifest.version,
+    commitEpochSeconds: runGit(['show', '-s', '--format=%ct', 'HEAD']),
+  });
   const outputDirectory = path.join(
     DESKTOP_ROOT,
     'dist',
@@ -372,6 +419,10 @@ async function build() {
         cargoTarget,
       ],
       {
+        env: {
+          ...process.env,
+          AGENTMESH360_HOST_RUNTIME_VERSION: hostRuntimeVersion,
+        },
         inherit: true,
         errorMessage: 'internal desktop Host build failed',
       },
@@ -381,6 +432,13 @@ async function build() {
     if (!hostInfo.isFile() || hostInfo.isSymbolicLink()) {
       throw new Error('internal desktop Host artifact is invalid');
     }
+    assertHostRuntimeVersionOutput({
+      output: run(hostBinary, ['--version'], {
+        errorMessage: 'internal desktop Host version inspection failed',
+      }),
+      runtimeVersion: hostRuntimeVersion,
+      commit: head,
+    });
 
     const builderConfig = {
       ...manifest.build,
@@ -470,6 +528,7 @@ async function build() {
     process.stdout.write(
       `${JSON.stringify({
         ...verified,
+        hostRuntimeVersion,
         output: path.relative(REPOSITORY_ROOT, outputDirectory),
       })}\n`,
     );

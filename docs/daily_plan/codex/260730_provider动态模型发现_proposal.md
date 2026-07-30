@@ -1,8 +1,8 @@
 # Provider 动态模型发现与连接诊断
 
 更新时间：2026-07-30  
-状态：完成
-进度：100%
+状态：owner UAT 升级回归修复中
+进度：85%
 
 ## 本轮目标
 
@@ -65,3 +65,36 @@
   全部通过；
 - 最终只保留 `9e6ea87` 对应的一份 Downloads 包和一份内部构建证据；
 - 下一轮回到既定首次使用引导，不扩展价格、余额、自动路由或在线发布。
+
+## Owner UAT 回归：安装新包后仍显示旧 Provider
+
+### 事实与根因
+
+- 新 DMG、`/Applications/AgentMesh360.app` 的 `app.asar` 和打包 Host 均包含
+  DeepSeek、GLM 与 Kimi Catalog；
+- owner 安装新包后，新 Electron/stdio Bridge 已启动，但 AgentMesh360 专属
+  Grok Leader 仍是安装前启动的旧进程；
+- 上游 Leader 只在新客户端语义版本严格更高时自动让位；当前每次内部包仍编译为
+  `0.2.106`，因此代码已改变但运行时版本未改变，Bridge 合法复用了旧 Leader；
+- 旧 Leader 被受控终止后，当前安装包立即拉起新 Leader，证明 Provider 实现与
+  Artifact 正确，缺陷位于 Host 升级传播。
+
+### 修复计划
+
+- [x] 核对 DMG、已安装 App、Host 字节和真实进程启动时间
+- [x] 受控轮换 owner Mac 的旧 AgentMesh360 Leader
+- [ ] 为每个内部构建派生单调递增的 AgentMesh360 Host runtime SemVer
+- [ ] 让打包 Host 与 Bridge 使用同一 runtime SemVer，自动替换旧 Leader并禁止降级
+- [ ] 升级 Desktop 版本并避免 ACP `clientVersion` 手工漂移
+- [ ] 补齐版本派生、旧 Leader 替换和真实安装升级回归
+- [ ] 更新进展、提交推送、生成并只保留一份修复包
+
+### 验收口径
+
+- 旧包 Leader 保持运行时安装并启动新包，新 Bridge 必须让旧 Leader 退出并由新包
+  Host 接管；
+- Leader 更换后不删除账户、Provider、Agent、Session 或工作区数据；
+- Provider 页面读取到十个官方入口，明确包含 DeepSeek、GLM API、GLM Coding Plan、
+  Kimi 国际/中国 API与 Kimi Coding Plan；
+- 旧版本客户端不能驱逐更新版本的 Leader；
+- 新包完成 receipt、摘要、DMG、交付副本和真实升级复验后才删除上一包。
