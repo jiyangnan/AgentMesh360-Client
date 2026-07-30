@@ -107,7 +107,7 @@
 
 - 已安装旧包 `0.1.0 / Host 0.2.106 (9e6ea87)` 并拉起旧 Leader PID `17250`；
 - 保持该 PID 常驻，安装并启动 `0.1.1` 后旧 PID 自动退出；当前 Electron、stdio
-  Bridge 与新 Leader 分别为 PID `21785 / 21973 / 22000`；
+  Bridge 与新 Leader 分别为 PID `27515 / 27577 / 22000`；
 - 已安装 Host 实际输出
   `grok 1000.1.1785426085001 (79005ea)`，严格高于旧 runtime；
 - owner 账户仍恢复为 `jiyangnan@gmail.com`，身份凭据文件存在，本地状态路径未被

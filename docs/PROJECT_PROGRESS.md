@@ -7456,7 +7456,7 @@ owner UAT 事实：
 - 旧安装基线为 Desktop `0.1.0 / Host 0.2.106 (9e6ea87)`；旧 Leader PID
   `17250` 保持常驻时覆盖安装并启动 `0.1.1`，旧 PID 自动退出；
 - 当前新 Electron、stdio Bridge、Leader 分别为 PID
-  `21785 / 21973 / 22000`，均从 `/Applications/AgentMesh360.app` 运行；
+  `27515 / 27577 / 22000`，均从 `/Applications/AgentMesh360.app` 正常启动；
 - owner 账户仍恢复为 `jiyangnan@gmail.com`，本地身份凭据文件和状态目录保留；
   未读取 Key 或会话正文，运行只新增正常缓存/锁文件；
 - 真实 Provider 页面显示 Catalog revision 3，供应商下拉逐项可见 OpenAI、xAI、
