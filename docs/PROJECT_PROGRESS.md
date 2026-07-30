@@ -7126,7 +7126,7 @@ DMG/ZIP。该阶段不关闭生产 R4
 
 ### 循环 134：后台复验期间 Provider 不再误报未认证
 
-状态：源码修复与本地验证已完成；等待冻结提交后重建本机未签名内部体验版
+状态：已完成；修复、验证、推送与新本机未签名内部体验版均已交付
 
 用户问题与根因：
 
@@ -7168,11 +7168,28 @@ DMG/ZIP。该阶段不关闭生产 R4
 - Kimi 继续按用户要求暂停。本轮由主 Agent 复核跨层时序、失败关闭、注销语义、
   Renderer 脱敏、共享 ACP Client 影响面和产品计划顺序。
 
+构建与本机交付：
+
+- 修复与首轮进展 commit `d35da9c9657ae9bb1d29363a1e4a0748415ebb16` 已推送
+  `origin/main`，内部构建开始时 `HEAD == origin/main` 且工作区 clean；
+- strict receipt 为 `desktop_internal_p6_d35da9c9657a_arm64`，状态
+  `unsigned_internal_only / passed`；Developer ID、公证、Apple credential、
+  上传、自动更新、Provider 请求、credits 和费用均为 0/false；
+- ZIP 为 181,153,933 bytes，SHA-256
+  `396f843c5fc58f6af65c5d544cee7006be11d60cf578f12490e9f1bda5c68c64`；
+  DMG 为 181,360,639 bytes，SHA-256
+  `144c5bdf38a2d95e8e46e4fa8c5ab7a2e81929863bcc361a94c11c3b27e0a409`；
+- strict receipt verifier、双 Artifact `shasum -c`、DMG `hdiutil verify` 与构建器
+  包内 Host 字节/arm64 inventory 均通过；
+- DMG 已逐字节复制并复验到
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-30-d35da9c-arm64/`，附单文件
+  `SHA256SUMS` 和中文安装/验收说明；旧包未删除，也没有在线发布。
+
 计划复盘与下一轮：
 
 - 本轮是 Cycle 133 的直接 UAT 缺陷修复，没有改变订阅有效才能进入客户端、BYOK、
   credits、Provider Key 本地保存或 Package/生产发布边界；
 - 原定下一产品切片仍是“简化 Provider 配置”，随后才是首次使用引导；本轮没有借机
   重构 Provider Catalog、增加模型供应商、调用 Provider 或扩展生产 authority；
-- 冻结并推送当前修复后，只重建同一 unsigned internal arm64 本机体验包并完成
-  checksum/DMG/包内 Host 复验；构建证据完成后回填本节，不在线发布。
+- 当前缺陷包已经完成。下一轮回到既定产品顺序：先简化 Provider 配置，再做首次使用
+  引导；不把本次修复扩展成 Provider Catalog 或生产发布重构。
