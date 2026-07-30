@@ -143,6 +143,27 @@ export function assertHostRuntimeVersionOutput({
   }
 }
 
+export function createHostVersionInspectionEnvironment({
+  environment = process.env,
+  homeDirectory,
+}) {
+  if (
+    typeof homeDirectory !== 'string'
+    || !path.isAbsolute(homeDirectory)
+  ) {
+    throw new Error('internal desktop Host inspection home is invalid');
+  }
+  return {
+    ...environment,
+    HOME: homeDirectory,
+    GROK_HOME: path.join(homeDirectory, '.grok'),
+    XDG_CACHE_HOME: path.join(homeDirectory, '.cache'),
+    XDG_CONFIG_HOME: path.join(homeDirectory, '.config'),
+    XDG_DATA_HOME: path.join(homeDirectory, '.local', 'share'),
+    XDG_STATE_HOME: path.join(homeDirectory, '.local', 'state'),
+  };
+}
+
 function digest(bytes) {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 }
@@ -432,8 +453,17 @@ async function build() {
     if (!hostInfo.isFile() || hostInfo.isSymbolicLink()) {
       throw new Error('internal desktop Host artifact is invalid');
     }
+    const hostVersionInspectionHome = path.join(
+      temporaryRoot,
+      'host-version-inspection-home',
+    );
+    await mkdir(hostVersionInspectionHome, { recursive: true });
     assertHostRuntimeVersionOutput({
       output: run(hostBinary, ['--version'], {
+        env: createHostVersionInspectionEnvironment({
+          environment: process.env,
+          homeDirectory: hostVersionInspectionHome,
+        }),
         errorMessage: 'internal desktop Host version inspection failed',
       }),
       runtimeVersion: hostRuntimeVersion,

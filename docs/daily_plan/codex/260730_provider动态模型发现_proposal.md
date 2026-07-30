@@ -83,10 +83,11 @@
 
 - [x] 核对 DMG、已安装 App、Host 字节和真实进程启动时间
 - [x] 受控轮换 owner Mac 的旧 AgentMesh360 Leader
-- [ ] 为每个内部构建派生单调递增的 AgentMesh360 Host runtime SemVer
-- [ ] 让打包 Host 与 Bridge 使用同一 runtime SemVer，自动替换旧 Leader并禁止降级
-- [ ] 升级 Desktop 版本并避免 ACP `clientVersion` 手工漂移
-- [ ] 补齐版本派生、旧 Leader 替换和真实安装升级回归
+- [x] 为每个内部构建派生单调递增的 AgentMesh360 Host runtime SemVer
+- [x] 让打包 Host 与 Bridge 使用同一 runtime SemVer，自动替换旧 Leader并禁止降级
+- [x] 升级 Desktop 版本并避免 ACP `clientVersion` 手工漂移
+- [x] 隔离 Host `--version` 构建门禁，避免读取用户 Grok channel 缓存
+- [ ] 补齐真实安装升级回归
 - [ ] 更新进展、提交推送、生成并只保留一份修复包
 
 ### 验收口径

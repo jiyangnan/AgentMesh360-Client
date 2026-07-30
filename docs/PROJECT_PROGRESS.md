@@ -7430,6 +7430,16 @@ owner UAT 事实：
 - `cargo fmt --all`、桌面语法检查和 `git diff --check` 通过；
 - 所有自动测试均为本机隔离环境，没有 Provider 请求、credits 或费用。
 
+构建门禁复盘：
+
+- 首次 `0.1.1` Release 构建在 Host `--version` 精确门禁处按设计失败，上一份可用包
+  未删除；
+- 复核确认 Host 已嵌入新 runtime version，但 `--version` 会读取 owner 现有
+  `~/.grok/version.json` 并追加 channel 标签，导致构建器把展示装饰误判为注入失败；
+- 构建器现使用隔离 `HOME` 与 `GROK_HOME` 检查 release Host，既不读取用户 Grok
+  缓存，也继续要求原始 runtime version 与 commit 逐字匹配；补齐相应单元回归后
+  再重新生成候选包。
+
 计划复盘：
 
 - 这是 Cycle 137 的真实安装回归，不新增产品能力；只有修复包完成真实“旧 Leader

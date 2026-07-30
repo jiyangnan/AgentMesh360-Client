@@ -17,6 +17,7 @@ import {
   assertFrozenInternalSource,
   assertHostRuntimeVersionOutput,
   assertSafeInternalEnvironment,
+  createHostVersionInspectionEnvironment,
   createUnsignedInternalReceipt,
   deriveHostRuntimeVersion,
   readDesktopManifest,
@@ -165,6 +166,34 @@ test('requires the compiled Host to expose the exact runtime version and commit'
       commit: 'abcdef0123456789abcdef0123456789abcdef01',
     }),
     /was not embedded/u,
+  );
+});
+
+test('inspects the compiled Host without reading the user Grok version cache', () => {
+  const environment = createHostVersionInspectionEnvironment({
+    environment: {
+      PATH: '/usr/bin:/bin',
+      HOME: '/Users/real-user',
+      GROK_HOME: '/Users/real-user/.grok',
+    },
+    homeDirectory: '/private/tmp/agentmesh360-host-version',
+  });
+  assert.equal(environment.PATH, '/usr/bin:/bin');
+  assert.equal(environment.HOME, '/private/tmp/agentmesh360-host-version');
+  assert.equal(
+    environment.GROK_HOME,
+    '/private/tmp/agentmesh360-host-version/.grok',
+  );
+  assert.equal(
+    environment.XDG_CACHE_HOME,
+    '/private/tmp/agentmesh360-host-version/.cache',
+  );
+  assert.throws(
+    () => createHostVersionInspectionEnvironment({
+      environment: {},
+      homeDirectory: 'relative',
+    }),
+    /inspection home is invalid/u,
   );
 });
 
