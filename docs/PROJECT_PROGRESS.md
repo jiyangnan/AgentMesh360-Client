@@ -6849,7 +6849,9 @@ DMG/ZIP。该阶段不关闭生产 R4
 4. 每次成功先逐字节核对 unpacked `.app` 内 Host 与 release Host，并确认可执行位；
    随后删除 unpacked/build 调试文件，只保留当前架构的一份 DMG、一份 ZIP、strict
    `unsigned-internal-build-v1.json` 和 `SHA256SUMS`；symlink、路径穿越、大小/摘要
-   漂移、重复 JSON key、更新 metadata 或额外能力声明全部失败关闭；
+   漂移、重复 JSON key、持久 update metadata 或额外能力声明全部失败关闭；DMG
+   关闭 update info，Electron Builder 对 ZIP 强制生成的临时 blockmap 在核验后
+   删除；
 5. receipt 固定 Developer ID、公证、Apple credential、外部上传、自动更新和
    `productionR4Satisfied` 全部为 false；同渠道 SHA-256 不冒充发布者身份，分发时
    仍需从官网或对应 Git commit 独立核对；

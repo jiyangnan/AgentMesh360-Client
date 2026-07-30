@@ -18,7 +18,9 @@ macOS 客户端使用未签名、未公证的内部体验版。该阶段服务�
 - receipt 明确记录 Developer ID、公证、自动更新、外部上传和生产 R4 均为 false；
 - 不请求 Provider，不消耗 AgentMesh credits，不访问 Apple 公证服务；
 - 构建使用的 Cargo 临时目录在结束后删除，不恢复仓库根 `target/`。
-- unpacked `.app` 与 builder 调试文件在核验后删除，只保留分发所需四个文件。
+- DMG 明确关闭 `writeUpdateInfo`；Electron Builder 对 ZIP 强制生成的临时
+  `.blockmap`、unpacked `.app` 与 builder 调试文件在核验后删除，只保留分发所需
+  四个文件。
 
 默认命令：
 

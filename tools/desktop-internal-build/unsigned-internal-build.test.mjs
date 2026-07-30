@@ -205,6 +205,7 @@ test('verifies the packaged Host bytes and removes unpacked build output', async
     await chmod(path.join(packaged, 'agentmesh360-host'), 0o755);
     await writeFile(path.join(output, 'AgentMesh360.dmg'), 'dmg');
     await writeFile(path.join(output, 'AgentMesh360.zip'), 'zip');
+    await writeFile(path.join(output, 'AgentMesh360.zip.blockmap'), 'blockmap');
     await writeFile(path.join(output, 'builder-debug.yml'), 'debug');
     await verifyPackagedHostAndPrune({
       outputDirectory: output,
@@ -217,6 +218,9 @@ test('verifies the packaged Host bytes and removes unpacked build output', async
     );
     await assert.rejects(
       readFile(path.join(output, 'builder-debug.yml')),
+    );
+    await assert.rejects(
+      readFile(path.join(output, 'AgentMesh360.zip.blockmap')),
     );
     assert.equal(await readFile(path.join(output, 'AgentMesh360.dmg'), 'utf8'), 'dmg');
   } finally {

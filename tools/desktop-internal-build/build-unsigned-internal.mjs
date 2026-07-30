@@ -244,13 +244,22 @@ export async function verifyPackagedHostAndPrune({
     'builder-effective-config.yaml',
   ]);
   const entries = await readdir(outputDirectory, { withFileTypes: true });
+  const artifactNames = entries
+    .filter((entry) => entry.isFile() && /\.(dmg|zip)$/u.test(entry.name))
+    .map((entry) => entry.name);
+  const allowedBlockmaps = new Set(
+    artifactNames.map((name) => `${name}.blockmap`),
+  );
   const unpacked = entries.filter((entry) => entry.isDirectory());
   const unexpected = entries.filter(
     (entry) =>
       !entry.isDirectory()
       && !/\.(dmg|zip)$/u.test(entry.name)
       && (
-        !allowedAuxiliaryFiles.has(entry.name)
+        (
+          !allowedAuxiliaryFiles.has(entry.name)
+          && !allowedBlockmaps.has(entry.name)
+        )
         || !entry.isFile()
       ),
   );
@@ -288,7 +297,10 @@ export async function verifyPackagedHostAndPrune({
     force: false,
   });
   for (const entry of entries) {
-    if (allowedAuxiliaryFiles.has(entry.name)) {
+    if (
+      allowedAuxiliaryFiles.has(entry.name)
+      || allowedBlockmaps.has(entry.name)
+    ) {
       await rm(path.join(outputDirectory, entry.name), { force: true });
     }
   }
@@ -373,6 +385,10 @@ async function build() {
           { target: 'dmg', arch: [process.arch] },
           { target: 'zip', arch: [process.arch] },
         ],
+      },
+      dmg: {
+        ...(manifest.build.dmg ?? {}),
+        writeUpdateInfo: false,
       },
     };
     const configPath = path.join(temporaryRoot, 'electron-builder.json');
