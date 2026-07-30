@@ -2022,6 +2022,11 @@ function formatProbeTime(value) {
 
 function publicError(error, fallback) {
   const message = String(error?.message || fallback);
+  if (/Authentication required|HostRequestError|Error invoking remote method/i.test(message)) {
+    return message.toLowerCase().includes('authentication required')
+      ? '本地身份正在恢复，请稍后重试。'
+      : fallback;
+  }
   return message
     .replace(/sk-[A-Za-z0-9_-]+/g, '[已隐藏]')
     .replace(/Bearer\s+\S+/gi, 'Bearer [已隐藏]')

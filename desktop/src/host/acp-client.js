@@ -67,6 +67,7 @@ class AcpHostClient extends EventEmitter {
     this.incomingPermissions = new Map();
     this.nextId = 1;
     this.startPromise = null;
+    this.accessRefreshPromise = null;
   }
 
   async start() {
@@ -82,10 +83,19 @@ class AcpHostClient extends EventEmitter {
   }
 
   async bootstrap(accessToken) {
-    const response = await this.#extension('x.agentmesh360/account/bootstrap', {
-      accessToken,
-    });
-    return response;
+    const previous = this.accessRefreshPromise?.catch(() => {});
+    const operation = (previous || Promise.resolve()).then(() => this.#extensionRequest(
+      'x.agentmesh360/account/bootstrap',
+      { accessToken },
+    ));
+    this.accessRefreshPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      if (this.accessRefreshPromise === operation) {
+        this.accessRefreshPromise = null;
+      }
+    }
   }
 
   async listAgents() {
@@ -445,6 +455,12 @@ class AcpHostClient extends EventEmitter {
   }
 
   async #extension(method, params) {
+    const accessRefresh = this.accessRefreshPromise;
+    if (accessRefresh) await accessRefresh;
+    return this.#extensionRequest(method, params);
+  }
+
+  async #extensionRequest(method, params) {
     await this.start();
     // ACP reserves bare method names for the protocol itself. Custom methods
     // travel on the wire with a leading underscore; the decoder removes it

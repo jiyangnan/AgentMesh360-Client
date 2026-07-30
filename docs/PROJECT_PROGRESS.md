@@ -7123,3 +7123,56 @@ DMG/ZIP。该阶段不关闭生产 R4
   规则，没有引入新 Provider、调用模型、消耗 credits 或触碰 Package/生产发布门；
 - 新包已经交付，下一步继续 owner UAT。当前已记录的下一项用户可见问题是简化 Provider
   配置与首次使用引导；它们必须作为独立产品切片执行，不与本轮修复混做重构。
+
+### 循环 134：后台复验期间 Provider 不再误报未认证
+
+状态：源码修复与本地验证已完成；等待冻结提交后重建本机未签名内部体验版
+
+用户问题与根因：
+
+1. Cycle 133 让已登录工作区在后台订阅复验期间继续可用，但 Host 的
+   `ClientAccess::bootstrap` 仍会在发出 Core 请求前立即把旧授权清成
+   `Unverified`；
+2. 新订阅结果返回前存在一个短暂授权空窗。用户此时进入 Provider 页面，
+   `providers/list` 会命中 Host 的认证门并返回 `Authentication required`；
+3. Renderer 又把 Electron IPC、方法名和 `HostRequestError` 原样显示，因此形成
+   “Provider 页面进不去”的用户可见故障；
+4. 这不是 Provider Key、模型配置或用户订阅失效，而是后台复验与业务请求的时序
+   错误。
+
+本轮实现：
+
+1. 桌面 ACP Client 为账户 bootstrap 建立顺序门；订阅复验尚未结束时，Provider、
+   Package、Agent 与其他 Host 扩展请求在本机短暂等待，验证完成后自动继续，不触发
+   全屏 loading，也不重建或清空 Renderer 表单；
+2. Host 将授权刷新改为原子替换：非空 Token 发起复验时保留尚在有效期内的旧
+   `Granted` 状态，新结果成功返回后一次性替换；401/403、网络失败、合同非法或订阅
+   拒绝落定后仍按原规则失效或进入 Denied；
+3. 空 Token 注销仍立即清空 Host 授权；Core 与 Host 结果不一致、订阅失效和登录过期
+   的失败关闭语义没有改变；
+4. Renderer 不再展示 `provider:get-snapshot`、Electron remote method 或
+   `HostRequestError` 等内部错误链；极短恢复窗口只显示“本地身份正在恢复，请稍后
+   重试。”
+
+验证与自主复核：
+
+- ACP Client 14/14：新增确定性延迟 bootstrap 回归，证明 Provider 请求在验证完成前
+  没有进入 Host，完成后自动继续；
+- Rust Host access 定向 6/6：覆盖成功刷新等待期保留旧授权，以及失败刷新结果落定后
+  清除旧授权；原有 active、denied、401、合同/可信时间失败关闭测试继续通过；
+- 完整桌面测试在本机 loopback 环境中 118 passed / 3 个真实 Host 环境门 skipped /
+  0 failed；沙箱内只有既有五个 OAuth loopback 权限失败，不属于产品回归；
+- Provider Electron UI smoke 通过：未保存表单仍保留，认证错误只显示稳定中文文案，
+  内部 IPC/Host 错误不进入 DOM；Conversation 与 Package UI smoke 均通过；
+- `npm run check`、`cargo fmt --all --check`、`git diff --check` 通过；
+- Kimi 继续按用户要求暂停。本轮由主 Agent 复核跨层时序、失败关闭、注销语义、
+  Renderer 脱敏、共享 ACP Client 影响面和产品计划顺序。
+
+计划复盘与下一轮：
+
+- 本轮是 Cycle 133 的直接 UAT 缺陷修复，没有改变订阅有效才能进入客户端、BYOK、
+  credits、Provider Key 本地保存或 Package/生产发布边界；
+- 原定下一产品切片仍是“简化 Provider 配置”，随后才是首次使用引导；本轮没有借机
+  重构 Provider Catalog、增加模型供应商、调用 Provider 或扩展生产 authority；
+- 冻结并推送当前修复后，只重建同一 unsigned internal arm64 本机体验包并完成
+  checksum/DMG/包内 Host 复验；构建证据完成后回填本节，不在线发布。

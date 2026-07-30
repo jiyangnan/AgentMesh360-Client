@@ -506,6 +506,12 @@ flowchart LR
 | 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现；P6 R4 no-authority preflight、首份 unsigned internal arm64 build、11/11 隔离安装/生命周期及 strict 留存验收已完成** | 三个首方 Agent 已由打包 Host 通过真实 detach/Leader 替换恢复；P6 内部版固定无 Developer ID、公证、自动更新/上传，含 receipt + SHA-256、DMG/ZIP 一致性、首启/单实例和 Login Item 清理证据。种子下载 preflight 已逐字节绑定验收证据，但保持 `not_approved / blocked`；官网下载 quarantine 后的单应用“仍要打开”仍是待授权人工体验项，生产 R4、18 项签名/更新/rollback 场景、P7/P8、Scheduler、Subagent、Agent 专属 UI 和生产 authority 不自动启动 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
 
+Cycle 134 修复了 Cycle 133 后台复验与 Host 授权更新之间的竞态：桌面 ACP Client 会
+在账户 bootstrap 完成前顺序等待业务扩展请求，Host 则在新结果返回前继续使用尚未
+过期的旧授权，并在失败结果落定后立即失败关闭。Provider 页面因此不会再误报
+`Authentication required`，也不会重新引入全屏 loading 或丢失未保存表单；订阅硬门、
+注销和 Core/Host 双重验证边界不变。下一产品切片仍按计划简化 Provider 配置。
+
 Job Agent、LectureCast Agent 和 Deploy Agent 已从相同的 Manifest v1 载入，不再
 分别硬编码 Registry 元数据与 Agent Profile。Host 现在会在启动时复验并合并本地
 Active Package；安装成功现在会在同一 Host 的顺序门内刷新共享 Catalog，刷新失败则

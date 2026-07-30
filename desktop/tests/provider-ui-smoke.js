@@ -5,11 +5,15 @@ const path = require('node:path');
 const { app, BrowserWindow, ipcMain } = require('electron');
 
 const writes = [];
+let providerFailure = null;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
-  ipcMain.handle('provider:get-snapshot', () => providerSnapshot());
+  ipcMain.handle('provider:get-snapshot', () => {
+    if (providerFailure) throw providerFailure;
+    return providerSnapshot();
+  });
   ipcMain.handle('provider:create-profile', (_event, payload) => {
     writes.push({ kind: 'profile', payload });
     return { profile: providerSnapshot().profiles[0] };
@@ -202,6 +206,32 @@ app.whenReady().then(async () => {
   const probeDom = await window.webContents.executeJavaScript('document.body.innerText');
   assert.equal(probeDom.includes('模型已真实响应'), true);
   assert.equal(probeDom.includes('sk-renderer-one-shot'), false);
+
+  providerFailure = new Error(
+    "Error invoking remote method 'provider:get-snapshot': HostRequestError: Authentication required",
+  );
+  const errorWindow = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    show: false,
+    backgroundColor: '#090d16',
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'src', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  await errorWindow.loadFile(path.join(__dirname, '..', 'src', 'ui', 'index.html'));
+  await errorWindow.webContents.executeJavaScript("document.getElementById('nav-providers').click()");
+  await waitFor(async () => errorWindow.webContents.executeJavaScript(
+    "document.querySelector('.retry-providers') !== null",
+  ));
+  const errorText = await errorWindow.webContents.executeJavaScript('document.body.innerText');
+  assert.equal(errorText.includes('本地身份正在恢复，请稍后重试。'), true);
+  assert.equal(errorText.includes('provider:get-snapshot'), false);
+  assert.equal(errorText.includes('HostRequestError'), false);
+  errorWindow.destroy();
 
   await app.quit();
 }).catch((error) => {

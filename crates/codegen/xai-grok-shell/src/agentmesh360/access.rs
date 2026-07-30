@@ -289,53 +289,67 @@ impl ClientAccess {
         &self,
         access_token: &str,
     ) -> Result<ClientBootstrapResponse, BootstrapError> {
-        *self.state.lock() = AccessState::Unverified;
         if access_token.trim().is_empty() {
+            self.invalidate();
             return Err(BootstrapError::MissingToken);
         }
 
-        let response = self
-            .client
-            .get(format!("{}{}", self.core_base_url, CLIENT_BOOTSTRAP_PATH))
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|_| BootstrapError::VerificationUnavailable)?;
+        let result = async {
+            let response = self
+                .client
+                .get(format!("{}{}", self.core_base_url, CLIENT_BOOTSTRAP_PATH))
+                .bearer_auth(access_token)
+                .send()
+                .await
+                .map_err(|_| BootstrapError::VerificationUnavailable)?;
 
-        if matches!(
-            response.status(),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
-        ) {
-            return Err(BootstrapError::AuthenticationRequired);
-        }
-        if !response.status().is_success() {
-            return Err(BootstrapError::VerificationUnavailable);
-        }
+            if matches!(
+                response.status(),
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+            ) {
+                return Err(BootstrapError::AuthenticationRequired);
+            }
+            if !response.status().is_success() {
+                return Err(BootstrapError::VerificationUnavailable);
+            }
 
-        let bootstrap = response
-            .json::<ClientBootstrapResponse>()
-            .await
-            .map_err(|_| BootstrapError::UnsupportedContract)?;
-        if bootstrap.schema_version != 1 {
-            return Err(BootstrapError::UnsupportedContract);
-        }
+            let bootstrap = response
+                .json::<ClientBootstrapResponse>()
+                .await
+                .map_err(|_| BootstrapError::UnsupportedContract)?;
+            if bootstrap.schema_version != 1 {
+                return Err(BootstrapError::UnsupportedContract);
+            }
 
-        if bootstrap.access.can_enter_client {
-            let (server_time, valid_for) = granted_bootstrap_validity(&bootstrap)?;
-            let observed_at = Instant::now();
-            let valid_until = observed_at
-                .checked_add(valid_for)
-                .ok_or(BootstrapError::UnsupportedContract)?;
-            let trusted_time = TrustedServerTime::new(server_time, observed_at, valid_for)?;
-            *self.state.lock() = AccessState::Granted {
-                response: bootstrap.clone(),
-                valid_until,
-                trusted_time,
+            let next_state = if bootstrap.access.can_enter_client {
+                let (server_time, valid_for) = granted_bootstrap_validity(&bootstrap)?;
+                let observed_at = Instant::now();
+                let valid_until = observed_at
+                    .checked_add(valid_for)
+                    .ok_or(BootstrapError::UnsupportedContract)?;
+                let trusted_time = TrustedServerTime::new(server_time, observed_at, valid_for)?;
+                AccessState::Granted {
+                    response: bootstrap.clone(),
+                    valid_until,
+                    trusted_time,
+                }
+            } else {
+                AccessState::Denied(bootstrap.clone())
             };
-        } else {
-            *self.state.lock() = AccessState::Denied(bootstrap.clone());
+            Ok((bootstrap, next_state))
         }
-        Ok(bootstrap)
+        .await;
+
+        match result {
+            Ok((bootstrap, next_state)) => {
+                *self.state.lock() = next_state;
+                Ok(bootstrap)
+            }
+            Err(error) => {
+                self.invalidate();
+                Err(error)
+            }
+        }
     }
 
     pub fn is_granted(&self) -> bool {
@@ -468,6 +482,7 @@ fn granted_bootstrap_validity(
 mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
 
     use super::*;
 
@@ -498,6 +513,53 @@ mod tests {
             request
         });
         (format!("http://{address}"), task)
+    }
+
+    async fn serve_initial_and_gated_refresh(
+        refresh_status: &str,
+        refresh_body: &str,
+    ) -> (
+        String,
+        oneshot::Receiver<()>,
+        oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let refresh_status = refresh_status.to_owned();
+        let refresh_body = refresh_body.to_owned();
+        let (arrived_tx, arrived_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            let mut arrived_tx = Some(arrived_tx);
+            let mut release_rx = Some(release_rx);
+            for request_index in 0..2 {
+                let (mut stream, _) = listener.accept().await.expect("accept");
+                let mut request = vec![0; 4096];
+                stream.read(&mut request).await.expect("read");
+                let (status, body) = if request_index == 0 {
+                    ("200 OK", ACTIVE_BODY)
+                } else {
+                    arrived_tx
+                        .take()
+                        .expect("refresh arrival sender")
+                        .send(())
+                        .expect("signal refresh arrival");
+                    release_rx
+                        .take()
+                        .expect("refresh release receiver")
+                        .await
+                        .expect("release refresh");
+                    (refresh_status.as_str(), refresh_body.as_str())
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.expect("write");
+            }
+        });
+        (format!("http://{address}"), arrived_rx, release_tx, task)
     }
 
     #[tokio::test]
@@ -543,6 +605,59 @@ mod tests {
                 .contains("authorization: bearer secret-jwt")
         );
         assert!(!format!("{access:?}").contains("secret-jwt"));
+    }
+
+    #[tokio::test]
+    async fn refresh_preserves_the_existing_grant_until_the_new_result_is_ready() {
+        let (base_url, refresh_arrived, release_refresh, server) =
+            serve_initial_and_gated_refresh("200 OK", ACTIVE_BODY).await;
+        let access = Arc::new(ClientAccess::new(base_url));
+        access
+            .bootstrap("initial-jwt")
+            .await
+            .expect("initial bootstrap");
+
+        let refresh_access = Arc::clone(&access);
+        let refresh = tokio::spawn(async move { refresh_access.bootstrap("renewed-jwt").await });
+        refresh_arrived.await.expect("refresh arrived");
+
+        access.require().expect("existing grant remains usable");
+        assert_eq!(access.current_account_id(), Some(1));
+
+        release_refresh.send(()).expect("release refresh");
+        refresh
+            .await
+            .expect("refresh task")
+            .expect("refresh bootstrap");
+        access.require().expect("refreshed grant");
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
+    async fn failed_refresh_invalidates_an_existing_grant_after_the_result_arrives() {
+        let (base_url, refresh_arrived, release_refresh, server) =
+            serve_initial_and_gated_refresh("401 Unauthorized", "{}").await;
+        let access = Arc::new(ClientAccess::new(base_url));
+        access
+            .bootstrap("initial-jwt")
+            .await
+            .expect("initial bootstrap");
+
+        let refresh_access = Arc::clone(&access);
+        let refresh = tokio::spawn(async move { refresh_access.bootstrap("revoked-jwt").await });
+        refresh_arrived.await.expect("refresh arrived");
+        access
+            .require()
+            .expect("existing grant remains during refresh");
+
+        release_refresh.send(()).expect("release refresh");
+        assert!(matches!(
+            refresh.await.expect("refresh task"),
+            Err(BootstrapError::AuthenticationRequired)
+        ));
+        assert!(!access.is_granted());
+        assert_eq!(access.current_account_id(), None);
+        server.await.expect("server");
     }
 
     #[tokio::test]

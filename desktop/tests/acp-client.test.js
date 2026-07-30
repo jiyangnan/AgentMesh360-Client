@@ -126,6 +126,62 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
 });
 
+test('Host access refresh keeps Provider requests queued until authentication is ready', async () => {
+  const received = [];
+  let releaseBootstrap;
+  const bootstrapGate = new Promise((resolve) => {
+    releaseBootstrap = resolve;
+  });
+  const spawnImpl = () => fakeChild(async (request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/account/bootstrap') {
+      await bootstrapGate;
+      return {
+        result: {
+          schemaVersion: 1,
+          account: { id: 7 },
+          access: { canEnterClient: true },
+        },
+      };
+    }
+    if (request.method === '_x.agentmesh360/providers/list') {
+      return { result: { profiles: [] } };
+    }
+    return { result: null, error: 'unsupported' };
+  });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+
+  const refresh = client.bootstrap('renewed-access-token');
+  await waitFor(() => received.some(
+    (request) => request.method === '_x.agentmesh360/account/bootstrap',
+  ));
+  const providers = client.listProviderProfiles();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    received.some((request) => request.method === '_x.agentmesh360/providers/list'),
+    false,
+    'Provider request must not enter the Host authentication gap',
+  );
+
+  releaseBootstrap();
+  await refresh;
+  assert.deepEqual(await providers, { profiles: [] });
+  assert.deepEqual(
+    received.slice(1).map((request) => request.method),
+    [
+      '_x.agentmesh360/account/bootstrap',
+      '_x.agentmesh360/providers/list',
+    ],
+  );
+  await client.stop();
+});
+
 test('Host command resolution prefers explicit and packaged binaries', () => {
   assert.equal(resolveHostCommand({ env: { AGENTMESH360_HOST_BIN: '/custom/host' } }).command, '/custom/host');
   const fallback = resolveHostCommand({ env: {}, resourcesPath: '/definitely/missing' });
@@ -834,8 +890,9 @@ function fakeChild(handler) {
     write(line) {
       const request = JSON.parse(line);
       queueMicrotask(() => {
-        const result = handler(request);
-        child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`);
+        Promise.resolve(handler(request)).then((result) => {
+          child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`);
+        });
       });
       return true;
     },
@@ -845,4 +902,12 @@ function fakeChild(handler) {
     child.emit('exit', 0);
   };
   return child;
+}
+
+async function waitFor(predicate, timeoutMs = 500) {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt >= timeoutMs) throw new Error('Timed out waiting for condition');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
