@@ -1101,3 +1101,13 @@ Provider、credits、Apple service、费用和生产 mutation 均为 0。此检�
 与无授权预检，不关闭 R4，不授予 P7/P8，也不改变 Apple Developer Program 延后
 决策。下一真实动作必须使用单独的下载 canary 授权卡，且禁止全局关闭 Gatekeeper、
 自动更新或把未签名内部版称为生产发行。
+
+## 65. 循环 132 P6 local-only internal handoff
+
+用户取消公开下载渠道，当前内部版只交付到 owner Mac 的本地 `~/Downloads`。交付
+副本与 Cycle 129 Artifact 逐字节一致，SHA-256 和 `hdiutil verify` 均通过，并附有
+中文单应用“仍要打开”说明。
+
+本轮没有在线 Release、tag、上传资产、DigitalOcean 资源、Provider、credits、
+Apple service 或费用。由于本地复制不产生浏览器 quarantine，这只满足本机取得
+安装包，不关闭下载 canary、Developer ID/notarization、生产 R4、P7 或 P8。

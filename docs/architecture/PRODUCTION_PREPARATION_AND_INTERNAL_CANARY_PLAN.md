@@ -1519,3 +1519,12 @@ credential、cohort、预算、安全策略、证据留存或清理撤回漂移�
 本轮只完成本地证据与 no-authority 预检，网络、上传、账号、Provider、credits、
 Apple service 和费用为 0。生产 R4、P7/P8、Developer ID、notarization 与正式更新/
 rollback 仍保持 blocked。
+
+## 60. Cycle 132 P6 本机交付，不启动下载 canary
+
+用户选择直接从 owner Mac 取得安装包，不再创建在线地址。已验收 DMG 只复制到本地
+`~/Downloads`，并用逐字节比较、SHA-256 与 `hdiutil verify` 复验。
+
+没有 Release、tag、在线资产或云存储。下一步由 owner 在本机执行安装、首次打开、
+订阅登录和持久 Agent 体验；本地复制无法验证浏览器 quarantine，因此下载 canary
+继续 blocked。生产 R4、P7/P8、Apple 签名/公证和自动更新状态不变。

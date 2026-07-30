@@ -7026,3 +7026,29 @@ DMG/ZIP。该阶段不关闭生产 R4
   中冻结下载 provider/hostname/path/可见性、同一 Artifact、账号与设备、起止时间、
   Abort Owner、上传/费用上限和证据/撤回策略，再执行 quarantine 下载 canary。
   Developer ID/notarization、生产 R4、P7 和 P8 继续关闭。
+
+### 循环 132：P6 未签名内部版本机交付
+
+状态：已完成；DMG 只复制到 owner Mac 的 `~/Downloads`，没有在线发布
+
+本轮结果：
+
+1. 用户明确取消在线下载地址，改为从当前电脑直接取得安装包；
+2. 复用 Cycle 129-131 已验收的 arm64 DMG，不重新构建、不改变 Artifact 字节；
+3. 本机交付目录只包含 DMG、单文件 `SHA256SUMS` 和中文安装说明；
+4. 交付副本与原件 `cmp` 逐字节一致，SHA-256 仍为
+   `c2cfcd1f024e39a52f253aa95e17684778afa23490ed5ed8e5d16c6702ca996f`，
+   `hdiutil verify` 通过；
+5. 曾创建一个不含资产且不可见的 GitHub Draft；在公开上传未获明确授权时立即停止，
+   Draft 已删除，公开 Release、tag 和上传资产均为 0；
+6. 没有使用 DigitalOcean、Provider、credits、Apple service 或产生费用。
+
+计划复盘：
+
+- 本轮只改变交付位置，不改变产品代码、构建 receipt、未签名状态或生产门；
+- 本地复制不会产生浏览器 quarantine，因此下一真实验证是 owner 从本机 DMG 安装，
+  观察首次启动、订阅登录和持久 Agent；它不能代替未来公开下载后的 Gatekeeper
+  场景；
+- Kimi 继续按用户要求暂停。本轮由主 Agent 复核本机目录冲突、Artifact 摘要、
+  逐字节一致性、DMG checksum、在线 Draft 清理和计划边界；
+- Developer ID/notarization、自动更新、生产 R4、P7/P8 和在线分发仍关闭。
