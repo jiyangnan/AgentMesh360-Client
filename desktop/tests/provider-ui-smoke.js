@@ -18,6 +18,18 @@ app.whenReady().then(async () => {
     writes.push({ kind: 'profile', payload });
     return { profile: providerSnapshot().profiles[0] };
   });
+  ipcMain.handle('provider:test-connection', (_event, payload) => {
+    writes.push({ kind: 'connection-test', payload });
+    return {
+      connectionTest: {
+        status: 'passed',
+        modelId: payload.modelId,
+        networkAttempted: true,
+        mayIncurCost: true,
+        summaryCode: 'minimal_inference_responded',
+      },
+    };
+  });
   ipcMain.handle('provider:upsert-assignment', (_event, assignment) => {
     writes.push({ kind: 'assignment', payload: assignment });
     return { assignment: providerSnapshot().assignments[0] };
@@ -123,6 +135,35 @@ app.whenReady().then(async () => {
       form.requestSubmit();
     })()
   `);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(writes.some((write) => write.kind === 'profile'), false);
+  const simplifiedProvider = await window.webContents.executeJavaScript(`({
+    managedVisible: !document.getElementById('managed-provider-card').hidden,
+    advancedHidden: document.getElementById('advanced-provider-settings').hidden,
+    saveDisabled: document.querySelector('.provider-save-button').disabled,
+    bodyText: document.body.innerText,
+  })`);
+  assert.equal(simplifiedProvider.managedVisible, true);
+  assert.equal(simplifiedProvider.advancedHidden, true);
+  assert.equal(simplifiedProvider.saveDisabled, true);
+  assert.equal(simplifiedProvider.bodyText.includes('不需要判断技术选项'), true);
+  assert.equal(simplifiedProvider.bodyText.includes('请先测试连接'), true);
+
+  await window.webContents.executeJavaScript(`
+    (() => {
+      window.confirm = () => true;
+      document.getElementById('provider-test-connection').click();
+    })()
+  `);
+  await waitFor(() => writes.some((write) => write.kind === 'connection-test'));
+  assert.equal(writes.find((write) => write.kind === 'connection-test').payload.apiKey,
+    'sk-renderer-one-shot');
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.getElementById('connection-test-status').dataset.status === 'passed'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('provider-profile-form').requestSubmit()",
+  );
   await waitFor(() => writes.some((write) => write.kind === 'profile'));
   assert.equal(
     writes.find((write) => write.kind === 'profile').payload.apiKey,
@@ -291,6 +332,7 @@ function providerSnapshot() {
         {
           presetId: 'openai',
           displayName: 'OpenAI',
+          classification: 'official',
           protocol: 'openai_responses',
           defaultBaseUrl: 'https://api.openai.com/v1',
           authKind: 'bearer_api_key',

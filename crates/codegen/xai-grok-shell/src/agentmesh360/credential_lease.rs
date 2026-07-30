@@ -9,7 +9,8 @@ use xai_grok_sampling_types::ApiBackend;
 
 use super::credential_vault::{CredentialRef, CredentialVault, SecretValue, SystemCredentialVault};
 use super::provider_profiles::{
-    ProviderAuthKind, ProviderProfileRecord, ProviderProfileStore, ProviderProtocol,
+    ProviderAuthKind, ProviderProfileInput, ProviderProfileRecord, ProviderProfileStore,
+    ProviderProtocol, normalize_model_id,
 };
 use super::session_bindings::{SessionBindingStore, SessionProviderBinding};
 
@@ -94,6 +95,38 @@ impl LeasedProbeRoute {
     fn sampler_config(&self) -> &SamplerConfig {
         &self.sampler_config
     }
+}
+
+/// Prepare a one-shot Provider connection test from an unsaved Profile.
+///
+/// The credential is held only by the non-serializable resolver in zeroizing
+/// memory. This path deliberately does not touch the Vault, Provider Profile
+/// store, Assignment store, Session Bindings, or Turn Routes.
+pub fn prepare_ephemeral_probe(
+    profile: ProviderProfileInput,
+    model_id: &str,
+    api_key: String,
+) -> Result<LeasedProbeRoute> {
+    let profile = profile.normalized()?;
+    let model_id = normalize_model_id(model_id)?;
+    if !profile
+        .enabled_models
+        .iter()
+        .any(|model| model == &model_id)
+    {
+        bail!("connection test model is not enabled by the Provider Profile");
+    }
+    let secret = SecretValue::new(api_key).context("validate Provider connection test secret")?;
+    let bearer_resolver: SharedBearerResolver = Arc::new(LeaseCredential { secret });
+    Ok(LeasedProbeRoute {
+        sampler_config: probe_sampler_config(
+            profile.base_url,
+            model_id,
+            profile.protocol,
+            profile.auth_kind,
+            bearer_resolver,
+        ),
+    })
 }
 
 impl fmt::Debug for LeasedSamplingRoute {
@@ -284,24 +317,40 @@ fn project_probe(
     }
     let bearer_resolver: SharedBearerResolver = lease.credential;
     Ok(LeasedProbeRoute {
-        sampler_config: SamplerConfig {
-            api_key: None,
-            base_url: profile.base_url.clone(),
-            model: model_id.to_owned(),
-            max_completion_tokens: Some(32),
-            api_backend: match profile.protocol {
-                ProviderProtocol::OpenaiResponses => ApiBackend::Responses,
-                ProviderProtocol::OpenaiChat => ApiBackend::ChatCompletions,
-                ProviderProtocol::AnthropicMessages => ApiBackend::Messages,
-            },
-            auth_scheme: match profile.auth_kind {
-                ProviderAuthKind::BearerApiKey => AuthScheme::Bearer,
-                ProviderAuthKind::XApiKey => AuthScheme::XApiKey,
-            },
-            bearer_resolver: Some(bearer_resolver),
-            ..SamplerConfig::default()
-        },
+        sampler_config: probe_sampler_config(
+            profile.base_url.clone(),
+            model_id.to_owned(),
+            profile.protocol,
+            profile.auth_kind,
+            bearer_resolver,
+        ),
     })
+}
+
+fn probe_sampler_config(
+    base_url: String,
+    model_id: String,
+    protocol: ProviderProtocol,
+    auth_kind: ProviderAuthKind,
+    bearer_resolver: SharedBearerResolver,
+) -> SamplerConfig {
+    SamplerConfig {
+        api_key: None,
+        base_url,
+        model: model_id,
+        max_completion_tokens: Some(32),
+        api_backend: match protocol {
+            ProviderProtocol::OpenaiResponses => ApiBackend::Responses,
+            ProviderProtocol::OpenaiChat => ApiBackend::ChatCompletions,
+            ProviderProtocol::AnthropicMessages => ApiBackend::Messages,
+        },
+        auth_scheme: match auth_kind {
+            ProviderAuthKind::BearerApiKey => AuthScheme::Bearer,
+            ProviderAuthKind::XApiKey => AuthScheme::XApiKey,
+        },
+        bearer_resolver: Some(bearer_resolver),
+        ..SamplerConfig::default()
+    }
 }
 
 #[cfg(test)]

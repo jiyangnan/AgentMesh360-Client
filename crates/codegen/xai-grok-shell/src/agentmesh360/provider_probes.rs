@@ -9,12 +9,16 @@ use url::Url;
 use uuid::Uuid;
 use xai_grok_sampling_types::{ConversationItem, ConversationRequest};
 
-use super::credential_lease::CredentialLeaseResolver;
+use super::credential_lease::{CredentialLeaseResolver, prepare_ephemeral_probe};
 use super::credential_vault::CredentialVault;
 use super::model_assignments::ModelAssignmentStore;
 use super::provider_catalog::{ProviderCatalog, ProviderClassification};
-use super::provider_profiles::{ProviderProfileRecord, ProviderProfileStore, ProviderProtocol};
+use super::provider_profiles::{
+    ProviderProfileInput, ProviderProfileRecord, ProviderProfileStore, ProviderProtocol,
+    normalize_model_id,
+};
 
+pub const PROVIDER_CONNECTION_TEST_METHOD: &str = "x.agentmesh360/providers/test-connection";
 pub const PROVIDER_PROBE_RUN_METHOD: &str = "x.agentmesh360/providers/probes/run";
 pub const PROVIDER_PROBE_LIST_METHOD: &str = "x.agentmesh360/providers/probes/list";
 const MINIMAL_INFERENCE_TIMEOUT: Duration = Duration::from_secs(20);
@@ -22,7 +26,7 @@ const MINIMAL_INFERENCE_TIMEOUT: Duration = Duration::from_secs(20);
 pub fn handles(method: &str) -> bool {
     matches!(
         method,
-        PROVIDER_PROBE_RUN_METHOD | PROVIDER_PROBE_LIST_METHOD
+        PROVIDER_CONNECTION_TEST_METHOD | PROVIDER_PROBE_RUN_METHOD | PROVIDER_PROBE_LIST_METHOD
     )
 }
 
@@ -94,6 +98,16 @@ struct ListProviderProbesRequest {
     profile_id: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TestProviderConnectionRequest {
+    profile: ProviderProfileInput,
+    api_key: String,
+    model_id: String,
+    #[serde(default)]
+    confirm_paid_inference: bool,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderProbeResult {
@@ -128,6 +142,29 @@ struct ProviderProbesResponse {
     probes: Vec<ProviderProbeResult>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConnectionTestResult {
+    pub model_id: String,
+    pub status: ProviderProbeStatus,
+    pub network_attempted: bool,
+    pub may_incur_cost: bool,
+    pub endpoint_classification: ProviderClassification,
+    pub endpoint_origin: String,
+    pub protocol: ProviderProtocol,
+    pub summary_code: String,
+    pub summary_message: String,
+    pub started_at: String,
+    pub completed_at: String,
+    pub latency_ms: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderConnectionTestResponse {
+    connection_test: ProviderConnectionTestResult,
+}
+
 pub struct ProviderProbeService<V> {
     state_home: std::path::PathBuf,
     profiles: ProviderProfileStore,
@@ -146,6 +183,57 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
             state_home,
             vault,
         }
+    }
+
+    async fn test_connection(
+        &self,
+        request: TestProviderConnectionRequest,
+        require_access: &dyn Fn() -> Result<()>,
+    ) -> Result<ProviderConnectionTestResult> {
+        require_access()?;
+        if !request.confirm_paid_inference {
+            anyhow::bail!(
+                "explicit confirmation is required because the connection test may incur Provider cost"
+            );
+        }
+        let profile = request.profile.normalized()?;
+        let model_id = normalize_model_id(&request.model_id)?;
+        if !profile
+            .enabled_models
+            .iter()
+            .any(|model| model == &model_id)
+        {
+            anyhow::bail!("connection test model is not enabled by the Provider Profile");
+        }
+
+        let started = Instant::now();
+        let started_at = now();
+        let endpoint_origin = endpoint_origin(&profile.base_url)?;
+        let endpoint_classification =
+            self.input_endpoint_classification(&profile, &endpoint_origin);
+        let protocol = profile.protocol;
+        let leased = prepare_ephemeral_probe(profile, &model_id, request.api_key)?;
+        let client = leased
+            .into_client()
+            .context("prepare Provider connection test client")?;
+
+        require_access()?;
+        let request = minimal_inference_request(&model_id, "connection-test");
+        let (status, summary_code, summary_message) = run_minimal_inference(client, request).await;
+        Ok(ProviderConnectionTestResult {
+            model_id,
+            status,
+            network_attempted: true,
+            may_incur_cost: true,
+            endpoint_classification,
+            endpoint_origin,
+            protocol,
+            summary_code,
+            summary_message,
+            started_at,
+            completed_at: now(),
+            latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        })
     }
 
     async fn run(
@@ -271,48 +359,12 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
                 };
                 require_access()?;
                 result.network_attempted = true;
-                let request = ConversationRequest {
-                    items: vec![ConversationItem::user(
-                        "Reply with a short acknowledgement. Do not use tools.",
-                    )],
-                    model: Some(model_id.to_owned()),
-                    max_output_tokens: Some(16),
-                    temperature: Some(0.0),
-                    x_grok_req_id: Some(format!(
-                        "agentmesh360-provider-probe-{}",
-                        Uuid::new_v4().simple()
-                    )),
-                    ..ConversationRequest::default()
-                };
-                match tokio::time::timeout(
-                    MINIMAL_INFERENCE_TIMEOUT,
-                    client.conversation_collect(request),
-                )
-                .await
-                {
-                    Ok(Ok(response)) if !response.assistant_text().trim().is_empty() => {
-                        result.summary_code = "minimal_inference_responded".into();
-                        result.summary_message =
-                            "The selected model returned a non-empty response.".into();
-                    }
-                    Ok(Ok(_)) => {
-                        result.status = ProviderProbeStatus::Failed;
-                        result.summary_code = "minimal_inference_empty_response".into();
-                        result.summary_message =
-                            "The Provider returned success without model text.".into();
-                    }
-                    Ok(Err(_)) => {
-                        result.status = ProviderProbeStatus::Failed;
-                        result.summary_code = "minimal_inference_request_failed".into();
-                        result.summary_message =
-                            "The Provider rejected or failed the minimal inference request.".into();
-                    }
-                    Err(_) => {
-                        result.status = ProviderProbeStatus::Failed;
-                        result.summary_code = "minimal_inference_timeout".into();
-                        result.summary_message = "The minimal inference request timed out.".into();
-                    }
-                }
+                let request = minimal_inference_request(model_id, "provider-probe");
+                let (status, summary_code, summary_message) =
+                    run_minimal_inference(client, request).await;
+                result.status = status;
+                result.summary_code = summary_code;
+                result.summary_message = summary_message;
             }
         }
         self.finish_and_record(owner_account_id, result, started)
@@ -446,6 +498,28 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
                 preset.classification
             })
     }
+
+    fn input_endpoint_classification(
+        &self,
+        profile: &ProviderProfileInput,
+        endpoint_origin: &str,
+    ) -> ProviderClassification {
+        profile
+            .preset_id
+            .as_deref()
+            .and_then(|preset_id| self.catalog.provider(preset_id))
+            .filter(|preset| {
+                preset.protocol == profile.protocol
+                    && preset.auth_kind == profile.auth_kind
+                    && preset
+                        .allowed_endpoint_origins
+                        .iter()
+                        .any(|allowed| allowed == endpoint_origin)
+            })
+            .map_or(ProviderClassification::Custom, |preset| {
+                preset.classification
+            })
+    }
 }
 
 pub async fn handle<V: CredentialVault + Clone>(
@@ -455,6 +529,16 @@ pub async fn handle<V: CredentialVault + Clone>(
     require_access: &dyn Fn() -> Result<()>,
 ) -> crate::extensions::ExtResult {
     let result = match args.method.as_ref() {
+        PROVIDER_CONNECTION_TEST_METHOD => {
+            let request: TestProviderConnectionRequest = crate::extensions::parse_params(args)?;
+            service
+                .test_connection(request, require_access)
+                .await
+                .and_then(|connection_test| {
+                    serde_json::to_value(ProviderConnectionTestResponse { connection_test })
+                        .map_err(Into::into)
+                })
+        }
         PROVIDER_PROBE_RUN_METHOD => {
             let request: RunProviderProbeRequest = crate::extensions::parse_params(args)?;
             service
@@ -477,6 +561,55 @@ pub async fn handle<V: CredentialVault + Clone>(
         )),
     };
     crate::extensions::to_ext_response(result)
+}
+
+fn minimal_inference_request(model_id: &str, purpose: &str) -> ConversationRequest {
+    ConversationRequest {
+        items: vec![ConversationItem::user(
+            "Reply with a short acknowledgement. Do not use tools.",
+        )],
+        model: Some(model_id.to_owned()),
+        max_output_tokens: Some(16),
+        temperature: Some(0.0),
+        x_grok_req_id: Some(format!(
+            "agentmesh360-{purpose}-{}",
+            Uuid::new_v4().simple()
+        )),
+        ..ConversationRequest::default()
+    }
+}
+
+async fn run_minimal_inference(
+    client: xai_grok_sampler::SamplingClient,
+    request: ConversationRequest,
+) -> (ProviderProbeStatus, String, String) {
+    match tokio::time::timeout(
+        MINIMAL_INFERENCE_TIMEOUT,
+        client.conversation_collect(request),
+    )
+    .await
+    {
+        Ok(Ok(response)) if !response.assistant_text().trim().is_empty() => (
+            ProviderProbeStatus::Passed,
+            "minimal_inference_responded".into(),
+            "The selected model returned a non-empty response.".into(),
+        ),
+        Ok(Ok(_)) => (
+            ProviderProbeStatus::Failed,
+            "minimal_inference_empty_response".into(),
+            "The Provider returned success without model text.".into(),
+        ),
+        Ok(Err(_)) => (
+            ProviderProbeStatus::Failed,
+            "minimal_inference_request_failed".into(),
+            "The Provider rejected or failed the minimal inference request.".into(),
+        ),
+        Err(_) => (
+            ProviderProbeStatus::Failed,
+            "minimal_inference_timeout".into(),
+            "The minimal inference request timed out.".into(),
+        ),
+    }
 }
 
 fn endpoint_origin(base_url: &str) -> Result<String> {
@@ -688,6 +821,145 @@ mod tests {
                 .is_err(),
             "unconfirmed inference must not connect"
         );
+    }
+
+    #[tokio::test]
+    async fn unsaved_connection_test_requires_confirmation_and_persists_nothing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("address");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = ProviderProbeService::in_home(temp.path(), MemoryCredentialVault::default());
+        let request = TestProviderConnectionRequest {
+            profile: ProviderProfileInput {
+                preset_id: None,
+                display_name: "Unsaved Provider".into(),
+                protocol: ProviderProtocol::OpenaiResponses,
+                base_url: format!("http://{address}/v1"),
+                auth_kind: ProviderAuthKind::BearerApiKey,
+                enabled_models: vec!["model-probe".into()],
+            },
+            api_key: SECRET.into(),
+            model_id: "model-probe".into(),
+            confirm_paid_inference: false,
+        };
+
+        assert!(
+            service
+                .test_connection(request, &|| Ok(()))
+                .await
+                .expect_err("confirmation must be required")
+                .to_string()
+                .contains("explicit confirmation")
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err(),
+            "unconfirmed connection test must not connect"
+        );
+        assert!(
+            service
+                .profiles
+                .list(ACCOUNT_ID)
+                .expect("profiles")
+                .is_empty()
+        );
+        assert!(service.list(ACCOUNT_ID, None).expect("history").is_empty());
+    }
+
+    #[tokio::test]
+    async fn confirmed_unsaved_connection_test_uses_ephemeral_secret_and_persists_nothing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let read = stream.read(&mut buffer).await.expect("read");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let text = String::from_utf8_lossy(&request);
+                    let content_length = text
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .and_then(|value| value.trim().parse::<usize>().ok())
+                        })
+                        .unwrap_or_default();
+                    let header_end = request
+                        .windows(4)
+                        .position(|window| window == b"\r\n\r\n")
+                        .map(|index| index + 4)
+                        .unwrap_or(request.len());
+                    if request.len() >= header_end + content_length {
+                        break;
+                    }
+                }
+            }
+            let completed = r#"{"id":"chatcmpl-test","object":"chat.completion.chunk","created":0,"model":"model-probe","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}"#;
+            let body = format!("data: {completed}\n\ndata: [DONE]\n\n");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.expect("write");
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        let temp = tempfile::tempdir().expect("tempdir");
+        let service = ProviderProbeService::in_home(temp.path(), MemoryCredentialVault::default());
+
+        let result = service
+            .test_connection(
+                TestProviderConnectionRequest {
+                    profile: ProviderProfileInput {
+                        preset_id: None,
+                        display_name: "Unsaved Provider".into(),
+                        protocol: ProviderProtocol::OpenaiChat,
+                        base_url: format!("http://{address}/v1"),
+                        auth_kind: ProviderAuthKind::BearerApiKey,
+                        enabled_models: vec!["model-probe".into()],
+                    },
+                    api_key: SECRET.into(),
+                    model_id: "model-probe".into(),
+                    confirm_paid_inference: true,
+                },
+                &|| Ok(()),
+            )
+            .await
+            .expect("connection test");
+        let wire = server.await.expect("server");
+
+        assert_eq!(result.status, ProviderProbeStatus::Passed);
+        assert!(result.network_attempted);
+        assert!(result.may_incur_cost);
+        assert!(wire.starts_with("POST /v1/chat/completions HTTP/1.1"));
+        assert!(
+            wire.to_ascii_lowercase()
+                .contains(&format!("authorization: bearer {SECRET}").to_ascii_lowercase())
+        );
+        assert!(wire.contains("\"model\":\"model-probe\""));
+        assert!(
+            service
+                .profiles
+                .list(ACCOUNT_ID)
+                .expect("profiles")
+                .is_empty()
+        );
+        assert!(service.list(ACCOUNT_ID, None).expect("history").is_empty());
+        let serialized = serde_json::to_string(&result).expect("serialize result");
+        assert!(!serialized.contains(SECRET));
+        assert!(!serialized.contains("OK"));
     }
 
     #[tokio::test]

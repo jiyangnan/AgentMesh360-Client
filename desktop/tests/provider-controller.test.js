@@ -210,3 +210,60 @@ test('explicit Probe is ready-gated, validated, and returns only public diagnost
     /订阅验证/,
   );
 });
+
+test('unsaved Provider connection test requires cost confirmation and never returns the Key', async () => {
+  const calls = [];
+  const identity = { getState: () => ({ phase: 'ready' }) };
+  const host = {
+    async testProviderConnection(request) {
+      calls.push(request);
+      return {
+        connectionTest: {
+          status: 'passed',
+          modelId: request.modelId,
+          networkAttempted: true,
+          mayIncurCost: true,
+          apiKey: request.apiKey,
+          authorization: `Bearer ${request.apiKey}`,
+        },
+      };
+    },
+  };
+  const controller = new ProviderController({ identity, host });
+
+  await assert.rejects(
+    () => controller.testConnection({
+      profile,
+      apiKey: 'sk-unsaved-test-only',
+      modelId: 'gpt-5',
+      confirmPaidInference: false,
+    }),
+    /必须先明确确认/,
+  );
+  assert.equal(calls.length, 0);
+
+  const result = await controller.testConnection({
+    profile,
+    apiKey: 'sk-unsaved-test-only',
+    modelId: 'gpt-5',
+    confirmPaidInference: true,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].apiKey, 'sk-unsaved-test-only');
+  assert.equal(calls[0].profile.baseUrl, 'https://api.openai.com/v1');
+  assert.equal(result.connectionTest.status, 'passed');
+  assert.equal(Object.hasOwn(result.connectionTest, 'apiKey'), false);
+  assert.equal(Object.hasOwn(result.connectionTest, 'authorization'), false);
+
+  identity.getState = () => ({ phase: 'blocked' });
+  await assert.rejects(
+    () => controller.testConnection({
+      profile,
+      apiKey: 'sk-unsaved-test-only',
+      modelId: 'gpt-5',
+      confirmPaidInference: true,
+    }),
+    /订阅验证/,
+  );
+  assert.equal(calls.length, 1);
+});

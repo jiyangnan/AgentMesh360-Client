@@ -43,6 +43,7 @@ app.whenReady().then(async () => {
     'provider:upsert-assignment',
     'provider:delete-assignment',
     'provider:run-probe',
+    'provider:test-connection',
     'package:download',
     'package:approve',
     'package:rollback',
@@ -67,6 +68,16 @@ app.whenReady().then(async () => {
   if (phase === 'provider' || phase === 'provider-bottom') {
     await window.webContents.executeJavaScript("document.getElementById('nav-providers').click()");
     await new Promise((resolve) => setTimeout(resolve, 180));
+    if (process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET) {
+      await window.webContents.executeJavaScript(`
+        (() => {
+          const select = document.getElementById('provider-preset');
+          select.value = ${JSON.stringify(process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET)};
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        })()
+      `);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
     if (phase === 'provider-bottom') {
       await window.webContents.executeJavaScript("document.querySelector('.workspace-main').scrollTo(0, document.querySelector('.workspace-main').scrollHeight)");
       await new Promise((resolve) => setTimeout(resolve, 120));
@@ -309,6 +320,7 @@ function providerFixture() {
         {
           presetId: 'openai',
           displayName: 'OpenAI',
+          classification: 'official',
           protocol: 'openai_responses',
           defaultBaseUrl: 'https://api.openai.com/v1',
           authKind: 'bearer_api_key',
@@ -317,6 +329,7 @@ function providerFixture() {
         {
           presetId: 'anthropic',
           displayName: 'Anthropic',
+          classification: 'official',
           protocol: 'anthropic_messages',
           defaultBaseUrl: 'https://api.anthropic.com',
           authKind: 'x_api_key',

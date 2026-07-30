@@ -7193,3 +7193,72 @@ DMG/ZIP。该阶段不关闭生产 R4
   重构 Provider Catalog、增加模型供应商、调用 Provider 或扩展生产 authority；
 - 当前缺陷包已经完成。下一轮回到既定产品顺序：先简化 Provider 配置，再做首次使用
   引导；不把本次修复扩展成 Provider Catalog 或生产发布重构。
+
+### 循环 135：Provider 自动配置与测试后保存
+
+状态：功能与回归已完成；等待提交推送后生成新的本机未签名内部体验版
+
+用户问题与产品判断：
+
+1. 官方 Google Gemini 虽然实际使用其 OpenAI Chat Completions 兼容接口，但原页面
+   直接要求普通用户选择“协议”和“认证”，容易被误解为 Gemini 被错误配置成 OpenAI；
+2. 原表单只有“安全保存”，用户无法在 Key 写入本机 Vault 前确认 API Key、模型 ID、
+   网络和接口地址是否真的可用；
+3. 该问题属于 Provider 接入体验，不需要增加供应商、改变 Catalog、修改 BYOK/订阅/
+   credits 规则，也不应把现有已保存 Profile 的诊断 Probe 混同为新 Profile 的前置测试；
+4. 本轮严格执行 Cycle 134 记录的既定顺序：先完成 Provider 配置简化，首次使用引导
+   留到下一独立切片。
+
+本轮实现：
+
+1. Provider 下拉框按“官方供应商（自动配置）”与“兼容和本地接口（高级）”分组；
+   官方 OpenAI、xAI、Anthropic、Google Gemini 选择后自动写入 Catalog 声明的协议、
+   认证方式、官方 Base URL 和模型，不再要求用户判断技术字段；
+2. 官方配置只展示“已自动配置”说明，技术内容收进可折叠的“查看技术信息”；
+   原始协议和认证控件只在兼容/本地/自定义端点的“高级连接设置”中出现，并使用
+   “OpenAI Chat Completions 兼容”等中文语义；
+3. 新增 `providers/test-connection` Host ACP 方法。它使用尚未保存的
+   `ProviderProfileInput`、测试模型和一次性 API Key 建立 Grok Sampling Client，
+   发出最小推理并只返回非秘密结果；
+4. 测试 Key 从 ACP 请求移入 `SecretValue` 零化内存和不可序列化 resolver；测试路径
+   不写 Credential Vault、Provider Profile、Assignment、Session Binding、
+   Turn Route 或 Probe history，也不把模型响应文本返回 Renderer；
+5. 测试前必须明确确认“可能产生极小 Provider 费用”；页面同时明确不消耗
+   AgentMesh credits、不写 Agent 会话、未保存 Key 不会落库；
+6. 新 Provider 的“安全保存”默认禁用，只有真实测试返回非空模型响应后才解锁；
+   Key、模型、协议、认证或地址发生变化会立即使旧测试失效并重新禁用保存，名称变化
+   不会无意义地要求重测；
+7. 编辑现有 Provider 可保留原配置直接保存名称；若更换 Key、模型或连接字段，则必须
+   重新输入 Key 并测试。客户端不会为了测试而读回已经保存在系统 Vault 的 Key；
+8. 连接失败、超时、无文本、身份恢复和本地输入错误均投影为稳定中文说明，不把
+   Electron IPC、Host 错误链、authorization 或 Key 显示到页面。
+
+验证与自主复核：
+
+- Provider Host 定向回归 6/6：覆盖未确认零网络、订阅拒绝零网络、已保存 Probe、
+  未保存 OpenAI Chat 兼容请求、Bearer Header、模型 ID、非空响应，以及测试后
+  Profile/Probe history 仍为空；
+- 完整 AgentMesh360 Host lib 回归 191 passed / 1 个显式外部源测试 ignored /
+  0 failed；
+- 桌面完整 Node 回归 120 passed / 3 个真实 Host 环境门 skipped / 0 failed；
+  Provider Controller + ACP 定向 22/22；
+- Provider Electron UI smoke 通过：未测试时提交不会创建 Profile，官方配置隐藏
+  高级协议，确认后测试请求只携带一次 Key，成功后才允许保存，保存后 Key 从 DOM
+  清空；原后台复验表单保留和认证错误脱敏用例继续通过；
+- Conversation、Package Electron UI smoke、`npm run check`、`cargo fmt --all
+  --check`、`git diff --check` 均通过；官方供应商自动配置视觉状态已由主 Agent
+  本机截图复核；
+- Kimi 继续按用户要求暂停。本轮由主 Agent 复核完整 diff、Catalog/UI 语义、
+  测试前订阅门、付费确认、一次性凭据生命周期、非持久化证明、Renderer 脱敏、
+  测试结果失效规则和 P0-P8 计划顺序；
+- 自动测试只连接本机 loopback mock，没有调用真实 Provider、使用用户 Key、
+  消耗 AgentMesh credits 或产生费用。
+
+计划复盘与下一轮：
+
+- 本轮没有增加 Provider、修改模型能力、自动分配角色、触碰 Package/生产发布、
+  Developer ID、公证或自动更新；BYOK 与“订阅无效不能进入客户端”的规则不变；
+- Provider 配置简化切片已完成，下一产品切片按原计划是首次使用引导：让首次登录者
+  清楚看到“先配置 Provider，再打开/激活 Agent，再开始对话”的产品路径；
+- 在完成本轮提交、推送、内部构建与本机交付前不启动首次使用引导，避免把两个产品
+  切片混为一次无边界重构。

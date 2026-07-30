@@ -129,6 +129,26 @@ class ProviderController {
     );
   }
 
+  async testConnection({
+    profile,
+    apiKey,
+    modelId,
+    confirmPaidInference = false,
+  } = {}) {
+    this.#requireReady();
+    if (confirmPaidInference !== true) {
+      throw new Error('测试连接可能产生 Provider 费用，必须先明确确认');
+    }
+    return publicProviderPayload(
+      await this.host.testProviderConnection({
+        profile: normalizeProviderProfile(profile),
+        apiKey: normalizeSecret(apiKey),
+        modelId: normalizeModelId(modelId),
+        confirmPaidInference: true,
+      }),
+    );
+  }
+
   #requireReady() {
     if (this.identity.getState()?.phase !== 'ready') {
       throw new Error('当前账号尚未通过订阅验证，无法管理 Provider');

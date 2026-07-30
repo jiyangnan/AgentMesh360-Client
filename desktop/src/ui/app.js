@@ -1495,7 +1495,7 @@ function providerSettingsView(state) {
         <div><span>Assignments</span><strong>${assignments.length}</strong></div>
         <div><span>Probe records</span><strong>${probes.length}</strong></div>
         <div><span>Catalog revision</span><strong>${escapeHtml(catalog.catalogRevision || '—')}</strong></div>
-        <p>保存配置不会自动测试模型，也不会产生 Provider 费用。</p>
+        <p>新 Provider 必须先测试连接，再保存到本机 Vault。</p>
       </section>
       <div class="provider-layout">
         <section class="provider-column">
@@ -1522,41 +1522,78 @@ function providerLoadingView() {
 function providerProfileEditor(catalog, profiles) {
   const editing = profiles.find((item) => item.profileId === providerUi.editingProfileId) || null;
   const providers = Array.isArray(catalog.providers) ? catalog.providers : [];
-  const selectedPreset = editing?.presetId || '';
+  const selectedPreset = editing ? (editing.presetId || '__custom__') : '';
+  const selectedProvider = providers.find((provider) => provider.presetId === selectedPreset) || null;
+  const managed = selectedProvider?.classification === 'official';
+  const officialProviders = providers.filter((provider) => provider.classification === 'official');
+  const advancedProviders = providers.filter((provider) => provider.classification !== 'official');
   const enabledModels = Array.isArray(editing?.enabledModels) ? editing.enabledModels.join('\n') : '';
   return `
-    <form class="control-panel provider-form" id="provider-profile-form">
-      <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑 Provider' : '接入 Provider'}</strong><small>Profile + write-only credential</small></div></div>
+    <form class="control-panel provider-form" id="provider-profile-form"
+      data-connection-test-passed="${editing ? 'true' : 'false'}"
+      data-config-revision="0">
+      <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑供应商' : '添加模型供应商'}</strong><small>选择供应商 → 填写 Key → 测试 → 保存</small></div></div>
       <div class="form-grid two">
-        <label class="field"><span>预设</span>
-          <select name="presetId" id="provider-preset">
-            <option value="">自定义兼容端点</option>
-            ${providers.map((provider) => `<option value="${escapeHtml(provider.presetId)}" ${selectedPreset === provider.presetId ? 'selected' : ''}>${escapeHtml(provider.displayName)}</option>`).join('')}
+        <label class="field"><span>供应商</span>
+          <select name="presetId" id="provider-preset" required>
+            <option value="" ${selectedPreset ? '' : 'selected'} disabled>请选择供应商</option>
+            ${officialProviders.length ? `<optgroup label="官方供应商（自动配置）">
+              ${officialProviders.map((provider) => `<option value="${escapeHtml(provider.presetId)}" ${selectedPreset === provider.presetId ? 'selected' : ''}>${escapeHtml(provider.displayName)}</option>`).join('')}
+            </optgroup>` : ''}
+            ${advancedProviders.length ? `<optgroup label="兼容与本地接口（高级）">
+              ${advancedProviders.map((provider) => `<option value="${escapeHtml(provider.presetId)}" ${selectedPreset === provider.presetId ? 'selected' : ''}>${escapeHtml(provider.displayName)}</option>`).join('')}
+            </optgroup>` : ''}
+            <option value="__custom__" ${selectedPreset === '__custom__' ? 'selected' : ''}>其他自定义接口（高级）</option>
           </select>
         </label>
-        <label class="field"><span>显示名称</span><input name="displayName" maxlength="80" required value="${escapeHtml(editing?.displayName || '')}" placeholder="例如：我的 OpenAI"></label>
+        <label class="field"><span>名称 <em>方便你自己区分</em></span><input name="displayName" maxlength="80" required value="${escapeHtml(editing?.displayName || '')}" placeholder="例如：我的 Gemini"></label>
       </div>
-      <div class="form-grid two">
-        <label class="field"><span>协议</span>
-          <select name="protocol" required>
-            ${option('openai_responses', 'OpenAI Responses', editing?.protocol)}
-            ${option('openai_chat', 'OpenAI Chat', editing?.protocol)}
-            ${option('anthropic_messages', 'Anthropic Messages', editing?.protocol)}
-          </select>
-        </label>
-        <label class="field"><span>认证</span>
-          <select name="authKind" required>
-            ${option('bearer_api_key', 'Bearer API Key', editing?.authKind)}
-            ${option('x_api_key', 'X-API-Key', editing?.authKind)}
-          </select>
-        </label>
+      <div class="managed-provider-card" id="managed-provider-card" ${managed ? '' : 'hidden'}>
+        <i aria-hidden="true"></i>
+        <div>
+          <strong id="managed-provider-title">${managed ? `已为 ${escapeHtml(selectedProvider.displayName)} 自动配置` : '已自动配置'}</strong>
+          <span>接口协议、认证方式和官方地址已自动选择，你不需要判断技术选项。</span>
+          <details>
+            <summary>查看技术信息</summary>
+            <p id="managed-provider-detail">${managed ? `${escapeHtml(protocolLabel(selectedProvider.protocol))} · ${escapeHtml(selectedProvider.defaultBaseUrl || '')}` : ''}</p>
+          </details>
+        </div>
       </div>
-      <label class="field"><span>Base URL</span><input name="baseUrl" type="url" required value="${escapeHtml(editing?.baseUrl || '')}" placeholder="https://api.example.com/v1"></label>
-      <label class="field"><span>启用模型 <em>一行一个，也可逗号分隔</em></span><textarea name="enabledModels" rows="3" placeholder="gpt-5&#10;gpt-5-mini">${escapeHtml(enabledModels)}</textarea></label>
+      <details class="advanced-provider-settings" id="advanced-provider-settings" ${selectedProvider && !managed || selectedPreset === '__custom__' ? 'open' : 'hidden'}>
+        <summary>高级连接设置</summary>
+        <p>只有服务商文档明确写明“兼容 OpenAI / Anthropic 接口”时才需要在这里选择。</p>
+        <div class="form-grid two">
+          <label class="field"><span>接口兼容方式</span>
+            <select name="protocol" required>
+              ${option('openai_responses', 'OpenAI Responses 兼容', editing?.protocol)}
+              ${option('openai_chat', 'OpenAI Chat Completions 兼容（最常见）', editing?.protocol)}
+              ${option('anthropic_messages', 'Anthropic Messages 兼容', editing?.protocol)}
+            </select>
+          </label>
+          <label class="field"><span>Key 发送方式</span>
+            <select name="authKind" required>
+              ${option('bearer_api_key', 'Authorization: Bearer', editing?.authKind)}
+              ${option('x_api_key', 'x-api-key Header', editing?.authKind)}
+            </select>
+          </label>
+        </div>
+        <label class="field"><span>接口地址</span><input name="baseUrl" type="url" required value="${escapeHtml(editing?.baseUrl || '')}" placeholder="https://api.example.com/v1"></label>
+      </details>
+      <label class="field"><span>模型 <em>第一个模型用于连接测试；可一行一个</em></span><textarea name="enabledModels" rows="3" required placeholder="例如：gemini-3.5-flash-lite">${escapeHtml(enabledModels)}</textarea></label>
       <label class="field secret-field"><span>${editing ? '替换 API Key（可留空）' : 'API Key'}</span><input name="apiKey" type="password" autocomplete="off" ${editing ? '' : 'required'} placeholder="${editing ? '不修改请留空' : '仅提交给本机 Host Vault'}"><i>提交后立即清空</i></label>
+      <div class="connection-test-status" id="connection-test-status" data-status="${editing ? 'passed' : 'idle'}" role="status">
+        <i aria-hidden="true"></i>
+        <div>
+          <strong>${editing ? '当前已保存配置可继续使用' : '保存前需要先测试连接'}</strong>
+          <span>${editing ? '若更换 Key、模型或接口设置，需要重新测试。' : '测试会尝试调用第一个模型，可能产生极小 Provider 费用；不消耗 AgentMesh credits，也不会保存 Key。'}</span>
+        </div>
+      </div>
       <div class="panel-actions">
         ${editing ? '<button class="ghost" id="cancel-profile-edit" type="button">取消编辑</button>' : '<span></span>'}
-        <button class="secondary" type="submit" ${providerUi.busy ? 'disabled' : ''}>${editing ? '保存 Profile' : '安全保存'}</button>
+        <div class="provider-save-actions">
+          <button class="secondary connection-test-button" id="provider-test-connection" type="button" ${providerUi.busy ? 'disabled' : ''}>测试连接</button>
+          <button class="secondary provider-save-button" type="submit" ${providerUi.busy || !editing ? 'disabled' : ''}>安全保存</button>
+        </div>
       </div>
     </form>`;
 }
@@ -1676,7 +1713,12 @@ function wireProviderSettings() {
     renderReady(currentState);
   });
   document.getElementById('provider-preset')?.addEventListener('change', applySelectedPreset);
-  document.getElementById('provider-profile-form')?.addEventListener('submit', submitProviderProfile);
+  const providerForm = document.getElementById('provider-profile-form');
+  providerForm?.addEventListener('submit', submitProviderProfile);
+  providerForm?.addEventListener('input', invalidateProviderConnectionTest);
+  providerForm?.addEventListener('change', invalidateProviderConnectionTest);
+  document.getElementById('provider-test-connection')?.addEventListener('click', testProviderConnection);
+  syncProviderConnectionMode(providerForm);
   document.getElementById('provider-assignment-form')?.addEventListener('submit', submitAssignment);
   document.getElementById('assignment-scope')?.addEventListener('change', syncAssignmentScope);
   syncAssignmentScope();
@@ -1727,17 +1769,19 @@ async function refreshProviderSnapshot(message = null) {
 async function submitProviderProfile(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  if (form.dataset.connectionTestPassed !== 'true') {
+    updateConnectionTestStatus(
+      form,
+      'failed',
+      '请先测试连接',
+      '只有连接成功后才能保存，避免把无效 Key 或错误模型写入本机。',
+    );
+    return;
+  }
   const data = new FormData(form);
   const editingProfileId = providerUi.editingProfileId;
   const apiKey = String(data.get('apiKey') || '').trim();
-  const profile = {
-    presetId: String(data.get('presetId') || '') || null,
-    displayName: data.get('displayName'),
-    protocol: data.get('protocol'),
-    baseUrl: data.get('baseUrl'),
-    authKind: data.get('authKind'),
-    enabledModels: parseModels(data.get('enabledModels')),
-  };
+  const profile = providerProfileFromForm(data);
   form.elements.apiKey.value = '';
   await runProviderOperation(async () => {
     if (editingProfileId) {
@@ -1748,6 +1792,85 @@ async function submitProviderProfile(event) {
     }
     providerUi.editingProfileId = null;
   }, editingProfileId ? 'Provider 已更新，Key 输入已清空。' : 'Provider 已安全保存，Key 输入已清空。');
+}
+
+async function testProviderConnection(event) {
+  const button = event.currentTarget;
+  const form = button.closest('form');
+  if (!form?.reportValidity()) return;
+  const data = new FormData(form);
+  const apiKey = String(data.get('apiKey') || '').trim();
+  if (!apiKey) {
+    updateConnectionTestStatus(
+      form,
+      'failed',
+      '需要输入 API Key',
+      '出于安全原因，客户端无法读回已经保存的 Key；重新测试时请再次输入。',
+    );
+    return;
+  }
+  const profile = providerProfileFromForm(data);
+  const modelId = profile.enabledModels[0];
+  if (!modelId) {
+    updateConnectionTestStatus(form, 'failed', '需要填写模型', '请至少填写一个模型 ID。');
+    return;
+  }
+  const confirmed = window.confirm(
+    `将尝试调用 ${modelId} 完成极短连接测试，可能产生极小 Provider 费用。`
+      + '不会消耗 AgentMesh credits，不会保存当前 Key，也不会写入 Agent 会话。继续吗？',
+  );
+  if (!confirmed) return;
+
+  const revision = form.dataset.configRevision;
+  const saveButton = form.querySelector('.provider-save-button');
+  button.disabled = true;
+  saveButton.disabled = true;
+  updateConnectionTestStatus(form, 'testing', '正在测试连接', `正在等待 ${modelId} 返回最小响应…`);
+  try {
+    const response = await bridge.testProviderConnection({
+      profile,
+      apiKey,
+      modelId,
+      confirmPaidInference: true,
+    });
+    if (!form.isConnected || form.dataset.configRevision !== revision) {
+      if (form.isConnected) {
+        updateConnectionTestStatus(
+          form,
+          'idle',
+          '配置已发生变化',
+          '测试期间你修改了配置，请使用最新内容重新测试。',
+        );
+      }
+      return;
+    }
+    if (response?.connectionTest?.status !== 'passed') {
+      updateConnectionTestStatus(
+        form,
+        'failed',
+        '连接没有通过',
+        connectionTestFailureMessage(response?.connectionTest),
+      );
+      return;
+    }
+    form.dataset.connectionTestPassed = 'true';
+    saveButton.disabled = false;
+    updateConnectionTestStatus(
+      form,
+      'passed',
+      '连接成功，可以保存',
+      `${modelId} 已返回有效响应；测试 Key 仍未保存。`,
+    );
+  } catch (error) {
+    updateConnectionTestStatus(
+      form,
+      'failed',
+      '连接失败',
+      connectionTestError(error),
+    );
+  } finally {
+    if (form.isConnected) button.disabled = false;
+  }
 }
 
 async function submitAssignment(event) {
@@ -1826,13 +1949,96 @@ async function runProviderOperation(operation, successMessage) {
 function applySelectedPreset(event) {
   const preset = (providerUi.snapshot?.catalog?.providers || [])
     .find((item) => item.presetId === event.currentTarget.value);
-  if (!preset) return;
   const form = document.getElementById('provider-profile-form');
-  form.elements.displayName.value = preset.displayName || '';
-  form.elements.protocol.value = preset.protocol || 'openai_responses';
-  form.elements.baseUrl.value = preset.defaultBaseUrl || '';
-  form.elements.authKind.value = preset.authKind || 'bearer_api_key';
-  form.elements.enabledModels.value = (preset.models || []).map((model) => model.modelId).join('\n');
+  if (!form) return;
+  const custom = event.currentTarget.value === '__custom__';
+  form.elements.displayName.value = preset?.displayName || '';
+  form.elements.protocol.value = preset?.protocol || 'openai_chat';
+  form.elements.baseUrl.value = preset?.defaultBaseUrl || '';
+  form.elements.authKind.value = preset?.authKind || 'bearer_api_key';
+  form.elements.enabledModels.value = (preset?.models || []).map((model) => model.modelId).join('\n');
+  if (!preset && !custom) form.elements.protocol.value = 'openai_chat';
+  syncProviderConnectionMode(form, preset);
+}
+
+function providerProfileFromForm(data) {
+  return {
+    presetId: ['', '__custom__'].includes(String(data.get('presetId') || ''))
+      ? null
+      : String(data.get('presetId')),
+    displayName: data.get('displayName'),
+    protocol: data.get('protocol'),
+    baseUrl: data.get('baseUrl'),
+    authKind: data.get('authKind'),
+    enabledModels: parseModels(data.get('enabledModels')),
+  };
+}
+
+function syncProviderConnectionMode(form, selectedPreset = null) {
+  if (!form) return;
+  const preset = selectedPreset || (providerUi.snapshot?.catalog?.providers || [])
+    .find((item) => item.presetId === form.elements.presetId.value);
+  const managed = preset?.classification === 'official';
+  const advanced = form.elements.presetId.value === '__custom__' || Boolean(preset && !managed);
+  const managedCard = document.getElementById('managed-provider-card');
+  const advancedSettings = document.getElementById('advanced-provider-settings');
+  managedCard.hidden = !managed;
+  advancedSettings.hidden = !advanced;
+  if (managed) {
+    document.getElementById('managed-provider-title').textContent =
+      `已为 ${preset.displayName} 自动配置`;
+    document.getElementById('managed-provider-detail').textContent =
+      `${protocolLabel(preset.protocol)} · ${preset.defaultBaseUrl || ''}`;
+  }
+}
+
+function invalidateProviderConnectionTest(event) {
+  const form = event.currentTarget;
+  if (event.target?.name === 'displayName') return;
+  form.dataset.configRevision = String(Number(form.dataset.configRevision || 0) + 1);
+  form.dataset.connectionTestPassed = 'false';
+  form.querySelector('.provider-save-button').disabled = true;
+  updateConnectionTestStatus(
+    form,
+    'idle',
+    '配置已更改，请重新测试',
+    'Key、模型或连接方式变化后，原测试结果不再有效。',
+  );
+}
+
+function updateConnectionTestStatus(form, status, title, detail) {
+  const container = form?.querySelector('#connection-test-status');
+  if (!container) return;
+  container.dataset.status = status;
+  container.querySelector('strong').textContent = title;
+  container.querySelector('span').textContent = detail;
+}
+
+function connectionTestFailureMessage(result) {
+  if (result?.summaryCode === 'minimal_inference_timeout') {
+    return '请求超时，请检查网络、接口地址或供应商服务状态。';
+  }
+  if (result?.summaryCode === 'minimal_inference_empty_response') {
+    return '接口已响应，但没有返回有效模型内容；请检查模型 ID。';
+  }
+  return '供应商拒绝了测试请求，请检查 API Key、模型 ID 和接口地址。';
+}
+
+function connectionTestError(error) {
+  const message = String(error?.message || '');
+  if (/Authentication required|订阅验证|身份正在恢复/i.test(message)) {
+    return publicError(error, '当前订阅身份尚未准备好，请稍后重试。');
+  }
+  if (/API Key|secret|credential/i.test(message)) {
+    return 'API Key 无效，请检查是否复制完整、是否包含多余空格。';
+  }
+  if (/model/i.test(message)) {
+    return '模型 ID 无效或未启用，请按照供应商控制台中的名称填写。';
+  }
+  if (/URL|endpoint|host/i.test(message)) {
+    return '接口地址无效，请检查服务商提供的 API 地址。';
+  }
+  return '无法完成连接测试，请检查 API Key、模型名称、网络和供应商服务状态。';
 }
 
 function syncAssignmentScope() {
@@ -1964,9 +2170,9 @@ function formatPackageTime(value, prefix = '验证于') {
 
 function protocolLabel(protocol) {
   return ({
-    openai_responses: 'OpenAI Responses',
-    openai_chat: 'OpenAI Chat',
-    anthropic_messages: 'Anthropic Messages',
+    openai_responses: 'OpenAI Responses 兼容',
+    openai_chat: 'OpenAI Chat Completions 兼容',
+    anthropic_messages: 'Anthropic Messages 兼容',
   })[protocol] || protocol || '未知协议';
 }
 

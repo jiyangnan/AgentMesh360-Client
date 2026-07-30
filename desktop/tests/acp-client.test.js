@@ -450,6 +450,58 @@ test('Provider Probe methods preserve explicit level and paid confirmation', asy
   await client.stop();
 });
 
+test('unsaved Provider connection test preserves one-shot credential and explicit confirmation', async () => {
+  const received = [];
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    return {
+      result: {
+        connectionTest: {
+          status: 'passed',
+          networkAttempted: true,
+          mayIncurCost: true,
+        },
+      },
+    };
+  });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+  const profile = {
+    presetId: 'google-gemini',
+    displayName: 'Google Gemini',
+    protocol: 'openai_chat',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    authKind: 'bearer_api_key',
+    enabledModels: ['gemini-3.5-flash-lite'],
+  };
+
+  const result = await client.testProviderConnection({
+    profile,
+    apiKey: 'ephemeral-secret',
+    modelId: 'gemini-3.5-flash-lite',
+    confirmPaidInference: true,
+  });
+
+  assert.equal(result.connectionTest.status, 'passed');
+  assert.deepEqual(received[1], {
+    jsonrpc: '2.0',
+    id: 2,
+    method: '_x.agentmesh360/providers/test-connection',
+    params: {
+      profile,
+      apiKey: 'ephemeral-secret',
+      modelId: 'gemini-3.5-flash-lite',
+      confirmPaidInference: true,
+    },
+  });
+  await client.stop();
+});
+
 test('Session Provider Binding methods keep route snapshots Host-owned', async () => {
   const received = [];
   const binding = {

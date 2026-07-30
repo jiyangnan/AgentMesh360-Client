@@ -927,6 +927,66 @@ button { -webkit-app-region: no-drag; }
 .route-submit { min-width: 126px; }
 .secondary:disabled { cursor: not-allowed; opacity: .45; }
 
+.managed-provider-card,
+.connection-test-status {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 13px;
+  padding: 12px;
+  border: 1px solid rgba(103,221,176,.18);
+  border-radius: 10px;
+  background: rgba(103,221,176,.045);
+}
+
+.managed-provider-card[hidden],
+.advanced-provider-settings[hidden] { display: none; }
+
+.managed-provider-card > i,
+.connection-test-status > i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 10px rgba(103,221,176,.5);
+}
+
+.managed-provider-card strong,
+.managed-provider-card span,
+.connection-test-status strong,
+.connection-test-status span { display: block; }
+.managed-provider-card strong,
+.connection-test-status strong { font-size: 10px; }
+.managed-provider-card span,
+.connection-test-status span { margin-top: 3px; color: #7e8b9e; font-size: 9px; line-height: 1.5; }
+.managed-provider-card details { margin-top: 7px; color: #728096; font-size: 8px; }
+.managed-provider-card summary,
+.advanced-provider-settings summary { cursor: pointer; user-select: none; }
+.managed-provider-card p { margin: 5px 0 0; font-family: "SFMono-Regular", Menlo, monospace; }
+
+.advanced-provider-settings {
+  margin: 0 0 13px;
+  padding: 12px 12px 0;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,.018);
+}
+
+.advanced-provider-settings > summary { color: #a9b2c1; font-size: 10px; font-weight: 700; }
+.advanced-provider-settings > p { margin: 8px 0 12px; color: #69768a; font-size: 9px; line-height: 1.5; }
+
+.connection-test-status[data-status="idle"] { border-color: rgba(255,255,255,.08); background: rgba(255,255,255,.018); }
+.connection-test-status[data-status="idle"] > i { background: #738096; box-shadow: none; }
+.connection-test-status[data-status="testing"] { border-color: rgba(182,165,255,.22); background: rgba(146,119,255,.055); }
+.connection-test-status[data-status="testing"] > i { background: var(--violet-2); animation: pulse 1s ease-in-out infinite; }
+.connection-test-status[data-status="failed"] { border-color: rgba(255,111,128,.24); background: rgba(255,90,112,.055); }
+.connection-test-status[data-status="failed"] > i { background: #ff7184; box-shadow: 0 0 9px rgba(255,113,132,.38); }
+.connection-test-status[data-status="passed"] { border-color: rgba(103,221,176,.22); }
+
+.provider-save-actions { display: flex; align-items: center; gap: 8px; }
+.connection-test-button { min-width: 104px; }
+
 .route-diagram {
   display: grid;
   grid-template-columns: auto 1fr auto 1fr auto;
