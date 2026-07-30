@@ -36,6 +36,22 @@ Apple/CSC 凭据和发布 Token；任何失败都会删除本次不完整输出�
 desktop/dist/internal/<version>-<commit12>-<architecture>/
 ```
 
+## 单包留存规则
+
+内部体验版只保留最新一份已验证包，避免历史 DMG、ZIP 和构建中间产物持续占用磁盘：
+
+- `~/Downloads` 只保留最新的
+  `AgentMesh360-Internal-Test-<date>-<commit7>-<architecture>/` 交付目录；
+- `desktop/dist/internal/` 只保留与该交付包对应的最新构建证据目录；
+- `desktop/dist/` 根目录不得残留重复的 DMG、ZIP、blockmap、unpacked App、
+  builder 调试文件或图标转换缓存；
+- 必须先让新包通过 receipt verifier、`SHA256SUMS`、DMG 校验和交付副本复验，
+  再删除上一份包；新包验证失败时保留上一份可用包；
+- 每次清理都在项目进展中记录保留版本、删除数量和最终磁盘状态。
+
+该规则只清理安装包和构建产物，不删除用户已经安装到 `/Applications` 的客户端，
+也不触碰客户端账户、Provider、Agent 或会话数据。
+
 ## 下载与校验
 
 分发时必须把 DMG、ZIP、`unsigned-internal-build-v1.json` 和 `SHA256SUMS` 放在同一

@@ -7281,3 +7281,40 @@ DMG/ZIP。该阶段不关闭生产 R4
   清楚看到“先配置 Provider，再打开/激活 Agent，再开始对话”的产品路径；
 - 在完成本轮提交、推送、内部构建与本机交付前不启动首次使用引导，避免把两个产品
   切片混为一次无边界重构。
+
+### 循环 136：内部测试包单版本留存
+
+状态：已完成；旧包与重复构建产物已清理，单包留存规则已固化
+
+用户要求与执行边界：
+
+1. owner 明确要求后续每次生成并验证新包后删除上一份测试包，始终只保留最新一份，
+   避免内部构建持续占满磁盘；
+2. 清理范围只包括 AgentMesh360 内部体验版交付目录、历史构建证据目录和
+   `desktop/dist/` 的重复中间产物，不删除 `/Applications/AgentMesh360.app`，
+   不触碰账户、Provider、Agent、会话或其他项目文件；
+3. 删除前重新执行最新 `1fe769f` 下载包单 Artifact `SHA256SUMS` 和构建归档双
+   Artifact `SHA256SUMS`，DMG 与 ZIP 均通过，确认存在可保留的最新有效包。
+
+清理结果：
+
+1. `~/Downloads` 原有 4 个 AgentMesh360 测试包目录，已删除 3 个旧版本，只保留
+   `AgentMesh360-Internal-Test-2026-07-30-1fe769f-arm64/`，占用约 173 MiB；
+2. `desktop/dist/internal/` 原有 4 个版本，已删除 `dc8d9e7`、`d35da9c` 和
+   `9db201f` 三个历史归档，只保留
+   `0.1.0-1fe769f116e2-arm64/`，占用约 346 MiB；
+3. `desktop/dist/` 根目录的重复 DMG、ZIP、blockmap、unpacked App、builder
+   调试文件和图标转换缓存均已删除；最终只有一个下载交付包和一个与之对应的构建
+   证据目录；
+4. 已知历史目录至少释放约 1.5 GiB，另清除了同轮构建根目录的重复 Artifact 与
+   中间产物；清理后数据卷可用空间约 37 GiB。
+
+规则固化与计划复盘：
+
+- `P6_UNSIGNED_INTERNAL_DISTRIBUTION.md` 已新增 fail-safe 单包留存规则：新包必须先
+  完成 receipt、摘要、DMG 和交付副本复验，再删除上一包；若新包失败则保留上一份；
+- 后续每次打包完成都执行相同清理，并在进展文档记录保留版本和最终状态；
+- 本轮只处理本机发行产物留存，没有修改运行时代码、订阅、BYOK、Provider、
+  credits、Package、Developer ID、公证或生产发布边界；
+- 复核既定产品顺序后，下一产品切片仍是首次使用引导：清楚呈现“配置 Provider →
+  激活/打开 Agent → 开始对话”，不因本次磁盘清理改变开发方向。
