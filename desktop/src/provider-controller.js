@@ -149,6 +149,16 @@ class ProviderController {
     );
   }
 
+  async discoverModels({ profile, apiKey } = {}) {
+    this.#requireReady();
+    return publicProviderPayload(
+      await this.host.discoverProviderModels({
+        profile: normalizeProviderProfile(profile),
+        apiKey: normalizeSecret(apiKey),
+      }),
+    );
+  }
+
   #requireReady() {
     if (this.identity.getState()?.phase !== 'ready') {
       throw new Error('当前账号尚未通过订阅验证，无法管理 Provider');

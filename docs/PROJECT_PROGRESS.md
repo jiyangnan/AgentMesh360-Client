@@ -7318,3 +7318,58 @@ DMG/ZIP。该阶段不关闭生产 R4
   credits、Package、Developer ID、公证或生产发布边界；
 - 复核既定产品顺序后，下一产品切片仍是首次使用引导：清楚呈现“配置 Provider →
   激活/打开 Agent → 开始对话”，不因本次磁盘清理改变开发方向。
+
+### 循环 137：动态模型发现与主流 Provider 一等支持
+
+状态：代码与全量回归完成，等待 commit、push 和单版本内部包交付
+
+owner UAT 问题与产品判断：
+
+1. 原页面仍把 Catalog 示例模型自动填入表单，用户看起来只能使用一个固定模型；
+2. 连接测试把包含 `HostRequestError` 的任意错误误判成“接口地址无效”，真实 Key
+   失败时没有可行动诊断；
+3. 模型发现成功后“测试连接”按钮没有重新启用，自动化复核发现并在本轮修复；
+4. 现有四个官方预设不足以覆盖 owner 明确要求的 OpenAI、xAI、DeepSeek、GLM 与
+   Kimi；GLM/Kimi 的普通 API 和 Coding Plan 不能混成同一个入口。
+
+本轮实现：
+
+1. 官方 Provider 改为“选择供应商 → 输入 Key → 官方目录动态读取模型 → 选择模型
+   → 最小真实推理 → 保存”，不再以 Catalog 示例模型充当用户选择；
+2. Host 新增一次性模型发现 ACP 方法，禁止重定向，12 秒超时，响应上限 1 MiB、
+   模型上限 512；Key 只进入零化内存，不写 Vault/Profile/Probe/Session；
+3. Catalog revision 3 增加 DeepSeek、GLM API、GLM Coding Plan、Kimi 国际 API、
+   Kimi 中国 API 与 Kimi Coding Plan；合计十个官方入口，全部固定官方端点；
+4. xAI 使用 `/language-models` 并纳入 alias；其余官方预设使用 `/models`；
+   模型目录成功只解锁模型选择，仍需真实推理返回非空文本后才能保存；
+5. GLM/Kimi Coding Plan 展示专属 Key、专属端点和官方适用范围提示；Kimi
+   Standard/HighSpeed 保留官方稳定 ID，但实际选项仍以当前 Key 响应为准；
+6. Anthropic Sampling 路径补齐强制 `anthropic-version: 2023-06-01`，修复真实
+   Messages 请求可能因缺 Header 失败的问题；
+7. 表单控件增大到至少 50px、输入文字 13px，模型改成动态单选框；错误分类区分
+   认证、权限、模型不存在、限流、网络、超时、空响应，IPC/Host 原始错误不进 DOM。
+
+验证与自主复核：
+
+- AgentMesh360 Rust lib：195 passed / 1 ignored / 0 failed；
+- Provider Rust 定向：19 passed / 0 failed；
+- 桌面 Node：122 passed / 3 个真实 Host 环境门 skipped / 0 failed；
+- Provider Controller + ACP Client 定向：24 passed / 0 failed；
+- Provider Electron UI smoke 完整通过十个官方入口、模型发现、模型选择、测试门禁、
+  保存、Key 清空、后台复验草稿保留与错误脱敏；
+- Conversation 与 Package Electron UI smoke 均通过；
+- 1180px Kimi Coding Plan 视觉状态由主 Agent 复核，表单尺寸、流程、套餐提示和
+  动作层级清晰；
+- 自动测试只使用 loopback mock，没有使用用户真实 Provider Key，没有 Provider
+  推理请求、AgentMesh credits 或费用；
+- Kimi 独立复核继续按 owner 要求暂停，本轮由主 Agent 自主检查跨层合同、安全边界、
+  官方端点、UI 状态机、完整 diff 和既定产品顺序。
+
+计划复盘与下一轮：
+
+- 本轮是 Cycle 135 Provider 配置简化的直接 UAT 完善，没有改变订阅有效才能进入、
+  BYOK 默认、Key 本机保存、持久 Agent、Package 或未签名内部发行边界；
+- owner 本轮明确扩展 Provider 范围，因此新增官方预设属于已授权产品范围，不是自行
+  延伸；价格比较、余额读取、自动模型推荐与 capability 推断没有加入；
+- 完成本轮 commit/push/单包替换后，下一产品切片仍回到首次使用引导，呈现“配置
+  Provider → 激活/打开 Agent → 开始对话”，不提前启动 P7/P8 或在线分发。

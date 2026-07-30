@@ -1,32 +1,44 @@
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use agent_client_protocol as acp;
 use anyhow::{Context, Result, anyhow};
 use chrono::{SecondsFormat, Utc};
+use futures_util::StreamExt;
+use reqwest::StatusCode;
+use reqwest::header::{AUTHORIZATION, HeaderName, HeaderValue};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
-use xai_grok_sampling_types::{ConversationItem, ConversationRequest};
+use xai_grok_sampling_types::{ConversationItem, ConversationRequest, SamplingError};
+use zeroize::Zeroizing;
 
 use super::credential_lease::{CredentialLeaseResolver, prepare_ephemeral_probe};
-use super::credential_vault::CredentialVault;
+use super::credential_vault::{CredentialVault, SecretValue};
 use super::model_assignments::ModelAssignmentStore;
 use super::provider_catalog::{ProviderCatalog, ProviderClassification};
 use super::provider_profiles::{
-    ProviderProfileInput, ProviderProfileRecord, ProviderProfileStore, ProviderProtocol,
-    normalize_model_id,
+    ProviderAuthKind, ProviderProfileInput, ProviderProfileRecord, ProviderProfileStore,
+    ProviderProtocol, normalize_model_id,
 };
 
 pub const PROVIDER_CONNECTION_TEST_METHOD: &str = "x.agentmesh360/providers/test-connection";
+pub const PROVIDER_MODEL_DISCOVERY_METHOD: &str = "x.agentmesh360/providers/discover-models";
 pub const PROVIDER_PROBE_RUN_METHOD: &str = "x.agentmesh360/providers/probes/run";
 pub const PROVIDER_PROBE_LIST_METHOD: &str = "x.agentmesh360/providers/probes/list";
 const MINIMAL_INFERENCE_TIMEOUT: Duration = Duration::from_secs(20);
+const MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(12);
+const MAX_MODEL_DISCOVERY_BODY_BYTES: usize = 1_048_576;
+const MAX_DISCOVERED_MODELS: usize = 512;
 
 pub fn handles(method: &str) -> bool {
     matches!(
         method,
-        PROVIDER_CONNECTION_TEST_METHOD | PROVIDER_PROBE_RUN_METHOD | PROVIDER_PROBE_LIST_METHOD
+        PROVIDER_CONNECTION_TEST_METHOD
+            | PROVIDER_MODEL_DISCOVERY_METHOD
+            | PROVIDER_PROBE_RUN_METHOD
+            | PROVIDER_PROBE_LIST_METHOD
     )
 }
 
@@ -108,6 +120,43 @@ struct TestProviderConnectionRequest {
     confirm_paid_inference: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DiscoverProviderModelsRequest {
+    profile: ProviderProfileInput,
+    api_key: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredProviderModel {
+    pub model_id: String,
+    pub display_name: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModelDiscoveryResult {
+    pub status: ProviderProbeStatus,
+    pub network_attempted: bool,
+    pub may_incur_cost: bool,
+    pub authentication_verified: bool,
+    pub models: Vec<DiscoveredProviderModel>,
+    pub truncated: bool,
+    pub endpoint_origin: String,
+    pub summary_code: String,
+    pub summary_message: String,
+    pub started_at: String,
+    pub completed_at: String,
+    pub latency_ms: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderModelDiscoveryResponse {
+    model_discovery: ProviderModelDiscoveryResult,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderProbeResult {
@@ -183,6 +232,191 @@ impl<V: CredentialVault + Clone> ProviderProbeService<V> {
             state_home,
             vault,
         }
+    }
+
+    async fn discover_models(
+        &self,
+        request: DiscoverProviderModelsRequest,
+        require_access: &dyn Fn() -> Result<()>,
+    ) -> Result<ProviderModelDiscoveryResult> {
+        require_access()?;
+        let started = Instant::now();
+        let started_at = now();
+        let profile = request.profile.normalized()?;
+        let preset_id = profile.preset_id.as_deref().ok_or_else(|| {
+            anyhow!("dynamic model discovery requires an official Provider preset")
+        })?;
+        let preset = self
+            .catalog
+            .provider(preset_id)
+            .filter(|preset| preset.classification == ProviderClassification::Official)
+            .ok_or_else(|| {
+                anyhow!("dynamic model discovery requires an official Provider preset")
+            })?;
+        let expected_base_url = preset
+            .default_base_url
+            .as_deref()
+            .ok_or_else(|| anyhow!("official Provider model endpoint is unavailable"))?;
+        if profile.protocol != preset.protocol
+            || profile.auth_kind != preset.auth_kind
+            || profile.base_url != expected_base_url
+        {
+            anyhow::bail!("official Provider connection settings do not match the trusted Catalog");
+        }
+
+        let endpoint_origin = endpoint_origin(expected_base_url)?;
+        let endpoint = match preset_id {
+            "xai" => format!("{expected_base_url}/language-models"),
+            _ => format!("{expected_base_url}/models"),
+        };
+        let secret = SecretValue::new(request.api_key)
+            .context("validate Provider model discovery secret")?;
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(MODEL_DISCOVERY_TIMEOUT)
+            .build()
+            .context("prepare Provider model discovery client")?;
+        let mut http_request = client.get(endpoint);
+        let mut auth_value = match profile.auth_kind {
+            ProviderAuthKind::BearerApiKey => {
+                let mut bearer = Zeroizing::new(b"Bearer ".to_vec());
+                bearer.extend_from_slice(secret.as_bytes());
+                HeaderValue::from_bytes(&bearer)
+                    .context("prepare Provider model discovery authorization")?
+            }
+            ProviderAuthKind::XApiKey => HeaderValue::from_bytes(secret.as_bytes())
+                .context("prepare Provider model discovery authorization")?,
+        };
+        auth_value.set_sensitive(true);
+        http_request = match profile.auth_kind {
+            ProviderAuthKind::BearerApiKey => http_request.header(AUTHORIZATION, auth_value),
+            ProviderAuthKind::XApiKey => http_request
+                .header(HeaderName::from_static("x-api-key"), auth_value)
+                .header(
+                    HeaderName::from_static("anthropic-version"),
+                    HeaderValue::from_static("2023-06-01"),
+                ),
+        };
+
+        require_access()?;
+        let response = match http_request.send().await {
+            Ok(response) => response,
+            Err(error) => {
+                let (summary_code, summary_message) = if error.is_timeout() {
+                    (
+                        "model_discovery_timeout",
+                        "The Provider model request timed out.",
+                    )
+                } else {
+                    (
+                        "model_discovery_network_failed",
+                        "The Provider model request could not reach the service.",
+                    )
+                };
+                return Ok(model_discovery_result(
+                    started,
+                    started_at,
+                    endpoint_origin,
+                    ProviderProbeStatus::Failed,
+                    false,
+                    Vec::new(),
+                    false,
+                    summary_code,
+                    summary_message,
+                ));
+            }
+        };
+        let status = response.status();
+        if !status.is_success() {
+            let (summary_code, summary_message) = model_discovery_http_failure(status);
+            return Ok(model_discovery_result(
+                started,
+                started_at,
+                endpoint_origin,
+                ProviderProbeStatus::Failed,
+                false,
+                Vec::new(),
+                false,
+                summary_code,
+                summary_message,
+            ));
+        }
+
+        let mut body = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(_) => {
+                    return Ok(model_discovery_result(
+                        started,
+                        started_at,
+                        endpoint_origin,
+                        ProviderProbeStatus::Failed,
+                        true,
+                        Vec::new(),
+                        false,
+                        "model_discovery_response_failed",
+                        "The Provider model response could not be read.",
+                    ));
+                }
+            };
+            if body.len().saturating_add(chunk.len()) > MAX_MODEL_DISCOVERY_BODY_BYTES {
+                return Ok(model_discovery_result(
+                    started,
+                    started_at,
+                    endpoint_origin,
+                    ProviderProbeStatus::Failed,
+                    true,
+                    Vec::new(),
+                    false,
+                    "model_discovery_response_too_large",
+                    "The Provider model response exceeded the safe size limit.",
+                ));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let document: serde_json::Value = match serde_json::from_slice(&body) {
+            Ok(document) => document,
+            Err(_) => {
+                return Ok(model_discovery_result(
+                    started,
+                    started_at,
+                    endpoint_origin,
+                    ProviderProbeStatus::Failed,
+                    true,
+                    Vec::new(),
+                    false,
+                    "model_discovery_invalid_response",
+                    "The Provider model response was not valid JSON.",
+                ));
+            }
+        };
+        let (models, truncated) = parse_discovered_models(preset_id, &document);
+        if models.is_empty() {
+            return Ok(model_discovery_result(
+                started,
+                started_at,
+                endpoint_origin,
+                ProviderProbeStatus::Failed,
+                true,
+                Vec::new(),
+                false,
+                "model_discovery_no_models",
+                "The Provider accepted the credential but returned no usable language models.",
+            ));
+        }
+        Ok(model_discovery_result(
+            started,
+            started_at,
+            endpoint_origin,
+            ProviderProbeStatus::Passed,
+            true,
+            models,
+            truncated,
+            "model_discovery_succeeded",
+            "The Provider credential was accepted and available models were returned.",
+        ))
     }
 
     async fn test_connection(
@@ -529,6 +763,16 @@ pub async fn handle<V: CredentialVault + Clone>(
     require_access: &dyn Fn() -> Result<()>,
 ) -> crate::extensions::ExtResult {
     let result = match args.method.as_ref() {
+        PROVIDER_MODEL_DISCOVERY_METHOD => {
+            let request: DiscoverProviderModelsRequest = crate::extensions::parse_params(args)?;
+            service
+                .discover_models(request, require_access)
+                .await
+                .and_then(|model_discovery| {
+                    serde_json::to_value(ProviderModelDiscoveryResponse { model_discovery })
+                        .map_err(Into::into)
+                })
+        }
         PROVIDER_CONNECTION_TEST_METHOD => {
             let request: TestProviderConnectionRequest = crate::extensions::parse_params(args)?;
             service
@@ -561,6 +805,122 @@ pub async fn handle<V: CredentialVault + Clone>(
         )),
     };
     crate::extensions::to_ext_response(result)
+}
+
+fn model_discovery_result(
+    started: Instant,
+    started_at: String,
+    endpoint_origin: String,
+    status: ProviderProbeStatus,
+    authentication_verified: bool,
+    models: Vec<DiscoveredProviderModel>,
+    truncated: bool,
+    summary_code: &str,
+    summary_message: &str,
+) -> ProviderModelDiscoveryResult {
+    ProviderModelDiscoveryResult {
+        status,
+        network_attempted: true,
+        may_incur_cost: false,
+        authentication_verified,
+        models,
+        truncated,
+        endpoint_origin,
+        summary_code: summary_code.into(),
+        summary_message: summary_message.into(),
+        started_at,
+        completed_at: now(),
+        latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+    }
+}
+
+fn model_discovery_http_failure(status: StatusCode) -> (&'static str, &'static str) {
+    match status {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => (
+            "model_discovery_authentication_failed",
+            "The Provider rejected the API credential.",
+        ),
+        StatusCode::TOO_MANY_REQUESTS => (
+            "model_discovery_rate_limited",
+            "The Provider rate limited the model request.",
+        ),
+        StatusCode::NOT_FOUND => (
+            "model_discovery_endpoint_not_found",
+            "The Provider model endpoint was not found.",
+        ),
+        status if status.is_server_error() => (
+            "model_discovery_provider_unavailable",
+            "The Provider model service is temporarily unavailable.",
+        ),
+        _ => (
+            "model_discovery_request_rejected",
+            "The Provider rejected the model request.",
+        ),
+    }
+}
+
+fn parse_discovered_models(
+    preset_id: &str,
+    document: &serde_json::Value,
+) -> (Vec<DiscoveredProviderModel>, bool) {
+    let entries = if preset_id == "xai" {
+        document.get("models").and_then(serde_json::Value::as_array)
+    } else {
+        document.get("data").and_then(serde_json::Value::as_array)
+    };
+    let mut models = BTreeMap::new();
+    for entry in entries.into_iter().flatten() {
+        let Some(model_id) = entry.get("id").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if let Ok(model_id) = normalize_model_id(model_id) {
+            let display_name = entry
+                .get("display_name")
+                .or_else(|| entry.get("displayName"))
+                .and_then(serde_json::Value::as_str)
+                .and_then(normalized_model_display_name)
+                .unwrap_or_else(|| model_id.clone());
+            models.entry(model_id).or_insert(display_name);
+        }
+        if preset_id == "xai" {
+            for alias in entry
+                .get("aliases")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+            {
+                if let Ok(alias) = normalize_model_id(alias) {
+                    models.entry(alias.clone()).or_insert(alias);
+                }
+            }
+        }
+    }
+    let truncated = models.len() > MAX_DISCOVERED_MODELS;
+    (
+        models
+            .into_iter()
+            .take(MAX_DISCOVERED_MODELS)
+            .map(|(model_id, display_name)| DiscoveredProviderModel {
+                model_id,
+                display_name,
+            })
+            .collect(),
+        truncated,
+    )
+}
+
+fn normalized_model_display_name(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.chars().count() > 100
+        || value
+            .chars()
+            .any(|character| character.is_control() || character == '\u{7f}')
+    {
+        return None;
+    }
+    Some(value.to_owned())
 }
 
 fn minimal_inference_request(model_id: &str, purpose: &str) -> ConversationRequest {
@@ -599,15 +959,78 @@ async fn run_minimal_inference(
             "minimal_inference_empty_response".into(),
             "The Provider returned success without model text.".into(),
         ),
-        Ok(Err(_)) => (
-            ProviderProbeStatus::Failed,
-            "minimal_inference_request_failed".into(),
-            "The Provider rejected or failed the minimal inference request.".into(),
-        ),
+        Ok(Err(error)) => {
+            let (summary_code, summary_message) = minimal_inference_failure(&error);
+            (
+                ProviderProbeStatus::Failed,
+                summary_code.into(),
+                summary_message.into(),
+            )
+        }
         Err(_) => (
             ProviderProbeStatus::Failed,
             "minimal_inference_timeout".into(),
             "The minimal inference request timed out.".into(),
+        ),
+    }
+}
+
+fn minimal_inference_failure(error: &SamplingError) -> (&'static str, &'static str) {
+    match error {
+        SamplingError::Auth(_)
+        | SamplingError::Api {
+            status: StatusCode::UNAUTHORIZED,
+            ..
+        } => (
+            "minimal_inference_authentication_failed",
+            "The Provider rejected the API credential.",
+        ),
+        SamplingError::Api {
+            status: StatusCode::FORBIDDEN,
+            ..
+        } => (
+            "minimal_inference_permission_denied",
+            "The API credential cannot use the selected model.",
+        ),
+        SamplingError::Api {
+            status: StatusCode::NOT_FOUND,
+            ..
+        } => (
+            "minimal_inference_model_not_found",
+            "The selected model or inference endpoint was not found.",
+        ),
+        SamplingError::Api {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            ..
+        } => (
+            "minimal_inference_rate_limited",
+            "The Provider rate limited the connection test.",
+        ),
+        SamplingError::Http(_) | SamplingError::EventStreamError(_) => (
+            "minimal_inference_network_failed",
+            "The connection test could not reach the Provider.",
+        ),
+        SamplingError::IdleTimeout { .. } => (
+            "minimal_inference_timeout",
+            "The minimal inference request timed out.",
+        ),
+        SamplingError::Api { message, .. }
+            if {
+                let message = message.to_ascii_lowercase();
+                message.contains("model")
+                    && (message.contains("not found")
+                        || message.contains("does not exist")
+                        || message.contains("invalid"))
+            } =>
+        {
+            (
+                "minimal_inference_model_not_found",
+                "The selected model or inference endpoint was not found.",
+            )
+        }
+        _ => (
+            "minimal_inference_request_failed",
+            "The Provider rejected or failed the minimal inference request.",
         ),
     }
 }
@@ -867,6 +1290,132 @@ mod tests {
                 .is_empty()
         );
         assert!(service.list(ACCOUNT_ID, None).expect("history").is_empty());
+    }
+
+    #[tokio::test]
+    async fn official_model_discovery_validates_the_ephemeral_key_and_persists_nothing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request = vec![0_u8; 4096];
+            let read = stream.read(&mut request).await.expect("read");
+            request.truncate(read);
+            let body = r#"{"object":"list","data":[{"id":"model-z","display_name":"Model Z"},{"id":"model-a"}]}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.expect("write");
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut service =
+            ProviderProbeService::in_home(temp.path(), MemoryCredentialVault::default());
+        let trusted_catalog = format!(
+            r#"{{
+              "schemaVersion": 1,
+              "catalogRevision": 99,
+              "providers": [{{
+                "presetId": "test-official",
+                "displayName": "Test Official",
+                "classification": "official",
+                "protocol": "openai_chat",
+                "defaultBaseUrl": "http://{address}/v1",
+                "authKind": "bearer_api_key",
+                "allowedEndpointOrigins": ["http://{address}"],
+                "quirks": [],
+                "models": []
+              }}]
+            }}"#
+        );
+        service.catalog = ProviderCatalog::from_trusted_document_or_builtin(&trusted_catalog).0;
+
+        let result = service
+            .discover_models(
+                DiscoverProviderModelsRequest {
+                    profile: ProviderProfileInput {
+                        preset_id: Some("test-official".into()),
+                        display_name: "Unsaved Official".into(),
+                        protocol: ProviderProtocol::OpenaiChat,
+                        base_url: format!("http://{address}/v1"),
+                        auth_kind: ProviderAuthKind::BearerApiKey,
+                        enabled_models: Vec::new(),
+                    },
+                    api_key: SECRET.into(),
+                },
+                &|| Ok(()),
+            )
+            .await
+            .expect("model discovery");
+        let wire = server.await.expect("server");
+
+        assert!(wire.starts_with("GET /v1/models HTTP/1.1"));
+        assert!(
+            wire.to_ascii_lowercase()
+                .contains(&format!("authorization: bearer {SECRET}").to_ascii_lowercase())
+        );
+        assert_eq!(result.status, ProviderProbeStatus::Passed);
+        assert!(result.authentication_verified);
+        assert!(!result.may_incur_cost);
+        assert_eq!(
+            result
+                .models
+                .iter()
+                .map(|model| model.model_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["model-a", "model-z"]
+        );
+        assert!(
+            service
+                .profiles
+                .list(ACCOUNT_ID)
+                .expect("profiles")
+                .is_empty()
+        );
+        assert!(service.list(ACCOUNT_ID, None).expect("history").is_empty());
+        let serialized = serde_json::to_string(&result).expect("serialize result");
+        assert!(!serialized.contains(SECRET));
+    }
+
+    #[test]
+    fn xai_model_discovery_includes_language_model_aliases_and_is_bounded() {
+        let document = serde_json::json!({
+            "models": [{
+                "id": "latest",
+                "display_name": "Latest",
+                "aliases": ["grok-latest", "grok-4.3-latest"]
+            }]
+        });
+        let (models, truncated) = parse_discovered_models("xai", &document);
+        assert!(!truncated);
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.model_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["grok-4.3-latest", "grok-latest", "latest"]
+        );
+    }
+
+    #[test]
+    fn model_discovery_bounds_untrusted_display_names() {
+        let document = serde_json::json!({
+            "data": [
+                {"id": "model-safe", "display_name": "Safe Model"},
+                {"id": "model-control", "display_name": "Unsafe\nName"},
+                {"id": "model-long", "display_name": "x".repeat(101)}
+            ]
+        });
+        let (models, truncated) = parse_discovered_models("openai", &document);
+        assert!(!truncated);
+        assert_eq!(models[0].display_name, "model-control");
+        assert_eq!(models[1].display_name, "model-long");
+        assert_eq!(models[2].display_name, "Safe Model");
     }
 
     #[tokio::test]

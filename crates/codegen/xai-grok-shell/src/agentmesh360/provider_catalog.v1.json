@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "catalogRevision": 2,
+  "catalogRevision": 3,
   "providers": [
     {
       "presetId": "openai",
@@ -55,6 +55,103 @@
             "parallelToolCalls": "unknown",
             "vision": "unknown",
             "structuredOutput": "supported",
+            "reasoning": "supported",
+            "streaming": "supported",
+            "source": "catalog"
+          }
+        }
+      ]
+    },
+    {
+      "presetId": "deepseek",
+      "displayName": "DeepSeek",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://api.deepseek.com/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://api.deepseek.com"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "glm",
+      "displayName": "智谱 GLM API",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://open.bigmodel.cn"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "glm-coding-plan",
+      "displayName": "智谱 GLM Coding Plan",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://open.bigmodel.cn/api/coding/paas/v4",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://open.bigmodel.cn"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "kimi",
+      "displayName": "Kimi API（国际）",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://api.moonshot.ai/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://api.moonshot.ai"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "kimi-cn",
+      "displayName": "Kimi API（中国）",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://api.moonshot.cn/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://api.moonshot.cn"],
+      "quirks": [],
+      "models": []
+    },
+    {
+      "presetId": "kimi-coding-plan",
+      "displayName": "Kimi Coding Plan",
+      "classification": "official",
+      "protocol": "openai_chat",
+      "defaultBaseUrl": "https://api.kimi.com/coding/v1",
+      "authKind": "bearer_api_key",
+      "allowedEndpointOrigins": ["https://api.kimi.com"],
+      "quirks": [],
+      "models": [
+        {
+          "modelId": "kimi-for-coding",
+          "displayName": "Kimi for Coding Standard",
+          "capability": {
+            "contextWindow": null,
+            "maxOutputTokens": null,
+            "tools": "supported",
+            "parallelToolCalls": "unknown",
+            "vision": "unknown",
+            "structuredOutput": "unknown",
+            "reasoning": "supported",
+            "streaming": "supported",
+            "source": "catalog"
+          }
+        },
+        {
+          "modelId": "kimi-for-coding-highspeed",
+          "displayName": "Kimi for Coding HighSpeed",
+          "capability": {
+            "contextWindow": null,
+            "maxOutputTokens": null,
+            "tools": "supported",
+            "parallelToolCalls": "unknown",
+            "vision": "unknown",
+            "structuredOutput": "unknown",
             "reasoning": "supported",
             "streaming": "supported",
             "source": "catalog"

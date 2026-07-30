@@ -267,3 +267,47 @@ test('unsaved Provider connection test requires cost confirmation and never retu
   );
   assert.equal(calls.length, 1);
 });
+
+test('official model discovery is ready-gated and returns only public model metadata', async () => {
+  const calls = [];
+  const identity = { getState: () => ({ phase: 'ready' }) };
+  const host = {
+    async discoverProviderModels(request) {
+      calls.push(request);
+      return {
+        modelDiscovery: {
+          status: 'passed',
+          authenticationVerified: true,
+          mayIncurCost: false,
+          models: [{ modelId: 'gpt-5', displayName: 'GPT-5' }],
+          apiKey: request.apiKey,
+          authorization: `Bearer ${request.apiKey}`,
+        },
+      };
+    },
+  };
+  const controller = new ProviderController({ identity, host });
+
+  const result = await controller.discoverModels({
+    profile: { ...profile, enabledModels: [] },
+    apiKey: 'sk-model-discovery-only',
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].apiKey, 'sk-model-discovery-only');
+  assert.deepEqual(calls[0].profile.enabledModels, []);
+  assert.equal(result.modelDiscovery.models[0].modelId, 'gpt-5');
+  assert.equal(result.modelDiscovery.mayIncurCost, false);
+  assert.equal(Object.hasOwn(result.modelDiscovery, 'apiKey'), false);
+  assert.equal(Object.hasOwn(result.modelDiscovery, 'authorization'), false);
+
+  identity.getState = () => ({ phase: 'blocked' });
+  await assert.rejects(
+    () => controller.discoverModels({
+      profile: { ...profile, enabledModels: [] },
+      apiKey: 'sk-model-discovery-only',
+    }),
+    /订阅验证/,
+  );
+  assert.equal(calls.length, 1);
+});

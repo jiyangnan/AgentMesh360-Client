@@ -1140,3 +1140,24 @@ receipt、双摘要、DMG checksum、ZIP Host inventory、临时 target 清理�
 
 下一顺序是继续 owner UAT；之后再按独立切片处理已经暴露的 Provider 配置复杂度和
 首次使用引导，不启动 P7/P8 或在线分发。
+
+## 67. 循环 134-137 owner UAT：Provider 连续性、简化与动态模型
+
+owner UAT 连续暴露并按产品顺序修复三类问题：
+
+1. 后台订阅复验不再重建 ready 工作区，切屏、focus、resume 或 Host reconnect
+   期间保留 Provider 草稿与对话输入；订阅最终失效仍失败关闭；
+2. 官方 Provider 隐藏协议、认证和 Base URL，并增加最小真实推理门；连接成功前
+   不允许保存未验证 Key/模型；
+3. 官方 Provider 不再自动填入固定 Catalog 模型，改为使用一次性 Key 从官方模型
+   目录读取当前账号可见模型，再由用户选择并测试。
+
+Catalog revision 3 的一等预设覆盖 OpenAI、xAI、Anthropic、Google Gemini、
+DeepSeek、GLM API、GLM Coding Plan、Kimi 国际/中国 API 与 Kimi Coding Plan。
+GLM/Kimi Coding Plan 使用独立端点和专项提示；技术兼容不代表套餐对第三方产品的
+商业授权，适用范围继续以供应商官方条款为准。
+
+本轮没有加入模型价格比较、余额读取、自动路由推荐、无确认付费请求或通过模型名称
+猜测 capability。订阅门、BYOK、本机 Vault、Agent Package、unsigned internal
+发行和生产 R4 边界不变。Provider UAT 切片完成并交付后，原定下一产品工作仍是首次
+使用引导；P7/P8、在线分发和生产更新继续关闭。

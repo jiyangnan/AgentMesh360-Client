@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
+use indexmap::IndexMap;
 use xai_grok_sampler::{
     AuthScheme, BearerResolver, SamplerConfig, SamplingClient, SharedBearerResolver,
 };
@@ -288,6 +289,7 @@ fn project(binding: SessionProviderBinding, lease: CredentialLease) -> Result<Le
         .transpose()
         .context("bound model max output tokens exceed Sampling limits")?;
     let bearer_resolver: SharedBearerResolver = lease.credential;
+    let extra_headers = protocol_headers(binding.route.protocol);
     let sampler_config = SamplerConfig {
         api_key: None,
         base_url: binding.route.base_url.clone(),
@@ -295,6 +297,7 @@ fn project(binding: SessionProviderBinding, lease: CredentialLease) -> Result<Le
         max_completion_tokens,
         api_backend: binding.route.api_backend(),
         auth_scheme: binding.route.auth_scheme(),
+        extra_headers,
         context_window: binding.route.capability.context_window.unwrap_or(0),
         bearer_resolver: Some(bearer_resolver),
         ..SamplerConfig::default()
@@ -334,6 +337,7 @@ fn probe_sampler_config(
     auth_kind: ProviderAuthKind,
     bearer_resolver: SharedBearerResolver,
 ) -> SamplerConfig {
+    let extra_headers = protocol_headers(protocol);
     SamplerConfig {
         api_key: None,
         base_url,
@@ -348,9 +352,18 @@ fn probe_sampler_config(
             ProviderAuthKind::BearerApiKey => AuthScheme::Bearer,
             ProviderAuthKind::XApiKey => AuthScheme::XApiKey,
         },
+        extra_headers,
         bearer_resolver: Some(bearer_resolver),
         ..SamplerConfig::default()
     }
+}
+
+fn protocol_headers(protocol: ProviderProtocol) -> IndexMap<String, String> {
+    let mut headers = IndexMap::new();
+    if protocol == ProviderProtocol::AnthropicMessages {
+        headers.insert("anthropic-version".into(), "2023-06-01".into());
+    }
+    headers
 }
 
 #[cfg(test)]
@@ -365,6 +378,17 @@ mod tests {
         ProviderAuthKind, ProviderProfileInput, ProviderProtocol,
     };
     use xai_grok_sampling_types::ApiBackend;
+
+    #[test]
+    fn anthropic_protocol_injects_the_required_version_header() {
+        assert_eq!(
+            protocol_headers(ProviderProtocol::AnthropicMessages)
+                .get("anthropic-version")
+                .map(String::as_str),
+            Some("2023-06-01")
+        );
+        assert!(protocol_headers(ProviderProtocol::OpenaiChat).is_empty());
+    }
 
     const SECRET: &str = "sentinel-lease-secret-1234";
 

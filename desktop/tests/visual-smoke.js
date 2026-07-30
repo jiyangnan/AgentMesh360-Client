@@ -44,6 +44,7 @@ app.whenReady().then(async () => {
     'provider:delete-assignment',
     'provider:run-probe',
     'provider:test-connection',
+    'provider:discover-models',
     'package:download',
     'package:approve',
     'package:rollback',
@@ -315,7 +316,7 @@ function providerFixture() {
     ],
     catalog: {
       schemaVersion: 1,
-      catalogRevision: 4,
+      catalogRevision: 3,
       providers: [
         {
           presetId: 'openai',
@@ -334,6 +335,27 @@ function providerFixture() {
           defaultBaseUrl: 'https://api.anthropic.com',
           authKind: 'x_api_key',
           models: [{ modelId: 'claude-opus-4-1' }],
+        },
+        {
+          presetId: 'glm-coding-plan',
+          displayName: '智谱 GLM Coding Plan',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'kimi-coding-plan',
+          displayName: 'Kimi Coding Plan',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://api.kimi.com/coding/v1',
+          authKind: 'bearer_api_key',
+          models: [
+            { modelId: 'kimi-for-coding' },
+            { modelId: 'kimi-for-coding-highspeed' },
+          ],
         },
       ],
     },

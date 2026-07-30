@@ -1,8 +1,14 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, ipcMain } = require('electron');
+
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'agentmesh360-provider-ui-'));
+app.setPath('userData', userData);
+app.commandLine.appendSwitch('disable-gpu');
 
 const writes = [];
 let providerFailure = null;
@@ -27,6 +33,22 @@ app.whenReady().then(async () => {
         networkAttempted: true,
         mayIncurCost: true,
         summaryCode: 'minimal_inference_responded',
+      },
+    };
+  });
+  ipcMain.handle('provider:discover-models', (_event, payload) => {
+    writes.push({ kind: 'model-discovery', payload });
+    return {
+      modelDiscovery: {
+        status: 'passed',
+        authenticationVerified: true,
+        mayIncurCost: false,
+        models: [
+          { modelId: 'gpt-5', displayName: 'GPT-5' },
+          { modelId: 'gpt-5-mini', displayName: 'GPT-5 mini' },
+        ],
+        truncated: false,
+        summaryCode: 'model_discovery_succeeded',
       },
     };
   });
@@ -81,14 +103,31 @@ app.whenReady().then(async () => {
   await waitFor(async () => window.webContents.executeJavaScript(
     "document.getElementById('provider-profile-form') !== null",
   ));
+  const officialPresetIds = await window.webContents.executeJavaScript(
+    "[...document.querySelectorAll('#provider-preset optgroup[label^=\"官方\"] option')].map((option) => option.value)",
+  );
+  assert.deepEqual(officialPresetIds, [
+    'openai',
+    'xai',
+    'anthropic',
+    'google-gemini',
+    'deepseek',
+    'glm',
+    'glm-coding-plan',
+    'kimi',
+    'kimi-cn',
+    'kimi-coding-plan',
+  ]);
 
   await window.webContents.executeJavaScript(`
     (() => {
       const form = document.getElementById('provider-profile-form');
       form.dataset.revalidationGuard = 'original-form';
+      form.elements.presetId.value = '__custom__';
+      form.elements.presetId.dispatchEvent(new Event('change', { bubbles: true }));
       form.elements.displayName.value = '尚未保存的 Provider';
       form.elements.baseUrl.value = 'https://draft.example.com/v1';
-      form.elements.enabledModels.value = 'draft-model';
+      form.elements.manualModel.value = 'draft-model';
       form.elements.apiKey.value = 'sk-unsaved-draft';
     })()
   `);
@@ -112,7 +151,7 @@ app.whenReady().then(async () => {
       sameForm: form?.dataset.revalidationGuard === 'original-form',
       displayName: form?.elements.displayName.value,
       baseUrl: form?.elements.baseUrl.value,
-      enabledModels: form?.elements.enabledModels.value,
+      manualModel: form?.elements.manualModel.value,
       apiKey: form?.elements.apiKey.value,
       spinnerVisible: document.querySelector('.state-card .spinner') !== null,
     };
@@ -121,7 +160,7 @@ app.whenReady().then(async () => {
     sameForm: true,
     displayName: '尚未保存的 Provider',
     baseUrl: 'https://draft.example.com/v1',
-    enabledModels: 'draft-model',
+    manualModel: 'draft-model',
     apiKey: 'sk-unsaved-draft',
     spinnerVisible: false,
   });
@@ -141,16 +180,48 @@ app.whenReady().then(async () => {
     managedVisible: !document.getElementById('managed-provider-card').hidden,
     advancedHidden: document.getElementById('advanced-provider-settings').hidden,
     saveDisabled: document.querySelector('.provider-save-button').disabled,
+    modelDisabled: document.getElementById('provider-model-select').disabled,
     bodyText: document.body.innerText,
   })`);
   assert.equal(simplifiedProvider.managedVisible, true);
   assert.equal(simplifiedProvider.advancedHidden, true);
   assert.equal(simplifiedProvider.saveDisabled, true);
+  assert.equal(simplifiedProvider.modelDisabled, true);
   assert.equal(simplifiedProvider.bodyText.includes('不需要判断技术选项'), true);
   assert.equal(simplifiedProvider.bodyText.includes('请先测试连接'), true);
+  assert.equal(simplifiedProvider.bodyText.includes('验证 Key 并获取模型'), true);
 
   await window.webContents.executeJavaScript(`
     (() => {
+      document.getElementById('provider-discover-models').click();
+    })()
+  `);
+  await waitFor(() => writes.some((write) => write.kind === 'model-discovery'));
+  const discoveryWrite = writes.find((write) => write.kind === 'model-discovery');
+  assert.equal(discoveryWrite.payload.apiKey, 'sk-renderer-one-shot');
+  assert.deepEqual(discoveryWrite.payload.profile.enabledModels, []);
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.getElementById('model-discovery-status').dataset.status === 'passed'",
+  ));
+  const discoveredModels = await window.webContents.executeJavaScript(`(() => {
+    const select = document.getElementById('provider-model-select');
+    return {
+      disabled: select.disabled,
+      values: [...select.options].map((option) => option.value).filter(Boolean),
+      saveDisabled: document.querySelector('.provider-save-button').disabled,
+    };
+  })()`);
+  assert.deepEqual(discoveredModels, {
+    disabled: false,
+    values: ['gpt-5', 'gpt-5-mini'],
+    saveDisabled: true,
+  });
+
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const select = document.getElementById('provider-model-select');
+      select.value = 'gpt-5';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
       window.confirm = () => true;
       document.getElementById('provider-test-connection').click();
     })()
@@ -158,6 +229,8 @@ app.whenReady().then(async () => {
   await waitFor(() => writes.some((write) => write.kind === 'connection-test'));
   assert.equal(writes.find((write) => write.kind === 'connection-test').payload.apiKey,
     'sk-renderer-one-shot');
+  assert.equal(writes.find((write) => write.kind === 'connection-test').payload.modelId,
+    'gpt-5');
   await waitFor(async () => window.webContents.executeJavaScript(
     "document.getElementById('connection-test-status').dataset.status === 'passed'",
   ));
@@ -273,9 +346,11 @@ app.whenReady().then(async () => {
   assert.equal(errorText.includes('provider:get-snapshot'), false);
   assert.equal(errorText.includes('HostRequestError'), false);
   errorWindow.destroy();
-
-  await app.quit();
+  window.destroy();
+  fs.rmSync(userData, { recursive: true, force: true });
+  app.exit(0);
 }).catch((error) => {
+  fs.rmSync(userData, { recursive: true, force: true });
   console.error(error);
   app.exit(1);
 });
@@ -327,7 +402,7 @@ function providerSnapshot() {
     ],
     catalog: {
       schemaVersion: 1,
-      catalogRevision: 4,
+      catalogRevision: 3,
       providers: [
         {
           presetId: 'openai',
@@ -337,6 +412,90 @@ function providerSnapshot() {
           defaultBaseUrl: 'https://api.openai.com/v1',
           authKind: 'bearer_api_key',
           models: [{ modelId: 'gpt-5' }],
+        },
+        {
+          presetId: 'xai',
+          displayName: 'xAI',
+          classification: 'official',
+          protocol: 'openai_responses',
+          defaultBaseUrl: 'https://api.x.ai/v1',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'anthropic',
+          displayName: 'Anthropic',
+          classification: 'official',
+          protocol: 'anthropic_messages',
+          defaultBaseUrl: 'https://api.anthropic.com/v1',
+          authKind: 'x_api_key',
+          models: [],
+        },
+        {
+          presetId: 'google-gemini',
+          displayName: 'Google Gemini',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'deepseek',
+          displayName: 'DeepSeek',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://api.deepseek.com/v1',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'glm',
+          displayName: '智谱 GLM API',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'glm-coding-plan',
+          displayName: '智谱 GLM Coding Plan',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'kimi',
+          displayName: 'Kimi API（国际）',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://api.moonshot.ai/v1',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'kimi-cn',
+          displayName: 'Kimi API（中国）',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://api.moonshot.cn/v1',
+          authKind: 'bearer_api_key',
+          models: [],
+        },
+        {
+          presetId: 'kimi-coding-plan',
+          displayName: 'Kimi Coding Plan',
+          classification: 'official',
+          protocol: 'openai_chat',
+          defaultBaseUrl: 'https://api.kimi.com/coding/v1',
+          authKind: 'bearer_api_key',
+          models: [
+            { modelId: 'kimi-for-coding' },
+            { modelId: 'kimi-for-coding-highspeed' },
+          ],
         },
       ],
     },

@@ -287,6 +287,41 @@ mod tests {
         assert!(catalog.provider("openai").is_some());
         assert!(catalog.provider("xai").is_some());
         assert!(catalog.provider("anthropic").is_some());
+        assert_eq!(
+            catalog
+                .provider("deepseek")
+                .and_then(|provider| provider.default_base_url.as_deref()),
+            Some("https://api.deepseek.com/v1")
+        );
+        assert_eq!(
+            catalog
+                .provider("glm-coding-plan")
+                .and_then(|provider| provider.default_base_url.as_deref()),
+            Some("https://open.bigmodel.cn/api/coding/paas/v4")
+        );
+        assert_eq!(
+            catalog
+                .provider("kimi-coding-plan")
+                .and_then(|provider| provider.default_base_url.as_deref()),
+            Some("https://api.kimi.com/coding/v1")
+        );
+        assert_eq!(
+            catalog
+                .provider("kimi")
+                .and_then(|provider| provider.default_base_url.as_deref()),
+            Some("https://api.moonshot.ai/v1")
+        );
+        assert_eq!(
+            catalog
+                .provider("kimi-cn")
+                .and_then(|provider| provider.default_base_url.as_deref()),
+            Some("https://api.moonshot.cn/v1")
+        );
+        assert!(
+            catalog
+                .model("kimi-coding-plan", "kimi-for-coding-highspeed")
+                .is_some()
+        );
         let gemini = catalog
             .provider("google-gemini")
             .expect("F0b-qualified Gemini preset");

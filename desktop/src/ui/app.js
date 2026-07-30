@@ -1527,12 +1527,14 @@ function providerProfileEditor(catalog, profiles) {
   const managed = selectedProvider?.classification === 'official';
   const officialProviders = providers.filter((provider) => provider.classification === 'official');
   const advancedProviders = providers.filter((provider) => provider.classification !== 'official');
-  const enabledModels = Array.isArray(editing?.enabledModels) ? editing.enabledModels.join('\n') : '';
+  const savedModels = Array.isArray(editing?.enabledModels) ? editing.enabledModels : [];
+  const advanced = selectedPreset === '__custom__' || Boolean(selectedProvider && !managed);
   return `
     <form class="control-panel provider-form" id="provider-profile-form"
       data-connection-test-passed="${editing ? 'true' : 'false'}"
+      data-model-discovery-passed="${editing && managed ? 'true' : 'false'}"
       data-config-revision="0">
-      <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑供应商' : '添加模型供应商'}</strong><small>选择供应商 → 填写 Key → 测试 → 保存</small></div></div>
+      <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑供应商' : '添加模型供应商'}</strong><small>选择供应商 → 填 Key 获取模型 → 选择模型 → 测试 → 保存</small></div></div>
       <div class="form-grid two">
         <label class="field"><span>供应商</span>
           <select name="presetId" id="provider-preset" required>
@@ -1557,9 +1559,10 @@ function providerProfileEditor(catalog, profiles) {
             <summary>查看技术信息</summary>
             <p id="managed-provider-detail">${managed ? `${escapeHtml(protocolLabel(selectedProvider.protocol))} · ${escapeHtml(selectedProvider.defaultBaseUrl || '')}` : ''}</p>
           </details>
+          <p class="provider-plan-notice" id="provider-plan-notice" ${providerPlanNotice(selectedPreset) ? '' : 'hidden'}>${escapeHtml(providerPlanNotice(selectedPreset) || '')}</p>
         </div>
       </div>
-      <details class="advanced-provider-settings" id="advanced-provider-settings" ${selectedProvider && !managed || selectedPreset === '__custom__' ? 'open' : 'hidden'}>
+      <details class="advanced-provider-settings" id="advanced-provider-settings" ${advanced ? 'open' : 'hidden'}>
         <summary>高级连接设置</summary>
         <p>只有服务商文档明确写明“兼容 OpenAI / Anthropic 接口”时才需要在这里选择。</p>
         <div class="form-grid two">
@@ -1579,8 +1582,29 @@ function providerProfileEditor(catalog, profiles) {
         </div>
         <label class="field"><span>接口地址</span><input name="baseUrl" type="url" required value="${escapeHtml(editing?.baseUrl || '')}" placeholder="https://api.example.com/v1"></label>
       </details>
-      <label class="field"><span>模型 <em>第一个模型用于连接测试；可一行一个</em></span><textarea name="enabledModels" rows="3" required placeholder="例如：gemini-3.5-flash-lite">${escapeHtml(enabledModels)}</textarea></label>
-      <label class="field secret-field"><span>${editing ? '替换 API Key（可留空）' : 'API Key'}</span><input name="apiKey" type="password" autocomplete="off" ${editing ? '' : 'required'} placeholder="${editing ? '不修改请留空' : '仅提交给本机 Host Vault'}"><i>提交后立即清空</i></label>
+      <div class="credential-action-row">
+        <label class="field secret-field"><span>${editing ? '替换 API Key（可留空）' : 'API Key'}</span><input name="apiKey" type="password" autocomplete="off" ${editing ? '' : 'required'} placeholder="${editing ? '重新获取模型或替换 Key 时填写' : '粘贴供应商 API Key'}"><i>仅交给本机 Host</i></label>
+        <button class="secondary model-discovery-button" id="provider-discover-models" type="button" ${managed ? '' : 'hidden'} ${providerUi.busy ? 'disabled' : ''}>验证 Key 并获取模型</button>
+      </div>
+      <section class="model-discovery-panel" id="official-model-discovery" ${managed ? '' : 'hidden'}>
+        <label class="field"><span>可用模型 <em>由当前 Key 从供应商实时读取</em></span>
+          <select name="enabledModels" id="provider-model-select" required ${editing && managed ? '' : 'disabled'}>
+            <option value="" ${savedModels.length ? '' : 'selected'} disabled>${savedModels.length ? '请选择模型' : '请先验证 Key 并获取模型'}</option>
+            ${savedModels.map((model, index) => `<option value="${escapeHtml(model)}" ${index === 0 ? 'selected' : ''}>${escapeHtml(model)}</option>`).join('')}
+          </select>
+        </label>
+        <div class="model-discovery-status" id="model-discovery-status" data-status="${editing && managed ? 'passed' : 'idle'}" role="status">
+          <i aria-hidden="true"></i>
+          <div>
+            <strong>${editing && managed ? '当前显示已保存模型' : '尚未读取可用模型'}</strong>
+            <span>${editing && managed ? '重新输入 Key 可从供应商刷新模型列表。' : '模型读取不执行推理，通常不会产生 Provider 费用。'}</span>
+          </div>
+        </div>
+      </section>
+      <label class="field manual-model-field" id="manual-model-field" ${advanced ? '' : 'hidden'}>
+        <span>模型 ID <em>兼容与本地接口需要手工填写</em></span>
+        <input name="manualModel" ${advanced ? 'required' : 'disabled'} value="${escapeHtml(advanced ? (savedModels[0] || '') : '')}" placeholder="例如：local-model">
+      </label>
       <div class="connection-test-status" id="connection-test-status" data-status="${editing ? 'passed' : 'idle'}" role="status">
         <i aria-hidden="true"></i>
         <div>
@@ -1717,6 +1741,7 @@ function wireProviderSettings() {
   providerForm?.addEventListener('submit', submitProviderProfile);
   providerForm?.addEventListener('input', invalidateProviderConnectionTest);
   providerForm?.addEventListener('change', invalidateProviderConnectionTest);
+  document.getElementById('provider-discover-models')?.addEventListener('click', discoverProviderModels);
   document.getElementById('provider-test-connection')?.addEventListener('click', testProviderConnection);
   syncProviderConnectionMode(providerForm);
   document.getElementById('provider-assignment-form')?.addEventListener('submit', submitAssignment);
@@ -1792,6 +1817,112 @@ async function submitProviderProfile(event) {
     }
     providerUi.editingProfileId = null;
   }, editingProfileId ? 'Provider 已更新，Key 输入已清空。' : 'Provider 已安全保存，Key 输入已清空。');
+}
+
+async function discoverProviderModels(event) {
+  const button = event.currentTarget;
+  const form = button.closest('form');
+  if (!form) return;
+  const preset = (providerUi.snapshot?.catalog?.providers || [])
+    .find((item) => item.presetId === form.elements.presetId.value);
+  if (preset?.classification !== 'official') {
+    updateModelDiscoveryStatus(
+      form,
+      'failed',
+      '当前接口需要手工填写模型',
+      '动态模型读取只用于客户端内置的官方供应商。',
+    );
+    return;
+  }
+  if (!form.elements.presetId.reportValidity() || !form.elements.displayName.reportValidity()) return;
+  const data = new FormData(form);
+  const apiKey = String(data.get('apiKey') || '').trim();
+  if (!apiKey) {
+    updateModelDiscoveryStatus(
+      form,
+      'failed',
+      '请先填写 API Key',
+      '客户端会把 Key 一次性交给本机 Host，用它读取当前账号可用的模型。',
+    );
+    form.elements.apiKey.focus();
+    return;
+  }
+  const profile = providerProfileFromForm(data, { allowEmptyModel: true });
+  const revision = form.dataset.configRevision;
+  const modelSelect = form.elements.enabledModels;
+  const testButton = form.querySelector('.connection-test-button');
+  const saveButton = form.querySelector('.provider-save-button');
+  button.disabled = true;
+  modelSelect.disabled = true;
+  testButton.disabled = true;
+  saveButton.disabled = true;
+  form.dataset.modelDiscoveryPassed = 'false';
+  form.dataset.connectionTestPassed = 'false';
+  updateModelDiscoveryStatus(
+    form,
+    'testing',
+    `正在验证 ${preset.displayName} Key`,
+    '正在从供应商官方接口读取这个 Key 实际可用的模型…',
+  );
+  updateConnectionTestStatus(
+    form,
+    'idle',
+    '等待选择模型',
+    '先获取模型并完成选择，再执行真实连接测试。',
+  );
+  try {
+    const response = await bridge.discoverProviderModels({ profile, apiKey });
+    if (!form.isConnected || form.dataset.configRevision !== revision) {
+      if (form.isConnected) {
+        updateModelDiscoveryStatus(
+          form,
+          'idle',
+          '配置已发生变化',
+          '读取期间你修改了配置，请使用最新内容重新获取模型。',
+        );
+      }
+      return;
+    }
+    const result = response?.modelDiscovery;
+    if (result?.status !== 'passed' || !Array.isArray(result.models) || !result.models.length) {
+      resetDiscoveredModels(form);
+      updateModelDiscoveryStatus(
+        form,
+        'failed',
+        '没有读取到可用模型',
+        modelDiscoveryFailureMessage(result),
+      );
+      return;
+    }
+    resetDiscoveredModels(form);
+    for (const model of result.models) {
+      const optionElement = document.createElement('option');
+      optionElement.value = model.modelId;
+      optionElement.textContent = model.displayName && model.displayName !== model.modelId
+        ? `${model.displayName} · ${model.modelId}`
+        : model.modelId;
+      modelSelect.append(optionElement);
+    }
+    modelSelect.disabled = false;
+    testButton.disabled = false;
+    form.dataset.modelDiscoveryPassed = 'true';
+    updateModelDiscoveryStatus(
+      form,
+      'passed',
+      `Key 有效，已获取 ${result.models.length} 个模型`,
+      `${result.truncated ? '列表较长，已显示前 512 个。' : ''}请选择一个模型，再执行连接测试。`,
+    );
+  } catch (error) {
+    resetDiscoveredModels(form);
+    updateModelDiscoveryStatus(
+      form,
+      'failed',
+      '模型读取失败',
+      modelDiscoveryError(error),
+    );
+  } finally {
+    if (form.isConnected) button.disabled = false;
+  }
 }
 
 async function testProviderConnection(event) {
@@ -1956,12 +2087,16 @@ function applySelectedPreset(event) {
   form.elements.protocol.value = preset?.protocol || 'openai_chat';
   form.elements.baseUrl.value = preset?.defaultBaseUrl || '';
   form.elements.authKind.value = preset?.authKind || 'bearer_api_key';
-  form.elements.enabledModels.value = (preset?.models || []).map((model) => model.modelId).join('\n');
+  form.elements.apiKey.value = '';
+  form.elements.manualModel.value = '';
+  resetDiscoveredModels(form);
+  form.dataset.modelDiscoveryPassed = 'false';
   if (!preset && !custom) form.elements.protocol.value = 'openai_chat';
   syncProviderConnectionMode(form, preset);
 }
 
-function providerProfileFromForm(data) {
+function providerProfileFromForm(data, { allowEmptyModel = false } = {}) {
+  const model = data.get('enabledModels') || data.get('manualModel');
   return {
     presetId: ['', '__custom__'].includes(String(data.get('presetId') || ''))
       ? null
@@ -1970,7 +2105,7 @@ function providerProfileFromForm(data) {
     protocol: data.get('protocol'),
     baseUrl: data.get('baseUrl'),
     authKind: data.get('authKind'),
-    enabledModels: parseModels(data.get('enabledModels')),
+    enabledModels: allowEmptyModel ? [] : parseModels(model),
   };
 }
 
@@ -1982,19 +2117,58 @@ function syncProviderConnectionMode(form, selectedPreset = null) {
   const advanced = form.elements.presetId.value === '__custom__' || Boolean(preset && !managed);
   const managedCard = document.getElementById('managed-provider-card');
   const advancedSettings = document.getElementById('advanced-provider-settings');
+  const officialModelDiscovery = document.getElementById('official-model-discovery');
+  const manualModelField = document.getElementById('manual-model-field');
+  const discoverButton = document.getElementById('provider-discover-models');
+  const planNotice = document.getElementById('provider-plan-notice');
+  const testButton = form.querySelector('.connection-test-button');
   managedCard.hidden = !managed;
   advancedSettings.hidden = !advanced;
+  officialModelDiscovery.hidden = !managed;
+  manualModelField.hidden = !advanced;
+  form.elements.manualModel.disabled = !advanced;
+  form.elements.manualModel.required = advanced;
+  discoverButton.hidden = !managed;
+  testButton.disabled = managed
+    ? form.dataset.modelDiscoveryPassed !== 'true'
+    : !advanced;
+  form.elements.enabledModels.disabled =
+    !managed || form.dataset.modelDiscoveryPassed !== 'true';
   if (managed) {
     document.getElementById('managed-provider-title').textContent =
       `已为 ${preset.displayName} 自动配置`;
     document.getElementById('managed-provider-detail').textContent =
       `${protocolLabel(preset.protocol)} · ${preset.defaultBaseUrl || ''}`;
+    const notice = providerPlanNotice(preset.presetId);
+    planNotice.textContent = notice || '';
+    planNotice.hidden = !notice;
+    if (form.dataset.modelDiscoveryPassed !== 'true') {
+      updateModelDiscoveryStatus(
+        form,
+        'idle',
+        `等待验证 ${preset.displayName} Key`,
+        '验证成功后会显示这个 Key 实际可用的模型。',
+      );
+    }
   }
+}
+
+function providerPlanNotice(presetId) {
+  if (presetId === 'glm-coding-plan') {
+    return '请使用 GLM Coding Plan 专属 Key；普通智谱 API Key 与 Coding Plan Key 不通用。套餐权益的适用工具范围以智谱当前官方条款为准。';
+  }
+  if (presetId === 'kimi-coding-plan') {
+    return '请使用 Kimi Coding Plan Key。Standard 与 HighSpeed 会按当前 Key 的实际权限返回；套餐权益的适用工具范围以 Kimi 当前官方条款为准。';
+  }
+  return null;
 }
 
 function invalidateProviderConnectionTest(event) {
   const form = event.currentTarget;
   if (event.target?.name === 'displayName') return;
+  if (['apiKey', 'presetId', 'protocol', 'authKind', 'baseUrl'].includes(event.target?.name)) {
+    invalidateProviderModelDiscovery(form);
+  }
   form.dataset.configRevision = String(Number(form.dataset.configRevision || 0) + 1);
   form.dataset.connectionTestPassed = 'false';
   form.querySelector('.provider-save-button').disabled = true;
@@ -2006,6 +2180,42 @@ function invalidateProviderConnectionTest(event) {
   );
 }
 
+function invalidateProviderModelDiscovery(form) {
+  const preset = (providerUi.snapshot?.catalog?.providers || [])
+    .find((item) => item.presetId === form.elements.presetId.value);
+  if (preset?.classification !== 'official') return;
+  form.dataset.modelDiscoveryPassed = 'false';
+  resetDiscoveredModels(form);
+  updateModelDiscoveryStatus(
+    form,
+    'idle',
+    'Key 或供应商配置已更改',
+    '请重新验证 Key 并获取当前可用模型。',
+  );
+}
+
+function resetDiscoveredModels(form) {
+  const select = form?.elements.enabledModels;
+  if (!select) return;
+  select.replaceChildren();
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '请先验证 Key 并获取模型';
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.append(placeholder);
+  select.disabled = true;
+  form.querySelector('.connection-test-button').disabled = true;
+}
+
+function updateModelDiscoveryStatus(form, status, title, detail) {
+  const container = form?.querySelector('#model-discovery-status');
+  if (!container) return;
+  container.dataset.status = status;
+  container.querySelector('strong').textContent = title;
+  container.querySelector('span').textContent = detail;
+}
+
 function updateConnectionTestStatus(form, status, title, detail) {
   const container = form?.querySelector('#connection-test-status');
   if (!container) return;
@@ -2015,17 +2225,19 @@ function updateConnectionTestStatus(form, status, title, detail) {
 }
 
 function connectionTestFailureMessage(result) {
-  if (result?.summaryCode === 'minimal_inference_timeout') {
-    return '请求超时，请检查网络、接口地址或供应商服务状态。';
-  }
-  if (result?.summaryCode === 'minimal_inference_empty_response') {
-    return '接口已响应，但没有返回有效模型内容；请检查模型 ID。';
-  }
-  return '供应商拒绝了测试请求，请检查 API Key、模型 ID 和接口地址。';
+  return ({
+    minimal_inference_authentication_failed: 'API Key 已被供应商拒绝，请确认复制完整且仍然有效。',
+    minimal_inference_permission_denied: '这个 Key 没有调用所选模型的权限，请更换模型或检查账号权限。',
+    minimal_inference_model_not_found: '供应商找不到所选模型，请重新获取模型列表后再选择。',
+    minimal_inference_rate_limited: '供应商当前触发限流，请稍后再试。',
+    minimal_inference_network_failed: '无法连接供应商，请检查网络或稍后重试。',
+    minimal_inference_timeout: '供应商响应超时，请稍后重试。',
+    minimal_inference_empty_response: '接口已响应，但模型没有返回有效内容，请换一个模型测试。',
+  })[result?.summaryCode] || '供应商拒绝了测试请求，请重新验证 Key、模型和账号权限。';
 }
 
 function connectionTestError(error) {
-  const message = String(error?.message || '');
+  const message = transportSafeErrorMessage(error);
   if (/Authentication required|订阅验证|身份正在恢复/i.test(message)) {
     return publicError(error, '当前订阅身份尚未准备好，请稍后重试。');
   }
@@ -2035,10 +2247,46 @@ function connectionTestError(error) {
   if (/model/i.test(message)) {
     return '模型 ID 无效或未启用，请按照供应商控制台中的名称填写。';
   }
-  if (/URL|endpoint|host/i.test(message)) {
+  if (/base URL|endpoint host|URL invalid|地址/i.test(message)) {
     return '接口地址无效，请检查服务商提供的 API 地址。';
   }
   return '无法完成连接测试，请检查 API Key、模型名称、网络和供应商服务状态。';
+}
+
+function modelDiscoveryFailureMessage(result) {
+  return ({
+    model_discovery_authentication_failed: 'API Key 无效、已过期，或没有读取模型的权限。',
+    model_discovery_rate_limited: '供应商暂时限制了请求频率，请稍后再试。',
+    model_discovery_endpoint_not_found: '官方模型接口暂时不可用，请更新客户端或稍后重试。',
+    model_discovery_provider_unavailable: '供应商模型服务暂时不可用，请稍后再试。',
+    model_discovery_network_failed: '无法连接供应商，请检查网络或稍后重试。',
+    model_discovery_timeout: '供应商响应超时，请稍后重试。',
+    model_discovery_response_failed: '供应商响应中断，请稍后重试。',
+    model_discovery_response_too_large: '供应商返回的模型列表异常过大，客户端已停止读取。',
+    model_discovery_invalid_response: '供应商返回了无法识别的模型列表。',
+    model_discovery_no_models: 'Key 已被接受，但当前账号没有返回可用于选择的模型。',
+    model_discovery_request_rejected: '供应商拒绝读取模型，请检查 Key 的权限。',
+  })[result?.summaryCode] || '没有读取到模型，请确认 Key 属于当前所选供应商。';
+}
+
+function modelDiscoveryError(error) {
+  const message = transportSafeErrorMessage(error);
+  if (/Authentication required|订阅验证|身份正在恢复/i.test(message)) {
+    return '当前订阅身份尚未准备好，请稍后重试。';
+  }
+  if (/API Key|secret|credential/i.test(message)) {
+    return 'API Key 无效，请检查是否复制完整、是否包含多余空格。';
+  }
+  if (/official Provider|trusted Catalog|connection settings/i.test(message)) {
+    return '官方供应商配置已发生异常，客户端已阻止发送 Key。';
+  }
+  return '无法读取模型，请检查网络、API Key 和供应商服务状态。';
+}
+
+function transportSafeErrorMessage(error) {
+  return String(error?.message || '')
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^HostRequestError:\s*/i, '');
 }
 
 function syncAssignmentScope() {

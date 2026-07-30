@@ -76,6 +76,13 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     modelId: String(modelId || '').slice(0, 200),
     confirmPaidInference: confirmPaidInference === true,
   }),
+  discoverProviderModels: ({ profile, apiKey } = {}) => ipcRenderer.invoke(
+    'provider:discover-models',
+    {
+      profile,
+      apiKey: String(apiKey || '').slice(0, 16_384),
+    },
+  ),
   getPackageSnapshot: () => ipcRenderer.invoke('package:get-snapshot'),
   refreshPackageRegistry: () => ipcRenderer.invoke('package:refresh-registry'),
   downloadAgentPackage: (packageId) => ipcRenderer.invoke(

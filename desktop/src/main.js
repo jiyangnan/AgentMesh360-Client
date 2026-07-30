@@ -206,6 +206,9 @@ function registerIpc(identity, providers, packages, conversationController, logi
   ipcMain.handle('provider:test-connection', (_event, request) => {
     return providers.testConnection(request);
   });
+  ipcMain.handle('provider:discover-models', (_event, request) => {
+    return providers.discoverModels(request);
+  });
   ipcMain.handle('package:get-snapshot', () => packages.getSnapshot());
   ipcMain.handle('package:refresh-registry', () => packages.refreshRegistry());
   ipcMain.handle('package:download', (_event, packageId) => {
