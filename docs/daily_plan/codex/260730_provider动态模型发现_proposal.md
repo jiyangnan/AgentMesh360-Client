@@ -87,6 +87,7 @@
 - [x] 让打包 Host 与 Bridge 使用同一 runtime SemVer，自动替换旧 Leader并禁止降级
 - [x] 升级 Desktop 版本并避免 ACP `clientVersion` 手工漂移
 - [x] 隔离 Host `--version` 构建门禁，避免读取用户 Grok channel 缓存
+- [x] 统一 Pager CLI、Leader、ACP 与 Version crate 的 runtime version 来源
 - [ ] 补齐真实安装升级回归
 - [ ] 更新进展、提交推送、生成并只保留一份修复包
 

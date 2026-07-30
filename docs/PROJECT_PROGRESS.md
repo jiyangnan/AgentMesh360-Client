@@ -7438,7 +7438,14 @@ owner UAT 事实：
   `~/.grok/version.json` 并追加 channel 标签，导致构建器把展示装饰误判为注入失败；
 - 构建器现使用隔离 `HOME` 与 `GROK_HOME` 检查 release Host，既不读取用户 Grok
   缓存，也继续要求原始 runtime version 与 commit 逐字匹配；补齐相应单元回归后
-  再重新生成候选包。
+  再重新生成候选包；
+- 隔离后第二次构建继续由同一精确门禁拦截；隔离诊断证明 `xai-grok-version`、
+  Leader 与 ACP 已嵌入 `1000.x.y`，但实际 `--version` 由 `xai-grok-pager`
+  自己的 build script 生成，该入口仍只读取上游 `GROK_VERSION`，所以展示
+  `0.2.106`；
+- 已把专属 runtime version 同步补入 Pager CLI build script，并给
+  `xai-grok-version` 的 build script 增加环境变化追踪；下一候选包必须在真实
+  `--version` 输出中同时证明版本与 commit，避免只修半条版本链路。
 
 计划复盘：
 
