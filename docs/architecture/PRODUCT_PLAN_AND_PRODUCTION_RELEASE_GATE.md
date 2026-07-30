@@ -1039,3 +1039,24 @@ Cycle 128 已实现 strict Schema、构建器、Host 字节/可执行位核对�
 
 该分支没有改变生产顺序：未来公开发行仍必须回到 Cycle 127 的 Developer ID、
 notarization、Hardened Runtime、entitlement、更新真实性、rollback 和 18 场景门。
+
+## 62. 循环 129 P6 首份 unsigned internal arm64 build
+
+clean pushed commit `9db201f...` 已真实完成 arm64 release Host 与 Electron DMG/ZIP
+构建。构建使用 `/private/tmp` Cargo target，最终没有恢复仓库根 `target/`；packaged
+Host 已在删除 unpacked App 前与 release Host 逐字节核对。
+
+最终输出严格只有 DMG、ZIP、strict receipt 和 `SHA256SUMS`。独立复验已覆盖两个
+Artifact 的大小/摘要、ZIP 内 arm64 可执行 Host、DMG checksum、Bundle ID/版本以及
+清理终态。Electron Builder 产生的 ZIP blockmap 和 `.icon-icns/` 只作为精确已知的
+构建临时项核验后删除，未知额外输出继续失败关闭。
+
+只读挂载证实主 Mach-O 只有 linker ad-hoc 标记，没有 Developer ID、Team ID 或有效
+deep bundle seal；它未公证，Gatekeeper 不能视作正式发行。receipt 继续声明 Apple
+credential、Apple service、上传、自动更新和生产 R4 均为 false。Provider、credits
+和产品/生产 mutation 为 0。
+
+下一检查点保持原顺序，只做隔离安装、单应用首次放行、UI detach/reopen、持久 Host
+与 Login Item 生命周期及清理恢复。不得覆盖已存在的 `/Applications/AgentMesh360.app`，
+不得要求全局关闭 Gatekeeper，也不得把内部安装通过升级成生产 R4。Developer ID、
+notarization、真实更新/rollback 和公开 cohort 仍按 Cycle 127 保持 blocked。

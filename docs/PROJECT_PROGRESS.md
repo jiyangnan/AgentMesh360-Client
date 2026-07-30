@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 no-authority preflight 与 unsigned internal builder 合同已完成，下一步以 clean pushed commit 生成并验证首份内部 DMG/ZIP；真实 Apple 签名/公证和生产 Desktop Candidate 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP 已构建并完成字节、镜像、Bundle 与未签名边界复验；下一步只执行隔离安装、首次打开与持久 Host/Login Item 生命周期矩阵，真实 Apple 签名/公证和生产 Desktop Candidate 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -6876,3 +6876,52 @@ DMG/ZIP。该阶段不关闭生产 R4
 - 下一轮先冻结并推送本 executor，再执行一次真实 arm64 内部构建，复验 DMG/ZIP、
   Host extra resource、receipt/SHA-256、临时 `target` 清理和无上传事实；通过后才
   进入未签名安装、首次打开与持久 Host 生命周期矩阵。
+
+### 循环 129：P6 首份未签名内部 arm64 构建
+
+状态：已完成；首份真实 `unsigned_internal_only` DMG/ZIP 已由 clean pushed commit
+构建并复验，不关闭生产 R4
+
+真实构建与产物证据：
+
+1. 构建 commit 为 `9db201f43a49d0cc58dd466a500d40f48c8fe933`，执行时
+   `HEAD == origin/main` 且工作区 clean；Host 使用 `/private/tmp` 隔离 Cargo target
+   完成 release 构建，仓库根 `target/` 构建前后均不存在；
+2. 沙箱内首次尝试因 Rust `protoc` 构建脚本访问 `/dev/stdout` 被系统拒绝而停止，
+   随后按既定本机构建方法在沙箱外重跑；这不是产品代码或打包产物通过证据；
+3. 两次真实打包分别暴露 Electron Builder 强制生成 ZIP `.blockmap` 与固定
+   `.icon-icns/` 图标转换缓存；提交 `13bdbf9`、`9db201f` 将两者收敛为精确已知的
+   临时项，校验后删除，其他未知文件或目录仍失败关闭；
+4. 最终目录严格只含 DMG、ZIP、`unsigned-internal-build-v1.json` 与
+   `SHA256SUMS`，总计约 353 MiB；ZIP 为 181,147,410 bytes、SHA-256
+   `7409150d8b82466c28813fda6964b465054d88f30e7c9b9900bf8b4a0e4164d6`，
+   DMG 为 181,359,004 bytes、SHA-256
+   `c2cfcd1f024e39a52f253aa95e17684778afa23490ed5ed8e5d16c6702ca996f`；
+5. 构建器内层已逐字节核对 packaged Host；独立 verifier 和
+   `shasum -a 256 -c` 再次通过，ZIP 中
+   `Resources/bin/agentmesh360-host` 为 arm64 Mach-O 且保持可执行位；
+6. `hdiutil verify` 通过；只读挂载后 Bundle ID 为 `com.agentmesh360.client`、
+   版本 `0.1.0`。主 Mach-O 只有 linker ad-hoc 标记，没有 Developer ID 或 Team ID；
+   `codesign --verify --deep --strict` 失败，不能被描述成 Apple 签名或公证通过；
+7. receipt 明确记录 Developer ID、公证、Apple credential、上传、自动更新和
+   `productionR4Satisfied` 均为 false；Provider 请求 0、AgentMesh credits 0、
+   Apple service 请求 0、产品/生产 mutation 0；
+8. 只读 DMG 已卸载，构建临时目录为 0，未保留 unpacked App、blockmap 或图标缓存，
+   仓库工作区保持 clean。
+
+自主验证与计划复盘：
+
+- 构建前新模块 16/16、P6 合计 31/31；完整工具链 278 passed，四项受沙箱 loopback
+  限制的 Origin 测试在沙箱外对应文件 5/5；桌面 114 passed / 3 个真实 Host 环境门
+  skipped / 0 failed，离线依赖审计 0 vulnerability；
+- 构建后 receipt verifier、双 Artifact SHA-256、ZIP Host inventory/权限、
+  DMG checksum、Bundle metadata、Developer ID 缺失、deep codesign 失败和清理终态
+  均逐项复验；
+- Kimi 继续按用户要求暂停，本轮为非 Kimi 独立审查，由主 Agent 对构建日志、产物
+  白名单、Host、签名边界、无上传声明和临时状态完成加强复核；
+- 对照产品蓝图与 P6 计划，本轮只把 unsigned internal build 从“源码合同”推进到
+  “真实 arm64 产物”，没有把 ad-hoc 标记写成 Developer ID，没有进入 notarization、
+  自动更新、外部 cohort、P7/P8 或生产 R4；
+- 下一轮只执行隔离安装/首次启动检查点：先冻结安装与恢复矩阵，再在不覆盖既有
+  `/Applications/AgentMesh360.app`、不关闭全局 Gatekeeper 的前提下验证 DMG/ZIP
+  安装、单应用放行边界、后台 Host、UI detach/reopen、Login Item 状态和清理恢复。

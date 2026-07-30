@@ -185,6 +185,10 @@ npm run build:mac
 [`P6_UNSIGNED_INTERNAL_DISTRIBUTION.md`](../docs/operations/P6_UNSIGNED_INTERNAL_DISTRIBUTION.md)。
 内部体验版不是生产 R4，也不要求或建议全局关闭 Gatekeeper。
 
+首份 arm64 内部构建已在 commit `9db201f...` 完成 DMG/ZIP、packaged Host、
+receipt/SHA-256、DMG checksum 与未签名边界复验。下一检查点是隔离安装和
+Host/Login Item 生命周期；尚未完成前不能把“能够打包”写成“安装链已验收”。
+
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
 签名安装包中的 macOS Login Item 注册/批准/升级、Electron 主进程自身守护以及受控
 Host shutdown 仍是发布门槛；源码和开发 smoke 通过不等于生产安装链已验收。

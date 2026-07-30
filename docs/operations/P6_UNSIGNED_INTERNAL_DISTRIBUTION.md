@@ -88,3 +88,21 @@ symlink 时不得安装。
 [`P6_DESKTOP_CANDIDATE_PREFLIGHT_CHECKLIST.md`](P6_DESKTOP_CANDIDATE_PREFLIGHT_CHECKLIST.md)
 重新冻结 Developer ID、签名、公证、Hardened Runtime、entitlements、更新渠道、
 rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
+
+## 已验证的首份内部构建
+
+2026-07-30 已从 clean pushed commit `9db201f43a49...` 完成 arm64 构建：
+
+- ZIP SHA-256：
+  `7409150d8b82466c28813fda6964b465054d88f30e7c9b9900bf8b4a0e4164d6`；
+- DMG SHA-256：
+  `c2cfcd1f024e39a52f253aa95e17684778afa23490ed5ed8e5d16c6702ca996f`；
+- `hdiutil verify`、receipt verifier 与 `SHA256SUMS` 均通过；
+- ZIP/DMG 内含 arm64、可执行的 `Resources/bin/agentmesh360-host`；
+- Bundle ID 为 `com.agentmesh360.client`，版本为 `0.1.0`；
+- 没有 Developer ID、Team ID 或 notarization；Mach-O 的 linker ad-hoc 标记不构成
+  Apple 发行签名，deep codesign 校验失败是本阶段的预期边界；
+- 构建临时 Cargo target、unpacked App、blockmap 与图标转换缓存均已清理。
+
+这些摘要只绑定上述 commit 的本地内部产物；未来任何重新构建都必须产生新的 receipt
+与摘要，不能沿用本节的数值。

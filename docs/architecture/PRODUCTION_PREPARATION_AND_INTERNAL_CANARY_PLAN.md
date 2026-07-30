@@ -1457,3 +1457,22 @@ P6-P8 继续关闭。
 Cycle 128 已完成构建合同源码和 16 项定向测试；由于执行器要求 clean pushed commit，
 真实 DMG/ZIP 构建留给下一检查点。此设计不是 Developer ID 的替代品，也不能用
 同渠道 checksum 声称发布者身份。公开发行仍回到 Cycle 127 的完整 18 场景。
+
+## 57. Cycle 129 P6 首份未签名内部构建
+
+commit `9db201f...` 已在真实 arm64 Mac 完成 release Host、DMG 与 ZIP 构建。最终
+目录只保留两个 Artifact、strict receipt 和 `SHA256SUMS`；两个摘要、ZIP 内 Host
+架构/可执行位、DMG checksum、Bundle ID/版本和构建临时状态均已独立复验。
+
+执行中实际发现 Electron Builder 会额外生成 ZIP blockmap 与固定 `.icon-icns/`
+转换缓存；构建器现只允许这两个精确已知临时项并在产物核验后删除，任何其他额外输出
+继续失败关闭。沙箱的 `/dev/stdout` 限制不能运行 Rust `protoc` build script，因此
+真实 build 在沙箱外执行并保留了明确的构建日志结果；失败尝试均删除不完整输出。
+
+DMG 只读检查确认它没有 Developer ID 或 Team ID，主二进制的 linker ad-hoc 标记
+不能替代签名，deep codesign 校验失败。Apple credential/service、notarization、
+上传、自动更新、Provider、credits 和生产 mutation 均为 0，生产 R4 继续 blocked。
+
+下一检查点冻结并执行隔离安装/生命周期矩阵：不覆盖既有系统安装，不修改全局
+Gatekeeper，逐项验证首次打开边界、UI 退出与重开、持久 Host、Login Item 状态以及
+测试状态清理。公开分发的签名、公证、更新真实性与 rollback 仍不进入本检查点。
