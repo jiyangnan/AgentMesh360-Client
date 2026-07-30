@@ -7055,8 +7055,7 @@ DMG/ZIP。该阶段不关闭生产 R4
 
 ### 循环 133：后台订阅复验不再打断工作区
 
-状态：源码、自动化回归与真实 Electron Renderer 回归已完成；等待以新的 clean
-pushed commit 重建本机内部体验版
+状态：已完成；修复已提交、推送，并生成和交付新的本机未签名内部体验版
 
 用户体验问题与根因：
 
@@ -7098,11 +7097,29 @@ pushed commit 重建本机内部体验版
 - Kimi 继续按用户要求暂停。本轮由主 Agent 对完整 diff、身份状态机、focus 频率、
   失败关闭语义、Renderer DOM 保留、秘密投影和测试结果进行加强自主复核。
 
+构建与本机交付：
+
+- 修复 commit `dc8d9e78c82761b5084a052bc71c82f95348705e` 已推送到
+  `origin/main`；构建时 `HEAD == origin/main` 且工作区 clean；
+- 沙箱内首次构建命中既有 `protoc` `/dev/stdout: Operation not permitted` 限制，
+  构建器失败关闭并清除临时目录；沙箱外按既定方法重跑后通过；
+- strict receipt 为 `desktop_internal_p6_dc8d9e78c827_arm64`，输出仍是
+  `unsigned_internal_only`，Developer ID、公证、Apple credential、上传、自动更新、
+  Provider 请求、credits 和费用全部为 0/false；
+- ZIP 为 181,148,642 bytes，SHA-256
+  `4e5744347a6c65e4f841fa8dba282360c90e3a2274f0a129407aaf5afdcfd46d`；
+  DMG 为 181,359,593 bytes，SHA-256
+  `934efda2d050a92bdc119885408c7f8dcb9ffc3313e065395e77fc47305b4d86`；
+- strict receipt verifier、双 Artifact `shasum -c`、DMG `hdiutil verify`、ZIP 内
+  `app.asar` 与可执行 arm64 Host inventory 均通过；仓库根 `target/` 和构建临时
+  目录均为空；
+- 新 DMG 已逐字节复制并复验到
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-30-dc8d9e7-arm64/`，附单文件
+  `SHA256SUMS` 和中文安装/验收说明；旧安装包未删除，避免无授权覆盖用户文件。
+
 计划复盘与下一轮：
 
 - 本轮只修复已登录工作区的后台复验体验，没有改变“订阅无效不能进入客户端”的产品
   规则，没有引入新 Provider、调用模型、消耗 credits 或触碰 Package/生产发布门；
-- 下一步先提交并推送本轮修复，用同一未签名内部构建合同生成新的本机 DMG，复验
-  Artifact 后替换 owner 的本地测试安装包；
-- 新包交付后继续 owner UAT。当前已记录的下一项用户可见问题是简化 Provider
+- 新包已经交付，下一步继续 owner UAT。当前已记录的下一项用户可见问题是简化 Provider
   配置与首次使用引导；它们必须作为独立产品切片执行，不与本轮修复混做重构。

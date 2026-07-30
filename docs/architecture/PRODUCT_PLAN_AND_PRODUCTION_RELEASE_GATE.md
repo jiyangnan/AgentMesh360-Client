@@ -1134,5 +1134,9 @@ Provider 未保存的显示名称、端点、模型与合成测试 Key 在真实
 中完整保留。
 
 本轮不改变订阅策略、Provider 路由、Agent Package、未签名发行边界或生产 R4。
-下一顺序是先由 clean pushed commit 重建本机内部版并继续 owner UAT；之后再按独立
-切片处理已经暴露的 Provider 配置复杂度和首次使用引导，不启动 P7/P8 或在线分发。
+修复 commit `dc8d9e78...` 已由 clean pushed 状态重建成本机未签名 DMG/ZIP；
+receipt、双摘要、DMG checksum、ZIP Host inventory、临时 target 清理和无上传事实
+均已复验，新 DMG 已交付到 owner 的本地 `~/Downloads`。
+
+下一顺序是继续 owner UAT；之后再按独立切片处理已经暴露的 Provider 配置复杂度和
+首次使用引导，不启动 P7/P8 或在线分发。
