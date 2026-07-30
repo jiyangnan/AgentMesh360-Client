@@ -109,7 +109,7 @@
   `1000.1.1785426085001 (79005ea)`；
 - 真实旧 Leader PID `17250` 在新 Bridge 启动后退出，新 Electron、stdio Bridge、
   Leader 最终由 PID `27515 / 27577 / 22000` 正常接管；
-- 账户 `jiyangnan@gmail.com` 与本地状态路径保留；Provider 页面 Catalog revision
+- owner 账户与本地状态路径保留；Provider 页面 Catalog revision
   为 3，十个官方入口在真实下拉菜单中完整可见；
 - receipt `desktop_internal_p6_79005ea2f074_arm64`、双 artifact 摘要、
   `hdiutil verify`、Downloads 交付副本逐字节复验全部通过；

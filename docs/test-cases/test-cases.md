@@ -59,7 +59,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：应用打开登录页或安全工作区；系统提示与内部说明一致；没有伪造签名/公证成功。
 - **失败与恢复**：损坏 DMG、摘要不一致或应用缺文件时停止，不启动 Host。
 - **验证层**：安装包 + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-INSTALL-002：重复打开与单实例聚焦
 
@@ -72,7 +72,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：聚焦或重建同一客户端窗口；不生成第二个产品 Host/Leader；登录和草稿状态不被重置。
 - **失败与恢复**：第二实例只负责请求现有主进程开窗后退出。
 - **验证层**：Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-INSTALL-003：新包接管旧持久 Host 且数据不丢失
 
@@ -85,7 +85,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：旧 Leader 让位，新 Leader 接管；旧客户端不能反向降级；用户数据、Keychain 和 Main Session 保留。
 - **失败与恢复**：新 Leader 启动失败时不得删除旧状态；显示可行动的本机 Host 故障。
 - **验证层**：Rust + Node + 安装包 + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 5. 登录、账户和订阅
 
@@ -100,7 +100,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：客户端只接收一次性结果；Access Token 不进入 URL/Renderer；Core 与 Host 双 active 后进入首页。
 - **失败与恢复**：取消、state/PKCE 不匹配、回调超时均返回登录页，可重新发起且不残留半登录状态。
 - **验证层**：Node + Electron + 外部真实服务
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-AUTH-002：GitHub 系统浏览器 OAuth 登录
 
@@ -113,7 +113,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：首次登录与加密恢复均成功；身份投影只显示当前账号的公开字段。
 - **失败与恢复**：OAuth 被拒、绑定冲突或订阅无效时不给工作区权限。
 - **验证层**：Node + Electron + 外部真实服务
-- **本轮结果**：待执行
+- **本轮结果**：阻断
 
 ## TC-AUTH-003：加密 Refresh Token 恢复
 
@@ -126,7 +126,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：无登录闪烁地恢复同一账号；Token 不出现在日志、DOM、SQLite 或命令行。
 - **失败与恢复**：凭据损坏/撤销时清理当前认证状态并回登录页，不泄露错误正文。
 - **验证层**：Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-AUTH-004：注销、换账号与本地状态隔离
 
@@ -139,7 +139,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：B 看不到 A 的任何账户级状态；A 再登录时恢复 A 自己的状态；秘密无跨账号读取 API。
 - **失败与恢复**：账户 identity 不一致时 Host 失败关闭，不“临时显示旧数据”。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-ACCESS-001：有效订阅进入客户端
 
@@ -152,7 +152,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：只在双重验证通过后显示工作区；订阅周期与 credits 是服务端投影，不由客户端自行拼算。
 - **失败与恢复**：Core/Host 结论不一致时不进入工作区。
 - **验证层**：Rust + Node + Electron + 外部真实服务
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-ACCESS-002：无效、过期或暂停订阅硬拦截
 
@@ -165,7 +165,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：不能进入任何 Agent/Provider/Package/会话界面；可打开官网订阅；恢复后由新 bootstrap 放行。
 - **失败与恢复**：credits 为 0 不能替代订阅结论；客户端不自行绕过服务端。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-ACCESS-003：后台复验不打断正在进行的工作
 
@@ -178,7 +178,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：当前界面保持可见可编辑；无全屏 loading；Provider Key、模型、名称和对话草稿不清空。
 - **失败与恢复**：只有新结果明确失效后才切拦截页；认证刷新竞态不向页面冒充 `Authentication required`。
 - **验证层**：Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-ACCESS-004：临时网络错误与旧授权有效期
 
@@ -191,7 +191,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：旧授权未过期时可等待新结果；明确失败或过期后所有敏感入口失败关闭；错误为用户可理解文案。
 - **失败与恢复**：网络恢复并重新 bootstrap 后恢复，不要求删除本地工作区。
 - **验证层**：Rust + Node
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 6. 持久 Agent
 
@@ -206,7 +206,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Agent 变为常驻；只创建一个账户级产品实例和固定 Main Session；重复点击打开同一个 Session。
 - **失败与恢复**：激活失败不留下半激活 Registry；错误可重试。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-AGENT-002：关闭窗口、重启后恢复同一 Agent
 
@@ -219,7 +219,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：恢复确定性同一 Main Session；历史、状态与产物连续；不创建“看起来同名”的新会话。
 - **失败与恢复**：Session 缺失时按 Host 恢复合同重建并给出明确恢复状态，不能静默换身份。
 - **验证层**：Rust + Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-AGENT-003：多 Agent 切换但共享一个 Host
 
@@ -232,7 +232,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：每个 Agent 只有自己的固定 Main Session；共享同一个 Host/Leader 与 Harness 基础设施；上下文不串线。
 - **失败与恢复**：一个 Agent Turn 失败不重启或清空其他 Agent。
 - **验证层**：Rust + Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-AGENT-004：未来 Agent 的动态双渠道集成
 
@@ -245,7 +245,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：两个渠道身份、版本、能力和来源一致；无需改客户端硬编码；客户端得到持久 Main Session。
 - **失败与恢复**：任何跨渠道摘要/版本/权限不一致时拒绝；当前生产 Trust/Registry 关闭。
 - **验证层**：Rust + Node
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 7. 对话、权限与工作区
 
@@ -260,7 +260,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：消息只进入当前 Main Session；Turn 使用冻结的 Provider route；响应可见且重开后仍存在。
 - **失败与恢复**：超时/限流/认证失败不伪造成功，不自动跨 Provider fallback。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-CONV-002：切换页面、退出 UI 与恢复
 
@@ -273,7 +273,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Session 不变；运行中状态由 Host 对账；完成结果恢复；Renderer 不持有 authority 状态。
 - **失败与恢复**：通知丢失时以 Host snapshot 修正，不重复提交 Turn。
 - **验证层**：Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-CONV-003：未发送草稿和配置草稿不丢失
 
@@ -286,7 +286,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：草稿逐字保留；页面不被无条件重建；保存/测试状态只在相关字段变化时失效。
 - **失败与恢复**：注销、明确账户切换或成功保存可以清空相应敏感草稿。
 - **验证层**：Node + Electron + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-CONV-004：标准 ACP 单次权限审批
 
@@ -299,7 +299,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：只接受当前 Request 的可见一次性选项；永久/未知/旧 Renderer 选择失败关闭。
 - **失败与恢复**：权限请求失联或 authority 改变时自动取消，不把操作当成功。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-CONV-005：工具活动的安全投影
 
@@ -312,7 +312,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：只显示固定安全标题、类别和四态；原始命令、cwd、输入输出、Token、路径不进入 Renderer。
 - **失败与恢复**：未知工具或 malformed 投影被隐藏/失败关闭，不直出原文。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-CONV-006：产物、项目状态与 Session Plan
 
@@ -325,7 +325,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：只显示 Host 逐次验证的 ID、标题、类别、大小、四态步骤；模型计划与业务进度明确区分。
 - **失败与恢复**：路径/文件内容/跨账号/未知状态不投影；读取失败不影响对话历史。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-CONV-007：Provider 失败时无静默 fallback
 
@@ -338,7 +338,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：使用同一冻结 route；错误按类型显示；无跨 Provider/模型自动 fallback；无伪造完成消息。
 - **失败与恢复**：用户修复 Key/Profile 后显式迁移或新 Session，旧 Session 不静默漂移。
 - **验证层**：Rust + Node
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 8. BYOK Provider
 
@@ -354,7 +354,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：十个入口完整；官方协议、认证和地址自动锁定；技术信息默认折叠；自定义端点独立存在。
 - **失败与恢复**：Catalog 失败使用受信内置/LKG，不显示半截供应商。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-002：Key 验证与动态模型发现
 
@@ -367,7 +367,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Host 只请求官方模型目录；成功显示当前 Key 返回的模型；不执行推理、不产生 AgentMesh credits。
 - **失败与恢复**：模型列表为空、非法或超限时失败关闭；Key 不写 Vault/Profile/Probe history。
 - **验证层**：Rust + Node + Electron + 外部真实服务
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-003：模型发现错误分类
 
@@ -380,7 +380,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：稳定中文错误与行动建议；模型选择/测试/保存禁用；无 IPC、HostRequestError、Header 或原始正文。
 - **失败与恢复**：修改 Key 后旧失败状态失效，可重新验证。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-004：GLM Coding Plan 模型发现与 glm-5.2 连接
 
@@ -394,7 +394,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   `reasoning_effort=none`，返回可见 `content` 后通过并解锁保存。
 - **失败与恢复**：只有 reasoning/空内容仍判失败；普通 GLM Key 与 Coding Plan Key 混用时给认证/权限错误。
 - **验证层**：Rust + Node + Electron + 外部真实服务
-- **本轮结果**：待执行
+- **本轮结果**：阻断
 
 ## TC-PROVIDER-005：Kimi Coding Plan Standard/HighSpeed 权限
 
@@ -407,7 +407,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：使用专属端点；实际列表以 Key 响应为准；HighSpeed 无权限时为稳定权限错误，不伪造支持。
 - **失败与恢复**：普通 Kimi API Key 不静默改走 Coding Plan。
 - **验证层**：Rust + Node + Electron + 外部真实服务
-- **本轮结果**：待执行
+- **本轮结果**：阻断
 
 ## TC-PROVIDER-006：最小真实连接测试与费用确认
 
@@ -420,7 +420,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：只调用选择的模型、短提示、无工具、有界输出；可见文本非空才通过；成功后解锁保存。
 - **失败与恢复**：未确认不发网络；失败保持保存禁用；结果区分认证、权限、模型、限流、网络、超时、空响应。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-007：安全保存与 Key 清理
 
@@ -433,7 +433,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Host 先写 Vault 再写 Profile；页面 Key 立即清空；列表只显示末四位/公开配置；无 secret-readback。
 - **失败与恢复**：Vault/DB 任一步失败按补偿顺序处理，不显示假成功或遗留无主秘密。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-008：字段变化使旧验证失效
 
@@ -446,7 +446,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：相关旧模型/连接结果立即失效；保存禁用；必须重新验证。
 - **失败与恢复**：仅修改显示名称不应无故产生 Provider 请求，但保存规则按产品合同处理。
 - **验证层**：Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-009：全局、Agent、Session 模型分配与冻结路由
 
@@ -459,7 +459,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Session > Agent > global；Session Binding 固定具体 revision；旧 Session 不静默改变；Turn Route 可审计。
 - **失败与恢复**：Profile 删除/凭据缺失/模型不启用时失败关闭。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PROVIDER-010：Provider 安全与边界
 
@@ -472,7 +472,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：完整 Key/Authorization/credential secret 零出现；Renderer 无读回；短租约不可序列化；删除先删 Vault。
 - **失败与恢复**：安全 Backend 不可用时失败关闭，不退回明文文件或环境变量。
 - **验证层**：Rust + Node + 秘密扫描
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 9. Agent Package
 
@@ -487,7 +487,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：只显示内置/本地可信 Package；远端入口明确关闭；无生产网络副作用。
 - **失败与恢复**：新目录失败保留 LKG，不清空现有 Agent。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PACKAGE-002：权限预览、批准与原子安装
 
@@ -500,7 +500,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：未知/永久批准不接受；Artifact、签名、Manifest、权限全部通过后原子切换；同 Host Catalog 立即刷新。
 - **失败与恢复**：中断或刷新失败保留旧 Active/LKG；无半安装目录。
 - **验证层**：Rust + Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PACKAGE-003：更新、重启恢复与回滚
 
@@ -513,7 +513,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：成功原子切换；失败保留 v1；重启对账一致；回滚后运行时、Catalog 和 Session 身份不乱。
 - **失败与恢复**：版本反回滚、跨 Agent 或摘要不一致拒绝。
 - **验证层**：Rust + Node
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PACKAGE-004：签名、Trust、Registry 与 Release 失败矩阵
 
@@ -526,7 +526,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：任何一层失败都在消费前停止；只拒绝新更新并保留 LKG；无原始 secret。
 - **失败与恢复**：生产 Root/Publisher/endpoint 仍关闭，不把 E0/E1 演练写成生产通过。
 - **验证层**：Rust + Node
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-PACKAGE-005：Agent Skill 双渠道一致性
 
@@ -539,7 +539,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：可复现且跨渠道一致；任何重复/缺失/未知 Host 或 Adapter 都拒绝。
 - **失败与恢复**：客户端安装失败不影响宿主 Skill 已有安装，反之亦然。
 - **验证层**：Rust
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 10. 后台 Host 与设置
 
@@ -554,7 +554,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Leader 与 Main Session 未因 UI 生命周期销毁；新窗口重新附着。
 - **失败与恢复**：用户显式“退出全部”合同之外，普通关窗不杀持久 Agent。
 - **验证层**：Rust + Node + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-HOST-002：Leader 崩溃与自动恢复
 
@@ -567,7 +567,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：新 Leader 启动；Core/Host 双准入；同一 Main Session 与 Workspace 恢复。
 - **失败与恢复**：恢复失败显示 Host 状态，不循环启动多份 Leader。
 - **验证层**：Rust + Node + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-HOST-003：系统登录启动开关
 
@@ -580,7 +580,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：设置持久；关闭时不注册；开启时隐藏启动单一后台主进程。
 - **失败与恢复**：unsigned 内部包不把源码级支持冒充签名安装包 Login Item E2E。
 - **验证层**：Node + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-HOST-004：Host 请求排队与认证更新竞态
 
@@ -593,7 +593,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：ACP Client 顺序等待 bootstrap；旧授权在新结果落定前仍有效；无 `Authentication required` 闪烁。
 - **失败与恢复**：新结果明确失败时排队请求统一失败关闭。
 - **验证层**：Node + Electron
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-HOST-005：资源和秘密边界
 
@@ -606,7 +606,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：单 Host/Leader；按 Agent/Main Session 隔离；Package 只得到声明能力；凭据只由 Host 解析。
 - **失败与恢复**：异常 Agent 不获得跨 Agent/跨账号/跨 Provider secret。
 - **验证层**：Rust + Node + 人工
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 11. 内部构建、交付与留存
 
@@ -621,7 +621,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：所有摘要和 commit 绑定；DMG/ZIP 内容一致；明确标注内部 unsigned。
 - **失败与恢复**：dirty source、版本不一致、摘要或 receipt 错误时阻断。
 - **验证层**：Node + 安装包
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-RELEASE-002：始终只保留一个内部测试包
 
@@ -634,7 +634,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：Downloads 只有一份当前交付目录；`desktop/dist/internal` 只有一份当前证据；无遗留挂载。
 - **失败与恢复**：新包未通过前不得删旧包；清理不碰用户状态、Keychain 或源码。
 - **验证层**：Node + 安装包 + 人工盘点
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-RELEASE-003：生产发布门保持关闭
 
@@ -647,7 +647,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：`authority=none`、`approvalStatus=not_approved`、生产 candidate blocked；不上传、不 tag、不发布更新。
 - **失败与恢复**：任何命令试图越过门禁时立即停止并保留审计。
 - **验证层**：Node + 安装包
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## 12. 本轮执行记录
 
@@ -657,7 +657,11 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 
 ### 2026-07-31 基线执行
 
-- 执行 commit：功能 commit 待 clean push 后回填；本节先记录工作树验证。
+- 功能与安装包 commit：
+  `8df16f8c9c4510b1a6f9bd514001ce5a9929e61e`，已推送 `origin/main`。
+- 用例结果：45 条中 42 条通过、3 条外部真实服务阻断、0 条待执行、0 条失败。
+  阻断项为 GitHub OAuth、修复后的 GLM Coding Plan 真实付费推理和 Kimi Coding
+  Plan 真实服务；其余用例至少完成一个声明验证层，不能把设计状态冒充结果。
 - 自动化结果：
   - AgentMesh360 Rust：197 passed / 1 ignored / 0 failed；
   - GLM 5.2 定向单元与本机 wire：2 passed / 0 failed；
@@ -668,12 +672,30 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - Electron 交互结果：Provider、Conversation、Package 三组 smoke 通过。新增
   Provider/Conversation 草稿跨侧栏与状态刷新恢复、跨账号清理、成功保存清理、
   password input value 不进入 HTML markup 等断言。
-- 安装包结果：待 clean pushed commit 生成唯一 unsigned internal arm64 包后回填。
+- 安装包结果：
+  - receipt：`desktop_internal_p6_8df16f8c9c45_arm64`；
+  - Desktop `0.1.1`，Host runtime
+    `1000.1.1785430165001 (8df16f8)`；
+  - DMG：181382550 bytes，
+    `d7ec046848ab085bd5b9d6b92125bd644b238c6a89e59a1bfac33c2436c54fda`；
+  - ZIP：181194924 bytes，
+    `53fcbf554d15f069c31882ce2281987e564c6a6d350e813fa0a13c9351494fe8`；
+  - receipt verifier、构建目录双摘要、`hdiutil verify`、交付副本逐字节比较和
+    覆盖安装均通过。
 - 外部真实服务：GLM Coding Plan 模型发现已由 owner 实际完成；修复后的付费最小推理
   尚无本轮费用授权，不能由开发 Agent 擅自重试。GitHub OAuth 与 Kimi Coding Plan
   也没有本轮外部真实服务凭据/授权，保留为明确阻断。
-- 真实桌面操作：当前安装版确认十个 Provider 入口；使用本地假 Key 复现并发现
-  Provider/对话草稿在侧栏切换后清空。假 Key 没有点击验证或保存、没有离开本机。
-- 已知失败：旧包 `glm-5.2` 空内容误判已在代码和 wire 回归中修复；草稿丢失也已修复。
-  两项都必须在新包安装后再次做客户端复验。
+- 已安装客户端验收：
+  `run-installed-ui-acceptance.mjs --port <loopback>` 在真实 owner 账户上通过：
+  有效订阅恢复、持久 Host 连接、1 个常驻 Agent、10 个官方 Provider、Provider
+  假 Key 草稿和对话草稿跨侧栏保留；假值随后清空，Provider 请求 0、AgentMesh
+  credits 0。
+- Host 接管：新 Bridge 发现旧 Leader 版本低于
+  `1000.1.1785430165001`，通过 `version_floor` 完成让位和新 PID 接管；账户、
+  Agent、Session 与工作区状态保留。
+- 单包留存：Downloads 只保留
+  `AgentMesh360-Internal-Test-2026-07-31-8df16f8-arm64`，构建证据只保留对应
+  `desktop/dist/internal/0.1.1-8df16f8c9c45-arm64`；旧包、旧证据、临时 App、
+  DMG 挂载和仓库 `target/` 均已清理。
+- 当前失败：0。GLM 真实付费推理等三项是外部验证阻断，不是本机回归失败。
 - Kimi：按 owner 指示暂停，使用主 Agent 加强自主复核，不冒充独立交叉测试。

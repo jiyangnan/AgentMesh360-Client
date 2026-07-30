@@ -7457,7 +7457,7 @@ owner UAT 事实：
   `17250` 保持常驻时覆盖安装并启动 `0.1.1`，旧 PID 自动退出；
 - 当前新 Electron、stdio Bridge、Leader 分别为 PID
   `27515 / 27577 / 22000`，均从 `/Applications/AgentMesh360.app` 正常启动；
-- owner 账户仍恢复为 `jiyangnan@gmail.com`，本地身份凭据文件和状态目录保留；
+- owner 账户仍正常恢复，本地身份凭据文件和状态目录保留；
   未读取 Key 或会话正文，运行只新增正常缓存/锁文件；
 - 真实 Provider 页面显示 Catalog revision 3，供应商下拉逐项可见 OpenAI、xAI、
   Anthropic、Google Gemini、DeepSeek、智谱 GLM API、智谱 GLM Coding Plan、
@@ -7485,7 +7485,7 @@ owner UAT 事实：
 
 ### 循环 139：产品用户旅程测试基线、GLM 5.2 连接修复与草稿恢复
 
-状态：功能与自动化已完成；等待 clean pushed commit 的单包构建、安装复验和最终留存
+状态：完成
 
 owner UAT 与根因：
 
@@ -7533,11 +7533,35 @@ owner UAT 与根因：
   owner Key，也不把 loopback 回归冒充真实 Provider 通过；
 - Kimi 按 owner 指示继续暂停，本轮由主 Agent 自主复核。
 
-计划复盘与下一步：
+构建、真实安装与用户旅程结果：
+
+- 功能 commit `8df16f8c9c4510b1a6f9bd514001ce5a9929e61e` 已推送
+  `origin/main`；从该 clean pushed commit 生成
+  `desktop_internal_p6_8df16f8c9c45_arm64`；
+- Desktop 为 `0.1.1`，打包 Host 为
+  `grok 1000.1.1785430165001 (8df16f8)`；旧 Leader 已通过
+  `version_floor` 让位，新 Leader 接管后 owner 账号、订阅、常驻 Agent 和本地状态
+  均恢复；
+- DMG：181382550 bytes，
+  `d7ec046848ab085bd5b9d6b92125bd644b238c6a89e59a1bfac33c2436c54fda`；
+- ZIP：181194924 bytes，
+  `53fcbf554d15f069c31882ce2281987e564c6a6d350e813fa0a13c9351494fe8`；
+- receipt verifier、双 `SHA256SUMS`、`hdiutil verify`、交付副本逐字节比较和真实
+  覆盖安装全部通过；
+- 新增已安装客户端 loopback 验收脚本；真实 owner 账户复验证明有效订阅、持久 Host、
+  1 个常驻 Agent、10 个官方 Provider、Provider 假 Key 草稿和对话草稿跨侧栏恢复；
+  假值随后清空，Provider 请求 0、AgentMesh credits 0；
+- 45 条用户旅程最终为 42 通过、3 个外部真实服务阻断、0 待执行、0 失败；阻断项是
+  GitHub OAuth、修复后的 GLM 真实付费最小推理和 Kimi Coding Plan 真实服务；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-8df16f8-arm64/`；
+- 已删除 `79005ea` 上一包、上一份构建证据、临时旧 App、测试挂载和临时采样；
+  Downloads 与 `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 不存在。
+
+计划复盘与下一轮：
 
 - 本轮没有新增 Provider、改变 BYOK/订阅硬门、实现 fallback、读取真实 Key、触碰
   Package 生产 Trust、P7/P8、Apple Developer ID、公证或在线分发；
-- 当前只剩从 clean pushed commit 构建 unsigned internal arm64 包、覆盖安装验证
-  新 Host 接管与草稿修复、确认唯一包留存，再回填最终 receipt 和摘要；
-- 包交付后下一产品切片仍是首次使用引导，把“配置 Provider → 激活/打开 Agent →
+- 本轮代码、测试基线、真实安装和单包留存均已关闭；下一产品切片仍是首次使用引导，
+  把“配置 Provider → 激活/打开 Agent →
   开始对话”的路径直接展示给首次用户；不会因本轮测试体系建设改变既定产品顺序。
