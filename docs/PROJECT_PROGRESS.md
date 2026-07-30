@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-29
+最近更新：2026-07-30
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -37,12 +37,12 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 no-authority preflight 已完成，真实 Apple 签名/公证和 Desktop Candidate 仍需独立授权 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 no-authority preflight 与 unsigned internal builder 合同已完成，下一步以 clean pushed commit 生成并验证首份内部 DMG/ZIP；真实 Apple 签名/公证和生产 Desktop Candidate 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
 | Provider UI | Profile、global/agent Assignment、三档显式 Probe、付费确认与非秘密历史已完成；Catalog 已加入通过真实契约的 Google Gemini 预设 | 保持保存零网络、真实 Probe 双重确认和无静默 fallback |
-| 动态 Agent Package | H0/H1 至 H2d4、P0-P5 已完成；P5 v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary、Registry-first 清理以及云端/本机资源归零均已真实通过；场景还暴露并修复四项真实合同问题 | P5 已关闭且生产 Trust/Registry 常量为空；P6 只完成 blocked preflight，未取得新授权前不签名、公证、上传或发布 Desktop Candidate |
+| 动态 Agent Package | H0/H1 至 H2d4、P0-P5 已完成；P5 v2 baseline、隔离客户端、Grok Host、owner OAuth/订阅、真实 Gemini BYOK、双代 Release Chain、61/61 Registry-last 发布、21/21 Package canary、Registry-first 清理以及云端/本机资源归零均已真实通过；场景还暴露并修复四项真实合同问题 | P5 已关闭且生产 Trust/Registry 常量为空；P6 unsigned internal 子阶段不得修改生产 Trust/Registry，也不得被误写成 Package 或 Desktop 生产发布 |
 
 ## 开发循环记录
 
@@ -6829,3 +6829,48 @@ credential、隔离 Client/state/build 尚待 finalizer 销毁
 - 对照产品蓝图与生产准备计划，本轮没有把“继续开发”扩大解释为 Apple credential
   或发布 authority，只关闭 P6 no-authority preflight。下一步真实候选必须先取得
   单独批准；P7/P8、生产发布和外部 cohort 继续关闭。
+
+### 循环 128：P6 未签名内部体验版构建合同
+
+状态：源码实现与合同回归已完成；等待 clean pushed executor 生成首份真实内部
+DMG/ZIP。该阶段不关闭生产 R4
+
+产品决策与实现：
+
+1. 用户确认在客户端达到能够承担 Apple Developer Program 年费的规模前，macOS
+   采用未签名、未公证的内部体验版；首次打开只指导单应用“隐私与安全性 → 仍要
+   打开”，不要求全局启用“任何来源”；
+2. `npm run build:mac` 现在显式路由到 `build:mac:internal`；执行器只接受 clean
+   且已经推送到 `origin/main` 的 commit，并拒绝已识别的 Apple、CSC、notarization
+   和发布凭据；
+3. Host 使用 `/private/tmp` 隔离 Cargo target 构建，Electron 固定
+   `identity: null` 与 `--publish never`；失败删除不完整输出，结束销毁临时 Cargo
+   目录，不恢复仓库根 `target/`；
+4. 每次成功先逐字节核对 unpacked `.app` 内 Host 与 release Host，并确认可执行位；
+   随后删除 unpacked/build 调试文件，只保留当前架构的一份 DMG、一份 ZIP、strict
+   `unsigned-internal-build-v1.json` 和 `SHA256SUMS`；symlink、路径穿越、大小/摘要
+   漂移、重复 JSON key、更新 metadata 或额外能力声明全部失败关闭；
+5. receipt 固定 Developer ID、公证、Apple credential、外部上传、自动更新和
+   `productionR4Satisfied` 全部为 false；同渠道 SHA-256 不冒充发布者身份，分发时
+   仍需从官网或对应 Git commit 独立核对；
+6. 当前 manifest 只要出现 publish、notarize、签名 identity、可执行 builder hook
+   或 `electron-updater` 就拒绝内部构建，避免未来配置漂移静默扩大权限；
+7. 新增中文内部发行说明，明确本阶段不做 Developer ID、Apple service、自动更新、
+   外部 cohort 或生产 R4。
+
+自主验证与计划复盘：
+
+- 新模块 16/16、与 P6 preflight 合计 31/31；完整工具链沙箱内
+  278 passed / 4 个 loopback Origin 因监听权限失败，沙箱外对应文件 5/5 通过；
+- 桌面语法检查通过，完整桌面测试沙箱外 114 passed / 3 个真实 Host 环境门
+  skipped / 0 failed；离线依赖审计 0 vulnerability；
+- 联网 `npm audit` 因会向 npm 服务发送依赖元数据而未获准，本轮没有绕过该边界；
+- Kimi 继续按用户要求暂停，本轮由主 Agent 复核构建环境、subprocess 参数、临时
+  目录清理、流式摘要、Schema/receipt 一致性、生产门关闭和秘密扫描；
+- 本轮没有执行真实 Host/Electron build，没有 Apple/Provider 请求、credits、
+  Keychain、上传、外部 cohort 或费用；新增 executor 必须先提交并推送才能运行；
+- 对照原计划，本轮只是 P6 下的受限内部工程子阶段，不改变 Cycle 127 的生产 R4
+  blocked 结论，也不提前实现自动更新或启动 P7/P8；
+- 下一轮先冻结并推送本 executor，再执行一次真实 arm64 内部构建，复验 DMG/ZIP、
+  Host extra resource、receipt/SHA-256、临时 `target` 清理和无上传事实；通过后才
+  进入未签名安装、首次打开与持久 Host 生命周期矩阵。

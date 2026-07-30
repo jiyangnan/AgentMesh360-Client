@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/desktop-internal-build-v1.json",
+  "title": "AgentMesh360 unsigned internal desktop build receipt v1",
+  "description": "Non-production receipt for a macOS DMG and ZIP built without Developer ID, notarization, publishing, or automatic updates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "receiptId",
+    "distributionClass",
+    "buildStatus",
+    "source",
+    "artifactPolicy",
+    "artifacts",
+    "instructions",
+    "evidence",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "receiptId": {
+      "type": "string",
+      "pattern": "^desktop_internal_p6_[0-9a-f]{12}_(arm64|x64)$"
+    },
+    "distributionClass": {
+      "type": "string",
+      "const": "unsigned_internal_only"
+    },
+    "buildStatus": {
+      "type": "string",
+      "const": "passed"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "desktopVersion",
+        "bundleId",
+        "productName",
+        "architecture",
+        "minimumMacOSVersion",
+        "desktopPackageJsonSha256",
+        "desktopPackageLockSha256"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "desktopVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "bundleId": {
+          "type": "string",
+          "const": "com.agentmesh360.client"
+        },
+        "productName": {
+          "type": "string",
+          "const": "AgentMesh360"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "arm64",
+            "x64"
+          ]
+        },
+        "minimumMacOSVersion": {
+          "type": "string",
+          "const": "not_frozen_for_internal"
+        },
+        "desktopPackageJsonSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "desktopPackageLockSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "artifactPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "developerIdSigned",
+        "notarized",
+        "appleCredentialsRead",
+        "externalUploadPerformed",
+        "publishProviderConfigured",
+        "automaticUpdateEnabled",
+        "packagedHostVerified",
+        "manualGatekeeperReviewRequired",
+        "sha256Required",
+        "productionR4Satisfied"
+      ],
+      "properties": {
+        "developerIdSigned": {
+          "type": "boolean",
+          "const": false
+        },
+        "notarized": {
+          "type": "boolean",
+          "const": false
+        },
+        "appleCredentialsRead": {
+          "type": "boolean",
+          "const": false
+        },
+        "externalUploadPerformed": {
+          "type": "boolean",
+          "const": false
+        },
+        "publishProviderConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "automaticUpdateEnabled": {
+          "type": "boolean",
+          "const": false
+        },
+        "packagedHostVerified": {
+          "type": "boolean",
+          "const": true
+        },
+        "manualGatekeeperReviewRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "sha256Required": {
+          "type": "boolean",
+          "const": true
+        },
+        "productionR4Satisfied": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "file",
+          "sizeBytes",
+          "sha256"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "dmg",
+              "zip"
+            ]
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}\\.(dmg|zip)$"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483648
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "instructions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document",
+        "gatekeeperAction",
+        "globalGatekeeperDisableRequired"
+      ],
+      "properties": {
+        "document": {
+          "type": "string",
+          "const": "docs/operations/P6_UNSIGNED_INTERNAL_DISTRIBUTION.md"
+        },
+        "gatekeeperAction": {
+          "type": "string",
+          "const": "privacy_and_security_open_anyway"
+        },
+        "globalGatekeeperDisableRequired": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildNetworkScope",
+        "providerRequests",
+        "agentMeshCredits",
+        "appleServiceRequests",
+        "currencyCostUsd"
+      ],
+      "properties": {
+        "buildNetworkScope": {
+          "type": "string",
+          "const": "dependency_and_build_tooling_only"
+        },
+        "providerRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "agentMeshCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "appleServiceRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "currencyCostUsd": {
+          "type": "integer",
+          "const": 0
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1016,3 +1016,26 @@ Session Binding、辅助 Provider 路由与 electron-builder 配置，确认计�
 - 本轮只关闭 P6 阻断式预检，不关闭 R4。真实 Desktop Candidate 必须等待
   Developer ID/notarization、更新渠道、候选版本/commit/架构/macOS floor、测试
   设备/cohort、rollback、窗口、预算和 evidence retention 的独立批准。
+
+## 61. 循环 128 P6 unsigned internal engineering
+
+用户确认 Apple Developer Program 延后到客户端具备可持续用户规模后购买。在此之前
+允许 P6 增加一个不关闭 R4 的内部工程子阶段：
+
+- 产物只能标记为 `unsigned_internal_only`，不能叫 production candidate；
+- 只从 clean 且已推送的 `origin/main` 构建当前架构 DMG/ZIP；
+- 明确禁用 identity 自动发现和上传，拒绝 Apple/CSC/发布 credential、notarize、
+  publish、可执行 builder hook 与 `electron-updater` 配置；
+- 输出 receipt 和 SHA-256，指导单应用“仍要打开”，不要求全局关闭 Gatekeeper；
+- 自动更新、外部 cohort、Apple service、生产常量和 P7/P8 继续关闭；
+- SHA-256 只证明字节一致，不冒充 Developer ID 发布者身份。
+
+Cycle 128 已实现 strict Schema、构建器、Host 字节/可执行位核对、流式 verifier、
+16 项定向负向测试和中文
+内部发行说明；当前只完成 executor 源码，尚未执行真实构建。下一步必须先提交、推送
+该 executor，再在 `/private/tmp` 隔离 Cargo target 中构建一次 arm64 DMG/ZIP，
+核对 Host extra resource、receipt/SHA-256 和清理终态。真实 build 通过后，才进入
+未签名安装、首次打开、Login Item 与持久 Host 生命周期验证。
+
+该分支没有改变生产顺序：未来公开发行仍必须回到 Cycle 127 的 Developer ID、
+notarization、Hardened Runtime、entitlement、更新真实性、rollback 和 18 场景门。

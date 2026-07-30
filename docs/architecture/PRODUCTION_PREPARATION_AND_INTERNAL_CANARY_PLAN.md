@@ -1436,3 +1436,24 @@ LKG rollback、Login Item/Host 恢复和卸载状态策略。18 项真实候选�
 必须先取得 Developer ID、notarization、更新渠道、候选版本/commit/架构/macOS floor、
 测试设备/cohort、rollback、窗口、预算和 evidence retention 的独立批准；否则
 P6-P8 继续关闭。
+
+## 56. Cycle 128 P6 未签名内部工程检查点
+
+本检查点吸收新的阶段性发行决策，但不修改 R4：
+
+1. Apple Developer Program、Developer ID 与 notarization 暂缓到规模化公开发行；
+2. 当前只允许 `unsigned_internal_only` DMG/ZIP，用于开发、自用和明确知情的种子
+   用户；
+3. 构建必须绑定 clean pushed commit，禁用 identity 自动发现和 publish，拒绝任何
+   Apple/CSC/发布 credential 以及 manifest 中的 notarize/publish/updater/hook；
+4. Cargo target 只存在于本机临时边界，构建后删除；仓库根 `target/` 不得恢复；
+5. 产物必须先逐字节核对 unpacked `.app` 内 Host 与 release Host 及可执行位，再
+   删除中间目录；strict receipt 与 SHA-256 流式复验普通文件、大小和摘要；
+6. 首次打开只走 macOS 单应用“仍要打开”，不得把全局关闭 Gatekeeper 写成要求；
+7. receipt 必须声明签名、公证、自动更新、外部上传和生产 R4 均未完成；
+8. 真实内部 build、安装、Login Item、Host 生命周期按独立后续检查点依次执行；
+9. P7/P8、生产上传、外部 cohort 与 Apple service 继续关闭。
+
+Cycle 128 已完成构建合同源码和 16 项定向测试；由于执行器要求 clean pushed commit，
+真实 DMG/ZIP 构建留给下一检查点。此设计不是 Developer ID 的替代品，也不能用
+同渠道 checksum 声称发布者身份。公开发行仍回到 Cycle 127 的完整 18 场景。

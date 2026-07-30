@@ -172,12 +172,18 @@ AGENTMESH360_SCREENSHOT=/tmp/agentmesh360-background.png \
   ./node_modules/.bin/electron tests/visual-smoke.js
 ```
 
-macOS 打包命令会先构建 release Host，再将它以
-`Resources/bin/agentmesh360-host` 打入应用：
+当前 macOS 打包命令只生成未签名、未公证、不会上传的内部体验版。它要求 clean
+且已经推送到 `origin/main` 的 commit，使用 `/private/tmp` Cargo target 构建
+release Host，再将 Host 以 `Resources/bin/agentmesh360-host` 打入应用：
 
 ```bash
 npm run build:mac
 ```
+
+成功后会在 `desktop/dist/internal/` 下生成 DMG、ZIP、strict receipt 与
+`SHA256SUMS`。使用和 macOS 单应用“仍要打开”说明见
+[`P6_UNSIGNED_INTERNAL_DISTRIBUTION.md`](../docs/operations/P6_UNSIGNED_INTERNAL_DISTRIBUTION.md)。
+内部体验版不是生产 R4，也不要求或建议全局关闭 Gatekeeper。
 
 正式分发前仍需补齐 Apple Developer ID 签名、公证、自动更新与发布流水线。
 签名安装包中的 macOS Login Item 注册/批准/升级、Electron 主进程自身守护以及受控
