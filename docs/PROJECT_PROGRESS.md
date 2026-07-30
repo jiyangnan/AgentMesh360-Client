@@ -7395,7 +7395,7 @@ owner UAT 问题与产品判断：
 
 ### 循环 138：内部包安装后旧持久 Host 未轮换
 
-状态：代码与定向回归完成，等待真实安装升级复验和单包替换
+状态：完成
 
 owner UAT 事实：
 
@@ -7423,7 +7423,7 @@ owner UAT 事实：
 当前验证：
 
 - 桌面 Node：122 passed / 3 个真实 Host 环境门 skipped / 0 failed；
-- 内部构建器：18 passed / 0 failed；
+- 内部构建器：19 passed / 0 failed；
 - Leader Rust：30 passed / 0 failed；
 - 专属 runtime version 方向定向测试：1 passed / 0 failed；
 - `xai-grok-version` 与 `xai-grok-shell` Clippy `-D warnings` 通过；
@@ -7447,9 +7447,38 @@ owner UAT 事实：
   `xai-grok-version` 的 build script 增加环境变化追踪；下一候选包必须在真实
   `--version` 输出中同时证明版本与 commit，避免只修半条版本链路。
 
+真实安装与交付证据：
+
+- 修复 commits `882ba9e`、`a4f6d8a`、`79005ea` 已推送 `origin/main`；
+- 从最终 clean pushed commit `79005ea2f0744251cd00c28963aaca8742ea27ba`
+  构建 Desktop `0.1.1`；打包 Host 实际输出
+  `grok 1000.1.1785426085001 (79005ea)`；
+- 旧安装基线为 Desktop `0.1.0 / Host 0.2.106 (9e6ea87)`；旧 Leader PID
+  `17250` 保持常驻时覆盖安装并启动 `0.1.1`，旧 PID 自动退出；
+- 当前新 Electron、stdio Bridge、Leader 分别为 PID
+  `21785 / 21973 / 22000`，均从 `/Applications/AgentMesh360.app` 运行；
+- owner 账户仍恢复为 `jiyangnan@gmail.com`，本地身份凭据文件和状态目录保留；
+  未读取 Key 或会话正文，运行只新增正常缓存/锁文件；
+- 真实 Provider 页面显示 Catalog revision 3，供应商下拉逐项可见 OpenAI、xAI、
+  Anthropic、Google Gemini、DeepSeek、智谱 GLM API、智谱 GLM Coding Plan、
+  Kimi 国际/中国 API 与 Kimi Coding Plan；
+- 最终 receipt `desktop_internal_p6_79005ea2f074_arm64`、双
+  `SHA256SUMS`、`hdiutil verify` 与 Downloads 交付副本逐字节复验全部通过；
+- DMG：181398630 bytes，
+  `d092ab82af2cd5c2b1a1c70956c11cb2825ea75e62437b0332cc80f73be162e2`；
+- ZIP：181183125 bytes，
+  `15ebc6ea5360fa7368ff443dda132fa54688f1bf50ef6f1c5ef1eb05032ef00d`；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-79005ea-arm64/`；
+- 已删除 `9e6ea87` 旧交付包与旧构建证据、诊断 Rust target、临时旧 App 备份，
+  并卸载 5 个遗留旧 DMG 与本轮验证 DMG；最终只保留一份 Downloads 包与一份
+  `desktop/dist/internal` 构建证据，仓库根 `target/` 不存在；
+- 构建、复验和可见 UI 检查没有 Provider 请求、AgentMesh credits、Apple 服务、
+  外部上传或费用；Kimi 交叉测试继续按 owner 指令暂停，本轮由主 Agent 自主复核。
+
 计划复盘：
 
-- 这是 Cycle 137 的真实安装回归，不新增产品能力；只有修复包完成真实“旧 Leader
-  运行 → 安装新包 → 新 Leader 自动接管 → 十个 Provider 可见”后才关闭；
-- 修复交付后下一产品切片仍是首次使用引导，不提前进入价格、余额、自动路由、
+- 这是 Cycle 137 的真实安装回归，没有新增产品能力；真实“旧 Leader 运行 →
+  安装新包 → 新 Leader 接管 → 十个 Provider 可见”已完成，Cycle 138 关闭；
+- 下一产品切片仍是首次使用引导，不提前进入价格、余额、自动路由、
   P7/P8 或在线分发。

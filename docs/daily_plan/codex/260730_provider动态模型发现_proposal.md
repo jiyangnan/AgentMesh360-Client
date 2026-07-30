@@ -1,8 +1,8 @@
 # Provider 动态模型发现与连接诊断
 
-更新时间：2026-07-30  
-状态：owner UAT 升级回归修复中
-进度：85%
+更新时间：2026-07-31
+状态：完成
+进度：100%
 
 ## 本轮目标
 
@@ -88,8 +88,8 @@
 - [x] 升级 Desktop 版本并避免 ACP `clientVersion` 手工漂移
 - [x] 隔离 Host `--version` 构建门禁，避免读取用户 Grok channel 缓存
 - [x] 统一 Pager CLI、Leader、ACP 与 Version crate 的 runtime version 来源
-- [ ] 补齐真实安装升级回归
-- [ ] 更新进展、提交推送、生成并只保留一份修复包
+- [x] 补齐真实安装升级回归
+- [x] 更新进展、提交推送、生成并只保留一份修复包
 
 ### 验收口径
 
@@ -100,3 +100,18 @@
   Kimi 国际/中国 API与 Kimi Coding Plan；
 - 旧版本客户端不能驱逐更新版本的 Leader；
 - 新包完成 receipt、摘要、DMG、交付副本和真实升级复验后才删除上一包。
+
+### 升级回归完成证据
+
+- 修复 commits：`882ba9e`、`a4f6d8a`、`79005ea`，均已推送
+  `origin/main`；
+- 最终内部包：Desktop `0.1.1`，Host runtime
+  `1000.1.1785426085001 (79005ea)`；
+- 真实旧 Leader PID `17250` 在新 Bridge 启动后退出，新 Electron、stdio Bridge、
+  Leader 由 PID `21785 / 21973 / 22000` 接管；
+- 账户 `jiyangnan@gmail.com` 与本地状态路径保留；Provider 页面 Catalog revision
+  为 3，十个官方入口在真实下拉菜单中完整可见；
+- receipt `desktop_internal_p6_79005ea2f074_arm64`、双 artifact 摘要、
+  `hdiutil verify`、Downloads 交付副本逐字节复验全部通过；
+- 最终只保留 `79005ea` 的一份 Downloads 包和一份内部构建证据；旧包、旧证据、
+  诊断 target、临时 App 备份与六个遗留 DMG 挂载均已清理。

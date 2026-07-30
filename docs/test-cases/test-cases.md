@@ -97,8 +97,22 @@
 
 ### 验收标准
 
-- [ ] 每个内部构建派生并嵌入可审计、单调递增的 Host runtime SemVer；
-- [ ] 新 Bridge 自动请求旧 Leader 让位并由当前打包 Host 接管；
-- [ ] 轮换不删除或重建用户持久数据；
-- [ ] Provider Catalog 来自新 Leader，十个官方入口完整可见；
-- [ ] 降级客户端不能替换较新 Leader。
+- [x] 每个内部构建派生并嵌入可审计、单调递增的 Host runtime SemVer；
+- [x] 新 Bridge 自动请求旧 Leader 让位并由当前打包 Host 接管；
+- [x] 轮换不删除或重建用户持久数据；
+- [x] Provider Catalog 来自新 Leader，十个官方入口完整可见；
+- [x] 降级客户端不能替换较新 Leader。
+
+### 通过证据（2026-07-31）
+
+- 已安装旧包 `0.1.0 / Host 0.2.106 (9e6ea87)` 并拉起旧 Leader PID `17250`；
+- 保持该 PID 常驻，安装并启动 `0.1.1` 后旧 PID 自动退出；当前 Electron、stdio
+  Bridge 与新 Leader 分别为 PID `21785 / 21973 / 22000`；
+- 已安装 Host 实际输出
+  `grok 1000.1.1785426085001 (79005ea)`，严格高于旧 runtime；
+- owner 账户仍恢复为 `jiyangnan@gmail.com`，身份凭据文件存在，本地状态路径未被
+  删除；运行时只新增正常缓存/锁文件；
+- 真实 Provider 页面显示 Catalog revision 3；供应商下拉菜单逐项可见 OpenAI、
+  xAI、Anthropic、Google Gemini、DeepSeek、智谱 GLM API、智谱 GLM Coding Plan、
+  Kimi API（国际）、Kimi API（中国）与 Kimi Coding Plan；
+- 降级方向由 Leader 30 项 Rust 回归覆盖，旧 runtime 不得驱逐新 runtime。
