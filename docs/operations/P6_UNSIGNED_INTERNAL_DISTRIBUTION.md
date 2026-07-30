@@ -106,3 +106,6 @@ rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
 
 这些摘要只绑定上述 commit 的本地内部产物；未来任何重新构建都必须产生新的 receipt
 与摘要，不能沿用本节的数值。
+
+隔离安装、首次启动、Login Item 与打包 Host 的后续矩阵见
+[`P6_UNSIGNED_INTERNAL_INSTALL_LIFECYCLE.md`](P6_UNSIGNED_INTERNAL_INSTALL_LIFECYCLE.md)。
