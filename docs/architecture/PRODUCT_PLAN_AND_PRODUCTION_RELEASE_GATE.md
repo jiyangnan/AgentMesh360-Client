@@ -1083,3 +1083,21 @@ arm64 DMG/ZIP 完成真实 11/11 自动矩阵：
 Developer ID/notarization、更新/rollback、P7 Desktop canary 和 P8 Combined canary
 均继续 blocked。下一步若要给种子用户实际下载，必须先冻结受控下载渠道、Artifact
 摘要、设备/cohort、执行窗口、Abort Owner 与清理边界，不从本轮推断上传 authority。
+
+## 64. 循环 131 P6 验收留存与种子下载 no-authority preflight
+
+Cycle 130 的 11/11 结果已转换为 strict 非秘密验收记录，并由独立 Schema 与语义
+校验器固定 build/executor commit、receipt、DMG/ZIP 文件名/大小/摘要、场景顺序、
+未签名 Gatekeeper 事实、清理和零外部使用。种子下载预检按验收文件 SHA-256 绑定
+这些证据，防止终端结论或 Artifact provenance 在下一轮被静默替换。
+
+当前下载预检只能是 `authority=none / not_approved / blocked`。九项真实场景包括
+独立 checksum、上传/readback、浏览器 quarantine、Gatekeeper 首次拦截、单应用
+“仍要打开”、订阅门、Login Item 用户选择、卸载清理与渠道撤回；在渠道、cohort、
+设备、窗口、Abort Owner、预算和留存规则获得独立批准前全部不得执行。
+
+本轮校验器没有网络、subprocess、Keychain 或上传能力，实际网络、上传、真实账号、
+Provider、credits、Apple service、费用和生产 mutation 均为 0。此检查点只关闭证据
+与无授权预检，不关闭 R4，不授予 P7/P8，也不改变 Apple Developer Program 延后
+决策。下一真实动作必须使用单独的下载 canary 授权卡，且禁止全局关闭 Gatekeeper、
+自动更新或把未签名内部版称为生产发行。

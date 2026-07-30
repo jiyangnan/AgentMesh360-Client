@@ -1,0 +1,407 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/desktop-internal-acceptance-v1.json",
+  "title": "AgentMesh360 P6 Unsigned Internal Desktop Acceptance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "acceptanceId",
+    "environment",
+    "workPackage",
+    "executionStatus",
+    "distributionClass",
+    "artifact",
+    "matrix",
+    "gatekeeper",
+    "lifecycle",
+    "cleanup",
+    "externalUsage",
+    "independentReview",
+    "productionBoundary",
+    "recordedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "acceptanceId": {
+      "type": "string",
+      "pattern": "^desktop_internal_p6_[0-9]{8}_[0-9]{4}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e0"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p6_unsigned_internal"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "automated_matrix_passed"
+    },
+    "distributionClass": {
+      "type": "string",
+      "const": "unsigned_internal_only"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildReceiptId",
+        "buildReceiptSha256",
+        "commit",
+        "executorCommit",
+        "version",
+        "bundleId",
+        "architecture",
+        "zip",
+        "dmg"
+      ],
+      "properties": {
+        "buildReceiptId": {
+          "type": "string",
+          "pattern": "^desktop_internal_p6_[0-9a-f]{12}_(arm64|x64)$"
+        },
+        "buildReceiptSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "executorCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "bundleId": {
+          "type": "string",
+          "const": "com.agentmesh360.client"
+        },
+        "architecture": {
+          "type": "string",
+          "enum": [
+            "arm64",
+            "x64"
+          ]
+        },
+        "zip": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "sizeBytes",
+            "sha256"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^AgentMesh360-[A-Za-z0-9._-]+\\.zip$"
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483648
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        "dmg": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file",
+            "sizeBytes",
+            "sha256"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "pattern": "^AgentMesh360-[A-Za-z0-9._-]+\\.dmg$"
+            },
+            "sizeBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483648
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenarioCount",
+        "passedCount",
+        "scenarios"
+      ],
+      "properties": {
+        "scenarioCount": {
+          "type": "integer",
+          "const": 11
+        },
+        "passedCount": {
+          "type": "integer",
+          "const": 11
+        },
+        "scenarios": {
+          "type": "array",
+          "minItems": 11,
+          "maxItems": 11,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          }
+        }
+      }
+    },
+    "gatekeeper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "developerIdSigned",
+        "teamIdentifierPresent",
+        "notarized",
+        "deepCodesignPassed",
+        "assessmentPassed",
+        "manualOpenAnywayRequired",
+        "globalDisableRequired",
+        "quarantineDownloadUserFlowExecuted"
+      ],
+      "properties": {
+        "developerIdSigned": {
+          "type": "boolean",
+          "const": false
+        },
+        "teamIdentifierPresent": {
+          "type": "boolean",
+          "const": false
+        },
+        "notarized": {
+          "type": "boolean",
+          "const": false
+        },
+        "deepCodesignPassed": {
+          "type": "boolean",
+          "const": false
+        },
+        "assessmentPassed": {
+          "type": "boolean",
+          "const": false
+        },
+        "manualOpenAnywayRequired": {
+          "type": "boolean",
+          "const": true
+        },
+        "globalDisableRequired": {
+          "type": "boolean",
+          "const": false
+        },
+        "quarantineDownloadUserFlowExecuted": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signedOutFirstLaunchPassed",
+        "hostDetachedBeforeAdmission",
+        "singleInstanceWindowRestorePassed",
+        "loginItemRoundTripPassed",
+        "signedOutBackgroundExitPassed",
+        "persistentAgentRecoveryPassed",
+        "persistentAgentCount"
+      ],
+      "properties": {
+        "signedOutFirstLaunchPassed": {
+          "type": "boolean",
+          "const": true
+        },
+        "hostDetachedBeforeAdmission": {
+          "type": "boolean",
+          "const": true
+        },
+        "singleInstanceWindowRestorePassed": {
+          "type": "boolean",
+          "const": true
+        },
+        "loginItemRoundTripPassed": {
+          "type": "boolean",
+          "const": true
+        },
+        "signedOutBackgroundExitPassed": {
+          "type": "boolean",
+          "const": true
+        },
+        "persistentAgentRecoveryPassed": {
+          "type": "boolean",
+          "const": true
+        },
+        "persistentAgentCount": {
+          "type": "integer",
+          "const": 3
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "loginItemRestoredDisabled",
+        "temporaryProcessCount",
+        "temporarySocketCount",
+        "temporaryMountCount",
+        "temporaryDirectoryCount",
+        "repositoryRootTargetAbsent",
+        "systemApplicationInstallCount",
+        "userApplicationInstallCount"
+      ],
+      "properties": {
+        "loginItemRestoredDisabled": {
+          "type": "boolean",
+          "const": true
+        },
+        "temporaryProcessCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "temporarySocketCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "temporaryMountCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "temporaryDirectoryCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "repositoryRootTargetAbsent": {
+          "type": "boolean",
+          "const": true
+        },
+        "systemApplicationInstallCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "userApplicationInstallCount": {
+          "type": "integer",
+          "const": 0
+        }
+      }
+    },
+    "externalUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providerRequests",
+        "agentMeshCredits",
+        "appleServiceRequests",
+        "artifactUploads",
+        "productionMutations",
+        "currencyCostUsd"
+      ],
+      "properties": {
+        "providerRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "agentMeshCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "appleServiceRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "artifactUploads": {
+          "type": "integer",
+          "const": 0
+        },
+        "productionMutations": {
+          "type": "integer",
+          "const": 0
+        },
+        "currencyCostUsd": {
+          "type": "number",
+          "const": 0
+        }
+      }
+    },
+    "independentReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kimiStatus",
+        "countedAsAcceptanceGate",
+        "primaryAgentSelfReviewCompleted"
+      ],
+      "properties": {
+        "kimiStatus": {
+          "type": "string",
+          "const": "paused_by_user"
+        },
+        "countedAsAcceptanceGate": {
+          "type": "boolean",
+          "const": false
+        },
+        "primaryAgentSelfReviewCompleted": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "productionBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "productionR4Satisfied",
+        "p7Authorized",
+        "p8Authorized",
+        "seedDownloadCanaryAuthorized"
+      ],
+      "properties": {
+        "productionR4Satisfied": {
+          "type": "boolean",
+          "const": false
+        },
+        "p7Authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "p8Authorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "seedDownloadCanaryAuthorized": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh360.com/schemas/desktop-seed-download-preflight-v1.json",
+  "title": "AgentMesh360 P6 Seed Download No-Authority Preflight v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "preflightId",
+    "environment",
+    "workPackage",
+    "authority",
+    "approvalStatus",
+    "executionStatus",
+    "evidenceInput",
+    "channel",
+    "cohort",
+    "budget",
+    "scenarioMatrix",
+    "approvalCard",
+    "networkBoundary",
+    "safetyPolicy",
+    "evidencePolicy",
+    "stopConditions",
+    "nextAction"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "preflightId": {
+      "type": "string",
+      "pattern": "^desktop_seed_download_p6_e0_[0-9]{8}_[0-9]{4}$"
+    },
+    "environment": {
+      "type": "string",
+      "const": "e0"
+    },
+    "workPackage": {
+      "type": "string",
+      "const": "p6_unsigned_internal_seed_download"
+    },
+    "authority": {
+      "type": "string",
+      "const": "none"
+    },
+    "approvalStatus": {
+      "type": "string",
+      "const": "not_approved"
+    },
+    "executionStatus": {
+      "type": "string",
+      "const": "blocked"
+    },
+    "evidenceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptanceId",
+        "acceptanceSha256",
+        "artifactCommit",
+        "buildReceiptId",
+        "buildReceiptSha256",
+        "zipSha256",
+        "dmgSha256",
+        "automatedScenarioCount",
+        "quarantineDownloadUserFlowExecuted",
+        "productionR4Satisfied"
+      ],
+      "properties": {
+        "acceptanceId": {
+          "type": "string",
+          "pattern": "^desktop_internal_p6_[0-9]{8}_[0-9]{4}$"
+        },
+        "acceptanceSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "artifactCommit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "buildReceiptId": {
+          "type": "string",
+          "pattern": "^desktop_internal_p6_[0-9a-f]{12}_(arm64|x64)$"
+        },
+        "buildReceiptSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "zipSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "dmgSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "automatedScenarioCount": {
+          "type": "integer",
+          "const": 11
+        },
+        "quarantineDownloadUserFlowExecuted": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionR4Satisfied": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configured",
+        "provider",
+        "hostname",
+        "downloadPath",
+        "uploadCredentialConfigured",
+        "artifactUploaded",
+        "publicVisible",
+        "independentChecksumLocationConfigured",
+        "withdrawalTested"
+      ],
+      "properties": {
+        "configured": {
+          "type": "boolean",
+          "const": false
+        },
+        "provider": {
+          "type": "null"
+        },
+        "hostname": {
+          "type": "null"
+        },
+        "downloadPath": {
+          "type": "null"
+        },
+        "uploadCredentialConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "artifactUploaded": {
+          "type": "boolean",
+          "const": false
+        },
+        "publicVisible": {
+          "type": "boolean",
+          "const": false
+        },
+        "independentChecksumLocationConfigured": {
+          "type": "boolean",
+          "const": false
+        },
+        "withdrawalTested": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountCount",
+        "deviceCount",
+        "deviceAliases",
+        "ownerApproved",
+        "informedUnsignedRisk"
+      ],
+      "properties": {
+        "accountCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "deviceCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "deviceAliases": {
+          "type": "array",
+          "maxItems": 0,
+          "items": false
+        },
+        "ownerApproved": {
+          "type": "boolean",
+          "const": false
+        },
+        "informedUnsignedRisk": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providerRequests",
+        "agentMeshCredits",
+        "appleServiceRequests",
+        "uploadRequests",
+        "currencyCostUsd"
+      ],
+      "properties": {
+        "providerRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "agentMeshCredits": {
+          "type": "integer",
+          "const": 0
+        },
+        "appleServiceRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "uploadRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "currencyCostUsd": {
+          "type": "number",
+          "const": 0
+        }
+      }
+    },
+    "scenarioMatrix": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "status",
+          "reason"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          },
+          "status": {
+            "type": "string",
+            "const": "blocked"
+          },
+          "reason": {
+            "type": "string",
+            "const": "approval_missing"
+          }
+        }
+      }
+    },
+    "approvalCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channelProvider",
+        "hostname",
+        "downloadPath",
+        "artifactVisibility",
+        "deviceAliases",
+        "cohortAccountCount",
+        "startAt",
+        "stopAt",
+        "abortOwner",
+        "retentionPolicy",
+        "maxUploadRequests",
+        "maxCostUsd"
+      ],
+      "properties": {
+        "channelProvider": {
+          "type": "null"
+        },
+        "hostname": {
+          "type": "null"
+        },
+        "downloadPath": {
+          "type": "null"
+        },
+        "artifactVisibility": {
+          "type": "null"
+        },
+        "deviceAliases": {
+          "type": "array",
+          "maxItems": 0,
+          "items": false
+        },
+        "cohortAccountCount": {
+          "type": "integer",
+          "const": 0
+        },
+        "startAt": {
+          "type": "null"
+        },
+        "stopAt": {
+          "type": "null"
+        },
+        "abortOwner": {
+          "type": "null"
+        },
+        "retentionPolicy": {
+          "type": "null"
+        },
+        "maxUploadRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "maxCostUsd": {
+          "type": "number",
+          "const": 0
+        }
+      }
+    },
+    "networkBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preflightNetworkRequests",
+        "uploadAuthorized",
+        "externalVisibilityAuthorized",
+        "productionMutationAuthorized"
+      ],
+      "properties": {
+        "preflightNetworkRequests": {
+          "type": "integer",
+          "const": 0
+        },
+        "uploadAuthorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "externalVisibilityAuthorized": {
+          "type": "boolean",
+          "const": false
+        },
+        "productionMutationAuthorized": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "safetyPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unsignedInternalOnly",
+        "globalGatekeeperDisableForbidden",
+        "developerIdClaimForbidden",
+        "notarizationClaimForbidden",
+        "automaticUpdaterForbidden",
+        "realAccountLoginForbiddenBeforeApproval",
+        "providerUseForbidden",
+        "creditsUseForbidden"
+      ],
+      "properties": {
+        "unsignedInternalOnly": {
+          "type": "boolean",
+          "const": true
+        },
+        "globalGatekeeperDisableForbidden": {
+          "type": "boolean",
+          "const": true
+        },
+        "developerIdClaimForbidden": {
+          "type": "boolean",
+          "const": true
+        },
+        "notarizationClaimForbidden": {
+          "type": "boolean",
+          "const": true
+        },
+        "automaticUpdaterForbidden": {
+          "type": "boolean",
+          "const": true
+        },
+        "realAccountLoginForbiddenBeforeApproval": {
+          "type": "boolean",
+          "const": true
+        },
+        "providerUseForbidden": {
+          "type": "boolean",
+          "const": true
+        },
+        "creditsUseForbidden": {
+          "type": "boolean",
+          "const": true
+        }
+      }
+    },
+    "evidencePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "retainedFields",
+        "retainSecrets",
+        "retainAccountContent",
+        "retainAbsoluteLocalPaths"
+      ],
+      "properties": {
+        "retainedFields": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{2,63}$"
+          }
+        },
+        "retainSecrets": {
+          "type": "boolean",
+          "const": false
+        },
+        "retainAccountContent": {
+          "type": "boolean",
+          "const": false
+        },
+        "retainAbsoluteLocalPaths": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    },
+    "stopConditions": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{2,63}$"
+      }
+    },
+    "nextAction": {
+      "type": "string",
+      "const": "obtain_separate_seed_download_canary_approval"
+    }
+  }
+}

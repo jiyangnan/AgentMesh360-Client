@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP 及 11/11 隔离安装/生命周期矩阵已通过；官网下载 quarantine 后的单应用“仍要打开”保留人工体验项，真实 Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP、11/11 隔离安装/生命周期矩阵及其留存证据已通过；种子下载无授权预检固定为 blocked，真实 quarantine 单应用“仍要打开”、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -6984,3 +6984,45 @@ DMG/ZIP。该阶段不关闭生产 R4
 - 当前无 authority 可安全继续的 P6 自动工程项已收口。下一实际体验点是从受控下载
   渠道取得带 quarantine 的同一内部版，并由明确知情的种子用户只对单应用执行
   “仍要打开”；上传渠道、设备/cohort、窗口和清理边界必须在执行前另行冻结。
+
+### 循环 131：P6 验收证据与种子下载无授权预检
+
+状态：源码与本地验证已完成；真实下载 canary 保持 `not_approved / blocked`
+
+实现与安全边界：
+
+1. 将 Cycle 130 的终端结果补成 strict、非秘密、可机读验收证据，固定 Artifact 与
+   executor commit、build receipt、DMG/ZIP 文件名/大小/摘要、11 个场景、未签名
+   Gatekeeper 边界、生命周期、清理、外部使用和生产门状态；
+2. 新增共享 strict JSON 读取与最小 Schema 校验，拒绝 symlink、超限文件、非法
+   UTF-8、重复 JSON key、未知字段、类型/范围/顺序漂移；
+3. 新增 P6 种子下载预检 Schema、模板、校验器和中文清单；模板逐字节绑定留存验收
+   证据，并再次固定 build receipt、ZIP 与 DMG provenance；
+4. 下载预检明确为 `authority=none`、`approvalStatus=not_approved`、
+   `executionStatus=blocked`；channel、credential、账号、设备、窗口、Abort Owner
+   与 retention 均为空，网络/上传/Provider/credits/Apple service/费用全部为 0；
+5. 固定九项真实体验矩阵：独立 checksum、上传/readback、浏览器 quarantine、
+   Gatekeeper 首次拦截、单应用“仍要打开”、订阅门、Login Item 用户选择、卸载
+   清理和渠道撤回；在独立授权前全部为 `blocked`；
+6. 禁止全局关闭 Gatekeeper、伪称 Developer ID/公证、自动更新、真实账号登录、
+   Provider/credits 使用及生产可见性或 mutation；校验器不含网络、subprocess、
+   Keychain 或上传能力。
+
+自主验证与计划复盘：
+
+- 新增验收证据与下载预检定向 12/12；覆盖精确 provenance、验收字节绑定、
+  authority/channel/cohort/预算升级拒绝、九场景和十二 stop condition 顺序、
+  Gatekeeper/签名/更新边界、留存安全、CLI 路径脱敏、重复 key、symlink、UTF-8
+  和大小；
+- 完整工具链 300 项中沙箱内 296 passed，四项 loopback Origin 受沙箱监听限制，
+  同一 Origin 文件在沙箱外 5/5；桌面 114 passed / 3 个真实 Host 环境门 skipped /
+  0 failed，语法通过，离线依赖审计 0 vulnerability；
+- Kimi 按用户要求继续暂停，本轮为非 Kimi 独立审查；主 Agent 逐项复核 strict
+  parser、Schema 与语义双门、证据字节绑定、能力扫描、负向测试、秘密扫描和
+  P0-P8 顺序；
+- 本轮没有上传 Artifact、配置渠道、登录真实账号、修改 Gatekeeper、调用 Provider/
+  Apple 服务、消耗 credits 或产生费用，也没有把 unsigned internal 写成 production；
+- 对照产品蓝图和生产计划，P6 本机工程证据已经收口。下一真实动作只能是在独立批准
+  中冻结下载 provider/hostname/path/可见性、同一 Artifact、账号与设备、起止时间、
+  Abort Owner、上传/费用上限和证据/撤回策略，再执行 quarantine 下载 canary。
+  Developer ID/notarization、生产 R4、P7 和 P8 继续关闭。

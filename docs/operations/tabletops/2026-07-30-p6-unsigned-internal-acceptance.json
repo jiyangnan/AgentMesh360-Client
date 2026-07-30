@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "acceptanceId": "desktop_internal_p6_20260730_0001",
+  "environment": "e0",
+  "workPackage": "p6_unsigned_internal",
+  "executionStatus": "automated_matrix_passed",
+  "distributionClass": "unsigned_internal_only",
+  "artifact": {
+    "buildReceiptId": "desktop_internal_p6_9db201f43a49_arm64",
+    "buildReceiptSha256": "sha256:ce1885e285c6edbb6e07241764b60d87278b7adfa07a3bd31ea847b3793e59f6",
+    "commit": "9db201f43a49d0cc58dd466a500d40f48c8fe933",
+    "executorCommit": "15507ae62a58317b8bc91b39a4f98f20e1e97dd7",
+    "version": "0.1.0",
+    "bundleId": "com.agentmesh360.client",
+    "architecture": "arm64",
+    "zip": {
+      "file": "AgentMesh360-0.1.0-arm64-mac.zip",
+      "sizeBytes": 181147410,
+      "sha256": "sha256:7409150d8b82466c28813fda6964b465054d88f30e7c9b9900bf8b4a0e4164d6"
+    },
+    "dmg": {
+      "file": "AgentMesh360-0.1.0-arm64.dmg",
+      "sizeBytes": 181359004,
+      "sha256": "sha256:c2cfcd1f024e39a52f253aa95e17684778afa23490ed5ed8e5d16c6702ca996f"
+    }
+  },
+  "matrix": {
+    "scenarioCount": 11,
+    "passedCount": 11,
+    "scenarios": [
+      "artifact_boundary",
+      "dmg_verify_and_isolated_copy",
+      "zip_and_dmg_payload_match",
+      "bundle_and_packaged_host",
+      "developer_id_absent_and_manual_gatekeeper",
+      "signed_out_first_launch",
+      "single_instance_window_restore",
+      "login_item_enable_disable_restore",
+      "signed_out_background_exit",
+      "packaged_host_persistent_agent_recovery",
+      "isolated_cleanup"
+    ]
+  },
+  "gatekeeper": {
+    "developerIdSigned": false,
+    "teamIdentifierPresent": false,
+    "notarized": false,
+    "deepCodesignPassed": false,
+    "assessmentPassed": false,
+    "manualOpenAnywayRequired": true,
+    "globalDisableRequired": false,
+    "quarantineDownloadUserFlowExecuted": false
+  },
+  "lifecycle": {
+    "signedOutFirstLaunchPassed": true,
+    "hostDetachedBeforeAdmission": true,
+    "singleInstanceWindowRestorePassed": true,
+    "loginItemRoundTripPassed": true,
+    "signedOutBackgroundExitPassed": true,
+    "persistentAgentRecoveryPassed": true,
+    "persistentAgentCount": 3
+  },
+  "cleanup": {
+    "loginItemRestoredDisabled": true,
+    "temporaryProcessCount": 0,
+    "temporarySocketCount": 0,
+    "temporaryMountCount": 0,
+    "temporaryDirectoryCount": 0,
+    "repositoryRootTargetAbsent": true,
+    "systemApplicationInstallCount": 0,
+    "userApplicationInstallCount": 0
+  },
+  "externalUsage": {
+    "providerRequests": 0,
+    "agentMeshCredits": 0,
+    "appleServiceRequests": 0,
+    "artifactUploads": 0,
+    "productionMutations": 0,
+    "currencyCostUsd": 0
+  },
+  "independentReview": {
+    "kimiStatus": "paused_by_user",
+    "countedAsAcceptanceGate": false,
+    "primaryAgentSelfReviewCompleted": true
+  },
+  "productionBoundary": {
+    "productionR4Satisfied": false,
+    "p7Authorized": false,
+    "p8Authorized": false,
+    "seedDownloadCanaryAuthorized": false
+  },
+  "recordedAt": "2026-07-30T02:22:28.000Z"
+}

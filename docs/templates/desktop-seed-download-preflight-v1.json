@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "preflightId": "desktop_seed_download_p6_e0_20260730_0001",
+  "environment": "e0",
+  "workPackage": "p6_unsigned_internal_seed_download",
+  "authority": "none",
+  "approvalStatus": "not_approved",
+  "executionStatus": "blocked",
+  "evidenceInput": {
+    "acceptanceId": "desktop_internal_p6_20260730_0001",
+    "acceptanceSha256": "sha256:958791ad8e6cbfadb6d2dc4bd202c16309cfac80c977b6a23ee254fd1b29b81a",
+    "artifactCommit": "9db201f43a49d0cc58dd466a500d40f48c8fe933",
+    "buildReceiptId": "desktop_internal_p6_9db201f43a49_arm64",
+    "buildReceiptSha256": "sha256:ce1885e285c6edbb6e07241764b60d87278b7adfa07a3bd31ea847b3793e59f6",
+    "zipSha256": "sha256:7409150d8b82466c28813fda6964b465054d88f30e7c9b9900bf8b4a0e4164d6",
+    "dmgSha256": "sha256:c2cfcd1f024e39a52f253aa95e17684778afa23490ed5ed8e5d16c6702ca996f",
+    "automatedScenarioCount": 11,
+    "quarantineDownloadUserFlowExecuted": false,
+    "productionR4Satisfied": false
+  },
+  "channel": {
+    "configured": false,
+    "provider": null,
+    "hostname": null,
+    "downloadPath": null,
+    "uploadCredentialConfigured": false,
+    "artifactUploaded": false,
+    "publicVisible": false,
+    "independentChecksumLocationConfigured": false,
+    "withdrawalTested": false
+  },
+  "cohort": {
+    "accountCount": 0,
+    "deviceCount": 0,
+    "deviceAliases": [],
+    "ownerApproved": false,
+    "informedUnsignedRisk": false
+  },
+  "budget": {
+    "providerRequests": 0,
+    "agentMeshCredits": 0,
+    "appleServiceRequests": 0,
+    "uploadRequests": 0,
+    "currencyCostUsd": 0
+  },
+  "scenarioMatrix": [
+    {
+      "scenario": "independent_checksum_publication",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "artifact_upload_and_readback",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "browser_download_quarantine",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "gatekeeper_initial_block",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "privacy_security_open_anyway",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "first_launch_subscription_gate",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "login_item_user_choice",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "uninstall_and_local_cleanup",
+      "status": "blocked",
+      "reason": "approval_missing"
+    },
+    {
+      "scenario": "channel_withdrawal",
+      "status": "blocked",
+      "reason": "approval_missing"
+    }
+  ],
+  "approvalCard": {
+    "channelProvider": null,
+    "hostname": null,
+    "downloadPath": null,
+    "artifactVisibility": null,
+    "deviceAliases": [],
+    "cohortAccountCount": 0,
+    "startAt": null,
+    "stopAt": null,
+    "abortOwner": null,
+    "retentionPolicy": null,
+    "maxUploadRequests": 0,
+    "maxCostUsd": 0
+  },
+  "networkBoundary": {
+    "preflightNetworkRequests": 0,
+    "uploadAuthorized": false,
+    "externalVisibilityAuthorized": false,
+    "productionMutationAuthorized": false
+  },
+  "safetyPolicy": {
+    "unsignedInternalOnly": true,
+    "globalGatekeeperDisableForbidden": true,
+    "developerIdClaimForbidden": true,
+    "notarizationClaimForbidden": true,
+    "automaticUpdaterForbidden": true,
+    "realAccountLoginForbiddenBeforeApproval": true,
+    "providerUseForbidden": true,
+    "creditsUseForbidden": true
+  },
+  "evidencePolicy": {
+    "retainedFields": [
+      "approval_reference",
+      "artifact_digests",
+      "channel_identifier",
+      "quarantine_presence",
+      "gatekeeper_result",
+      "cleanup_counts",
+      "withdrawal_result",
+      "request_and_cost_totals"
+    ],
+    "retainSecrets": false,
+    "retainAccountContent": false,
+    "retainAbsoluteLocalPaths": false
+  },
+  "stopConditions": [
+    "approval_missing",
+    "channel_unapproved",
+    "upload_credential_unapproved",
+    "artifact_or_checksum_drift",
+    "cohort_or_device_unapproved",
+    "execution_window_unapproved",
+    "abort_owner_missing",
+    "evidence_retention_unapproved",
+    "production_visibility_or_mutation",
+    "provider_or_credit_use",
+    "global_gatekeeper_disable",
+    "cleanup_or_withdrawal_unproven"
+  ],
+  "nextAction": "obtain_separate_seed_download_canary_approval"
+}

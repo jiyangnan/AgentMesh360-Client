@@ -1497,3 +1497,25 @@ Provider 请求、AgentMesh credits、Apple service、上传、外部 cohort 和
 及独立的设备/cohort、更新窗口、rollback 与清理 authority；在没有 Developer ID、
 notarization 和更新真实性之前不能按生产 P7 前进。若新增内部下载 canary，也必须
 先冻结渠道和范围，不能沿用本轮本机执行 authority。
+
+## 59. Cycle 131 P6 验收证据与下载演练阻断门
+
+新增 strict 留存验收和种子下载 preflight，把三个状态分开：
+
+1. `automated_matrix_passed`：仅表示同一未签名 Artifact 的本机 11/11 生命周期；
+2. `not_approved / blocked`：表示下载渠道、设备/cohort 和窗口尚无 authority；
+3. future canary execution：必须由新的精确授权显式创建，不能修改预检模板来冒充。
+
+预检逐字节绑定留存验收文件，并固定 build receipt、DMG/ZIP provenance。九项下载
+矩阵及十二项 stop condition 必须精确有序；任何 Artifact/checksum、channel、
+credential、cohort、预算、安全策略、证据留存或清理撤回漂移都失败关闭。
+
+真实执行前的独立授权至少要固定下载 provider、hostname/path、Artifact 可见性、
+账号数与设备别名、未签名风险告知、起止时间、Abort Owner、上传请求与费用上限、
+非秘密证据留存以及渠道撤回/本机清理方式。只能指导用户对单个 App 使用“仍要打开”，
+禁止全局关闭 Gatekeeper；禁止自动更新、生产可见性、Provider/credits 或未经批准的
+真实账号登录。
+
+本轮只完成本地证据与 no-authority 预检，网络、上传、账号、Provider、credits、
+Apple service 和费用为 0。生产 R4、P7/P8、Developer ID、notarization 与正式更新/
+rollback 仍保持 blocked。
