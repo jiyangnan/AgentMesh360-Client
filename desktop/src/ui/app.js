@@ -46,7 +46,12 @@ bridge.getState().then(render).catch(() => render({
 }));
 
 function render(state) {
+  const previousState = currentState;
   currentState = state || { phase: 'unavailable', message: '身份状态无效' };
+  if (isBackgroundReadyRefresh(previousState, currentState)) {
+    refreshReadyIdentityMetadata(currentState);
+    return;
+  }
   if (currentState.phase === 'ready' && currentState.account?.id !== readyAccountId) {
     readyAccountId = currentState.account?.id ?? null;
     workspaceView = 'agents';
@@ -109,6 +114,37 @@ function render(state) {
     default:
       renderChecking(currentState);
   }
+}
+
+function isBackgroundReadyRefresh(previousState, nextState) {
+  return (
+    previousState?.phase === 'ready'
+    && nextState?.phase === 'ready'
+    && previousState.account?.id === nextState.account?.id
+    && Number.isInteger(previousState.validationRevision)
+    && Number.isInteger(nextState.validationRevision)
+    && previousState.validationRevision !== nextState.validationRevision
+  );
+}
+
+function refreshReadyIdentityMetadata(state) {
+  const account = state.account || {};
+  const subscription = state.subscription || {};
+  const credits = state.credits || {};
+  setText('[data-ready-account-name]', account.displayName || 'AgentMesh360 用户');
+  setText('[data-ready-account-email]', account.email || '');
+  setText('[data-ready-welcome]', `欢迎回来，${firstName(account)}`);
+  setText('[data-ready-subscription]', `${subscriptionLabel(subscription)} · 订阅验证通过`);
+  setText('[data-ready-credits]', formatNumber(credits.balance));
+  setText(
+    '[data-ready-checked-at]',
+    `订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}`,
+  );
+}
+
+function setText(selector, value) {
+  const element = document.querySelector(selector);
+  if (element) element.textContent = value;
 }
 
 async function restoreConversationSnapshot(accountId) {
@@ -256,7 +292,7 @@ function renderReady(state) {
         <div class="sidebar-spacer"></div>
         <div class="sidebar-account">
           <div class="avatar">${escapeHtml(initials(account))}</div>
-          <div class="copy"><strong>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span>${escapeHtml(account.email || '')}</span></div>
+          <div class="copy"><strong data-ready-account-name>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span data-ready-account-email>${escapeHtml(account.email || '')}</span></div>
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
@@ -1426,13 +1462,13 @@ function agentWorkspaceView(state) {
   const agents = Array.isArray(state.agents) ? state.agents : [];
   return `
     <header class="workspace-header">
-      <div><p class="eyebrow">Persistent Agent Workspace</p><h1>欢迎回来，${escapeHtml(firstName(account))}</h1><p>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
-      <div class="credit-card"><span>AgentMesh360 Credits</span><strong>${formatNumber(credits.balance)}</strong></div>
+      <div><p class="eyebrow">Persistent Agent Workspace</p><h1 data-ready-welcome>欢迎回来，${escapeHtml(firstName(account))}</h1><p data-ready-subscription>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
+      <div class="credit-card"><span>AgentMesh360 Credits</span><strong data-ready-credits>${formatNumber(credits.balance)}</strong></div>
     </header>
     <div class="section-head"><h2>你的专业 Agent</h2><span>${agents.filter(isResident).length} 个正在常驻</span></div>
     ${state.activationError ? `<div class="activation-error">${escapeHtml(state.activationError)}</div>` : ''}
     <div class="agent-grid">${agents.length ? agents.map((agent, index) => agentCard(agent, index, state.activatingAgentId)).join('') : '<div class="empty-agents">当前没有可用的 Agent Package。</div>'}</div>
-    <div class="security-row">订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}</div>`;
+    <div class="security-row" data-ready-checked-at>订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}</div>`;
 }
 
 function providerSettingsView(state) {

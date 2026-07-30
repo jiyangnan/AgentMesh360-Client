@@ -4,7 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { CoreRequestError } = require('../src/auth/core-client');
-const { IdentityController } = require('../src/identity-controller');
+const {
+  DEFAULT_REVALIDATE_INTERVAL_MS,
+  IdentityController,
+} = require('../src/identity-controller');
 
 test('startup without a stored refresh token stays signed out and does not start product agents', async () => {
   const fixture = makeFixture({ storedRefreshToken: null });
@@ -163,6 +166,73 @@ test('Leader reconnect fails closed when Core cannot refresh identity', async ()
   assert.equal(fixture.host.calls.invalidate, 1);
   assert.equal(Object.hasOwn(fixture.controller.getState(), 'agents'), false);
   assert.equal(JSON.stringify(fixture.controller.getState()).includes('rotated-access-token'), false);
+});
+
+test('background subscription revalidation keeps a ready workspace usable until the result arrives', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  const initialState = fixture.controller.getState();
+  const published = [];
+  fixture.controller.subscribe((state) => published.push(state));
+  published.length = 0;
+
+  let finishRefresh;
+  fixture.core.refresh = async () => {
+    fixture.core.refreshCalls += 1;
+    return new Promise((resolve) => {
+      finishRefresh = () => resolve({
+        access_token: 'background-access-token',
+        refresh_token: 'background-refresh-token',
+      });
+    });
+  };
+
+  const revalidation = fixture.controller.revalidate('focus');
+  await waitFor(() => typeof finishRefresh === 'function');
+
+  assert.equal(fixture.controller.getState(), initialState);
+  assert.equal(fixture.controller.getState().phase, 'ready');
+  assert.deepEqual(published, []);
+
+  finishRefresh();
+  const state = await revalidation;
+
+  assert.equal(state.phase, 'ready');
+  assert.equal(state.revalidatedBy, 'focus');
+  assert.equal(state.validationRevision, initialState.validationRevision + 1);
+  assert.deepEqual(published.map((item) => item.phase), ['ready']);
+});
+
+test('focus revalidation is due only after the ready identity becomes stale', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  const checkedAt = Date.parse(fixture.controller.getState().checkedAt);
+
+  assert.equal(
+    fixture.controller.isRevalidationDue(checkedAt + DEFAULT_REVALIDATE_INTERVAL_MS - 1),
+    false,
+  );
+  assert.equal(
+    fixture.controller.isRevalidationDue(checkedAt + DEFAULT_REVALIDATE_INTERVAL_MS),
+    true,
+  );
+});
+
+test('background revalidation still closes access when the session has expired', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  fixture.core.refreshError = new CoreRequestError(
+    'session_expired',
+    '登录状态已失效，请重新登录',
+    401,
+  );
+
+  const state = await fixture.controller.revalidate('periodic');
+
+  assert.equal(state.phase, 'signed_out');
+  assert.equal(state.code, 'session_expired');
+  assert.equal(fixture.tokenStore.cleared, 1);
+  assert.equal(fixture.host.calls.invalidate, 1);
 });
 
 function makeFixture({

@@ -33,7 +33,6 @@ const REGISTRATION_URL = 'https://agentmesh360.com/app/#register';
 let window = null;
 let controller = null;
 let conversations = null;
-let lastFocusCheck = 0;
 const canaryRuntime = configureP5CanaryRuntime({ app });
 const loginItems = new LoginItemController({ app });
 const startupIntent = resolveStartupIntent({
@@ -133,9 +132,7 @@ function createWindow() {
   created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   created.webContents.on('will-navigate', (event) => event.preventDefault());
   created.on('focus', () => {
-    const now = Date.now();
-    if (!controller || now - lastFocusCheck < 30_000) return;
-    lastFocusCheck = now;
+    if (!controller?.isRevalidationDue()) return;
     controller.revalidate('focus').catch(() => {});
   });
   created.once('ready-to-show', () => created.show());

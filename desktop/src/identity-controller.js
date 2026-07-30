@@ -27,6 +27,7 @@ class IdentityController {
     this.activeOperation = null;
     this.hostReconnectPromise = null;
     this.shuttingDown = false;
+    this.validationRevision = 0;
     this.state = Object.freeze({ phase: 'starting' });
     this.handleHostExit = (error) => {
       if (!['ready', 'checking'].includes(this.state.phase)) return;
@@ -48,6 +49,12 @@ class IdentityController {
     this.listeners.add(listener);
     listener(this.state);
     return () => this.listeners.delete(listener);
+  }
+
+  isRevalidationDue(now = Date.now()) {
+    if (this.state.phase !== 'ready' || this.activeOperation) return false;
+    const checkedAt = Date.parse(this.state.checkedAt || '');
+    return !Number.isFinite(checkedAt) || now - checkedAt >= this.revalidateIntervalMs;
   }
 
   async start() {
@@ -210,12 +217,15 @@ class IdentityController {
 
   #runValidation(refreshToken, reason) {
     return this.#exclusive(async () => {
-      const preserve = ['ready', 'blocked'].includes(this.state.phase) ? this.state : null;
-      this.#publish({
-        ...(preserve || {}),
-        phase: 'checking',
-        message: reason === 'startup' ? '正在恢复安全登录状态…' : '正在重新验证订阅…',
-      });
+      const isBackgroundRevalidation = this.state.phase === 'ready';
+      if (!isBackgroundRevalidation) {
+        const preserve = this.state.phase === 'blocked' ? this.state : null;
+        this.#publish({
+          ...(preserve || {}),
+          phase: 'checking',
+          message: reason === 'startup' ? '正在恢复安全登录状态…' : '正在重新验证订阅…',
+        });
+      }
       let pair;
       try {
         pair = await this.core.refresh(refreshToken);
@@ -287,6 +297,7 @@ class IdentityController {
         agents: publicAgents(list?.agents),
         checkedAt: new Date().toISOString(),
         revalidatedBy: reason,
+        validationRevision: ++this.validationRevision,
       });
     } catch (error) {
       await this.host.invalidate().catch(() => {});

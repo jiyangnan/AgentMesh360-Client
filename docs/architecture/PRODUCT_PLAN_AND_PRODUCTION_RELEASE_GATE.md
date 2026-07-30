@@ -1111,3 +1111,28 @@ Provider、credits、Apple service、费用和生产 mutation 均为 0。此检�
 本轮没有在线 Release、tag、上传资产、DigitalOcean 资源、Provider、credits、
 Apple service 或费用。由于本地复制不产生浏览器 quarantine，这只满足本机取得
 安装包，不关闭下载 canary、Developer ID/notarization、生产 R4、P7 或 P8。
+
+## 66. 循环 133 owner UAT：后台订阅复验连续性修复
+
+owner 对本机内部版的首次真实使用发现，已有 `ready` 工作区会在窗口 focus 超过
+30 秒、定时复验、系统 resume 或 Host reconnect 时进入阻塞式 `checking`。Renderer
+随后重建完整页面，导致 Provider 草稿和对话输入一起被销毁。该行为违背“持久 Agent
+工作区应允许用户离开、调研并返回继续”的产品目标，因此优先于后续引导和 Provider
+简化修复。
+
+修复后的身份语义分为两类：
+
+1. 首次启动、登录和从 blocked 状态手动复验仍是阻塞准入；未明确验证订阅有效时
+   不能进入客户端；
+2. 已经 `ready` 的同账号复验采用后台刷新，工作区 DOM 保持不变，只原位更新公开
+   身份元数据；最终发现 session expired、订阅无效、Core/Host 不一致或 Host 不可用
+   时仍立即失败关闭。
+
+focus 只在上次成功验证超过既有五分钟周期时补做复验，不再把正常的应用切换等同于
+高频准入重建。自动化同时证明后台复验期间保持 `ready`、过期身份仍关闭，以及
+Provider 未保存的显示名称、端点、模型与合成测试 Key 在真实 Electron Renderer
+中完整保留。
+
+本轮不改变订阅策略、Provider 路由、Agent Package、未签名发行边界或生产 R4。
+下一顺序是先由 clean pushed commit 重建本机内部版并继续 owner UAT；之后再按独立
+切片处理已经暴露的 Provider 配置复杂度和首次使用引导，不启动 P7/P8 或在线分发。

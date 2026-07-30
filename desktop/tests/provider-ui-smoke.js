@@ -69,6 +69,50 @@ app.whenReady().then(async () => {
   await window.webContents.executeJavaScript(`
     (() => {
       const form = document.getElementById('provider-profile-form');
+      form.dataset.revalidationGuard = 'original-form';
+      form.elements.displayName.value = '尚未保存的 Provider';
+      form.elements.baseUrl.value = 'https://draft.example.com/v1';
+      form.elements.enabledModels.value = 'draft-model';
+      form.elements.apiKey.value = 'sk-unsaved-draft';
+    })()
+  `);
+  window.webContents.send('identity:state', {
+    ...readyState(),
+    account: {
+      ...readyState().account,
+      displayName: 'Ferdinand Revalidated',
+    },
+    credits: { balance: 955 },
+    checkedAt: '2026-07-30T08:00:00.000Z',
+    revalidatedBy: 'focus',
+    validationRevision: 2,
+  });
+  await waitFor(async () => window.webContents.executeJavaScript(
+    "document.querySelector('[data-ready-account-name]')?.textContent === 'Ferdinand Revalidated'",
+  ));
+  const preservedDraft = await window.webContents.executeJavaScript(`(() => {
+    const form = document.getElementById('provider-profile-form');
+    return {
+      sameForm: form?.dataset.revalidationGuard === 'original-form',
+      displayName: form?.elements.displayName.value,
+      baseUrl: form?.elements.baseUrl.value,
+      enabledModels: form?.elements.enabledModels.value,
+      apiKey: form?.elements.apiKey.value,
+      spinnerVisible: document.querySelector('.state-card .spinner') !== null,
+    };
+  })()`);
+  assert.deepEqual(preservedDraft, {
+    sameForm: true,
+    displayName: '尚未保存的 Provider',
+    baseUrl: 'https://draft.example.com/v1',
+    enabledModels: 'draft-model',
+    apiKey: 'sk-unsaved-draft',
+    spinnerVisible: false,
+  });
+
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('provider-profile-form');
       form.elements.presetId.value = 'openai';
       form.elements.presetId.dispatchEvent(new Event('change', { bubbles: true }));
       form.elements.apiKey.value = 'sk-renderer-one-shot';
@@ -191,6 +235,7 @@ function readyState() {
       },
     ],
     checkedAt: new Date().toISOString(),
+    validationRevision: 1,
   };
 }
 

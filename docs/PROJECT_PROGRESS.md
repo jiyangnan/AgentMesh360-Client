@@ -7052,3 +7052,57 @@ DMG/ZIP。该阶段不关闭生产 R4
 - Kimi 继续按用户要求暂停。本轮由主 Agent 复核本机目录冲突、Artifact 摘要、
   逐字节一致性、DMG checksum、在线 Draft 清理和计划边界；
 - Developer ID/notarization、自动更新、生产 R4、P7/P8 和在线分发仍关闭。
+
+### 循环 133：后台订阅复验不再打断工作区
+
+状态：源码、自动化回归与真实 Electron Renderer 回归已完成；等待以新的 clean
+pushed commit 重建本机内部体验版
+
+用户体验问题与根因：
+
+1. owner 内部体验发现，客户端每次切回窗口超过 30 秒、每 5 分钟定时复验、Mac
+   恢复或 Host 重连时，都会把已有 `ready` 身份切换为 `checking`；
+2. Renderer 把所有 `checking` 都当成首次准入，使用全屏“正在建立安全工作区”替换
+   整个工作区 DOM；
+3. 这不仅造成视觉中断，还会直接销毁 Provider 表单和对话输入框，因此用户尚未提交
+   的显示名称、Base URL、模型列表、API Key 或消息草稿可能丢失；
+4. 该问题属于客户端状态建模与渲染错误，不是用户订阅无效，也不是 Provider 配置
+   错误。
+
+本轮实现：
+
+1. 首次启动、登录、从 blocked 手动复验仍使用阻塞式 `checking`；已经进入工作区的
+   focus/periodic/resume/Host reconnect 复验保持原 `ready` 状态，验证完成后只发布
+   新的 `validationRevision`；
+2. Renderer 将同账号 `ready → ready` 的新验证版本识别为后台身份刷新，只原位更新
+   账号、订阅、credits 和验证时间，不重建当前工作区 DOM；
+3. 窗口 focus 不再按 30 秒固定触发，只有上次成功验证已超过既有 5 分钟复验周期且
+   当前没有身份操作时才补做复验；周期复验、系统 resume 和 Host reconnect 仍保留；
+4. 安全门没有放宽：刷新令牌过期仍立即清除安全身份并回到登录页，订阅失效、
+   Core/Host 不一致或 Host 不可用仍按原规则失败关闭；
+5. 为已有 Provider Electron smoke 注册 `npm run test:provider-ui`，使本轮关键回归
+   可以直接重复执行。
+
+测试用例与结果：
+
+- 身份控制器 14/14：覆盖后台复验等待期间保持 `ready`、完成后只发布一次 `ready`、
+  focus 五分钟 freshness、刷新令牌过期仍失败关闭；
+- 完整桌面 Node 测试 117 passed / 3 个真实 Host 环境门 skipped / 0 failed；
+- Provider Electron UI 回归通过：填入未保存的显示名称、Base URL、模型列表和合成
+  测试 Key 后注入一次 focus 复验结果，原表单节点和全部字段保持不变，全屏 spinner
+  不存在；
+- Conversation 与 Package Electron UI 回归均通过；`npm run check` 和
+  `git diff --check` 通过；
+- 沙箱内完整测试的五个 OAuth 用例因 loopback 监听权限失败；按既定方法在沙箱外
+  重跑完整测试后全部通过，未把环境限制记成产品缺陷；
+- Kimi 继续按用户要求暂停。本轮由主 Agent 对完整 diff、身份状态机、focus 频率、
+  失败关闭语义、Renderer DOM 保留、秘密投影和测试结果进行加强自主复核。
+
+计划复盘与下一轮：
+
+- 本轮只修复已登录工作区的后台复验体验，没有改变“订阅无效不能进入客户端”的产品
+  规则，没有引入新 Provider、调用模型、消耗 credits 或触碰 Package/生产发布门；
+- 下一步先提交并推送本轮修复，用同一未签名内部构建合同生成新的本机 DMG，复验
+  Artifact 后替换 owner 的本地测试安装包；
+- 新包交付后继续 owner UAT。当前已记录的下一项用户可见问题是简化 Provider
+  配置与首次使用引导；它们必须作为独立产品切片执行，不与本轮修复混做重构。
