@@ -7196,7 +7196,7 @@ DMG/ZIP。该阶段不关闭生产 R4
 
 ### 循环 135：Provider 自动配置与测试后保存
 
-状态：功能与回归已完成；等待提交推送后生成新的本机未签名内部体验版
+状态：功能、验证、推送、新本机未签名内部体验版与磁盘清理均已完成
 
 用户问题与产品判断：
 
@@ -7253,6 +7253,25 @@ DMG/ZIP。该阶段不关闭生产 R4
   测试结果失效规则和 P0-P8 计划顺序；
 - 自动测试只连接本机 loopback mock，没有调用真实 Provider、使用用户 Key、
   消耗 AgentMesh credits 或产生费用。
+
+构建与本机交付：
+
+- 功能 commit `1fe769f116e2b9668f54d7ded6fd3c952246cf7b` 已推送
+  `origin/main`；构建开始时工作区 clean 且 `HEAD == origin/main`；
+- strict receipt 为 `desktop_internal_p6_1fe769f116e2_arm64`，状态
+  `unsigned_internal_only / passed`；Developer ID、公证、Apple credential、上传、
+  自动更新、Provider 请求、AgentMesh credits 和费用均为 0/false；
+- ZIP 为 181,172,601 bytes，SHA-256
+  `bad92c5f1dfc3f034c3eb4cdcd312d0d99fc664d1c955311c8ad43c29006ffa5`；
+  DMG 为 181,414,072 bytes，SHA-256
+  `76e5e865546a15bc062abd0e071775169413d247ac1f47fff9f3dde2053d0c07`；
+- strict receipt verifier、双 Artifact `shasum -c`、DMG `hdiutil verify` 与 ZIP 内
+  `app.asar` / 161,419,520-byte 打包 Host inventory 均通过；
+- DMG 已逐字节复制并复验到
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-30-1fe769f-arm64/`，附单文件
+  `SHA256SUMS` 和中文安装/验收说明；旧体验包未删除，也没有在线发布；
+- 构建与测试产生的仓库根 `target/` 已按 owner 既定要求清空，回收约 20 GiB；
+  本轮保留 346 MiB 构建证据目录和 173 MiB 本机交付目录。
 
 计划复盘与下一轮：
 
