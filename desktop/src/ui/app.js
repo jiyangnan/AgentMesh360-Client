@@ -24,6 +24,9 @@ let agentOverviewUi = {
 let agentOverviewRequestRevision = 0;
 let conversationOpenRevision = 0;
 let pendingConversationOpen = null;
+let conversationOpenTail = Promise.resolve();
+let conversationSendRevision = 0;
+let conversationSendPending = null;
 let settingsTab = 'account';
 let providerUi = {
   phase: 'idle',
@@ -63,6 +66,11 @@ bridge.onConversationState((state) => {
   // The open IPC response is authoritative. Host push events emitted by a
   // previous load must not replace this request's fail-closed loading state.
   if (pendingConversationOpen) return;
+  // A Host handoff can briefly project an agent-less idle snapshot while the
+  // current send IPC is still resolving. Keep the known Agent snapshot and
+  // local pending-turn owner until that IPC either returns a full state or
+  // rejects; otherwise the missing agentId would strand the turn lock.
+  if (conversationSendPending && state?.phase === 'idle' && !state?.agentId) return;
   if (
     state?.phase !== 'idle'
     && state?.agentId
@@ -70,13 +78,20 @@ bridge.onConversationState((state) => {
   ) {
     return;
   }
-  const wasStreaming = conversationUi.streaming === true;
+  const wasTurnRunning = conversationTurnIsRunning();
+  if (
+    conversationSendPending
+    && state?.agentId === conversationSendPending.agentId
+    && state?.streaming === true
+  ) {
+    conversationSendPending = null;
+  }
   conversationUi = state || { phase: 'idle' };
-  const streamingChanged = wasStreaming !== (conversationUi.streaming === true);
+  const turnRunningChanged = wasTurnRunning !== conversationTurnIsRunning();
   if (
     currentState.phase === 'ready'
     && workspaceView === 'agent-detail'
-    && (agentManagementUi.tab === 'conversation' || streamingChanged)
+    && (agentManagementUi.tab === 'conversation' || turnRunningChanged)
   ) {
     renderReady(currentState);
   }
@@ -128,6 +143,10 @@ function render(state) {
       error: null,
     };
     agentOverviewRequestRevision += 1;
+    conversationOpenRevision += 1;
+    pendingConversationOpen = null;
+    conversationSendRevision += 1;
+    conversationSendPending = null;
     settingsTab = 'account';
     packageUi = {
       phase: 'idle',
@@ -172,6 +191,10 @@ function render(state) {
       error: null,
     };
     agentOverviewRequestRevision += 1;
+    conversationOpenRevision += 1;
+    pendingConversationOpen = null;
+    conversationSendRevision += 1;
+    conversationSendPending = null;
     packageUi.snapshot = null;
     packageUi.phase = 'idle';
     packageUi.pendingApproval = null;
@@ -382,8 +405,9 @@ function renderReady(state) {
   const account = state.account || {};
   const agentAreaActive = ['agents', 'agent-detail', 'add-agent'].includes(workspaceView);
   const hostStatus = hostConnectionStatus();
+  const showAgentContext = shouldShowAgentContext(state);
   root.innerHTML = `
-    <section class="shell workspace">
+    <section class="shell workspace ${showAgentContext ? 'agent-workspace-layout' : ''}">
       <aside class="sidebar">
         ${brand()}
         <p class="nav-label">工作区</p>
@@ -400,7 +424,8 @@ function renderReady(state) {
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
-      <main class="workspace-main">${readyWorkspaceContent(state)}</main>
+      ${showAgentContext ? agentWorkspaceRail(state) : ''}
+      <main class="workspace-main ${showAgentContext ? 'agent-workspace-main' : ''}">${readyWorkspaceContent(state)}</main>
     </section>`;
   document.getElementById('logout').addEventListener('click', () => bridge.logout());
   document.getElementById('nav-agents').addEventListener('click', () => {
@@ -424,6 +449,7 @@ function renderReady(state) {
     renderReady(currentState);
     if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
   });
+  if (showAgentContext) wireAgentWorkspaceRail();
   if (workspaceView === 'agent-detail') {
     wireAgentDetail();
   } else if (workspaceView === 'add-agent') {
@@ -438,6 +464,12 @@ function renderReady(state) {
       const agent = currentState.agents?.find(
         (item) => item.agentId === button.dataset.manageAgent,
       );
+      if (conversationTurnBlocksAgentSwitch(agent?.agentId)) return;
+      if (
+        isResident(agent)
+        && conversationTurnIsRunning(agent.agentId)
+        && showExistingConversation(agent.agentId)
+      ) return;
       openAgentDetail(agent?.agentId, isResident(agent) ? 'conversation' : 'model');
     });
   }
@@ -463,19 +495,121 @@ function readyWorkspaceContent(state) {
   return agentWorkspaceView(state);
 }
 
+function shouldShowAgentContext(state) {
+  if (workspaceView !== 'agent-detail') return false;
+  const agent = (state.agents || []).find(
+    (item) => item.agentId === agentManagementUi.agentId,
+  );
+  return Boolean(agent && isResident(agent));
+}
+
+function agentWorkspaceRail(state) {
+  const agents = (state.agents || []).filter(isResident);
+  const activeAgent = agents.find((agent) => agent.agentId === agentManagementUi.agentId);
+  const sessions = activeAgent ? publicAgentSessions(activeAgent) : [];
+  return `
+    <aside class="agent-workspace-rail" aria-label="持久 Agent 与会话">
+      <section class="agent-rail-section resident-agent-section">
+        <header><span>常驻 Agent</span><small>${agents.length}</small></header>
+        <nav class="resident-agent-list" aria-label="选择持久 Agent">
+          ${agents.map((agent) => {
+    const active = agent.agentId === activeAgent?.agentId;
+    const disabled = conversationTurnBlocksAgentSwitch(agent.agentId);
+    return `
+            <button
+              type="button"
+              class="agent-rail-item ${active ? 'active' : ''}"
+              data-switch-resident-agent="${escapeHtml(agent.agentId)}"
+              ${active ? 'aria-current="true"' : ''}
+              ${disabled ? 'disabled title="当前回答完成后可切换 Agent"' : ''}
+            >
+              <span class="agent-rail-avatar">${escapeHtml(agentInitial(agent))}</span>
+              <span><strong>${escapeHtml(agent.displayName)}</strong><small>${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</small></span>
+            </button>`;
+  }).join('') || '<p class="agent-rail-empty">尚未激活持久 Agent</p>'}
+        </nav>
+      </section>
+      <section class="agent-rail-section agent-session-section">
+        <header><span>会话</span><small>${sessions.length}</small></header>
+        <nav class="agent-session-list" aria-label="选择当前 Agent 会话">
+          ${sessions.map((session) => `
+            <button
+              type="button"
+              class="agent-session-item ${agentManagementUi.tab === 'conversation' ? 'active' : ''}"
+              data-agent-session="${escapeHtml(session.key)}"
+              ${agentManagementUi.tab === 'conversation' ? 'aria-current="page"' : ''}
+            >
+              <span class="session-glyph" aria-hidden="true">主</span>
+              <span><strong>${escapeHtml(session.title)}</strong><small>${escapeHtml(session.subtitle)}</small></span>
+            </button>
+          `).join('') || '<p class="agent-rail-empty">激活后将创建持久主会话</p>'}
+        </nav>
+      </section>
+    </aside>`;
+}
+
+function publicAgentSessions(agent) {
+  if (!isResident(agent)) return [];
+  return [{ key: 'main', title: '主会话', subtitle: '持续保留' }];
+}
+
+function wireAgentWorkspaceRail() {
+  document.querySelectorAll('[data-switch-resident-agent]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const agentId = button.dataset.switchResidentAgent;
+      if (!agentId) return;
+      if (conversationTurnBlocksAgentSwitch(agentId)) return;
+      if (showExistingConversation(agentId)) return;
+      openAgentDetail(agentId, 'conversation');
+    });
+  });
+  document.querySelector('[data-agent-session="main"]')?.addEventListener('click', () => {
+    if (!agentManagementUi.agentId) return;
+    if (conversationTurnBlocksAgentSwitch(agentManagementUi.agentId)) return;
+    if (showExistingConversation(agentManagementUi.agentId)) return;
+    openConversation(agentManagementUi.agentId);
+  });
+}
+
+function showExistingConversation(agentId) {
+  if (
+    !agentId
+    || conversationUi.agentId !== agentId
+    || !['loading', 'ready', 'error'].includes(conversationUi.phase)
+  ) {
+    return false;
+  }
+  agentManagementRequestRevision += 1;
+  workspaceView = 'agent-detail';
+  agentManagementUi = {
+    ...agentManagementUi,
+    agentId,
+    tab: 'conversation',
+    error: null,
+    message: null,
+    busy: false,
+  };
+  renderReady(currentState);
+  return true;
+}
+
 function captureRendererDrafts() {
   captureProviderDraft();
   const customizationForm = document.getElementById('agent-customization-form');
-  if (customizationForm && agentManagementUi.agentId) {
+  if (customizationForm?.dataset.dirty === 'true') {
     const kind = String(customizationForm.elements.kind?.value || '');
-    const key = `${readyAccountId}:${agentManagementUi.agentId}:${kind}`;
+    const accountId = String(customizationForm.dataset.accountId || '');
+    const agentId = String(customizationForm.dataset.agentId || '');
+    const key = accountId && agentId && kind ? `${accountId}:${agentId}:${kind}` : null;
     const content = String(customizationForm.elements.content?.value || '');
-    const saved = agentCustomizationRecord(kind)?.content || '';
-    if (content !== saved) agentCustomizationDrafts.set(key, content);
-    else agentCustomizationDrafts.delete(key);
+    if (key) agentCustomizationDrafts.set(key, content);
   }
   const conversationForm = document.getElementById('conversation-form');
-  const draftKey = conversationDraftKey();
+  const draftKey = conversationDraftKey(
+    conversationForm?.dataset.accountId,
+    conversationForm?.dataset.agentId,
+    conversationForm?.dataset.sessionKey,
+  );
   if (conversationForm && draftKey) {
     const value = String(conversationForm.elements.message?.value || '');
     if (value) conversationDrafts.set(draftKey, value);
@@ -521,10 +655,13 @@ function captureProviderDraft() {
   };
 }
 
-function conversationDraftKey() {
-  const agentId = conversationUi?.agentId;
-  if (!readyAccountId || !agentId) return null;
-  return `${readyAccountId}:${agentId}`;
+function conversationDraftKey(
+  accountId = readyAccountId,
+  agentId = conversationUi?.agentId,
+  sessionKey = 'main',
+) {
+  if (!accountId || !agentId || sessionKey !== 'main') return null;
+  return `${accountId}:${agentId}:${sessionKey}`;
 }
 
 function conversationView() {
@@ -540,7 +677,7 @@ function conversationView() {
   const projectUnavailable = conversationUi.projectStatus === 'unavailable';
   const loading = conversationUi.phase === 'loading';
   const ready = conversationUi.phase === 'ready';
-  const sending = conversationUi.streaming === true;
+  const sending = conversationTurnIsRunning(conversationUi.agentId);
   const displayName = conversationUi.displayName || 'Agent';
   const canReopen = conversationUi.phase === 'error' && conversationUi.agentId;
   const awaitingPermission = conversationUi.interaction?.kind === 'permission';
@@ -558,44 +695,45 @@ function conversationView() {
       <button class="ghost" type="button" id="conversation-fix-model">重新选择模型</button>
     </div>` : ''}${awaitingPermission ? permissionInteractionView(conversationUi.interaction) : ''}`;
   return `
-    <section class="conversation-shell" aria-label="固定 Main Session 对话">
-      <header class="conversation-header">
-        <button class="ghost conversation-back" type="button">← 返回 Agent</button>
-        <div>
-          <p class="eyebrow">Persistent Main Session</p>
-          <h1>${escapeHtml(displayName)}</h1>
-          <p>${loading ? '正在由 Host 解析并加载固定主会话…' : '同一账号、同一 Agent、同一个持久主会话'}</p>
-        </div>
-        <span class="conversation-state ${sending ? 'working' : ''}">${awaitingPermission ? '等待你的确认' : sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : ready ? '已连接' : '尚未连接'}</span>
-      </header>
+    <section class="conversation-shell" aria-label="${escapeHtml(displayName)} 主会话">
       <div class="conversation-gates">${gates}</div>
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
-        ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍保存在 Host 中，此处只显示最近消息。</div>' : ''}
-        ${project || projectUnavailable
+        <div class="conversation-feed">
+          ${conversationUi.transcriptTruncated ? '<div class="conversation-truncated">较早内容仍安全保留，此处只显示最近消息。</div>' : ''}
+          ${project || projectUnavailable
     ? conversationProjectView(project, projectUnavailable)
     : ''}
-        ${planEntries.length || planUnavailable
+          ${planEntries.length || planUnavailable
     ? conversationPlanView(planEntries, planUnavailable)
     : ''}
-        ${backgroundTasks.length || backgroundUnavailable
+          ${backgroundTasks.length || backgroundUnavailable
     ? conversationBackgroundTasksView(backgroundTasks, backgroundUnavailable)
     : ''}
-        ${activities.length ? conversationActivitiesView(activities) : ''}
-        ${artifacts.length || artifactUnavailable
+          ${activities.length ? conversationActivitiesView(activities) : ''}
+          ${artifacts.length || artifactUnavailable
     ? conversationArtifactsView(artifacts, artifactUnavailable)
     : ''}
-        ${messages.length
+          ${messages.length
     ? messages.map(conversationMessage).join('')
     : `<div class="conversation-empty">${loading ? '正在恢复历史…' : `这里会显示 ${escapeHtml(displayName)} 的持久对话历史。`}</div>`}
-        ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${escapeHtml(displayName)} 正在继续这项工作</span></div>` : ''}
-      </div>
-      <form class="conversation-composer" id="conversation-form">
-        <textarea name="message" maxlength="16000" rows="3" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${!ready || sending || modelBlocked ? 'disabled' : ''}></textarea>
-        <div>
-          <span>Renderer 只接收安全文本投影；Session ID、路径和 Provider 凭据留在 Host。</span>
-          <button class="secondary" type="submit" ${!ready || sending || modelBlocked ? 'disabled' : ''}>发送</button>
+          ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${escapeHtml(displayName)} 正在继续这项工作</span></div>` : ''}
         </div>
-      </form>
+      </div>
+      <div class="conversation-composer-dock">
+        <form
+          class="conversation-composer"
+          id="conversation-form"
+          data-account-id="${escapeHtml(String(readyAccountId || ''))}"
+          data-agent-id="${escapeHtml(String(conversationUi.agentId || agentManagementUi.agentId || ''))}"
+          data-session-key="main"
+        >
+          <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${!ready || sending || modelBlocked ? 'disabled' : ''}></textarea>
+          <div>
+            <span>内容会保留在这个 Agent 的主会话中</span>
+            <button class="secondary" type="submit" ${!ready || sending || modelBlocked ? 'disabled' : ''}>发送</button>
+          </div>
+        </form>
+      </div>
     </section>`;
 }
 
@@ -1057,15 +1195,52 @@ function conversationMessage(message) {
   return `
     <article class="conversation-message ${role}">
       <span>${role === 'user' ? '你' : escapeHtml(initial)}</span>
-      <div><b>${role === 'user' ? '你' : escapeHtml(displayName)}</b><p>${escapeHtml(message?.text || '')}</p></div>
+      <div><b>${role === 'user' ? '你' : escapeHtml(displayName)}</b><div class="conversation-message-body">${renderConversationText(message?.text || '')}</div></div>
     </article>`;
 }
 
+function renderConversationText(value) {
+  const lines = String(value || '').replace(/\r\n?/g, '\n').split('\n');
+  const blocks = [];
+  let paragraph = [];
+  let list = [];
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    blocks.push(`<p>${paragraph.map(renderConversationInline).join('<br>')}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    blocks.push(`<ul>${list.map((item) => `<li>${renderConversationInline(item)}</li>`).join('')}</ul>`);
+    list = [];
+  };
+  for (const line of lines) {
+    const item = line.match(/^\s*[-*]\s+(.+)$/u);
+    if (item) {
+      flushParagraph();
+      list.push(item[1]);
+      continue;
+    }
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    flushList();
+    paragraph.push(line);
+  }
+  flushParagraph();
+  flushList();
+  return blocks.join('') || '<p></p>';
+}
+
+function renderConversationInline(value) {
+  return escapeHtml(value)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+}
+
 function wireConversation() {
-  document.querySelector('.conversation-back')?.addEventListener('click', () => {
-    workspaceView = 'agents';
-    renderReady(currentState);
-  });
   document.querySelector('[data-reopen-conversation]')?.addEventListener('click', (event) => {
     openConversation(event.currentTarget.dataset.reopenConversation);
   });
@@ -1080,20 +1255,48 @@ function wireConversation() {
   const transcript = document.getElementById('conversation-transcript');
   if (transcript) transcript.scrollTop = transcript.scrollHeight;
   const form = document.getElementById('conversation-form');
-  const restoredDraft = conversationDrafts.get(conversationDraftKey()) || '';
+  const formDraftKey = conversationDraftKey(
+    form?.dataset.accountId,
+    form?.dataset.agentId,
+    form?.dataset.sessionKey,
+  );
+  const restoredDraft = conversationDrafts.get(formDraftKey) || '';
   if (form?.elements.message && restoredDraft) form.elements.message.value = restoredDraft;
+  form?.elements.message?.addEventListener('input', (event) => {
+    if (!formDraftKey) return;
+    const value = String(event.currentTarget.value || '');
+    if (value) conversationDrafts.set(formDraftKey, value);
+    else conversationDrafts.delete(formDraftKey);
+  });
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const textarea = form.elements.message;
     const text = textarea.value.trim();
-    if (!text) return;
-    const draftKey = conversationDraftKey();
+    const agentId = form.dataset.agentId;
+    if (!text || !agentId || conversationTurnIsRunning(agentId)) return;
+    const draftKey = formDraftKey;
+    const mutation = {
+      accountId: readyAccountId,
+      agentId,
+      revision: ++conversationSendRevision,
+    };
     textarea.value = '';
+    if (draftKey) conversationDrafts.delete(draftKey);
+    conversationSendPending = mutation;
+    conversationUi = { ...conversationUi, error: null };
+    if (currentState.phase === 'ready') renderReady(currentState);
     try {
       const state = await bridge.sendConversationMessage(text);
+      if (!conversationSendIsCurrent(mutation)) return;
+      conversationSendPending = null;
       conversationUi = state;
-      if (draftKey) conversationDrafts.delete(draftKey);
     } catch (error) {
+      if (!conversationSendIsCurrent(mutation)) return;
+      conversationSendPending = null;
+      // The pending-state render owns a fresh, intentionally empty form. Remove
+      // it before restoring the failed message so captureRendererDrafts() cannot
+      // overwrite the restored draft with that transient empty value.
+      document.getElementById('conversation-form')?.remove();
       if (draftKey) conversationDrafts.set(draftKey, text);
       conversationUi = {
         ...conversationUi,
@@ -1163,7 +1366,51 @@ function finishConversationOpen(revision) {
   }
 }
 
+function conversationOpenIsCurrent(agentId, revision) {
+  return (
+    revision === conversationOpenRevision
+    && currentState.phase === 'ready'
+    && workspaceView === 'agent-detail'
+    && agentManagementUi.agentId === agentId
+    && agentManagementUi.tab === 'conversation'
+  );
+}
+
+function conversationSendIsCurrent(context) {
+  return Boolean(
+    context
+    && context.revision === conversationSendRevision
+    && currentState.phase === 'ready'
+    && readyAccountId === context.accountId
+    && agentManagementUi.agentId === context.agentId,
+  );
+}
+
+function conversationTurnAgentId() {
+  if (
+    conversationSendPending
+    && readyAccountId === conversationSendPending.accountId
+  ) {
+    return conversationSendPending.agentId;
+  }
+  return conversationUi.streaming === true ? conversationUi.agentId : null;
+}
+
+function conversationTurnIsRunning(agentId = conversationUi.agentId) {
+  if (!agentId) return false;
+  return conversationTurnAgentId() === agentId;
+}
+
+function conversationTurnBlocksAgentSwitch(agentId) {
+  const runningAgentId = conversationTurnAgentId();
+  return Boolean(runningAgentId && agentId && runningAgentId !== agentId);
+}
+
 async function openConversation(agentId, pendingRevision = null) {
+  if (conversationTurnIsRunning()) {
+    if (agentId === conversationTurnAgentId()) showExistingConversation(agentId);
+    return;
+  }
   const requestRevision = (
     pendingRevision !== null
     && pendingConversationOpen?.agentId === agentId
@@ -1180,26 +1427,24 @@ async function openConversation(agentId, pendingRevision = null) {
   };
   conversationUi = loadingConversationState(agentId);
   renderReady(currentState);
+  const skipped = Symbol('conversation-open-skipped');
+  const openAttempt = conversationOpenTail
+    .catch(() => undefined)
+    .then(() => {
+      if (!conversationOpenIsCurrent(agentId, requestRevision)) return skipped;
+      return bridge.openAgentConversation(agentId);
+    });
+  conversationOpenTail = openAttempt.catch(() => undefined);
   try {
-    const snapshot = await bridge.openAgentConversation(agentId);
-    if (
-      requestRevision !== conversationOpenRevision
-      || workspaceView !== 'agent-detail'
-      || agentManagementUi.agentId !== agentId
-      || agentManagementUi.tab !== 'conversation'
-    ) {
+    const snapshot = await openAttempt;
+    if (snapshot === skipped || !conversationOpenIsCurrent(agentId, requestRevision)) {
       finishConversationOpen(requestRevision);
       return;
     }
     conversationUi = snapshot;
     finishConversationOpen(requestRevision);
   } catch (error) {
-    if (
-      requestRevision !== conversationOpenRevision
-      || workspaceView !== 'agent-detail'
-      || agentManagementUi.agentId !== agentId
-      || agentManagementUi.tab !== 'conversation'
-    ) {
+    if (!conversationOpenIsCurrent(agentId, requestRevision)) {
       finishConversationOpen(requestRevision);
       return;
     }
@@ -1959,8 +2204,7 @@ function agentDetailView(state) {
     return '<button class="ghost" id="back-to-agents" type="button">← 返回 Agent</button><div class="empty-agents">这个 Agent 当前不可用。</div>';
   }
   const resident = isResident(agent);
-  const turnRunning = conversationUi.agentId === agent.agentId
-    && conversationUi.streaming === true;
+  const turnRunning = conversationTurnIsRunning(agent.agentId);
   const binding = agentManagementUi.snapshot?.modelBinding;
   const profile = (agentManagementUi.snapshot?.profiles || []).find(
     (item) => item.profileId === binding?.providerProfileId,
@@ -1977,41 +2221,96 @@ function agentDetailView(state) {
     : binding
       ? `${profile?.displayName || '供应商不可用'} · ${binding.modelId}`
       : '尚未选择模型';
-  const tabs = [
-    ['conversation', '对话'],
+  if (resident && agentManagementUi.tab === 'conversation') {
+    return agentConversationWorkspace(agent, turnRunning);
+  }
+  return agentSettingsWorkspace(agent, {
+    resident,
+    turnRunning,
+    modelSummary,
+  });
+}
+
+function agentConversationWorkspace(agent, turnRunning) {
+  const status = conversationPresentationState();
+  return `
+    <section class="agent-conversation-workspace">
+      <header class="agent-chat-toolbar">
+        <div class="agent-chat-identity">
+          <span class="agent-chat-avatar" aria-hidden="true">${escapeHtml(agentInitial(agent))}</span>
+          <div><h1>${escapeHtml(agent.displayName)}</h1><p>主会话</p></div>
+        </div>
+        <div class="agent-chat-actions">
+          <span class="conversation-state ${escapeHtml(status.className)}">${escapeHtml(status.label)}</span>
+          <button
+            class="agent-settings-button"
+            id="agent-settings-button"
+            type="button"
+            aria-label="打开 ${escapeHtml(agent.displayName)} 设置"
+            title="Agent 设置"
+            ${turnRunning ? 'disabled' : ''}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25Zm8 3.75-.12-1.18 1.45-1.13-1.8-3.12-1.72.68a8.4 8.4 0 0 0-2.04-1.18L15.5 4.25h-3.6l-.27 1.82a8.4 8.4 0 0 0-2.04 1.18l-1.72-.68-1.8 3.12 1.45 1.13L7.4 12l.12 1.18-1.45 1.13 1.8 3.12 1.72-.68c.62.5 1.3.9 2.04 1.18l.27 1.82h3.6l.27-1.82a8.4 8.4 0 0 0 2.04-1.18l1.72.68 1.8-3.12-1.45-1.13L20 12Z"/></svg>
+          </button>
+        </div>
+      </header>
+      ${conversationView()}
+    </section>`;
+}
+
+function conversationPresentationState() {
+  if (conversationUi.interaction?.kind === 'permission') {
+    return { label: '等待你的确认', className: 'waiting' };
+  }
+  if (conversationTurnIsRunning(conversationUi.agentId)) {
+    return { label: 'Agent 正在处理', className: 'working' };
+  }
+  if (conversationUi.phase === 'loading') {
+    return { label: '正在加载', className: 'loading' };
+  }
+  if (conversationUi.phase === 'error') {
+    return { label: '需要重新打开', className: 'error' };
+  }
+  if (conversationUi.phase === 'ready') {
+    return { label: '已连接', className: 'ready' };
+  }
+  return { label: '尚未连接', className: 'idle' };
+}
+
+function agentSettingsWorkspace(agent, { resident, turnRunning, modelSummary }) {
+  const settings = [
     ['model', '模型'],
-    ['agent_md', '行为 agent.md'],
-    ['user_md', '偏好 user.md'],
+    ['agent_md', '行为'],
+    ['user_md', '用户偏好'],
   ];
   return `
-    <header class="agent-detail-header">
-      <button class="ghost" id="back-to-agents" type="button">← 所有 Agent</button>
-      <div>
-        <p class="eyebrow">${resident ? 'Persistent Agent' : 'Ready to activate'}</p>
-        <h1>${escapeHtml(agent.displayName)}</h1>
-        <p>${escapeHtml(agent.description)}</p>
-        <span class="agent-current-model">${escapeHtml(modelSummary)}</span>
-      </div>
-      <span class="agent-status-pill ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
-    </header>
-    <nav class="agent-tabs" aria-label="${escapeHtml(agent.displayName)} 管理">
-      ${tabs.map(([id, label]) => `
-        <button type="button" data-agent-tab="${id}" class="${agentManagementUi.tab === id ? 'active' : ''}" ${(id === 'conversation' && !resident) || (id !== 'conversation' && turnRunning) ? 'disabled' : ''}>${escapeHtml(label)}</button>
-      `).join('')}
-    </nav>
-    ${turnRunning ? '<div class="provider-notice" role="status">当前回答完成后即可修改模型、行为或偏好；正在生成的内容不会被中途改变。</div>' : ''}
-    ${agentManagementUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(agentManagementUi.message)}</div>` : ''}
-    ${agentManagementUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(agentManagementUi.error)}</div>` : ''}
-    ${agentManagementUi.tab === 'conversation'
-      ? conversationView()
-      : agentManagementUi.phase === 'loading'
-        ? '<div class="provider-loading"><div class="spinner"></div><div><strong>正在读取 Agent 设置</strong><span>模型和个性化内容由本机 Host 返回。</span></div></div>'
-        : agentManagementUi.phase === 'error'
-          ? '<button class="secondary retry-agent-management" type="button">重新读取 Agent 设置</button>'
-          : agentManagementUi.tab === 'model'
-            ? agentModelView(agent)
-            : agentCustomizationView(agent, agentManagementUi.tab)}
-  `;
+    <section class="agent-settings-workspace">
+      <header class="agent-settings-header">
+        <button class="ghost agent-settings-back" id="${resident ? 'back-to-agent-conversation' : 'back-to-agents'}" type="button">← ${resident ? '返回主会话' : '所有 Agent'}</button>
+        <div>
+          <p class="eyebrow">Agent 设置</p>
+          <h1>${escapeHtml(agent.displayName)}</h1>
+          <p>${escapeHtml(agent.description)}</p>
+          <span class="agent-current-model">${escapeHtml(modelSummary)}</span>
+        </div>
+        <span class="agent-status-pill ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
+      </header>
+      <nav class="agent-settings-nav" aria-label="${escapeHtml(agent.displayName)} 设置">
+        ${settings.map(([id, label]) => `
+          <button type="button" data-agent-setting="${id}" class="${agentManagementUi.tab === id ? 'active' : ''}" ${turnRunning || agentManagementUi.busy ? 'disabled' : ''}>${escapeHtml(label)}</button>
+        `).join('')}
+      </nav>
+      ${turnRunning ? '<div class="provider-notice" role="status">当前回答完成后即可修改模型、行为或偏好；正在生成的内容不会被中途改变。</div>' : ''}
+      ${agentManagementUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(agentManagementUi.message)}</div>` : ''}
+      ${agentManagementUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(agentManagementUi.error)}</div>` : ''}
+      ${agentManagementUi.phase === 'loading'
+    ? '<div class="provider-loading"><div class="spinner"></div><div><strong>正在读取 Agent 设置</strong><span>模型和个性化内容由本机 Host 返回。</span></div></div>'
+    : agentManagementUi.phase === 'error'
+      ? '<button class="secondary retry-agent-management" type="button">重新读取 Agent 设置</button>'
+      : agentManagementUi.tab === 'model'
+        ? agentModelView(agent)
+        : agentCustomizationView(agent, agentManagementUi.tab)}
+    </section>`;
 }
 
 function agentModelView(agent) {
@@ -2019,8 +2318,7 @@ function agentModelView(agent) {
   const profiles = Array.isArray(snapshot.profiles) ? snapshot.profiles : [];
   const binding = snapshot.modelBinding || null;
   const draft = agentManagementUi.modelDraft || {};
-  const turnRunning = conversationUi.agentId === agent.agentId
-    && conversationUi.streaming === true;
+  const turnRunning = conversationTurnIsRunning(agent.agentId);
   const selectedProfileId = draft.providerProfileId
     || binding?.providerProfileId
     || (profiles.length === 1 ? profiles[0].profileId : '');
@@ -2049,7 +2347,7 @@ function agentModelView(agent) {
   return `
     <form class="agent-settings-panel agent-model-form" id="agent-model-form">
       <div class="agent-setting-heading">
-        <div><p class="eyebrow">${resident ? 'Model for next message' : 'Activation setup'}</p><h2>${resident ? '这个 Agent 使用哪个模型' : '选择模型并激活 Agent'}</h2></div>
+        <div><p class="eyebrow">${resident ? '下一条消息使用' : '激活设置'}</p><h2>${resident ? '这个 Agent 使用哪个模型' : '选择模型并激活 Agent'}</h2></div>
         ${snapshot.inheritedFromLegacyGlobal ? '<span class="migration-badge">已从旧版全局设置迁移</span>' : ''}
       </div>
       <p class="agent-setting-copy">${resident
@@ -2062,13 +2360,13 @@ function agentModelView(agent) {
     : ''}
       <div class="form-grid two">
         <label class="field"><span>模型供应商</span>
-          <select name="providerProfileId" required ${turnRunning ? 'disabled' : ''}>
+          <select name="providerProfileId" required ${turnRunning || agentManagementUi.busy ? 'disabled' : ''}>
             <option value="">请选择</option>
             ${profiles.map((profile) => `<option value="${escapeHtml(profile.profileId)}" ${profile.profileId === selectedProfileId ? 'selected' : ''}>${escapeHtml(profile.displayName)}</option>`).join('')}
           </select>
         </label>
         <label class="field"><span>可用模型 <em>来自当前供应商验证结果</em></span>
-          <select name="modelId" required ${selectedProfile && !turnRunning ? '' : 'disabled'}>
+          <select name="modelId" required ${selectedProfile && !turnRunning && !agentManagementUi.busy ? '' : 'disabled'}>
             <option value="">请选择</option>
             ${models.map((model) => `<option value="${escapeHtml(model)}" ${model === selectedModel ? 'selected' : ''}>${escapeHtml(model)}</option>`).join('')}
           </select>
@@ -2085,7 +2383,7 @@ function agentModelView(agent) {
           <small>Agent 仍受客户端安全确认与订阅门禁约束；外部操作不会因为激活而自动执行。</small>
         </div>
         <label class="activation-confirm">
-          <input name="confirmActivation" type="checkbox" ${turnRunning ? 'disabled' : ''}>
+          <input name="confirmActivation" type="checkbox" ${turnRunning || agentManagementUi.busy ? 'disabled' : ''}>
           <span>我已查看上面的能力范围，确认激活 ${escapeHtml(agent.displayName)}，并从首次消息开始使用所选模型。</span>
         </label>`}
       <div class="agent-setting-actions">
@@ -2111,14 +2409,19 @@ function agentCustomizationView(agent, kind) {
   const contentLength = [...(content || '')].length;
   const isBehavior = kind === 'agent_md';
   const hasConflict = agentManagementUi.customizationConflict?.kind === kind;
-  const turnRunning = conversationUi.agentId === agent.agentId
-    && conversationUi.streaming === true;
+  const turnRunning = conversationTurnIsRunning(agent.agentId);
   return `
-    <form class="agent-settings-panel customization-form" id="agent-customization-form">
+    <form
+      class="agent-settings-panel customization-form"
+      id="agent-customization-form"
+      data-account-id="${escapeHtml(String(readyAccountId || ''))}"
+      data-agent-id="${escapeHtml(String(agent.agentId || ''))}"
+      data-dirty="false"
+    >
       <input type="hidden" name="kind" value="${kind}">
       <div class="agent-setting-heading">
         <div>
-          <p class="eyebrow">${isBehavior ? 'Behavior overlay' : 'User preferences'}</p>
+          <p class="eyebrow">${isBehavior ? '行为设置' : '用户偏好'}</p>
           <h2>${isBehavior ? '补充这个 Agent 的工作方式' : '告诉这个 Agent 你偏好的协作方式'}</h2>
         </div>
         ${hasDraft ? '<span class="unsaved-badge">尚未保存</span>' : ''}
@@ -2139,11 +2442,11 @@ function agentCustomizationView(agent, kind) {
         <span>v${escapeHtml(agentManagementUi.snapshot?.customization?.packageVersion || agent.version || '—')} · ${escapeHtml(agentManagementUi.snapshot?.customization?.packageDescription || agent.description)}</span>
       </div>
       <label class="field"><span>${isBehavior ? '行为补充' : '用户偏好'} <em>最多 8000 字符，请勿填写 API Key 或私钥</em></span>
-        <textarea name="content" maxlength="16000" rows="14" ${turnRunning ? 'disabled' : ''} placeholder="${isBehavior ? '例如：先给出简短计划，涉及外部发布前必须确认。' : '例如：默认用中文回答；状态更新要简洁；每周五总结进度。'}">${escapeHtml(content || '')}</textarea>
+        <textarea name="content" maxlength="16000" rows="14" ${turnRunning || agentManagementUi.busy ? 'disabled' : ''} placeholder="${isBehavior ? '例如：先给出简短计划，涉及外部发布前必须确认。' : '例如：默认用中文回答；状态更新要简洁；每周五总结进度。'}">${escapeHtml(content || '')}</textarea>
       </label>
       <div class="character-count ${contentLength > 8_000 ? 'invalid' : ''}">${contentLength} / 8000</div>
       <div class="agent-setting-actions">
-        <button class="ghost danger-text" id="restore-customization" type="button" ${record.customized && !turnRunning ? '' : 'disabled'}>恢复默认</button>
+        <button class="ghost danger-text" id="restore-customization" type="button" ${record.customized && !turnRunning && !agentManagementUi.busy ? '' : 'disabled'}>恢复默认</button>
         <button class="secondary" type="submit" ${agentManagementUi.busy || turnRunning || contentLength > 8_000 ? 'disabled' : ''}>保存并从下一条消息生效</button>
       </div>
     </form>`;
@@ -2151,6 +2454,10 @@ function agentCustomizationView(agent, kind) {
 
 async function openAgentDetail(agentId, tab) {
   if (!agentId) return;
+  if (tab === 'conversation') {
+    if (conversationTurnBlocksAgentSwitch(agentId)) return;
+    if (conversationTurnIsRunning(agentId) && showExistingConversation(agentId)) return;
+  }
   const requestRevision = ++agentManagementRequestRevision;
   const conversationRequestRevision = tab === 'conversation'
     ? beginConversationOpen(agentId)
@@ -2233,22 +2540,40 @@ function wireAgentDetail() {
     workspaceView = 'agents';
     renderReady(currentState);
   });
+  document.getElementById('agent-settings-button')?.addEventListener('click', () => {
+    agentManagementUi = {
+      ...agentManagementUi,
+      tab: 'model',
+      error: null,
+      message: null,
+    };
+    renderReady(currentState);
+  });
+  document.getElementById('back-to-agent-conversation')?.addEventListener('click', async () => {
+    if (
+      conversationUi.agentId === agentManagementUi.agentId
+      && ['loading', 'ready', 'error'].includes(conversationUi.phase)
+    ) {
+      agentManagementUi = {
+        ...agentManagementUi,
+        tab: 'conversation',
+        error: null,
+        message: null,
+      };
+      renderReady(currentState);
+      return;
+    }
+    await openConversation(agentManagementUi.agentId);
+  });
   document.querySelector('.retry-agent-management')?.addEventListener(
     'click',
     () => refreshAgentManagement(),
   );
-  document.querySelectorAll('[data-agent-tab]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const tab = button.dataset.agentTab;
-      if (tab === 'conversation') {
-        await openConversation(agentManagementUi.agentId);
-        return;
-      }
+  document.querySelectorAll('[data-agent-setting]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const tab = button.dataset.agentSetting;
       agentManagementUi = { ...agentManagementUi, tab, message: null, error: null };
       renderReady(currentState);
-      if (!agentManagementUi.snapshot && agentManagementUi.phase !== 'loading') {
-        await refreshAgentManagement();
-      }
     });
   });
   if (agentManagementUi.tab === 'conversation') wireConversation();
@@ -2299,10 +2624,16 @@ function wireAgentDetail() {
   });
   const customizationForm = document.getElementById('agent-customization-form');
   customizationForm?.elements.content?.addEventListener('input', (event) => {
-    const key = `${readyAccountId}:${agentManagementUi.agentId}:${customizationForm.elements.kind.value}`;
-    agentCustomizationDrafts.set(key, event.currentTarget.value);
+    const kind = customizationForm.elements.kind.value;
+    const key = `${customizationForm.dataset.accountId}:${customizationForm.dataset.agentId}:${kind}`;
+    const savedContent = agentCustomizationRecord(kind)?.content || '';
+    const value = event.currentTarget.value;
+    const changed = value !== savedContent;
+    customizationForm.dataset.dirty = changed ? 'true' : 'false';
+    if (changed) agentCustomizationDrafts.set(key, value);
+    else agentCustomizationDrafts.delete(key);
     const counter = customizationForm.querySelector('.character-count');
-    const length = [...event.currentTarget.value].length;
+    const length = [...value].length;
     if (counter) {
       counter.textContent = `${length} / 8000`;
       counter.classList.toggle('invalid', length > 8_000);
@@ -2322,7 +2653,8 @@ function wireAgentDetail() {
   document.querySelector('.discard-customization-draft')?.addEventListener(
     'click',
     async () => {
-      const key = `${readyAccountId}:${agentManagementUi.agentId}:${agentManagementUi.tab}`;
+      const form = document.getElementById('agent-customization-form');
+      const key = `${form?.dataset.accountId}:${form?.dataset.agentId}:${form?.elements.kind?.value}`;
       document.getElementById('agent-customization-form')?.remove();
       agentCustomizationDrafts.delete(key);
       agentManagementUi.customizationConflict = null;
@@ -2335,12 +2667,30 @@ function wireAgentDetail() {
   );
 }
 
+function beginAgentManagementMutation(agentId, tab) {
+  return {
+    accountId: readyAccountId,
+    agentId,
+    tab,
+    revision: ++agentManagementRequestRevision,
+  };
+}
+
+function agentManagementMutationIsCurrent(context) {
+  return Boolean(
+    context
+    && currentState.phase === 'ready'
+    && readyAccountId === context.accountId
+    && workspaceView === 'agent-detail'
+    && agentManagementUi.agentId === context.agentId
+    && agentManagementUi.tab === context.tab
+    && agentManagementRequestRevision === context.revision,
+  );
+}
+
 async function saveAgentModel(event) {
   event.preventDefault();
-  if (
-    conversationUi.agentId === agentManagementUi.agentId
-    && conversationUi.streaming === true
-  ) return;
+  if (conversationTurnIsRunning(agentManagementUi.agentId)) return;
   const form = event.currentTarget;
   const agentId = agentManagementUi.agentId;
   const agent = currentState.agents?.find((item) => item.agentId === agentId);
@@ -2350,11 +2700,17 @@ async function saveAgentModel(event) {
     providerProfileId: form.elements.providerProfileId.value,
     modelId: form.elements.modelId.value,
   };
+  const mutation = beginAgentManagementMutation(agentId, 'model');
   agentManagementUi = { ...agentManagementUi, busy: true, error: null, message: null };
   renderReady(currentState);
   try {
     if (isResident(agent)) {
-      agentManagementUi.snapshot = await bridge.saveAgentModel(request);
+      const snapshot = await bridge.saveAgentModel(request);
+      if (!agentManagementMutationIsCurrent(mutation)) {
+        refreshAgentOverview();
+        return;
+      }
+      agentManagementUi.snapshot = snapshot;
       agentManagementUi.message = '模型设置已保存，将从下一条消息开始使用。';
       agentManagementUi.phase = 'ready';
       agentManagementUi.busy = false;
@@ -2363,11 +2719,8 @@ async function saveAgentModel(event) {
       refreshAgentOverview();
     } else {
       await bridge.configureAndActivateAgent(request);
-      if (
-        workspaceView !== 'agent-detail'
-        || agentManagementUi.agentId !== agentId
-        || agentManagementUi.tab !== 'model'
-      ) {
+      if (!agentManagementMutationIsCurrent(mutation)) {
+        refreshAgentOverview();
         return;
       }
       agentManagementUi.busy = false;
@@ -2383,6 +2736,7 @@ async function saveAgentModel(event) {
       }
     }
   } catch (error) {
+    if (!agentManagementMutationIsCurrent(mutation)) return;
     agentManagementUi = {
       ...agentManagementUi,
       phase: 'ready',
@@ -2395,15 +2749,15 @@ async function saveAgentModel(event) {
 
 async function saveAgentCustomization(event) {
   event.preventDefault();
-  if (
-    conversationUi.agentId === agentManagementUi.agentId
-    && conversationUi.streaming === true
-  ) return;
+  if (conversationTurnIsRunning(agentManagementUi.agentId)) return;
   const form = event.currentTarget;
+  form.dataset.dirty = 'false';
   const kind = form.elements.kind.value;
   const content = form.elements.content.value;
-  const agentId = agentManagementUi.agentId;
+  const agentId = form.dataset.agentId || agentManagementUi.agentId;
   const record = agentCustomizationRecord(kind) || { revision: 0 };
+  const snapshotBeforeMutation = agentManagementUi.snapshot;
+  const mutation = beginAgentManagementMutation(agentId, kind);
   agentManagementUi = { ...agentManagementUi, busy: true, error: null, message: null };
   renderReady(currentState);
   try {
@@ -2413,18 +2767,20 @@ async function saveAgentCustomization(event) {
       content,
       expectedRevision: record.revision,
     });
-    const customization = { ...(agentManagementUi.snapshot?.customization || {}) };
+    agentCustomizationDrafts.delete(`${mutation.accountId}:${agentId}:${kind}`);
+    if (!agentManagementMutationIsCurrent(mutation)) return;
+    const customization = { ...(snapshotBeforeMutation?.customization || {}) };
     customization[kind === 'agent_md' ? 'agentMd' : 'userMd'] = updated;
     agentManagementUi = {
       ...agentManagementUi,
       phase: 'ready',
       busy: false,
-      snapshot: { ...agentManagementUi.snapshot, customization },
+      snapshot: { ...snapshotBeforeMutation, customization },
       message: '已保存，将从下一条消息开始生效。',
       customizationConflict: null,
     };
-    agentCustomizationDrafts.delete(`${readyAccountId}:${agentId}:${kind}`);
   } catch (error) {
+    if (!agentManagementMutationIsCurrent(mutation)) return;
     const conflict = /revision conflict/i.test(String(error?.message || ''));
     agentManagementUi = {
       ...agentManagementUi,
@@ -2440,33 +2796,35 @@ async function saveAgentCustomization(event) {
 }
 
 async function clearAgentCustomization() {
-  if (
-    conversationUi.agentId === agentManagementUi.agentId
-    && conversationUi.streaming === true
-  ) return;
+  if (conversationTurnIsRunning(agentManagementUi.agentId)) return;
   const kind = agentManagementUi.tab;
   const record = agentCustomizationRecord(kind);
   if (!record?.customized) return;
+  const agentId = agentManagementUi.agentId;
+  const snapshotBeforeMutation = agentManagementUi.snapshot;
+  const mutation = beginAgentManagementMutation(agentId, kind);
   agentManagementUi = { ...agentManagementUi, busy: true, error: null, message: null };
   renderReady(currentState);
   try {
     const updated = await bridge.clearAgentCustomization({
-      agentId: agentManagementUi.agentId,
+      agentId,
       kind,
       expectedRevision: record.revision,
     });
-    const customization = { ...(agentManagementUi.snapshot?.customization || {}) };
+    agentCustomizationDrafts.delete(`${mutation.accountId}:${agentId}:${kind}`);
+    if (!agentManagementMutationIsCurrent(mutation)) return;
+    const customization = { ...(snapshotBeforeMutation?.customization || {}) };
     customization[kind === 'agent_md' ? 'agentMd' : 'userMd'] = updated;
     agentManagementUi = {
       ...agentManagementUi,
       phase: 'ready',
       busy: false,
-      snapshot: { ...agentManagementUi.snapshot, customization },
+      snapshot: { ...snapshotBeforeMutation, customization },
       message: '已恢复默认设置，将从下一条消息开始生效。',
       customizationConflict: null,
     };
-    agentCustomizationDrafts.delete(`${readyAccountId}:${agentManagementUi.agentId}:${kind}`);
   } catch (error) {
+    if (!agentManagementMutationIsCurrent(mutation)) return;
     const conflict = /revision conflict/i.test(String(error?.message || ''));
     agentManagementUi = {
       ...agentManagementUi,
@@ -3682,13 +4040,15 @@ function publicError(error, fallback) {
 function agentCard(agent, index, activatingAgentId, overview = null) {
   const resident = isResident(agent);
   const activating = activatingAgentId === agent.agentId;
+  const turnLocked = conversationTurnBlocksAgentSwitch(agent.agentId);
   const tones = ['tone-violet', 'tone-mint', 'tone-blue'];
-  const symbol = Array.from(String(agent.displayName || agent.agentId || '').trim())[0]
-    ?.toUpperCase() || 'A';
+  const symbol = agentInitial(agent);
   const buttonAttribute = `data-manage-agent="${escapeHtml(agent.agentId)}"`;
   const buttonLabel = activating
     ? '正在唤醒…'
-    : resident ? '打开 Agent' : '设置并激活';
+    : turnLocked
+      ? '当前回答完成后可切换'
+      : resident ? '打开 Agent' : '设置并激活';
   const modelSummary = overview?.modelId
     ? `${overview.providerDisplayName || '供应商不可用'} · ${overview.modelId}`
     : '尚未选择模型';
@@ -3707,9 +4067,14 @@ function agentCard(agent, index, activatingAgentId, overview = null) {
       </div>
       <div class="agent-meta">
         <span class="runtime ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
-        <button class="agent-action" ${buttonAttribute} ${activating ? 'disabled' : ''}>${buttonLabel}</button>
+        <button class="agent-action" ${buttonAttribute} ${activating || turnLocked ? 'disabled' : ''}>${buttonLabel}</button>
       </div>
     </article>`;
+}
+
+function agentInitial(agent) {
+  return Array.from(String(agent?.displayName || agent?.agentId || '').trim())[0]
+    ?.toUpperCase() || 'A';
 }
 
 function accountChip(account) {

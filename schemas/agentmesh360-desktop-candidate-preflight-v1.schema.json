@@ -99,7 +99,7 @@
         },
         "desktopPackageJsonSha256": {
           "type": "string",
-          "const": "sha256:724ce525026b9f45adc40426b0f3622e6bac81c755f2ec6d450d8691ab321c16"
+          "const": "sha256:67e69fb52d06e87fbddfa5cb4c4668fbdc64013bded803281c9ccb67c4647cad"
         },
         "desktopPackageLockSha256": {
           "type": "string",

@@ -7,9 +7,12 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const phase = process.env.AGENTMESH360_VISUAL_STATE || 'signed_out';
 const output = process.env.AGENTMESH360_SCREENSHOT || path.join('/tmp', `agentmesh360-${phase}.png`);
+const windowWidth = visualDimension(process.env.AGENTMESH360_VISUAL_WIDTH, 1180);
+const windowHeight = visualDimension(process.env.AGENTMESH360_VISUAL_HEIGHT, 760);
 const backgroundWrites = [];
 const identityLoginWrites = [];
 let backgroundEnabled = true;
+let conversationSnapshot = { phase: 'idle' };
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => fixtureState(phase));
@@ -17,7 +20,12 @@ app.whenReady().then(async () => {
     identityLoginWrites.push(payload);
     return fixtureState(phase);
   });
-  ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
+  ipcMain.handle('conversation:get-snapshot', () => conversationSnapshot);
+  ipcMain.handle('conversation:open', (event, agentId) => {
+    conversationSnapshot = conversationFixture(agentId);
+    event.sender.send('conversation:state', conversationSnapshot);
+    return conversationSnapshot;
+  });
   ipcMain.handle('package:get-snapshot', () => packageFixture());
   ipcMain.handle('package:refresh-registry', () => ({
     registry: packageFixture().status.remoteRegistry,
@@ -25,6 +33,9 @@ app.whenReady().then(async () => {
   }));
   ipcMain.handle('provider:get-snapshot', () => providerFixture());
   ipcMain.handle('agent:get-model-overview', () => modelOverviewFixture());
+  ipcMain.handle('agent:get-management-snapshot', (_event, agentId) => (
+    agentManagementFixture(agentId)
+  ));
   ipcMain.handle('runtime:get-background-snapshot', () => backgroundFixture());
   ipcMain.handle('runtime:set-background-startup', (_event, enabled) => {
     backgroundWrites.push(enabled);
@@ -52,8 +63,8 @@ app.whenReady().then(async () => {
     ipcMain.handle(channel, () => providerFixture());
   }
   const window = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: windowWidth,
+    height: windowHeight,
     show: false,
     backgroundColor: '#090d16',
     webPreferences: {
@@ -65,7 +76,29 @@ app.whenReady().then(async () => {
   });
   await window.loadFile(path.join(__dirname, '..', 'src', 'ui', 'index.html'));
   await new Promise((resolve) => setTimeout(resolve, 180));
-  if (phase === 'provider' || phase === 'provider-bottom') {
+  if (phase === 'conversation' || phase === 'agent-settings') {
+    await waitFor(() => window.webContents.executeJavaScript(
+      "document.querySelector('[data-manage-agent=\"job-agent\"]') !== null",
+    ));
+    await window.webContents.executeJavaScript(
+      "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
+    );
+    await waitFor(() => window.webContents.executeJavaScript(
+      "document.getElementById('conversation-form') !== null",
+    ));
+    await waitFor(() => window.webContents.executeJavaScript(
+      "document.querySelector('.conversation-state')?.textContent.trim() === '已连接'"
+        + " && document.querySelectorAll('.conversation-message').length === 2",
+    ));
+    if (phase === 'agent-settings') {
+      await window.webContents.executeJavaScript(
+        "document.getElementById('agent-settings-button').click()",
+      );
+      await waitFor(() => window.webContents.executeJavaScript(
+        "document.getElementById('agent-model-form') !== null",
+      ));
+    }
+  } else if (phase === 'provider' || phase === 'provider-bottom') {
     await window.webContents.executeJavaScript("document.getElementById('nav-providers').click()");
     await new Promise((resolve) => setTimeout(resolve, 180));
     if (phase === 'provider-bottom' || process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET) {
@@ -96,9 +129,16 @@ app.whenReady().then(async () => {
     `);
     await new Promise((resolve) => setTimeout(resolve, 180));
   }
+  if (phase === 'conversation' || phase === 'agent-settings') {
+    await new Promise((resolve) => setTimeout(resolve, 220));
+  }
   const image = await window.webContents.capturePage();
   fs.writeFileSync(output, image.toPNG());
-  if (phase === 'package') {
+  if (phase === 'conversation') {
+    await assertConversationVisual(window);
+  } else if (phase === 'agent-settings') {
+    await assertAgentSettingsVisual(window);
+  } else if (phase === 'package') {
     const closedControls = await window.webContents.executeJavaScript(`({
       hasInstallForm: document.getElementById('package-install-form') !== null,
       hasDownloadButtons: document.querySelector('[data-download-package]') !== null,
@@ -129,10 +169,13 @@ app.whenReady().then(async () => {
     assert.deepEqual(identityLoginWrites, [{ provider: 'google' }]);
   }
   await app.quit();
-}).catch(() => app.exit(1));
+}).catch((error) => {
+  process.stderr.write(`${error.stack || error}\n`);
+  app.exit(1);
+});
 
 function fixtureState(selected) {
-  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'package-ready' || selected === 'background') {
+  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'package-ready' || selected === 'background' || selected === 'conversation' || selected === 'agent-settings') {
     return {
       phase: 'ready',
       account: { id: 7, email: 'ferdinand@example.com', displayName: 'Ferdinand' },
@@ -157,6 +200,136 @@ function fixtureState(selected) {
     };
   }
   return { phase: 'signed_out' };
+}
+
+async function assertAgentWorkspaceBase(window) {
+  const metrics = await window.webContents.executeJavaScript(`(() => {
+    const workspace = document.querySelector('.workspace');
+    const sidebar = document.querySelector('.sidebar');
+    const rail = document.querySelector('.agent-workspace-rail');
+    const main = document.querySelector('.agent-workspace-main');
+    const sidebarRect = sidebar?.getBoundingClientRect();
+    const railRect = rail?.getBoundingClientRect();
+    const mainRect = main?.getBoundingClientRect();
+    return {
+      hasWorkspaceLayout: workspace?.classList.contains('agent-workspace-layout') === true,
+      hasSidebar: Boolean(sidebar),
+      hasRail: Boolean(rail),
+      hasMain: Boolean(main),
+      gridColumns: workspace
+        ? getComputedStyle(workspace).gridTemplateColumns.split(/\\s+/).filter(Boolean).length
+        : 0,
+      columnsOrdered: Boolean(
+        sidebarRect && railRect && mainRect
+        && sidebarRect.right <= railRect.left + 1
+        && railRect.right <= mainRect.left + 1
+      ),
+      residentAgentCount: document.querySelectorAll('[data-switch-resident-agent]').length,
+      activeResidentAgent: document.querySelector('[data-switch-resident-agent].active')
+        ?.dataset.switchResidentAgent,
+      sessionCount: document.querySelectorAll('[data-agent-session]').length,
+      mainSessionCount: document.querySelectorAll('[data-agent-session="main"]').length,
+      activeSession: document.querySelector('[data-agent-session].active')?.dataset.agentSession,
+      sessionTitle: document.querySelector('[data-agent-session="main"] strong')
+        ?.textContent.trim(),
+      legacyTabs: document.querySelectorAll(
+        '.agent-tabs, .agent-detail-header, .conversation-back, [data-agent-tab]',
+      ).length,
+      noDocumentOverflow: document.documentElement.scrollWidth
+        <= document.documentElement.clientWidth + 1,
+      noWorkspaceOverflow: workspace.scrollWidth <= workspace.clientWidth + 1,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    };
+  })()`);
+  assert.equal(metrics.hasWorkspaceLayout, true);
+  assert.equal(metrics.hasSidebar, true);
+  assert.equal(metrics.hasRail, true);
+  assert.equal(metrics.hasMain, true);
+  assert.equal(metrics.gridColumns, 3);
+  assert.equal(metrics.columnsOrdered, true);
+  assert.equal(metrics.residentAgentCount, 2);
+  assert.equal(metrics.activeResidentAgent, 'job-agent');
+  assert.equal(metrics.sessionCount, 1);
+  assert.equal(metrics.mainSessionCount, 1);
+  assert.equal(metrics.sessionTitle, '主会话');
+  assert.equal(metrics.legacyTabs, 0);
+  assert.equal(metrics.noDocumentOverflow, true);
+  assert.equal(metrics.noWorkspaceOverflow, true);
+  assert.equal(metrics.viewportWidth >= 1180, true);
+  assert.equal(metrics.viewportHeight >= 700, true);
+  return metrics;
+}
+
+async function assertConversationVisual(window) {
+  const workspaceMetrics = await assertAgentWorkspaceBase(window);
+  assert.equal(workspaceMetrics.activeSession, 'main');
+  const metrics = await window.webContents.executeJavaScript(`(() => {
+    const gear = document.getElementById('agent-settings-button');
+    const messageBody = document.querySelector('.conversation-message-body');
+    const composer = document.querySelector('#conversation-form textarea');
+    const state = document.querySelector('.conversation-state');
+    const feed = document.querySelector('.conversation-feed');
+    const gearRect = gear?.getBoundingClientRect();
+    return {
+      hasConversationWorkspace: document.querySelector('.agent-conversation-workspace') !== null,
+      hasSettingsWorkspace: document.querySelector('.agent-settings-workspace') !== null,
+      settingsTabs: document.querySelectorAll('[data-agent-setting]').length,
+      toolbarTitle: document.querySelector('.agent-chat-identity h1')?.textContent.trim(),
+      conversationState: document.querySelector('.conversation-state')?.textContent.trim(),
+      messageCount: document.querySelectorAll('.conversation-message').length,
+      gearLabel: gear?.getAttribute('aria-label'),
+      gearWidth: gearRect?.width,
+      gearHeight: gearRect?.height,
+      messageFont: messageBody ? parseFloat(getComputedStyle(messageBody).fontSize) : 0,
+      composerFont: composer ? parseFloat(getComputedStyle(composer).fontSize) : 0,
+      stateFont: state ? parseFloat(getComputedStyle(state).fontSize) : 0,
+      feedWidth: feed?.getBoundingClientRect().width,
+      feedFitsTranscript: feed?.getBoundingClientRect().width
+        <= document.querySelector('.conversation-transcript')?.getBoundingClientRect().width,
+    };
+  })()`);
+  assert.equal(metrics.hasConversationWorkspace, true);
+  assert.equal(metrics.hasSettingsWorkspace, false);
+  assert.equal(metrics.settingsTabs, 0);
+  assert.equal(metrics.toolbarTitle, 'Job Agent');
+  assert.equal(metrics.conversationState, '已连接');
+  assert.equal(metrics.messageCount, 2);
+  assert.equal(metrics.gearLabel, '打开 Job Agent 设置');
+  assert.equal(metrics.gearWidth, 44);
+  assert.equal(metrics.gearHeight, 44);
+  assert.equal(metrics.messageFont >= 15, true);
+  assert.equal(metrics.composerFont >= 15, true);
+  assert.equal(metrics.stateFont >= 12, true);
+  assert.equal(metrics.feedWidth <= 900, true);
+  assert.equal(metrics.feedFitsTranscript, true);
+}
+
+async function assertAgentSettingsVisual(window) {
+  await assertAgentWorkspaceBase(window);
+  const metrics = await window.webContents.executeJavaScript(`({
+    hasSettingsWorkspace: document.querySelector('.agent-settings-workspace') !== null,
+    hasConversationWorkspace: document.querySelector('.agent-conversation-workspace') !== null,
+    hasConversationForm: document.getElementById('conversation-form') !== null,
+    hasBackToConversation: document.getElementById('back-to-agent-conversation') !== null,
+    hasToolbarGear: document.getElementById('agent-settings-button') !== null,
+    title: document.querySelector('.agent-settings-header h1')?.textContent.trim(),
+    labels: Array.from(
+      document.querySelectorAll('[data-agent-setting]'),
+      (node) => node.textContent.trim(),
+    ),
+    activeSetting: document.querySelector('[data-agent-setting].active')?.dataset.agentSetting,
+    hasModelForm: document.getElementById('agent-model-form') !== null,
+  })`);
+  assert.equal(metrics.hasSettingsWorkspace, true);
+  assert.equal(metrics.hasConversationWorkspace, false);
+  assert.equal(metrics.hasConversationForm, false);
+  assert.equal(metrics.hasBackToConversation, true);
+  assert.equal(metrics.hasToolbarGear, false);
+  assert.equal(metrics.title, 'Job Agent');
+  assert.deepEqual(metrics.labels, ['模型', '行为', '用户偏好']);
+  assert.equal(metrics.activeSetting, 'model');
+  assert.equal(metrics.hasModelForm, true);
 }
 
 function packageFixture() {
@@ -311,6 +484,76 @@ function modelOverviewFixture() {
   };
 }
 
+function agentManagementFixture(agentId) {
+  return {
+    agentId,
+    profiles: providerFixture().profiles,
+    modelBinding: {
+      scopeKind: 'agent',
+      scopeId: agentId,
+      role: 'main',
+      providerProfileId: 'pp_openai',
+      modelId: 'gpt-5',
+    },
+    bindingIssue: null,
+    inheritedFromLegacyGlobal: false,
+    customization: {
+      packageName: fixtureState(phase).agents
+        .find((agent) => agent.agentId === agentId)?.displayName || agentId,
+      packageVersion: '1.0.0',
+      packageDescription: '本地视觉验收用 Agent Package。',
+      requestedPermissions: ['local_files', 'network_access'],
+      agentMd: {
+        kind: 'agent_md',
+        content: '先给出简短计划，再继续执行。',
+        revision: 1,
+        customized: true,
+      },
+      userMd: {
+        kind: 'user_md',
+        content: '默认使用中文。',
+        revision: 1,
+        customized: true,
+      },
+    },
+  };
+}
+
+function conversationFixture(agentId) {
+  const displayName = fixtureState(phase).agents
+    .find((agent) => agent.agentId === agentId)?.displayName || agentId;
+  return {
+    phase: 'ready',
+    agentId,
+    displayName,
+    messages: [
+      {
+        id: 'visual-message-1',
+        role: 'user',
+        text: '继续我上次的求职进度。',
+      },
+      {
+        id: 'visual-message-2',
+        role: 'assistant',
+        text: '好的，上次的岗位筛选和材料进度都还在。我们可以从最新的候选岗位继续。',
+      },
+    ],
+    activities: [],
+    backgroundTasks: [],
+    backgroundStatus: 'ready',
+    planEntries: [],
+    planStatus: 'ready',
+    artifacts: [],
+    artifactStatus: 'ready',
+    project: null,
+    projectStatus: 'ready',
+    streaming: false,
+    transcriptTruncated: false,
+    error: null,
+    stopReason: 'end_turn',
+  };
+}
+
 function providerFixture() {
   return {
     profiles: [
@@ -425,4 +668,20 @@ function providerFixture() {
       },
     ],
   };
+}
+
+function visualDimension(rawValue, fallback) {
+  if (rawValue === undefined || rawValue === '') return fallback;
+  const value = Number(rawValue);
+  assert.equal(Number.isInteger(value) && value >= 700 && value <= 4000, true);
+  return value;
+}
+
+async function waitFor(predicate, timeoutMs = 4_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`等待 ${phase} 视觉状态超时`);
 }

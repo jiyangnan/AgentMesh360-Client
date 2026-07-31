@@ -1162,3 +1162,28 @@ GLM/Kimi Coding Plan 使用独立端点和专项提示；技术兼容不代表�
 发行和生产 R4 边界不变。Provider UAT 切片已由 clean pushed commit
 `9e6ea87439d6...` 完成单版本本地交付；原定下一产品工作仍是首次使用引导；
 P7/P8、在线分发和生产更新继续关闭。
+
+## 68. 循环 138-144 owner UAT：Agent 归属、主对话与工作区层级
+
+owner UAT 从“Provider 配置成功后如何真正使用 Agent”继续向前验证，依次关闭了模型
+配置归属、首次绑定保存、固定 Main Session 恢复、旧 Leader 首次启动接管，以及 Agent
+工作区信息层级。最终产品心智冻结为：
+
+1. 全局“模型供应商”只新增、验证和管理 BYOK Provider；
+2. 具体 Agent 的模型、行为 `agent.md` 和用户偏好 `user.md` 只在该 Agent 齿轮设置中；
+3. Agent 工作区默认是对话，不把设置与对话放在同一视觉级别；
+4. 全局导航和主区域之间增加上下文二级栏，上方选择真实常驻 Agent，下方选择该 Agent
+   的真实会话；当前 Host 只有确定性 Main Session，因此只展示“主会话”，不伪造多会话；
+5. 同一账号、Agent 和 Main Session 的历史及草稿持续保留；切屏、后台复验、快速切换、
+   异步保存响应和旧 Host 推送均不得把内容写到另一个账号、Agent 或页面；
+6. 当前回答生成中阻止切换到另一 Agent；模型改变从下一条消息生效，不修改历史回答。
+
+本轮三栏布局、纯对话工具栏、齿轮设置、15px 正文/输入、固定 Composer、latest-intent
+和异步 mutation 归属已进入 Electron 点击级回归。多会话创建、命名、删除、搜索、归档
+及 Session Index 仍未实现；只有 Host 将账户隔离的真实会话索引作为公开安全投影后，
+客户端才扩展二级栏，不从本地目录或历史字符串猜测。
+
+这组 owner UAT 仍属于 P6 本机 unsigned internal 候选。订阅强门、BYOK、本机 Vault、
+Host 持久权威、Package 签名信任和 fail-closed 边界不变；没有授权 P7/P8、在线分发、
+生产自动更新、Developer ID/notarization、模型价格/余额或自动 fallback。完成本轮唯一
+本地安装包后，产品顺序回到首次使用引导，不因会话栏预留位置提前扩展多会话后端。

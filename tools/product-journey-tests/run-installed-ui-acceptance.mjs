@@ -183,6 +183,10 @@ function acceptanceExpression() {
         throw new Error('installed client did not recover a resident Agent');
       }
 
+      const providerProbeBaseline = JSON.stringify(
+        (await window.agentmesh360.getProviderSnapshot())?.probes || [],
+      );
+
       document.getElementById('nav-providers').click();
       await waitFor(
         () => document.querySelector('.provider-list-shell'),
@@ -277,16 +281,102 @@ function acceptanceExpression() {
       ) {
         throw new Error('Host conversation snapshot is not the ready Job Agent');
       }
+
+      const workspaceShell = document.querySelector(
+        '.workspace.agent-workspace-layout',
+      );
+      const workspaceColumns = [...(workspaceShell?.children || [])];
+      const threeColumnAgentWorkspace =
+        workspaceColumns.length === 3
+        && workspaceColumns[0]?.matches('aside.sidebar')
+        && workspaceColumns[1]?.matches('aside.agent-workspace-rail')
+        && workspaceColumns[2]?.matches('main.workspace-main.agent-workspace-main');
+      if (!threeColumnAgentWorkspace) {
+        throw new Error('installed Agent workspace is not the required three-column layout');
+      }
+
+      const globalNavigationReady =
+        document.querySelector('#nav-agents.nav-item.active')
+        && document.getElementById('nav-providers')
+        && document.getElementById('nav-settings');
+      if (!globalNavigationReady) {
+        throw new Error('installed global navigation does not match the product structure');
+      }
+
+      const residentAgentSelection = document.querySelectorAll(
+        '.resident-agent-list [data-switch-resident-agent][aria-current="true"]',
+      );
+      if (
+        residentAgentSelection.length !== 1
+        || residentAgentSelection[0].dataset.switchResidentAgent !== 'job-agent'
+      ) {
+        throw new Error('installed Agent rail does not identify the active Job Agent');
+      }
+
+      const sessionButtons = [
+        ...document.querySelectorAll('.agent-session-list [data-agent-session]'),
+      ];
+      const singlePersistentMainSession =
+        sessionButtons.length === 1
+        && sessionButtons[0].dataset.agentSession === 'main'
+        && sessionButtons[0].getAttribute('aria-current') === 'page'
+        && sessionButtons[0].textContent?.includes('主会话')
+        && document.querySelectorAll('#conversation-form').length === 1
+        && document.getElementById('conversation-form')?.dataset.sessionKey === 'main'
+        && document.querySelector('.agent-chat-identity p')?.textContent?.trim() === '主会话';
+      if (!singlePersistentMainSession) {
+        throw new Error('installed Agent does not expose exactly one persistent main session');
+      }
+
+      const settingsButton = document.querySelector(
+        '#agent-settings-button.agent-settings-button',
+      );
+      const agentSettingsGearPresent =
+        settingsButton instanceof HTMLButtonElement
+        && !settingsButton.disabled
+        && settingsButton.getAttribute('aria-label')?.includes('设置')
+        && settingsButton.querySelector('svg');
+      if (!agentSettingsGearPresent) {
+        throw new Error('installed Agent conversation lacks the settings gear');
+      }
+
+      const legacyAgentTabsAbsent =
+        !document.querySelector('.agent-tabs')
+        && !document.querySelector('[data-agent-tab]')
+        && !document.querySelector('.agent-conversation-workspace .agent-settings-nav');
+      if (!legacyAgentTabsAbsent) {
+        throw new Error('installed Agent conversation still exposes peer-level configuration tabs');
+      }
+
+      const conversationMessagesBefore = JSON.stringify(
+        firstConversationSnapshot.messages || [],
+      );
+      const conversationDomMessagesBefore = document.querySelectorAll(
+        '.conversation-message',
+      ).length;
       let message = document.querySelector(
         '#conversation-form [name="message"]',
       );
       message.value = ${JSON.stringify(FAKE_CONVERSATION_DRAFT)};
-      document.querySelector('.conversation-back')?.click();
+      settingsButton.click();
       await waitFor(
-        () => document.querySelector('[data-manage-agent="job-agent"]'),
-        'Agent list did not return from conversation',
+        () => (
+          document.querySelector('.agent-settings-workspace')
+          && document.getElementById('back-to-agent-conversation')
+          && document.querySelectorAll(
+            '.agent-settings-nav [data-agent-setting]',
+          ).length === 3
+          && !document.getElementById('conversation-form')
+        ),
+        'Agent settings did not open from the conversation gear',
       );
-      document.querySelector('[data-manage-agent="job-agent"]').click();
+      if (
+        document.querySelector('.agent-tabs')
+        || document.querySelector('[data-agent-tab]')
+      ) {
+        throw new Error('installed Agent settings still use legacy peer-level tabs');
+      }
+      document.getElementById('back-to-agent-conversation').click();
       await waitFor(
         () => {
           const form = document.getElementById('conversation-form');
@@ -309,6 +399,14 @@ function acceptanceExpression() {
       ) {
         throw new Error('reopened Host snapshot is not the ready Job Agent');
       }
+      if (
+        JSON.stringify(reopenedConversationSnapshot.messages || [])
+          !== conversationMessagesBefore
+        || document.querySelectorAll('.conversation-message').length
+          !== conversationDomMessagesBefore
+      ) {
+        throw new Error('installed acceptance unexpectedly sent a conversation message');
+      }
       message = document.querySelector(
         '#conversation-form [name="message"]',
       );
@@ -318,10 +416,17 @@ function acceptanceExpression() {
           ${JSON.stringify(FAKE_CONVERSATION_DRAFT)},
         );
       if (!conversationDraftPreserved) {
-        throw new Error('conversation draft was not preserved safely');
+        throw new Error('conversation draft was not preserved through Agent settings');
       }
       message.value = '';
       document.getElementById('nav-agents').click();
+
+      const providerProbeFinal = JSON.stringify(
+        (await window.agentmesh360.getProviderSnapshot())?.probes || [],
+      );
+      if (providerProbeFinal !== providerProbeBaseline) {
+        throw new Error('installed acceptance unexpectedly triggered a Provider request');
+      }
 
       return {
         status: 'passed',
@@ -332,7 +437,13 @@ function acceptanceExpression() {
         officialProviderCount: presetIds.length,
         providerDraftPreserved,
         conversationDraftPreserved,
+        conversationDraftPreservedViaSettings: true,
         conversationHostReady: true,
+        threeColumnAgentWorkspace: true,
+        singlePersistentMainSession: true,
+        agentSettingsGearPresent: true,
+        legacyAgentTabsAbsent: true,
+        conversationMessagesSent: 0,
         providerRequests: 0,
         agentMeshCreditsUsed: 0,
         fakeDraftsCleared: true,

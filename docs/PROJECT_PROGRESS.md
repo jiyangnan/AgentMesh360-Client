@@ -7897,3 +7897,58 @@ KimiCLI 独立交叉测试：
 - 主对话故障、首次启动接管、完整回归、KimiCLI 复核、唯一内部包和磁盘清理均已关闭；
 - 下一产品切片回到既定首次使用引导；进入下一轮前仍先复核产品计划，不把本次恢复修复
   延伸成 Provider fallback、在线商店或生产发布。
+
+### 循环 144：Agent 工作区对话、设置与会话导航重构
+
+状态：功能、全量回归与 KimiCLI 终审通过，内部包交付进行中
+
+owner UAT 直接暴露：旧 Agent 详情把 Agent 介绍、模型、`agent.md`、`user.md` 和对话
+放在同一视觉层级，Agent 名称与主会话标题重复，消息正文和输入字号偏小；全局导航与
+对话之间也没有“常驻 Agent / 当前 Agent 会话”的上下文层，用户难以形成稳定心智。
+
+本轮已实现：
+
+- Agent 工作区改为“全局导航 / Agent 与会话二级栏 / 主区域”三栏；二级栏上半区只列
+  当前账户真实常驻 Agent，下半区只列 Host 当前确实拥有的固定“主会话”；
+- 常驻 Agent 默认直接进入纯对话，顶部只保留 Agent、主会话、连接状态和 44px 齿轮；
+  模型、行为和用户偏好全部移入齿轮设置，设置页提供明确“返回主会话”；
+- 对话正文限制阅读宽度，正文和输入为 15px，关键辅助信息不低于 12px，Composer 固定
+  在底部；安全 Markdown 先转义再投影，不向 Renderer 暴露 Session、路径或 Provider
+  凭据；
+- 对话草稿键升级为“账号 / Agent / Main Session”，配置草稿也从表单记录自身账号、
+  Agent 和类型，切换页面或 Agent 不会把旧 DOM 内容写入新对象；
+- 快速 A→B 打开采用 latest-intent，并串行化 Host `conversation:open`；A 的延迟响应和
+  push 均不能覆盖 B；当前 Agent 生成中，全局 Agent 卡与二级栏都阻止切到另一 Agent；
+- send pending 期间忽略 Host 让位短暂出现的无 Agent `idle` 快照；成功和失败响应都按
+  发起账号、Agent 与 revision 收口，避免 turn lock 永久卡死或迟到结果污染别的 Agent；
+- 模型或 overlay 异步保存绑定发起时的账号、Agent、设置页和 revision；保存成功或失败
+  到达时若用户已切换 Agent，只更新所属对象，不污染当前页面和草稿；
+- 四组 Electron smoke 增加 `-ApplePersistenceIgnoreState YES`，避免测试被 macOS
+  Electron 崩溃历史恢复弹窗阻断；blocked P6 preflight 的 package manifest 摘要同步。
+
+当前自主验证：
+
+- Desktop syntax：通过；Desktop Node：142 passed / 5 个显式 real-Host gate skipped /
+  0 failed；
+- Agent 管理、Conversation、Provider、Agent Package 四组 Electron smoke 全部通过；
+- Conversation 覆盖快速 Agent 切换、旧响应/推送、生成中全入口锁定；Agent 管理覆盖
+  延迟模型成功和延迟 overlay 冲突在切换后的归属隔离；
+- 1180×760 对话与 1600×900 Agent 设置截图已人工复核，三栏、字号、阅读宽度、固定
+  Composer 和设置层级符合本轮设计；
+- AgentMesh360 Rust：202 passed / 1 ignored / 0 failed；真实 Host：5 passed / 0 failed；
+  Repository 工具链：306 passed / 0 failed；产品旅程 73 条、14 个领域通过结构与执行
+  校验，校验器 3 passed / 0 failed；
+- Rust fmt、Clippy `-D warnings`、`git diff --check` 通过；真实 Provider Key/Vault 读取、
+  Provider 请求、消息发送、AgentMesh credits、外部上传和费用均为 0。
+- KimiCLI 首轮终审发现并推动关闭 Host `idle` 过渡快照导致 send pending 永久锁死，
+  以及状态字号低于 12px 两项问题；修复后独立复跑 syntax、Conversation、Agent 管理和
+  产品旅程，最终结论 `CLEAN`，P0/P1/P2 为 0。
+
+计划复盘与后续门禁：
+
+- 本轮只重排既定 Agent 工作区并补齐交互竞态，没有伪造多会话；新增、重命名、删除、
+  搜索和归档会话仍等待 Host 提供账户隔离的真实 Session Index；
+- Provider 页仍只管理供应商；模型、行为和偏好仍归具体 Agent；未扩展自动 fallback、
+  价格/余额、在线商店、P7/P8、签名/公证或在线发布；
+- 只有 clean commit push、唯一内部包复验和真实覆盖安装通过后，本循环才可关闭；
+  KimiCLI 终审已通过；之后回到既定首次使用引导切片。

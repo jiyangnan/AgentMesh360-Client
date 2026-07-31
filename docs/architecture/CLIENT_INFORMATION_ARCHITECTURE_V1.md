@@ -16,8 +16,8 @@
 首页会重复 Agent 列表并诱发假数据或过度设计。“默认落点、首次引导、恢复工作”的
 需求由 Agent 列表页直接承担。
 
-不设置一级“当前对话”。对话属于具体 Agent 的固定 Main Session，是 Agent 详情的
-默认页签。
+不设置一级“当前对话”。对话属于具体 Agent 的固定 Main Session；打开常驻 Agent 后，
+主内容默认直接进入对话，不再先经过详情头部或“对话”页签。
 
 不设置一级“Agent Package”。原 Package Center 迁入 Agent 页内的“添加 Agent”；
 Registry、revision、digest 等信息只进入“高级与审计”折叠区域。
@@ -34,11 +34,12 @@ flowchart TD
     AGENTS --> RESUME["继续上次工作"]
     AGENTS --> LIST["已激活 / 可激活 Agent"]
     AGENTS --> ADD["添加 Agent"]
-    LIST --> DETAIL["Agent 详情"]
-    DETAIL --> CHAT["对话"]
-    DETAIL --> MODEL["模型"]
-    DETAIL --> AGENT_MD["行为 agent.md"]
-    DETAIL --> USER_MD["偏好 user.md"]
+    LIST --> WORKSPACE["Agent 工作区"]
+    WORKSPACE --> CHAT["主会话（默认）"]
+    WORKSPACE --> GEAR["右上角 Agent 设置"]
+    GEAR --> MODEL["模型"]
+    GEAR --> AGENT_MD["行为 agent.md"]
+    GEAR --> USER_MD["偏好 user.md"]
 
     PROVIDERS --> CONNECT["添加 / 编辑供应商"]
     PROVIDERS --> SAVED["已连接供应商"]
@@ -94,16 +95,28 @@ Agent 页按以下顺序组织：
 6. 没有 Profile 时阻止激活，提供“去添加模型供应商”；
 7. 取消不写绑定、不激活、不创建半状态。
 
-## 6. Agent 详情
+## 6. Agent 工作区
 
-详情头部包含返回 Agent 列表、Agent 名称、状态和当前模型摘要。
+已激活 Agent 使用三栏工作区：
+
+1. 全局导航：Agent、模型供应商、设置；
+2. Agent 二级栏：上半区列真正常驻 Agent，下半区列当前 Agent 的真实会话；
+3. 主内容：默认且首要为当前会话。
+
+当前 Host 产品合同是每个账户、每个 Agent 一个确定性 Main Session，因此会话区只显示
+一条“主会话”。Renderer 使用公开语义键 `main`，不获得真实 Session ID、Workspace
+或路径，也不提供没有 Host 权威支持的新建、重命名、删除会话控件。二级栏保留列表结构，
+以后必须先由 Host 增加账户隔离的多会话 Registry 和窄接口，才能扩展更多会话。
 
 ### 6.1 对话
 
-现有 Conversation View 迁入此页签，继续使用同一个确定性 Main Session；项目、
-计划、后台任务、活动、产物、消息、权限确认和草稿合同不变。
+打开常驻 Agent 后直接展示同一个确定性 Main Session；项目、计划、后台任务、活动、
+产物、消息、权限确认和草稿合同不变。顶部只保留 Agent 身份、主会话状态和设置齿轮；
+模型、行为和偏好不与对话处于同一视觉层级。
 
 ### 6.2 模型
+
+从对话右上角齿轮进入 Agent 设置，再选择“模型”。
 
 - 显示当前 Provider、模型、状态和来源；
 - Provider 下拉只列已验证 Profile；
@@ -120,6 +133,8 @@ Agent 页按以下顺序组织：
 
 ### 6.3 行为 agent.md
 
+从对话右上角齿轮进入 Agent 设置，再选择“行为”。
+
 `agent.md` 是该用户、该 Agent 的本机行为补充，不是签名 Package 的基础 Prompt。
 
 - UI 只显示 Package 名、版本和公开描述，不展示内部 Prompt 全文；
@@ -131,6 +146,8 @@ Agent 页按以下顺序组织：
 - 官方安全规则优先，个人补充不能解除权限限制。
 
 ### 6.4 偏好 user.md
+
+从对话右上角齿轮进入 Agent 设置，再选择“用户偏好”。
 
 `user.md` 是该用户、该 Agent 的本机偏好，包括称呼、语言、习惯和相关背景；本版不做
 全局 user.md。它与 `agent.md` 独立存储、独立 revision、独立草稿。
@@ -197,6 +214,7 @@ Agent 页按以下顺序组织：
 - 全局 user.md；
 - needs_input 已读标记；
 - 多对话聚合页；
+- 第二会话及其新建、重命名、删除、搜索和归档；
 - 在线 Agent 商店；
 - role 级路由 UI；
 - Package 内部基础 Prompt 展示；

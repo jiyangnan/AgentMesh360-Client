@@ -15,6 +15,8 @@ let customizationConflict = false;
 let hostBridgeState = 'connected';
 let backgroundDelayMs = 0;
 let managementDelayMs = 0;
+let modelSaveBarrier = null;
+let customizationSaveBarrier = null;
 let validationRevision = 1;
 let activeAccountId = 7;
 let smokeStep = 'startup';
@@ -36,10 +38,16 @@ app.whenReady().then(async () => {
   ipcMain.handle('provider:get-snapshot', () => providerSnapshot());
   ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
   ipcMain.handle('conversation:open', (event, agentId) => {
+    calls.push(['open-conversation', agentId]);
+    const displayName = agentId === 'job-agent'
+      ? 'Job Agent'
+      : agentId === 'deploy-agent'
+        ? 'Deploy Agent'
+        : 'LectureCast Agent';
     const snapshot = {
       phase: 'ready',
       agentId,
-      displayName: agentId === 'job-agent' ? 'Job Agent' : 'LectureCast Agent',
+      displayName,
       messages: [],
       activities: [],
       backgroundTasks: [],
@@ -82,8 +90,14 @@ app.whenReady().then(async () => {
     };
     return {};
   });
-  ipcMain.handle('agent:save-model', (_event, request) => {
-    if (modelSaveFailure) {
+  ipcMain.handle('agent:save-model', async (_event, request) => {
+    const shouldFail = modelSaveFailure;
+    const barrier = modelSaveBarrier;
+    if (barrier) {
+      calls.push(['save-model-pending', request]);
+      await barrier.promise;
+    }
+    if (shouldFail) {
       calls.push(['save-model-failed', request]);
       throw new Error('fixture model save failed');
     }
@@ -96,9 +110,16 @@ app.whenReady().then(async () => {
     calls.push(['activate', request]);
     return readyState();
   });
-  ipcMain.handle('agent:save-customization', (_event, request) => {
-    if (customizationConflict) {
+  ipcMain.handle('agent:save-customization', async (_event, request) => {
+    const shouldConflict = customizationConflict;
+    const barrier = customizationSaveBarrier;
+    if (barrier) {
+      calls.push(['save-customization-pending', request]);
+      await barrier.promise;
+    }
+    if (shouldConflict) {
       customizationConflict = false;
+      calls.push(['save-customization-conflict', request]);
       throw new Error('agent customization revision conflict; reload before saving');
     }
     calls.push(['save-customization', request]);
@@ -327,11 +348,25 @@ app.whenReady().then(async () => {
     sendDisabled: true,
   });
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('.agent-detail-header h1')?.innerText === 'Job Agent'",
+    "document.querySelector('.agent-chat-identity h1')?.innerText === 'Job Agent'",
   ));
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.conversation-state')?.innerText === '已连接'",
   ));
+  smokeStep = 'verify conversation keeps settings out of the primary navigation';
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    settingsButton: document.getElementById('agent-settings-button') !== null,
+    settingsNavigation: document.querySelector('.agent-settings-nav') !== null,
+    settingsTabs: document.querySelectorAll('[data-agent-setting]').length,
+    legacyTabs: document.querySelectorAll('[data-agent-tab]').length,
+    backToConversation: document.getElementById('back-to-agent-conversation') !== null,
+  })`), {
+    settingsButton: true,
+    settingsNavigation: false,
+    settingsTabs: 0,
+    legacyTabs: 0,
+    backToConversation: false,
+  });
   managementDelayMs = 0;
   window.webContents.send('conversation:state', { phase: 'idle' });
   await waitFor(() => window.webContents.executeJavaScript(
@@ -345,13 +380,13 @@ app.whenReady().then(async () => {
     sendDisabled: true,
   });
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"model\"]').click()",
+    "document.getElementById('agent-settings-button').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-model-form') !== null",
   ));
   const modelForm = await window.webContents.executeJavaScript(`({
-    agent: document.querySelector('.agent-detail-header h1')?.innerText,
+    agent: document.querySelector('.agent-settings-header h1')?.innerText,
     modelTag: document.querySelector('#agent-model-form [name="modelId"]').tagName,
     models: [...document.querySelectorAll('#agent-model-form [name="modelId"] option')]
       .map((option) => option.value).filter(Boolean),
@@ -399,10 +434,10 @@ app.whenReady().then(async () => {
     document.querySelector('[data-manage-agent="job-agent"]').click();
   `);
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"model\"]') !== null",
+    "document.getElementById('agent-settings-button') !== null",
   ));
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"model\"]').click()",
+    "document.getElementById('agent-settings-button').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-model-form') !== null",
@@ -449,7 +484,7 @@ app.whenReady().then(async () => {
   });
   smokeStep = 'open the resident conversation immediately after first model save';
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"conversation\"]').click()",
+    "document.getElementById('back-to-agent-conversation').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.conversation-state')?.innerText === '已连接'",
@@ -464,7 +499,7 @@ app.whenReady().then(async () => {
     hasError: false,
   });
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"model\"]').click()",
+    "document.getElementById('agent-settings-button').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-model-form') !== null",
@@ -506,9 +541,81 @@ app.whenReady().then(async () => {
     modelId: 'glm-4.7',
   });
 
+  smokeStep = 'ignore a delayed Job model save after switching to Deploy';
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('agent-model-form');
+      form.elements.modelId.value = 'glm-5.2';
+      form.elements.modelId.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+  const delayedModelSave = createBarrier();
+  modelSaveBarrier = delayedModelSave;
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]')?.click()",
+  );
+  await waitFor(() => calls.some(
+    ([kind, request]) => kind === 'save-model-pending'
+      && request.agentId === 'job-agent'
+      && request.modelId === 'glm-5.2',
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-switch-resident-agent=\"deploy-agent\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.agent-chat-identity h1')?.innerText === 'Deploy Agent'",
+  ));
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText === '已连接'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('agent-settings-button')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('agent-model-form') !== null",
+  ));
+  assert.deepEqual(await currentAgentModelUi(window), {
+    title: 'Deploy Agent',
+    currentModel: 'Kimi Coding Plan · kimi-k2.5',
+    providerId: 'pp_kimi',
+    modelId: 'kimi-k2.5',
+    models: ['kimi-k2.5'],
+    successNotice: null,
+    errorNotice: null,
+  });
+  delayedModelSave.resolve();
+  modelSaveBarrier = null;
+  await waitFor(() => calls.some(
+    ([kind, request]) => kind === 'save-model'
+      && request.agentId === 'job-agent'
+      && request.modelId === 'glm-5.2',
+  ));
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.deepEqual(await currentAgentModelUi(window), {
+    title: 'Deploy Agent',
+    currentModel: 'Kimi Coding Plan · kimi-k2.5',
+    providerId: 'pp_kimi',
+    modelId: 'kimi-k2.5',
+    models: ['kimi-k2.5'],
+    successNotice: null,
+    errorNotice: null,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-switch-resident-agent=\"job-agent\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.agent-chat-identity h1')?.innerText === 'Job Agent'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('agent-settings-button')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('agent-model-form') !== null",
+  ));
+
   smokeStep = 'open behavior editor';
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]').click()",
+    "document.querySelector('[data-agent-setting=\"agent_md\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-customization-form') !== null",
@@ -530,10 +637,16 @@ app.whenReady().then(async () => {
     document.querySelector('[data-manage-agent="job-agent"]').click();
   `);
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]') !== null",
+    "document.getElementById('agent-settings-button') !== null",
   ));
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]').click()",
+    "document.getElementById('agent-settings-button').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-customization-form') !== null",
@@ -555,7 +668,7 @@ app.whenReady().then(async () => {
 
   smokeStep = 'save and clear user preferences';
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"user_md\"]').click()",
+    "document.querySelector('[data-agent-setting=\"user_md\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-customization-form') !== null",
@@ -594,7 +707,7 @@ app.whenReady().then(async () => {
 
   smokeStep = 'preserve draft on customization revision conflict';
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]').click()",
+    "document.querySelector('[data-agent-setting=\"agent_md\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-customization-form') !== null",
@@ -645,6 +758,95 @@ app.whenReady().then(async () => {
     "document.querySelector('.unsaved-badge') === null",
   ), true);
 
+  smokeStep = 'ignore a delayed Job customization failure after switching to Deploy';
+  customizationConflict = true;
+  const delayedCustomizationSave = createBarrier();
+  customizationSaveBarrier = delayedCustomizationSave;
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('agent-customization-form');
+      form.elements.content.value = 'Job Agent 的延迟失败草稿';
+      form.elements.content.dispatchEvent(new Event('input', { bubbles: true }));
+      form.requestSubmit();
+    })()
+  `);
+  await waitFor(() => calls.some(
+    ([kind, request]) => kind === 'save-customization-pending'
+      && request.agentId === 'job-agent'
+      && request.content === 'Job Agent 的延迟失败草稿',
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-switch-resident-agent=\"deploy-agent\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.agent-chat-identity h1')?.innerText === 'Deploy Agent'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('agent-settings-button')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('agent-customization-form') !== null",
+  ));
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const textarea = document.querySelector('#agent-customization-form textarea');
+      textarea.value = '只属于 Deploy Agent 的未保存草稿';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    })()
+  `);
+  assert.deepEqual(await currentAgentCustomizationUi(window), {
+    title: 'Deploy Agent',
+    currentModel: 'Kimi Coding Plan · kimi-k2.5',
+    activeSetting: '行为',
+    packageName: 'Deploy Agent',
+    content: '只属于 Deploy Agent 的未保存草稿',
+    successNotice: null,
+    errorNotice: null,
+    conflict: false,
+  });
+  delayedCustomizationSave.resolve();
+  customizationSaveBarrier = null;
+  await waitFor(() => calls.some(
+    ([kind, request]) => kind === 'save-customization-conflict'
+      && request.agentId === 'job-agent'
+      && request.content === 'Job Agent 的延迟失败草稿',
+  ));
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.deepEqual(await currentAgentCustomizationUi(window), {
+    title: 'Deploy Agent',
+    currentModel: 'Kimi Coding Plan · kimi-k2.5',
+    activeSetting: '行为',
+    packageName: 'Deploy Agent',
+    content: '只属于 Deploy Agent 的未保存草稿',
+    successNotice: null,
+    errorNotice: null,
+    conflict: false,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-switch-resident-agent=\"job-agent\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.agent-chat-identity h1')?.innerText === 'Job Agent'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('agent-settings-button')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('agent-customization-form') !== null",
+  ));
+
   smokeStep = 'lock Agent settings while a turn is running';
   window.webContents.send('conversation:state', {
     phase: 'ready',
@@ -662,13 +864,29 @@ app.whenReady().then(async () => {
   ));
   assert.deepEqual(await window.webContents.executeJavaScript(`({
     submitDisabled: document.querySelector('#agent-customization-form button[type="submit"]')?.disabled,
-    modelTabDisabled: document.querySelector('[data-agent-tab="model"]')?.disabled,
+    modelTabDisabled: document.querySelector('[data-agent-setting="model"]')?.disabled,
     notice: document.body.innerText.includes('当前回答完成后即可修改模型、行为或偏好'),
   })`), {
     submitDisabled: true,
     modelTabDisabled: true,
     notice: true,
   });
+  const opensBeforeStreamingSessionReturn = calls.filter(
+    ([kind]) => kind === 'open-conversation',
+  ).length;
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-session=\"main\"]')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('conversation-form') !== null",
+  ));
+  assert.equal(
+    calls.filter(([kind]) => kind === 'open-conversation').length,
+    opensBeforeStreamingSessionReturn,
+  );
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText",
+  ), 'Agent 正在处理');
   window.webContents.send('conversation:state', {
     phase: 'ready',
     agentId: 'job-agent',
@@ -680,6 +898,18 @@ app.whenReady().then(async () => {
     artifacts: [],
     streaming: false,
   });
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText === '已连接'",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('agent-settings-button')?.click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]')?.click()",
+  );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('#agent-customization-form textarea')?.disabled === false",
   ));
@@ -832,10 +1062,16 @@ app.whenReady().then(async () => {
     document.querySelector('[data-manage-agent="job-agent"]').click();
   `);
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]') !== null",
+    "document.getElementById('agent-settings-button') !== null",
   ));
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]').click()",
+    "document.getElementById('agent-settings-button').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-customization-form') !== null",
@@ -857,10 +1093,16 @@ app.whenReady().then(async () => {
     "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]') !== null",
+    "document.getElementById('agent-settings-button') !== null",
   ));
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-agent-tab=\"agent_md\"]').click()",
+    "document.getElementById('agent-settings-button').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-setting=\"agent_md\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('agent-customization-form') !== null",
@@ -904,6 +1146,14 @@ function readyState() {
         desiredState: 'stopped',
         runtimeState: 'available',
       },
+      {
+        agentId: 'deploy-agent',
+        displayName: 'Deploy Agent',
+        description: '持续管理发布、部署和验证流程。',
+        version: '1.0.0',
+        desiredState: 'running',
+        runtimeState: 'resident',
+      },
     ],
     checkedAt: new Date().toISOString(),
   };
@@ -929,6 +1179,27 @@ function providerSnapshot() {
 }
 
 function managementSnapshot(agentId, binding = null) {
+  const deployBinding = agentId === 'deploy-agent'
+    ? {
+      scopeKind: 'agent',
+      scopeId: agentId,
+      role: 'main',
+      providerProfileId: 'pp_kimi',
+      modelId: 'kimi-k2.5',
+    }
+    : null;
+  const deployAgentMd = {
+    kind: 'agent_md',
+    content: '部署前先执行预检，并清楚报告验证结果。',
+    revision: 3,
+    customized: true,
+  };
+  const deployUserMd = {
+    kind: 'user_md',
+    content: '部署状态更新使用中文。',
+    revision: 2,
+    customized: true,
+  };
   return {
     agentId,
     profiles: profilesUnavailable ? [] : providerSnapshot().profiles,
@@ -948,19 +1219,27 @@ function managementSnapshot(agentId, binding = null) {
           providerProfileId: 'pp_glm',
           modelId: 'glm-5.2',
         }
-        : null,
-    bindingIssue: agentId === 'job-agent' && !jobBindingMissing ? bindingIssue : {
-      code: 'model_not_configured',
-      message: '这个 Agent 尚未选择模型。',
-    },
+        : deployBinding,
+    bindingIssue: agentId === 'job-agent' && !jobBindingMissing
+      ? bindingIssue
+      : deployBinding
+        ? null
+        : {
+          code: 'model_not_configured',
+          message: '这个 Agent 尚未选择模型。',
+        },
     inheritedFromLegacyGlobal: false,
     customization: {
-      packageName: agentId === 'job-agent' ? 'Job Agent' : 'LectureCast Agent',
+      packageName: agentId === 'job-agent'
+        ? 'Job Agent'
+        : agentId === 'deploy-agent'
+          ? 'Deploy Agent'
+          : 'LectureCast Agent',
       packageVersion: '1.0.0',
       packageDescription: 'Public package description',
       requestedPermissions: ['network_access', 'process_execution'],
-      agentMd,
-      userMd,
+      agentMd: agentId === 'deploy-agent' ? deployAgentMd : agentMd,
+      userMd: agentId === 'deploy-agent' ? deployUserMd : userMd,
     },
   };
 }
@@ -969,11 +1248,21 @@ function modelOverview() {
   return {
     agents: readyState().agents.map((agent) => ({
       agentId: agent.agentId,
-      providerProfileId: agent.agentId === 'job-agent' && !jobBindingMissing ? 'pp_glm' : null,
+      providerProfileId: agent.agentId === 'job-agent' && !jobBindingMissing
+        ? 'pp_glm'
+        : agent.agentId === 'deploy-agent'
+          ? 'pp_kimi'
+          : null,
       providerDisplayName: agent.agentId === 'job-agent' && !jobBindingMissing && !deletedProvider
         ? '智谱 GLM Coding Plan'
-        : null,
-      modelId: agent.agentId === 'job-agent' && !jobBindingMissing ? 'glm-5.2' : null,
+        : agent.agentId === 'deploy-agent'
+          ? 'Kimi Coding Plan'
+          : null,
+      modelId: agent.agentId === 'job-agent' && !jobBindingMissing
+        ? 'glm-5.2'
+        : agent.agentId === 'deploy-agent'
+          ? 'kimi-k2.5'
+          : null,
       bindingIssue: agent.agentId === 'job-agent'
         ? (jobBindingMissing
           ? {
@@ -984,13 +1273,49 @@ function modelOverview() {
             code: 'provider_unavailable',
             message: '原模型供应商已被删除或不可用，请重新选择。',
           } : null)))
-        : {
-        code: 'model_not_configured',
-        message: '这个 Agent 尚未选择模型。',
-      },
+        : agent.agentId === 'deploy-agent'
+          ? null
+          : {
+            code: 'model_not_configured',
+            message: '这个 Agent 尚未选择模型。',
+          },
       inheritedFromLegacyGlobal: false,
     })),
   };
+}
+
+function createBarrier() {
+  let resolve;
+  const promise = new Promise((release) => {
+    resolve = release;
+  });
+  return { promise, resolve };
+}
+
+async function currentAgentModelUi(window) {
+  return window.webContents.executeJavaScript(`({
+    title: document.querySelector('.agent-settings-header h1')?.innerText || null,
+    currentModel: document.querySelector('.agent-current-model')?.innerText || null,
+    providerId: document.querySelector('#agent-model-form [name="providerProfileId"]')?.value || null,
+    modelId: document.querySelector('#agent-model-form [name="modelId"]')?.value || null,
+    models: [...document.querySelectorAll('#agent-model-form [name="modelId"] option')]
+      .map((option) => option.value).filter(Boolean),
+    successNotice: document.querySelector('.provider-notice.success')?.innerText || null,
+    errorNotice: document.querySelector('.provider-notice.error')?.innerText || null,
+  })`);
+}
+
+async function currentAgentCustomizationUi(window) {
+  return window.webContents.executeJavaScript(`({
+    title: document.querySelector('.agent-settings-header h1')?.innerText || null,
+    currentModel: document.querySelector('.agent-current-model')?.innerText || null,
+    activeSetting: document.querySelector('[data-agent-setting].active')?.innerText || null,
+    packageName: document.querySelector('.package-public-meta strong')?.innerText || null,
+    content: document.querySelector('#agent-customization-form textarea')?.value || null,
+    successNotice: document.querySelector('.provider-notice.success')?.innerText || null,
+    errorNotice: document.querySelector('.provider-notice.error')?.innerText || null,
+    conflict: document.querySelector('.customization-conflict') !== null,
+  })`);
 }
 
 async function waitFor(predicate, timeoutMs = 4_000) {
