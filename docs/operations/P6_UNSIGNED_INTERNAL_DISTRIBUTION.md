@@ -128,19 +128,19 @@ rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
 ## 最新内部体验版
 
 2026-07-31 已从 clean pushed commit
-`461f1af9ab8c981e21669b4b00da2e3d1d7b9373` 构建并交付当前 arm64 内部体验版：
+`20773b4c39c7876e0cff8d8b52bb7aa76fa4680e` 构建并交付当前 arm64 内部体验版：
 
-- receipt：`desktop_internal_p6_461f1af9ab8c_arm64`；
-- Desktop `0.1.1`，Host runtime `1000.1.1785475728001 (461f1af)`；
+- receipt：`desktop_internal_p6_20773b4c39c7_arm64`；
+- Desktop `0.1.1`，Host runtime `1000.1.1785478545001 (20773b4)`；
 - DMG SHA-256：
-  `338323b23311a6765150d100069dee6c2ba9ac5abbf0dd336b96ddbadad1d2ea`；
+  `a30deceae0ca110ded20bdedb1f2f2392f6e8be646062cfe5977688d44c17616`；
 - ZIP SHA-256：
-  `46070c7528411e7ec403372cc2bbad62f472e7163fb8e84846b2003776eb79d8`；
+  `9c02e09628e8b031f68a135be8ccda8eb241b37300e82c50d43e8cd1d63d2d32`；
 - receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和 ZIP
   Host/`app.asar` inventory 全部通过；
 - 本地交付目录：
-  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-461f1af-arm64/`；
-- 新包验证后才删除上一包和旧构建证据；当前 Downloads 与
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-20773b4-arm64/`；
+- 新包验证后才删除 `461f1af` 上一包和旧构建证据；当前 Downloads 与
   `desktop/dist/internal` 各只保留这一份，仓库根 `target/` 不存在；
 - 本次仍未签名、未公证、未上传、未请求 Provider，Apple/credits/Provider 费用均为
   0。

@@ -1,8 +1,8 @@
 # Agent 模型首次绑定保存修复
 
 更新时间：2026-07-31
-状态：实现、自主回归与 KimiCLI 交叉测试完成，等待内部包交付
-进度：90%
+状态：已完成
+进度：100%
 
 ## 1. 用户实际问题
 
@@ -48,8 +48,21 @@ Renderer 的模型 `change` 事件会更新 `agentManagementUi.modelDraft`，但
   “无阻断问题，P1/P2 均无”；
 - 没有读取真实 Provider Key、发起 Provider 请求、消耗 credits 或产生费用。
 
-## 6. 剩余完成门
+## 6. 最终提交与内部交付
 
-1. 提交并推送 clean commit；
-2. 构建、复验并交付唯一新内部包，新包通过前保留上一包；
-3. 回填 commit、receipt、摘要、清理结果并关闭循环 141。
+- 功能 commit：
+  `20773b4c39c7876e0cff8d8b52bb7aa76fa4680e`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_20773b4c39c7_arm64`；
+- Desktop `0.1.1`，Host runtime `1000.1.1785478545001 (20773b4)`；
+- DMG：181426684 bytes，
+  `a30deceae0ca110ded20bdedb1f2f2392f6e8be646062cfe5977688d44c17616`；
+- ZIP：181218751 bytes，
+  `9c02e09628e8b031f68a135be8ccda8eb241b37300e82c50d43e8cd1d63d2d32`；
+- receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和 ZIP
+  内 `app.asar`、Host、`Info.plist` inventory 全部通过；
+- 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-20773b4-arm64/`；
+- 新包完全通过后才删除 `461f1af` 上一包和旧构建证据；Downloads 与
+  `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 不存在；
+- 未读取真实 Provider Key、发起 Provider 请求、消耗 AgentMesh credits、请求 Apple
+  服务、上传外部服务或产生费用。

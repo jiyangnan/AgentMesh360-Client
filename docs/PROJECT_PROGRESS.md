@@ -7653,7 +7653,7 @@ owner UAT 与根因：
 
 ### 循环 141：常驻 Agent 首次绑定模型无法保存
 
-状态：进行中（实现、自主回归与 KimiCLI 交叉测试完成，等待内部包）
+状态：已完成
 
 用户实际发现：
 
@@ -7693,9 +7693,30 @@ owner UAT 与根因：
   P1/P2 均无”；
 - 测试只使用 fixture 和 loopback，不读取真实 Key、不请求 Provider、不消耗 credits。
 
-方向复盘与下一步：
+最终提交与内部交付：
+
+- 功能 commit：
+  `20773b4c39c7876e0cff8d8b52bb7aa76fa4680e`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_20773b4c39c7_arm64`；
+- Desktop `0.1.1`，Host runtime
+  `1000.1.1785478545001 (20773b4)`；
+- DMG：181426684 bytes，
+  `a30deceae0ca110ded20bdedb1f2f2392f6e8be646062cfe5977688d44c17616`；
+- ZIP：181218751 bytes，
+  `9c02e09628e8b031f68a135be8ccda8eb241b37300e82c50d43e8cd1d63d2d32`；
+- receipt verifier、构建/交付目录 `SHA256SUMS`、`hdiutil verify`、构建/交付副本
+  逐字节比较和 ZIP Host/`app.asar`/`Info.plist` inventory 全部通过；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-20773b4-arm64/`；
+- 新包通过后才删除 `461f1af` 上一包和旧构建证据；Downloads 与
+  `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 不存在；
+- 外部副作用：Provider 请求 0、AgentMesh credits 0、Apple 服务请求 0、外部上传 0、
+  费用 $0。
+
+方向复盘与下一轮：
 
 - Provider 页面仍只管理模型供应商；模型绑定继续属于具体 Agent，没有产品职责回退；
 - 本轮不扩展自动 fallback、价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布；
-- 下一步提交推送，从 clean pushed commit 构建新内部包；新包通过前保留
-  `461f1af` 上一包，通过后再执行单包留存清理。
+- 本轮代码、覆盖补全、双人复核和单包交付已经关闭；
+- 下一产品切片仍按既定计划推进首次使用引导，不因本次局部缺陷延伸到自动 fallback、
+  价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布。

@@ -1013,3 +1013,44 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   和约 12 GiB 仓库 `target/`。
 - 外部副作用：Provider 请求 0、AgentMesh credits 0、Apple 公证请求 0、外部上传 0、
   费用 $0。
+
+### 2026-07-31 常驻 Agent 首次绑定模型保存修复执行
+
+- 功能与安装包 commit：
+  `20773b4c39c7876e0cff8d8b52bb7aa76fa4680e`，已推送 `origin/main`。
+- 用例结果：63 条、14 个领域通过结构与执行校验；60 条通过、3 条既有外部真实服务
+  阻断、0 条待执行、0 条失败。新增 `TC-MODEL-005` 专门覆盖常驻 Agent 没有旧绑定时，
+  选择 Provider/模型后按钮由禁用变为可点并通过真实按钮点击保存。
+- 缺陷复现：修复前新增 Electron 断言稳定失败，保存按钮仍为 disabled；
+  修复后同一输入通过。保存失败路径会保留选择、恢复按钮，并可直接重试。
+- 自动化结果：
+  - Desktop Node：129 passed / 3 个显式 real-Host gate skipped / 0 failed；
+  - Agent 管理、Conversation、Provider、添加 Agent 四组 Electron smoke 全部通过；
+  - 产品旅程校验器：63 条、14 个领域通过；校验器单元测试 3 passed / 0 failed；
+  - Desktop syntax 和 `git diff --check` 通过。
+- KimiCLI 交叉测试：独立审查首次绑定真实点击、重渲染竞态、Host 保存失败恢复、
+  未激活 Agent 分支和覆盖矩阵；连续两次复跑 Agent 管理 smoke，并复跑 Desktop Node、
+  其余 Electron 与旅程校验，最终结论为“无阻断问题，P1/P2 均无”。
+- 安装包结果：
+  - receipt：`desktop_internal_p6_20773b4c39c7_arm64`；
+  - Desktop `0.1.1`，Host runtime `1000.1.1785478545001 (20773b4)`；
+  - DMG：181426684 bytes，
+    `a30deceae0ca110ded20bdedb1f2f2392f6e8be646062cfe5977688d44c17616`；
+  - ZIP：181218751 bytes，
+    `9c02e09628e8b031f68a135be8ccda8eb241b37300e82c50d43e8cd1d63d2d32`；
+  - receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和 ZIP
+    Host/`app.asar`/`Info.plist` inventory 全部通过。
+- 单包留存：新包全部通过后删除 `461f1af` 上一包和旧构建证据；当前只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-20773b4-arm64/` 及对应
+  `desktop/dist/internal/0.1.1-20773b4c39c7-arm64/`，仓库根 `target/` 不存在。
+- 外部副作用：真实 Provider Key 读取 0、Provider 请求 0、AgentMesh credits 0、
+  Apple 服务请求 0、外部上传 0、费用 $0。
+
+计划复盘与下一轮：
+
+- Provider 页面继续只管理供应商；每个 Agent 的模型、对话、`agent.md`、`user.md`
+  继续归 Agent 详情管理；
+- 当前已列出的 P0/P1 可交互面均有对应测试编号和执行层；新增控件必须同时补成功、
+  失败、恢复测试，不能再用测试总数代替状态覆盖；
+- 下一产品切片仍是既定首次使用引导，不扩展自动 fallback、价格/余额、在线商店、
+  P7/P8 或生产发布。
