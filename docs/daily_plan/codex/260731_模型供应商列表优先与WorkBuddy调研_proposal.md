@@ -1,8 +1,8 @@
 # 模型供应商列表优先与 WorkBuddy 调研
 
 更新时间：2026-07-31
-状态：功能与回归完成，等待内部包交付
-进度：90%
+状态：已完成
+进度：100%
 
 ## 1. 本轮触发
 
@@ -116,15 +116,27 @@ Owner 在真实客户端中发现：
 测试只使用本机 fixture 和 loopback，没有真实 Provider 请求、真实 Key、AgentMesh
 credits、外部上传或费用。
 
-## 7. 待完成
+## 7. 最终交付
 
-1. 更新项目进展文档；
-2. 提交并推送功能 commit；
-3. 从 clean pushed commit 构建 unsigned internal DMG/ZIP；
-4. 完成 receipt、摘要、DMG、ZIP 与交付副本复验；
-5. 新包全部通过后删除旧包与旧构建证据，始终只保留一份；
-6. 清理仓库根 `target/`；
-7. 记录最终 commit、receipt、SHA 和本地交付目录后关闭本轮。
+- 功能 commit：
+  `697310e234776a76cfdf3a9431ab84dd781cffb0`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_697310e23477_arm64`；
+- Desktop `0.1.1`，Host runtime
+  `1000.1.1785482324001 (697310e)`；
+- DMG：
+  `183e76bfd9f1b014637e8c03a2a6b421b30b749915e924fb20b485d15b2aa727`；
+- ZIP：
+  `bbe33d56b4b8f3158ea97bb0fee6f9f620307fbd402f784aad1313f7540cdeb5`；
+- receipt、双摘要、ZIP CRC、`hdiutil verify`、DMG 只读挂载、Host 架构与版本、
+  `app.asar`/`Info.plist` inventory 以及构建/交付副本逐字节比较全部通过；
+- 独立测试 Agent 再次只读复验，结果无阻断；内部 receipt 的最低系统版本仍使用
+  `not_frozen_for_internal`，实际 `Info.plist` 为 macOS 12.0，公开发布前再统一冻结；
+- 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-697310e-arm64/`；
+- 新包验证通过后才删除上一包与旧构建证据；Downloads 和
+  `desktop/dist/internal` 各只保留一份，仓库根 `target/` 已删除；
+- Provider 请求、真实 Key、AgentMesh credits、Apple 服务请求、外部上传和费用均为
+  0。
 
 ## 8. 下一轮
 

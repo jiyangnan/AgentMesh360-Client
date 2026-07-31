@@ -7723,7 +7723,7 @@ owner UAT 与根因：
 
 ### 循环 142：模型供应商列表优先、统一 UI 与 WorkBuddy 调研
 
-状态：功能与回归完成，等待内部包交付
+状态：已完成
 
 用户实际发现：
 
@@ -7790,10 +7790,35 @@ KimiCLI 独立交叉测试：
 - 修复后再次复跑 Provider smoke 并交由 Kimi 复验，最终结论为
   “P0/P1/P2 全部清零，无阻断问题”。
 
-方向复盘与下一步：
+最终提交与内部交付：
+
+- 功能 commit：
+  `697310e234776a76cfdf3a9431ab84dd781cffb0`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_697310e23477_arm64`；
+- Desktop `0.1.1`，Host runtime
+  `1000.1.1785482324001 (697310e)`；
+- DMG：181427796 bytes，
+  `183e76bfd9f1b014637e8c03a2a6b421b30b749915e924fb20b485d15b2aa727`；
+- ZIP：181221366 bytes，
+  `bbe33d56b4b8f3158ea97bb0fee6f9f620307fbd402f784aad1313f7540cdeb5`；
+- receipt verifier、构建目录和交付目录 `SHA256SUMS`、ZIP 全量 CRC、
+  `hdiutil verify`、DMG 只读挂载、构建/交付副本逐字节比较以及
+  ZIP Host/`app.asar`/`Info.plist` inventory 全部通过；
+- DMG 与 ZIP 内的 Host 均为 Mach-O arm64，版本指向同一提交；应用 bundle 为
+  `com.agentmesh360.client`，版本 `0.1.1`，实际最低系统版本为 macOS 12.0；
+- 独立测试 Agent 对 receipt、摘要、Host、ZIP、DMG 和零外部副作用再次只读复验，
+  结果无阻断；receipt 的最低系统版本仍使用内部包 sentinel
+  `not_frozen_for_internal`，公开发布前再与实际 `12.0` 统一冻结；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-697310e-arm64/`；
+- 新包全部通过后才删除 `20773b4` 上一包、旧构建证据和临时检查目录；Downloads 与
+  `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 已删除；
+- 构建与验收没有 Provider 请求、真实 Key、AgentMesh credits、Apple 服务请求、
+  外部上传或费用。
+
+方向复盘与下一轮：
 
 - 本轮仍严格属于既定“Provider 只管理供应商，Agent 内管理模型”的信息架构；
 - 没有进入自动 fallback、价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布；
-- 下一步只提交推送，从 clean pushed commit 构建唯一 unsigned internal 包，复验后
-  删除旧包和根 `target/`；
-- 交付关闭后回到既定首次使用引导切片。
+- 功能、双人复核、唯一内部包交付和磁盘清理均已关闭；
+- 下一产品切片回到既定首次使用引导，不因本次 Provider 纠偏扩展产品范围。
