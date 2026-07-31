@@ -7812,7 +7812,8 @@ KimiCLI 独立交叉测试：
 - owner 本地交付目录：
   `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-697310e-arm64/`；
 - 新包全部通过后才删除 `20773b4` 上一包、旧构建证据和临时检查目录；Downloads 与
-  `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 已删除；
+  `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 已删除；系统中残留的
+  两个更早版本只读 DMG 卷确认无进程使用后也已安全卸载；
 - 构建与验收没有 Provider 请求、真实 Key、AgentMesh credits、Apple 服务请求、
   外部上传或费用。
 

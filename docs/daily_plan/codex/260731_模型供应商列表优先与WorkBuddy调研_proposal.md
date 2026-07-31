@@ -134,7 +134,8 @@ credits、外部上传或费用。
 - 本地交付目录：
   `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-697310e-arm64/`；
 - 新包验证通过后才删除上一包与旧构建证据；Downloads 和
-  `desktop/dist/internal` 各只保留一份，仓库根 `target/` 已删除；
+  `desktop/dist/internal` 各只保留一份，仓库根 `target/` 已删除；两个更早版本残留
+  的只读 DMG 卷确认无进程使用后也已安全卸载；
 - Provider 请求、真实 Key、AgentMesh credits、Apple 服务请求、外部上传和费用均为
   0。
 
