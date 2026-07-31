@@ -127,6 +127,166 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
 });
 
+test('Host initialization may outlast ordinary request timeouts during Leader replacement', async () => {
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl: () => fakeChild(async (request) => {
+      if (request.method === 'initialize') {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return { protocolVersion: 1, agentCapabilities: {} };
+      }
+      return {};
+    }),
+    requestTimeoutMs: 5,
+    initializeTimeoutMs: 100,
+  });
+
+  await client.start();
+
+  assert.equal(client.getRuntimeStatus().bridgeState, 'connected');
+  await client.stop();
+});
+
+test('persistent Host startup absorbs one Leader handoff exit and preserves later exit signals', async () => {
+  const children = [];
+  let spawnCount = 0;
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: persistentHostEnv('leader-handoff'),
+    spawnImpl: () => {
+      const attempt = ++spawnCount;
+      let child;
+      child = fakeChild((request) => {
+        if (request.method === 'initialize' && attempt === 1) {
+          queueMicrotask(() => child.emit('exit', 1));
+          return new Promise(() => {});
+        }
+        if (request.method === 'initialize') {
+          return { protocolVersion: 1, agentCapabilities: {} };
+        }
+        if (request.method === '_x.agentmesh360/account/bootstrap') {
+          return {
+            result: {
+              schemaVersion: 1,
+              account: { id: 7 },
+              access: { canEnterClient: true },
+            },
+          };
+        }
+        return { result: null, error: 'unsupported' };
+      });
+      children.push(child);
+      return child;
+    },
+    requestTimeoutMs: 500,
+    initializeTimeoutMs: 500,
+  });
+  const exits = [];
+  client.on('exit', (error) => exits.push(error.code));
+
+  const bootstrap = await client.bootstrap('access-token-private');
+
+  assert.equal(spawnCount, 2);
+  assert.equal(bootstrap.account.id, 7);
+  assert.deepEqual(exits, []);
+  assert.equal(client.getRuntimeStatus().bridgeState, 'connected');
+
+  children[1].emit('exit', 1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(exits, ['host_exited']);
+  assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
+});
+
+test('persistent Host startup stops after two initialization exits', async () => {
+  let spawnCount = 0;
+  let extensionRequests = 0;
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: persistentHostEnv('bounded-retry'),
+    spawnImpl: () => {
+      spawnCount += 1;
+      let child;
+      child = fakeChild((request) => {
+        if (request.method === 'initialize') {
+          queueMicrotask(() => child.emit('exit', 1));
+          return new Promise(() => {});
+        }
+        extensionRequests += 1;
+        return {};
+      });
+      return child;
+    },
+    requestTimeoutMs: 500,
+    initializeTimeoutMs: 500,
+  });
+
+  await assert.rejects(
+    client.start(),
+    (error) => error?.code === 'host_exited',
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(spawnCount, 2);
+  assert.equal(extensionRequests, 0);
+  assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
+});
+
+test('embedded Host startup never retries an initialization exit', async () => {
+  let spawnCount = 0;
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl: () => {
+      spawnCount += 1;
+      let child;
+      child = fakeChild((request) => {
+        if (request.method === 'initialize') {
+          queueMicrotask(() => child.emit('exit', 1));
+          return new Promise(() => {});
+        }
+        return {};
+      });
+      return child;
+    },
+    requestTimeoutMs: 500,
+    initializeTimeoutMs: 500,
+  });
+
+  await assert.rejects(
+    client.start(),
+    (error) => error?.code === 'host_exited',
+  );
+
+  assert.equal(spawnCount, 1);
+  assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
+});
+
+test('an initialization timeout terminates its ghost bridge without retrying', async () => {
+  let spawnCount = 0;
+  let child;
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: persistentHostEnv('initialize-timeout'),
+    spawnImpl: () => {
+      spawnCount += 1;
+      child = fakeChild(() => new Promise(() => {}));
+      return child;
+    },
+    requestTimeoutMs: 5,
+    initializeTimeoutMs: 5,
+  });
+
+  await assert.rejects(
+    client.start(),
+    (error) => error?.code === 'host_timeout',
+  );
+
+  assert.equal(spawnCount, 1);
+  assert.equal(child.killed, true);
+  assert.equal(client.getRuntimeStatus().bridgeState, 'detached');
+});
+
 test('Host access refresh keeps Provider requests queued until authentication is ready', async () => {
   const received = [];
   let releaseBootstrap;
@@ -1004,6 +1164,15 @@ function fakeChild(handler) {
     child.emit('exit', 0);
   };
   return child;
+}
+
+function persistentHostEnv(label) {
+  return {
+    ...process.env,
+    AGENTMESH360_HOST_MODE: 'persistent_leader',
+    AGENTMESH360_HOME: `/tmp/agentmesh360-acp-${process.pid}-${label}`,
+    AGENTMESH360_HOST_SOCKET: `/tmp/agentmesh360-acp-${process.pid}-${label}.sock`,
+  };
 }
 
 async function waitFor(predicate, timeoutMs = 500) {

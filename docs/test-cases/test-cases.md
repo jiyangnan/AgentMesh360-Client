@@ -40,10 +40,10 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 安装和启动 | 安装内部版并稳定打开 | TC-INSTALL-001 ～ 003 |
 | 登录和订阅 | 用真实账号进入，失效时正确拦截 | TC-AUTH-001 ～ 004、TC-ACCESS-001 ～ 004 |
 | 持久 Agent | 激活后长期找到同一个 Agent，并管理其模型与行为 | TC-AGENT-001 ～ 006、TC-MODEL-001 ～ 005、TC-OVERLAY-001 ～ 005 |
-| 对话和工作区 | 对话、切屏、恢复、审批和产物不断档 | TC-CONV-001 ～ 007 |
+| 对话和工作区 | 对话、切屏、恢复、审批和产物不断档 | TC-CONV-001 ～ 009 |
 | BYOK Provider | 添加、验证、测试和管理模型供应商 | TC-PROVIDER-001 ～ 013 |
 | Agent Package | 从 Agent 管理中安全发现、安装、更新与回滚 | TC-PACKAGE-001 ～ 006 |
-| 后台 Host 和设置 | UI 关闭仍工作，设置结构清楚且故障可恢复 | TC-HOST-001 ～ 005、TC-SETTINGS-001 |
+| 后台 Host 和设置 | UI 关闭仍工作，设置结构清楚且故障可恢复 | TC-HOST-001 ～ 007、TC-SETTINGS-001 |
 | 发布与本地交付 | 只保留一个可复核内部包 | TC-RELEASE-001 ～ 003 |
 
 ## 3.1 当前可交互功能覆盖矩阵
@@ -57,13 +57,13 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 登录与订阅 | Google/GitHub 登录、重新验证、退出、订阅入口 | 成功、取消、state 错配、过期、订阅阻断、后台复验 | Node；TC-AUTH-001～004、TC-ACCESS-001～004 |
 | 左侧导航与引导 | Agent、模型供应商、设置、Host 状态、三步引导 | 默认落点、切页、Host 三态、恢复引导 | Electron；TC-NAV-001～002、TC-GUIDE-001 |
 | Agent 列表 | 管理、激活、添加 Agent、失效修复入口 | 已激活、未激活、模型失效、零 Agent | Node + Electron；TC-AGENT-001～006 |
-| Agent 对话 | 发送、权限确认、模型修复、活动/计划/产物 | 流式、失败、切页草稿、重启恢复、旧事件、无 fallback | Node + Electron + Rust；TC-CONV-001～007 |
+| Agent 对话 | 发送、权限确认、模型修复、活动/计划/产物 | 流式、失败、切页草稿、重启恢复、旧事件、无 fallback | Node + Electron + Rust；TC-CONV-001～009 |
 | Agent 模型 | Provider 下拉、模型下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、Turn 锁定 | Node + Electron + Rust；TC-MODEL-001～005 |
 | 行为 `agent.md` | 编辑、保存、恢复默认、冲突处理 | 草稿、8000/8001 字符、秘密拒绝、revision 冲突、Turn 锁定 | Node + Electron + Rust；TC-OVERLAY-001～005 |
 | 偏好 `user.md` | 编辑、保存、恢复默认、冲突处理 | 账户+Agent 隔离、草稿、秘密拒绝、账号切换清理 | Node + Electron + Rust；TC-OVERLAY-001～005 |
 | 模型供应商 | 选择预设、填 Key、获取模型、测试、保存、编辑、删除 | 动态模型、错误 Key/地址、连接失败、列表层级、草稿、删除影响、认证刷新 | Node + Electron；TC-PROVIDER-001～013 |
 | 添加 Agent | 刷新目录、权限预览、批准、安装/更新/回滚 | 关闭态、LKG、未知权限、失败原子性、远端不可用 | Node + Electron + Rust；TC-PACKAGE-001～006 |
-| 设置 | 账号与订阅、后台运行、使用指南、高级诊断 | 四子页、登录启动、Host 异常、诊断不可用 | Node + Electron；TC-HOST-001～005、TC-SETTINGS-001 |
+| 设置 | 账号与订阅、后台运行、使用指南、高级诊断 | 四子页、登录启动、Host 异常、诊断不可用 | Node + Electron；TC-HOST-001～007、TC-SETTINGS-001 |
 | 内部交付 | DMG/ZIP、receipt、SHA、单包留存 | clean pushed commit、失败保留旧包、生产发布门关闭 | Node + 安装包；TC-RELEASE-001～003 |
 
 ## 3.2 信息架构和首次引导
@@ -963,6 +963,28 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   固定 boundary，不触碰正常状态。
 - **验证层**：Node + Electron + 本地边界审计
 - **本轮结果**：通过
+
+## TC-HOST-007：新包首次启动完成旧 Leader 交接且无需重开
+
+- **用户故事**：作为安装新内部包的用户，我希望只打开一次客户端就恢复账号、Agent 和
+  主对话，不能因为旧 Leader 让位而先报错，再靠我重启一次碰运气。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：旧版本持久 Leader 正在运行；账号订阅有效；Job Agent 已常驻并拥有
+  canonical Main Session。
+- **输入**：Host runtime 版本更高的新内部包，以及旧 Leader 在首次 `initialize`
+  期间退出让位的交接事件。
+- **交互步骤**：覆盖安装新包；只启动一次客户端且不点击“重新验证/重新打开”；观察
+  Leader 接管、Identity、Host bridge、Agent 列表；打开 Job Agent 主对话后返回列表
+  并再次打开。
+- **预期输出**：首次初始化退出只在 persistent Host 传输边界内重试一次，不向
+  Identity 广播瞬时 `exit`；同次启动内新 Leader 接管、订阅保持 `ready`、Job
+  对话两次均为“已连接”，输入框和发送按钮可用。
+- **失败与恢复**：总启动尝试严格不超过 2 次；第二次仍退出或初始化超时则失败关闭，
+  清理 ghost bridge 并显示可行动 Host 故障；embedded 模式、spawn error 和 timeout
+  不进入版本交接重试。
+- **验证层**：Node + Electron + 安装包
+- **本轮结果**：待执行
 
 ## TC-SETTINGS-001：设置页四类子菜单
 

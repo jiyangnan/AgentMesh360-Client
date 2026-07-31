@@ -6,11 +6,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 const {
+  HOST_MODE_PERSISTENT,
   prepareHostRuntime,
   publicHostRuntime,
   resolveHostRuntime,
 } = require('./runtime');
 const { version: DESKTOP_VERSION } = require('../../package.json');
+
+const PERSISTENT_START_ATTEMPTS = 2;
 
 const INITIALIZE_PARAMS = Object.freeze({
   protocolVersion: 1,
@@ -46,6 +49,7 @@ class AcpHostClient extends EventEmitter {
     resourcesPath = process.resourcesPath,
     spawnImpl = spawn,
     requestTimeoutMs = 20000,
+    initializeTimeoutMs = 60000,
     sessionLoadTimeoutMs = 120000,
     sessionPromptTimeoutMs = 30 * 60 * 1000,
     permissionRequestTimeoutMs = 5 * 60 * 1000,
@@ -60,6 +64,7 @@ class AcpHostClient extends EventEmitter {
     this.env = this.runtime.env;
     this.spawnImpl = spawnImpl;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.initializeTimeoutMs = initializeTimeoutMs;
     this.sessionLoadTimeoutMs = sessionLoadTimeoutMs;
     this.sessionPromptTimeoutMs = sessionPromptTimeoutMs;
     this.permissionRequestTimeoutMs = permissionRequestTimeoutMs;
@@ -75,7 +80,7 @@ class AcpHostClient extends EventEmitter {
     if (this.startPromise) return this.startPromise;
     if (this.child) return;
     prepareHostRuntime(this.runtime);
-    this.startPromise = this.#spawnAndInitialize();
+    this.startPromise = this.#startWithBoundedRetry();
     try {
       await this.startPromise;
     } finally {
@@ -372,6 +377,26 @@ class AcpHostClient extends EventEmitter {
     });
   }
 
+  async #startWithBoundedRetry() {
+    const attempts = this.runtime.mode === HOST_MODE_PERSISTENT
+      ? PERSISTENT_START_ATTEMPTS
+      : 1;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        await this.#spawnAndInitialize();
+        return;
+      } catch (error) {
+        if (
+          attempt >= attempts
+          || !(error instanceof HostRequestError)
+          || error.code !== 'host_exited'
+        ) {
+          throw error;
+        }
+      }
+    }
+  }
+
   async #spawnAndInitialize() {
     let child;
     try {
@@ -384,25 +409,63 @@ class AcpHostClient extends EventEmitter {
       throw new HostRequestError('host_unavailable', '无法启动 AgentMesh360 Agent Host');
     }
     this.child = child;
+    let initialized = false;
+    const lines = readline.createInterface({ input: child.stdout });
+    let linesClosed = false;
+    const closeLines = () => {
+      if (linesClosed) return;
+      linesClosed = true;
+      lines.close();
+    };
     child.once('error', () => {
-      this.#handleExit(child, new HostRequestError('host_unavailable', '无法启动 AgentMesh360 Agent Host'));
+      closeLines();
+      this.#handleExit(
+        child,
+        new HostRequestError('host_unavailable', '无法启动 AgentMesh360 Agent Host'),
+        initialized,
+      );
     });
     child.once('exit', () => {
-      this.#handleExit(child, new HostRequestError('host_exited', 'AgentMesh360 Agent Host 已退出'));
+      closeLines();
+      this.#handleExit(
+        child,
+        new HostRequestError('host_exited', 'AgentMesh360 Agent Host 已退出'),
+        initialized,
+      );
     });
-    const lines = readline.createInterface({ input: child.stdout });
-    lines.on('line', (line) => this.#handleLine(line));
+    lines.on('line', (line) => {
+      if (this.child === child) this.#handleLine(line);
+    });
     child.stderr?.resume();
 
-    await this.#request('initialize', INITIALIZE_PARAMS);
+    try {
+      await this.#request('initialize', INITIALIZE_PARAMS, this.initializeTimeoutMs);
+      if (this.child !== child) {
+        throw new HostRequestError('host_exited', 'AgentMesh360 Agent Host 已退出');
+      }
+      initialized = true;
+    } catch (error) {
+      if (this.child === child) {
+        this.child = null;
+        closeLines();
+        this.#clearIncomingPermissions();
+        this.#rejectPending(error);
+        try {
+          if (!child.killed) child.kill('SIGTERM');
+        } catch {
+          // Startup already failed; transport cleanup must not replace its error.
+        }
+      }
+      throw error;
+    }
   }
 
-  #handleExit(child, error) {
+  #handleExit(child, error, initialized = true) {
     if (this.child !== child) return;
     this.child = null;
     this.#clearIncomingPermissions();
     this.#rejectPending(error);
-    this.emit('exit', error);
+    if (initialized) this.emit('exit', error);
   }
 
   #handleLine(line) {

@@ -71,7 +71,7 @@ async function evaluatePage(webSocketUrl, expression) {
       settled = true;
       socket.close();
       reject(new Error('installed UI evaluation timed out'));
-    }, 30_000);
+    }, 360_000);
     socket.addEventListener('open', () => {
       socket.send(JSON.stringify({
         id: 1,
@@ -118,16 +118,16 @@ async function evaluatePage(webSocketUrl, expression) {
 function acceptanceExpression() {
   return `(
     async () => {
-      const waitFor = async (predicate, message) => {
-        const deadline = Date.now() + 10000;
+      const waitFor = async (predicate, message, timeoutMs = 10000) => {
+        const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
           if (predicate()) return;
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
         throw new Error(message);
       };
-      const waitForValue = async (load, predicate, message) => {
-        const deadline = Date.now() + 20000;
+      const waitForValue = async (load, predicate, message, timeoutMs = 20000) => {
+        const deadline = Date.now() + timeoutMs;
         while (Date.now() < deadline) {
           const value = await load();
           if (predicate(value)) return value;
@@ -143,6 +143,7 @@ function acceptanceExpression() {
           && value.subscription?.status === 'active'
         ),
         'installed client did not recover the admitted account',
+        60000,
       );
       if (
         identity?.phase !== 'ready'
@@ -158,6 +159,7 @@ function acceptanceExpression() {
           && value.host.bridgeState === 'connected'
         ),
         'installed persistent Host did not reconnect',
+        60000,
       );
       if (
         background?.host?.mode !== 'persistent_leader'
@@ -264,6 +266,7 @@ function acceptanceExpression() {
             && document.querySelector('.conversation-state')?.textContent?.trim() === '已连接';
         },
         'Job Agent conversation did not reach a usable connected state',
+        60000,
       );
       const firstConversationSnapshot =
         await window.agentmesh360.getConversationSnapshot();
@@ -295,6 +298,7 @@ function acceptanceExpression() {
             && document.querySelector('.conversation-state')?.textContent?.trim() === '已连接';
         },
         'usable conversation form did not return after navigation',
+        60000,
       );
       const reopenedConversationSnapshot =
         await window.agentmesh360.getConversationSnapshot();

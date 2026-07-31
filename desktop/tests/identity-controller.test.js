@@ -3,7 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const { CoreRequestError } = require('../src/auth/core-client');
+const { AcpHostClient } = require('../src/host/acp-client');
 const {
   DEFAULT_REVALIDATE_INTERVAL_MS,
   IdentityController,
@@ -34,6 +36,94 @@ test('valid zero-credit subscription reaches ready only after Core and Host agre
   assert.equal(Object.hasOwn(state.agents[0], 'workspaceDir'), false);
   assert.equal(Object.hasOwn(state.agents[0], 'mainSessionId'), false);
   assert.equal(Object.hasOwn(state.agents[0], 'lastError'), false);
+});
+
+test('a persistent Host Leader handoff stays inside startup and preserves ready identity', async () => {
+  let spawnCount = 0;
+  let activated = false;
+  const host = new AcpHostClient({
+    command: '/fake/host',
+    env: {
+      ...process.env,
+      AGENTMESH360_HOST_MODE: 'persistent_leader',
+      AGENTMESH360_HOME: `/tmp/agentmesh360-identity-${process.pid}`,
+      AGENTMESH360_HOST_SOCKET: `/tmp/agentmesh360-identity-${process.pid}.sock`,
+    },
+    spawnImpl: () => {
+      const attempt = ++spawnCount;
+      let child;
+      child = fakeAcpChild((request) => {
+        if (request.method === 'initialize' && attempt === 1) {
+          queueMicrotask(() => child.emit('exit', 1));
+          return new Promise(() => {});
+        }
+        if (request.method === 'initialize') {
+          return { protocolVersion: 1, agentCapabilities: {} };
+        }
+        if (request.method === '_x.agentmesh360/account/bootstrap') {
+          return { result: hostBootstrap({ canEnter: true }) };
+        }
+        if (request.method === '_x.agentmesh360/agents/list') {
+          return {
+            result: {
+              agents: [{
+                agentId: 'job-agent',
+                displayName: 'Job Agent',
+                description: 'Career copilot',
+                version: '0.1.0',
+                runtimeState: activated ? 'resident' : 'available',
+                desiredState: activated ? 'running' : 'stopped',
+              }],
+            },
+          };
+        }
+        if (request.method === '_x.agentmesh360/agents/activate') {
+          activated = true;
+          return { result: {} };
+        }
+        return { result: null, error: 'unsupported' };
+      });
+      return child;
+    },
+    requestTimeoutMs: 500,
+    initializeTimeoutMs: 500,
+  });
+  const tokenStore = {
+    value: 'old-refresh-token',
+    loadRefreshToken() { return this.value; },
+    saveRefreshToken(value) { this.value = value; },
+    clear() { this.value = null; },
+  };
+  const core = {
+    async refresh() {
+      return {
+        access_token: 'rotated-access-token',
+        refresh_token: 'rotated-refresh-token',
+      };
+    },
+    async bootstrap() {
+      return bootstrap({ canEnter: true });
+    },
+  };
+  const controller = new IdentityController({
+    core,
+    tokenStore,
+    host,
+    setIntervalImpl: () => ({ unref() {} }),
+    clearIntervalImpl: () => {},
+  });
+  const phases = [];
+  controller.subscribe((state) => phases.push(state.phase));
+
+  const state = await controller.start();
+  const activatedState = await controller.activateAgent('job-agent');
+
+  assert.equal(spawnCount, 2);
+  assert.equal(state.phase, 'ready');
+  assert.equal(activatedState.phase, 'ready');
+  assert.equal(activatedState.agents[0].runtimeState, 'resident');
+  assert.equal(phases.includes('unavailable'), false);
+  await controller.shutdown();
 });
 
 test('invalid subscription exposes only the blocked identity state and preserves local sessions', async () => {
@@ -365,4 +455,28 @@ function hostBootstrap({ canEnter, status = 'active', reason = 'subscription_act
     credits: { balance: 0 },
     access: { canEnterClient: canEnter, reason },
   };
+}
+
+function fakeAcpChild(handler) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.killed = false;
+  child.stdin = {
+    writable: true,
+    write(line) {
+      const request = JSON.parse(line);
+      queueMicrotask(() => {
+        Promise.resolve(handler(request)).then((result) => {
+          child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result })}\n`);
+        });
+      });
+      return true;
+    },
+  };
+  child.kill = () => {
+    child.killed = true;
+    child.emit('exit', 0);
+  };
+  return child;
 }

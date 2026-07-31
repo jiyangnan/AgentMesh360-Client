@@ -7823,3 +7823,54 @@ KimiCLI 独立交叉测试：
 - 没有进入自动 fallback、价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布；
 - 功能、双人复核、唯一内部包交付和磁盘清理均已关闭；
 - 下一产品切片回到既定首次使用引导，不因本次 Provider 纠偏扩展产品范围。
+
+### 循环 143：持久 Agent 主对话恢复与首次启动接管
+
+状态：进行中（95%）
+
+用户实际发现：
+
+- Job Agent 模型已经保存成功并显示 `智谱 GLM Coding Plan · glm-5.2`；
+- 点击“对话”后仍显示“需要重新打开”和“暂时无法打开此 Agent 的主对话”；
+- 修复 Session/Workspace 后的第一份覆盖安装又在首次启动进入
+  `host_unavailable`，第二次启动才恢复。
+
+本轮已修复：
+
+- Rust Host 只能恢复 Registry 指定 canonical Workspace 内的固定 Main Session；
+  相同 Session ID 已属于其他 Workspace 时明确失败关闭，不再跨目录串用或复制；
+- 常驻 Agent 第一次保存模型时建立 initial Main Session Binding；Host 已提交但响应
+  丢失时通过 durable state 对账，不误回滚已成功的模型设置；
+- 对话页只有 Host conversation snapshot 真正 `ready` 才显示“已连接”，加载和旧
+  snapshot 不再制造假成功；
+- P5 同时隔离 `HOME`、`GROK_HOME`、AgentMesh/Electron/XDG 状态，防止测试 Session
+  再进入真实 `~/.grok`；
+- persistent Host 在首次 `initialize` 因旧 Leader 让位退出时，传输层只做一次有界
+  重试且不向 Identity 广播瞬时退出；初始化成功后的退出仍照常关闭工作区；
+- 初始化超时会关闭 readline、清空 child 并终止 ghost bridge；embedded、spawn error
+  和 timeout 不进入交接重试；
+- 已安装验收对账号、Host 和两次 Job 对话分别提供 60 秒具名等待，外层预算 360 秒，
+  仍会明确指出具体失败阶段。
+
+当前自主验证：
+
+- Desktop Node：142 passed / 5 个真实 Host gate skipped / 0 failed；
+- 真实 Host 跨层：5 passed / 0 failed，包含模型首次保存、canonical Binding、
+  Main Session 打开和跨 Workspace fail-closed；没有执行 `promptSession`；
+- Repository 工具链：306 passed / 0 failed；
+- Agent 管理、Conversation、Provider、Agent Package 四组 Electron smoke 全部通过；
+- 产品旅程新增 `TC-HOST-007`，69 条、14 个领域通过结构校验；该用例的真实安装层仍
+  保持“待执行”，不把单元测试冒充安装包通过；
+- KimiCLI 首轮指出安装验收外层超时不足和失败 bridge 的 readline 清理缺口；两项修复
+  后独立复跑 36 条 Node 与旅程校验，最终结论 `CLEAN`，无 P0/P1/P2；
+- Provider 请求 0、真实 Key/Keychain 读取 0、AgentMesh credits 0、外部费用 0。
+
+计划复盘与剩余门禁：
+
+- 本轮仍只修复既定“保存 Agent 模型 → 恢复固定 Main Session → 打开主对话”路径，
+  没有扩展自动 fallback、价格/余额、在线商店、P7/P8、签名/公证或在线发布；
+- 下一步先提交并推送当前修复，再从该 clean commit 构建唯一内部包；
+- 保持当前旧 Leader 运行，只启动新 App 一次完成真实接管验收；不得人工预启动新 Host、
+  重启客户端或点击重新验证来绕过失败；
+- 新包全部通过后才删除旧 Downloads 包、旧 dist 证据、临时 App、会话隔离目录和
+  仓库 `target/`，最终只保留一份内部测试包。
