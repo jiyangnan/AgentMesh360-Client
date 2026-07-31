@@ -102,8 +102,12 @@ class AgentManagementController {
       modelId: normalizedModelId,
     });
     try {
-      await this.#switchResidentSession(normalizedAgentId);
+      await this.#switchResidentSession(normalizedAgentId, {
+        providerProfileId: normalizedProviderProfileId,
+        modelId: normalizedModelId,
+      });
     } catch (error) {
+      if (error?.code === 'binding_outcome_unknown') throw error;
       try {
         if (priorAssignment) {
           await this.host.upsertModelAssignment({
@@ -156,7 +160,7 @@ class AgentManagementController {
     return state;
   }
 
-  async #switchResidentSession(agentId) {
+  async #switchResidentSession(agentId, expectedRoute) {
     const agents = await this.host.listAgents();
     const agent = Array.isArray(agents?.agents)
       ? agents.agents.find((item) => item.agentId === agentId)
@@ -167,14 +171,49 @@ class AgentManagementController {
       role: 'main',
       agentId,
     });
-    if (!Array.isArray(history?.bindings) || history.bindings.length === 0) return;
-    await this.host.switchSessionBinding({
+    const request = {
       sessionId: agent.mainSessionId,
       role: 'main',
       agentId,
-      kind: 'explicit_switch',
-    });
+    };
+    try {
+      if (!Array.isArray(history?.bindings) || history.bindings.length === 0) {
+        await this.host.resolveSessionBinding(request);
+        return;
+      }
+      await this.host.switchSessionBinding({
+        ...request,
+        kind: 'explicit_switch',
+      });
+    } catch (error) {
+      let durableRouteMatches = null;
+      try {
+        const durableHistory = await this.host.getSessionBindingHistory(request);
+        durableRouteMatches = currentBindingMatches(
+          durableHistory?.bindings,
+          expectedRoute,
+        );
+      } catch {
+        durableRouteMatches = null;
+      }
+      if (durableRouteMatches === true) return;
+      if (durableRouteMatches === false) throw error;
+      const unknown = new Error('模型切换结果未知，请重新加载确认');
+      unknown.code = 'binding_outcome_unknown';
+      throw unknown;
+    }
   }
+}
+
+function currentBindingMatches(bindings, expectedRoute) {
+  if (!Array.isArray(bindings) || bindings.length === 0) return false;
+  const current = bindings.reduce((latest, binding) => (
+    !latest || Number(binding?.bindingRevision) > Number(latest?.bindingRevision)
+      ? binding
+      : latest
+  ), null);
+  return current?.route?.providerProfileId === expectedRoute.providerProfileId
+    && current?.route?.modelId === expectedRoute.modelId;
 }
 
 function resolveModelBinding(agentId, profiles, assignments) {

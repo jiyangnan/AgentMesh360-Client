@@ -408,10 +408,12 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **交互步骤**：检查初始按钮禁用；用真实 `change` 事件选择 Provider/模型；检查状态
   提示；用鼠标点击保存；模拟一次 Host 保存失败后直接重试。
 - **预期输出**：选择完成后保存按钮立即启用；标题显示“尚未保存”，错误提示改为
-  “点击保存后生效”；真实点击产生 Agent/main 保存请求；成功后显示已保存绑定。
+  “点击保存后生效”；真实点击产生 Agent/main 保存请求；若 Main Session 从未建立过
+  Binding，Host 同步创建首个 Binding；成功后显示已保存绑定，立即切到“对话”可进入
+  同一个 Main Session。
 - **失败与恢复**：Host 保存失败时保留 Provider/模型草稿、重新启用按钮并显示错误；
   用户无需重新选择即可重试。
-- **验证层**：Node + Electron
+- **验证层**：Rust + Node + Electron
 - **本轮结果**：通过
 
 ## TC-OVERLAY-001：Agent 行为与用户偏好保存和生效
@@ -572,6 +574,41 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：使用同一冻结 route；错误按类型显示；无跨 Provider/模型自动 fallback；无伪造完成消息。
 - **失败与恢复**：用户在 Agent“模型”页修复并显式保存后从下一条消息生效，旧 Turn 不静默漂移。
 - **验证层**：Rust + Node
+- **本轮结果**：通过
+
+## TC-CONV-008：固定 Main Session 不得跨工作区误恢复
+
+- **用户故事**：作为持久 Agent 用户，我希望重新打开的是这个 Agent 当前工作区的主对话，
+  不能因为另一次隔离测试或旧目录碰巧拥有相同 Session ID 就打开失败或串到别处。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：两个隔离的 AgentMesh 状态目录共用一个隔离 Grok Home，并为同账号同
+  Agent 生成相同稳定 Session ID；只有第一个工作区已有持久 Session。
+- **输入**：先在状态目录 A 激活 Job Agent，再在状态目录 B 激活同一账号的 Job Agent。
+- **交互步骤**：用真实 Rust Host 分别启动 A、B；在 B 请求激活并读取 Agent 列表。
+- **预期输出**：B 只检查自己的 canonical Workspace，不恢复 A 的 Session；Host 发现
+  同一稳定 Session ID 已属于 A 后明确 `workspace conflict` 并失败关闭，B 的
+  `runtimeState` 为 `error`，Grok Home 中仍只有一个该 ID 的 Session 目录。
+- **失败与恢复**：不得在 B 创建第二个同 ID Session，也不能把 Agent 标为假常驻；
+  隔离演练必须使用独立 `GROK_HOME`。若确认冲突目录是测试泄漏，先隔离该目录并复验，
+  不能静默删除或串用用户历史。
+- **验证层**：真实 Rust Host + Node
+- **本轮结果**：通过
+
+## TC-CONV-009：打开对话加载态不得假装已连接
+
+- **用户故事**：作为用户，我点击 Agent 后希望加载过程诚实、稳定；在主会话尚未打开前，
+  输入框不能误导我已经可以发送。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：Agent 为常驻状态；管理 snapshot 被人为延迟。
+- **输入**：从 Agent 列表点击“打开 Agent”，以及首次保存模型后立即点击“对话”。
+- **交互步骤**：在延迟期间检查状态、输入框和发送按钮；等待 Host snapshot 与
+  `session/load` 完成；再检查可用状态。
+- **预期输出**：先显示“正在加载”且输入框/发送禁用；只有对话真实打开后显示“已连接”并
+  启用输入；页面无 `.conversation-error`。
+- **失败与恢复**：打开失败保留明确的重试行动；旧 Agent 的成功快照不能覆盖本次请求。
+- **验证层**：Node + Electron
 - **本轮结果**：通过
 
 ## 8. BYOK Provider
@@ -908,6 +945,23 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：单 Host/Leader；按 Agent/Main Session 隔离；Package 只得到声明能力；凭据只由 Host 解析。
 - **失败与恢复**：异常 Agent 不获得跨 Agent/跨账号/跨 Provider secret。
 - **验证层**：Rust + Node + 人工
+- **本轮结果**：通过
+
+## TC-HOST-006：P5 隔离演练不得污染真实 Grok 会话
+
+- **用户故事**：作为日常客户端用户，我希望内部 canary 测试完全留在临时目录，不能把
+  测试 Session 写进真实 `~/.grok`，导致之后的持久 Agent 恢复错误。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：P5 E1 授权 marker、私有临时 boundary 和 frozen executor commit。
+- **输入**：P5 Electron 场景矩阵及本地清理流程。
+- **交互步骤**：准备 boundary；核对 `HOME`、`AGENTMESH360_HOME`、Electron
+  `userData`、`GROK_HOME` 与 XDG 目录；执行场景；完成清理。
+- **预期输出**：`HOME` 和 `GROK_HOME` 均指向 0700 临时 boundary；Host Session、
+  配置、缓存和客户端状态不进入真实用户目录；运行时发现任一路径漂移立即拒绝启动。
+- **失败与恢复**：缺目录、符号链接、权限或路径不匹配时 fail closed；finalizer 只清理
+  固定 boundary，不触碰正常状态。
+- **验证层**：Node + Electron + 本地边界审计
 - **本轮结果**：通过
 
 ## TC-SETTINGS-001：设置页四类子菜单

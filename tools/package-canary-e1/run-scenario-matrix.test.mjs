@@ -278,6 +278,10 @@ test('keeps production Package constants empty and canary scope fixed', async ()
     runner,
     /JSON\.stringify\(driverInput\.value\) !== JSON\.stringify\(expectedDriverInput\)/u,
   );
+  assert.match(
+    runner,
+    /GROK_HOME:\s*path\.join\(CLIENT_BOUNDARY,\s*'grok-home'\)/u,
+  );
   assert.match(runner, /driverInputSha256: typedSha256\(driverInput\.bytes\)/u);
   assert.equal(
     (

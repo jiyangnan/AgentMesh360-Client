@@ -724,8 +724,10 @@ mod tests {
             .registry
             .prepare_activation(1, "research-agent")
             .expect("activate projected Agent");
-        let expected_session_id =
-            super::super::registry::stable_main_session_id(1, "research-agent").to_string();
+        let expected_session_id = service
+            .registry
+            .allocated_main_session_id(1, "research-agent")
+            .to_string();
         assert_eq!(
             activated.main_session_id.as_deref(),
             Some(expected_session_id.as_str())

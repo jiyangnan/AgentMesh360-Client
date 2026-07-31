@@ -32,15 +32,37 @@ function configureP5CanaryRuntime({
 
   const stateHome = path.join(CANARY_BOUNDARY, 'state');
   const userDataHome = path.join(CANARY_BOUNDARY, 'user-data');
+  const grokHome = path.join(CANARY_BOUNDARY, 'grok-home');
+  const cacheHome = path.join(CANARY_BOUNDARY, 'cache');
+  const configHome = path.join(CANARY_BOUNDARY, 'config');
+  const dataHome = path.join(CANARY_BOUNDARY, 'data');
+  const xdgStateHome = path.join(CANARY_BOUNDARY, 'xdg-state');
   if (
-    env.AGENTMESH360_HOME !== stateHome
+    env.HOME !== CANARY_BOUNDARY
+    || env.AGENTMESH360_HOME !== stateHome
     || env.AGENTMESH360_P5_USER_DATA !== userDataHome
+    || env.GROK_HOME !== grokHome
   ) {
-    throw new Error('P5 canary state or userData path is invalid');
+    throw new Error('P5 canary HOME, state, Grok, or userData path is invalid');
+  }
+  if (
+    env.XDG_CACHE_HOME !== cacheHome
+    || env.XDG_CONFIG_HOME !== configHome
+    || env.XDG_DATA_HOME !== dataHome
+    || env.XDG_STATE_HOME !== xdgStateHome
+  ) {
+    throw new Error(
+      'P5 canary XDG cache, config, data, or state path is invalid',
+    );
   }
   assertPrivateDirectory(fsModule, CANARY_BOUNDARY, 'P5 canary boundary');
   assertPrivateDirectory(fsModule, stateHome, 'P5 canary state');
+  assertPrivateDirectory(fsModule, grokHome, 'P5 canary Grok home');
   assertPrivateDirectory(fsModule, userDataHome, 'P5 canary userData');
+  assertPrivateDirectory(fsModule, cacheHome, 'P5 canary XDG cache');
+  assertPrivateDirectory(fsModule, configHome, 'P5 canary XDG config');
+  assertPrivateDirectory(fsModule, dataHome, 'P5 canary XDG data');
+  assertPrivateDirectory(fsModule, xdgStateHome, 'P5 canary XDG state');
 
   const markerPath = path.join(CANARY_BOUNDARY, MARKER_FILE);
   const markerInfo = fsModule.lstatSync(markerPath);
@@ -90,9 +112,9 @@ function assertPrivateDirectory(fsModule, directory, label) {
   if (
     !info.isDirectory()
     || info.isSymbolicLink()
-    || (info.mode & 0o077) !== 0
+    || (info.mode & 0o777) !== 0o700
   ) {
-    throw new Error(`${label} must be a private real directory`);
+    throw new Error(`${label} must be a 0700 real directory`);
   }
 }
 

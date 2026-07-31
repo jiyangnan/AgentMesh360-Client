@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
+  lstat,
   mkdtemp,
   readFile,
   realpath,
@@ -96,6 +97,20 @@ test('prepares one private isolated client boundary without side effects', async
     );
     assert.equal(marker.executorCommit, EXECUTOR);
     assert.equal(marker.normalStateReadable, false);
+    for (const directoryName of [
+      'grok-home',
+      'cache',
+      'config',
+      'data',
+      'xdg-state',
+    ]) {
+      const privateDirectory = await lstat(
+        path.join(canonicalDirectory, 'boundary', directoryName),
+      );
+      assert.equal(privateDirectory.isDirectory(), true);
+      assert.equal(privateDirectory.isSymbolicLink(), false);
+      assert.equal(privateDirectory.mode & 0o777, 0o700);
+    }
   });
 });
 

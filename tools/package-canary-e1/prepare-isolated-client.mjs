@@ -78,9 +78,9 @@ async function makePrivateDirectory(directory) {
   if (
     !info.isDirectory()
     || info.isSymbolicLink()
-    || (info.mode & 0o077) !== 0
+    || (info.mode & 0o777) !== 0o700
   ) {
-    throw new Error('isolated client directory is not private');
+    throw new Error('isolated client directory must be a 0700 real directory');
   }
 }
 
@@ -151,6 +151,11 @@ export async function prepareIsolatedClient({
   try {
     await makePrivateDirectory(path.join(boundary, 'state'));
     await makePrivateDirectory(path.join(boundary, 'user-data'));
+    await makePrivateDirectory(path.join(boundary, 'grok-home'));
+    await makePrivateDirectory(path.join(boundary, 'cache'));
+    await makePrivateDirectory(path.join(boundary, 'config'));
+    await makePrivateDirectory(path.join(boundary, 'data'));
+    await makePrivateDirectory(path.join(boundary, 'xdg-state'));
     const marker = {
       schemaVersion: 2,
       authorizationId: authorization.authorizationId,

@@ -304,9 +304,9 @@ impl AgentRegistry {
             format!("create product agent workspace {}", workspace_dir.display())
         })?;
         let main_session_id = match package.persistence.main_session_strategy {
-            MainSessionStrategy::AccountAgentStableV5 => {
-                stable_main_session_id(owner_account_id, agent_id).to_string()
-            }
+            MainSessionStrategy::AccountAgentStableV5 => self
+                .allocated_main_session_id(owner_account_id, agent_id)
+                .to_string(),
         };
         let now = now();
         let conn = self.open()?;
@@ -329,6 +329,25 @@ impl AgentRegistry {
             return Err(anyhow!("unknown AgentMesh360 product agent: {agent_id}"));
         }
         self.get(owner_account_id, agent_id)
+    }
+
+    pub(crate) fn allocated_main_session_id(&self, owner_account_id: i64, agent_id: &str) -> Uuid {
+        #[cfg(not(test))]
+        {
+            stable_main_session_id(owner_account_id, agent_id)
+        }
+        #[cfg(test)]
+        {
+            // Unit tests share one process-wide Grok home while intentionally
+            // creating many independent temporary AgentMesh state homes.
+            // Namespace their persisted Harness sessions by state home so one
+            // test cannot impersonate another test's product Session.
+            let identity = format!(
+                "agentmesh360-test-state:{}:account:{owner_account_id}:agent:{agent_id}",
+                self.state_home.display()
+            );
+            Uuid::new_v5(&Uuid::NAMESPACE_URL, identity.as_bytes())
+        }
     }
 
     pub fn mark_runtime(
@@ -461,7 +480,7 @@ mod tests {
     fn activation_is_idempotent_across_registry_reopen() {
         let temp = tempfile::tempdir().expect("tempdir");
         let first = AgentRegistry::in_home(temp.path());
-        let expected_session_id = stable_main_session_id(41, "job-agent").to_string();
+        let expected_session_id = first.allocated_main_session_id(41, "job-agent").to_string();
         assert!(
             first
                 .main_session_owner(&expected_session_id)

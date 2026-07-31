@@ -925,7 +925,6 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
     let (profile, overlay_revisions) =
         agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home)
             .apply_to_definition(owner_account_id, agent_id, profile)?;
-    let persisted_cwd = crate::session::resolve_local_session_any_cwd(session_id.0.as_ref());
     let mut meta = acp::Meta::new();
     meta.insert("agentProfile".into(), profile.to_json_value());
     meta.insert("agentmesh360AgentId".into(), agent_id.into());
@@ -935,6 +934,26 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
         "agentmesh360-product-agent".into(),
     );
 
+    let workspace_cwd = workspace_dir.to_string_lossy().into_owned();
+    let session_exists_in_workspace =
+        crate::session::session_exists_for_cwd(session_id.0.as_ref(), &workspace_cwd);
+    if !session_exists_in_workspace
+        && let Some(other_cwd) =
+            crate::session::resolve_local_session_any_cwd(session_id.0.as_ref())
+    {
+        let error = format!(
+            "Agent Session workspace conflict: session {} belongs to {}, expected {}",
+            session_id.0, other_cwd, workspace_cwd
+        );
+        let _ = agent.agentmesh360.registry().mark_runtime(
+            owner_account_id,
+            agent_id,
+            "error",
+            Some(&error),
+        );
+        return Err(anyhow!(error));
+    }
+    let persisted_cwd = session_exists_in_workspace.then_some(workspace_cwd);
     let resumed = persisted_cwd.is_some();
     let session_result = if let Some(cwd) = persisted_cwd {
         let request = acp::LoadSessionRequest::new(session_id.clone(), cwd).meta(meta);
@@ -1008,7 +1027,13 @@ fn refresh_runtime_view(agent: &MvpAgent, record: &mut ProductAgentRecord) {
     };
     record.runtime_state = if agent.sessions.borrow().contains_key(&session_id) {
         activity_name(agent.resident_activity(&session_id)).into()
-    } else if crate::session::resolve_local_session_any_cwd(session_id.0.as_ref()).is_some() {
+    } else if record
+        .workspace_dir
+        .as_deref()
+        .is_some_and(|workspace_dir| {
+            crate::session::session_exists_for_cwd(session_id.0.as_ref(), workspace_dir)
+        })
+    {
         "dormant".into()
     } else if record.runtime_state == "error" {
         "error".into()

@@ -172,6 +172,10 @@ test('source confines destructive work and deletes Provider via product API', as
   assert.match(finalizer, /PRODUCTION_TRUST_BUNDLE_URL/u);
   assert.match(finalizer, /PRODUCTION_REGISTRY_URL/u);
   assert.match(finalizer, /com\.agentmesh360\.client\.provider/u);
+  assert.match(
+    finalizer,
+    /GROK_HOME:\s*path\.join\(CLIENT_BOUNDARY,\s*'grok-home'\)/u,
+  );
   assert.match(finalizer, /await rm\(CLIENT_BUILD/u);
   assert.match(finalizer, /await securelyRemovePrivateTree\(CLIENT_STATE\)/u);
   assert.match(driver, /providers\.deleteProfile\(profile\.profileId\)/u);

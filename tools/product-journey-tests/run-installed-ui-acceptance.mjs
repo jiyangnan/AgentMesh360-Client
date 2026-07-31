@@ -249,28 +249,62 @@ function acceptanceExpression() {
       document.getElementById('nav-agents').click();
 
       const jobButton = document.querySelector(
-        '[data-open-conversation="job-agent"]',
+        '[data-manage-agent="job-agent"]',
       );
       if (!jobButton) throw new Error('resident Job Agent is unavailable');
       jobButton.click();
       await waitFor(
-        () => document.querySelector(
-          '#conversation-form [name="message"]',
-        ),
-        'Job Agent conversation did not open',
+        () => {
+          const form = document.getElementById('conversation-form');
+          return form
+            && form.elements.message
+            && !form.elements.message.disabled
+            && !form.querySelector('button[type="submit"]')?.disabled
+            && !document.querySelector('.conversation-error')
+            && document.querySelector('.conversation-state')?.textContent?.trim() === '已连接';
+        },
+        'Job Agent conversation did not reach a usable connected state',
       );
+      const firstConversationSnapshot =
+        await window.agentmesh360.getConversationSnapshot();
+      if (
+        firstConversationSnapshot?.phase !== 'ready'
+        || firstConversationSnapshot?.agentId !== 'job-agent'
+        || firstConversationSnapshot?.error
+      ) {
+        throw new Error('Host conversation snapshot is not the ready Job Agent');
+      }
       let message = document.querySelector(
         '#conversation-form [name="message"]',
       );
       message.value = ${JSON.stringify(FAKE_CONVERSATION_DRAFT)};
-      document.getElementById('nav-agents').click();
-      document.getElementById('nav-conversation').click();
+      document.querySelector('.conversation-back')?.click();
       await waitFor(
-        () => document.querySelector(
-          '#conversation-form [name="message"]',
-        ),
-        'conversation form did not return after navigation',
+        () => document.querySelector('[data-manage-agent="job-agent"]'),
+        'Agent list did not return from conversation',
       );
+      document.querySelector('[data-manage-agent="job-agent"]').click();
+      await waitFor(
+        () => {
+          const form = document.getElementById('conversation-form');
+          return form
+            && form.elements.message
+            && !form.elements.message.disabled
+            && !form.querySelector('button[type="submit"]')?.disabled
+            && !document.querySelector('.conversation-error')
+            && document.querySelector('.conversation-state')?.textContent?.trim() === '已连接';
+        },
+        'usable conversation form did not return after navigation',
+      );
+      const reopenedConversationSnapshot =
+        await window.agentmesh360.getConversationSnapshot();
+      if (
+        reopenedConversationSnapshot?.phase !== 'ready'
+        || reopenedConversationSnapshot?.agentId !== 'job-agent'
+        || reopenedConversationSnapshot?.error
+      ) {
+        throw new Error('reopened Host snapshot is not the ready Job Agent');
+      }
       message = document.querySelector(
         '#conversation-form [name="message"]',
       );
@@ -294,6 +328,7 @@ function acceptanceExpression() {
         officialProviderCount: presetIds.length,
         providerDraftPreserved,
         conversationDraftPreserved,
+        conversationHostReady: true,
         providerRequests: 0,
         agentMeshCreditsUsed: 0,
         fakeDraftsCleared: true,

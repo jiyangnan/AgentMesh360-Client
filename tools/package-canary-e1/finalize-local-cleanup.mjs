@@ -288,6 +288,12 @@ function runProviderCleanup(hostExecutorCommit) {
     timeout: 5 * 60 * 1000,
     env: {
       ...process.env,
+      HOME: CLIENT_BOUNDARY,
+      GROK_HOME: path.join(CLIENT_BOUNDARY, 'grok-home'),
+      XDG_CACHE_HOME: path.join(CLIENT_BOUNDARY, 'cache'),
+      XDG_CONFIG_HOME: path.join(CLIENT_BOUNDARY, 'config'),
+      XDG_DATA_HOME: path.join(CLIENT_BOUNDARY, 'data'),
+      XDG_STATE_HOME: path.join(CLIENT_BOUNDARY, 'xdg-state'),
       AGENTMESH360_HOME: CLIENT_STATE,
       AGENTMESH360_HOST_BIN: HOST_BINARY,
       AGENTMESH360_HOST_MODE: 'embedded',

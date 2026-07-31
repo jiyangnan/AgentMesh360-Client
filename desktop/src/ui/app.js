@@ -23,6 +23,7 @@ let agentOverviewUi = {
 };
 let agentOverviewRequestRevision = 0;
 let conversationOpenRevision = 0;
+let pendingConversationOpen = null;
 let settingsTab = 'account';
 let providerUi = {
   phase: 'idle',
@@ -59,6 +60,9 @@ let permissionResponseInFlight = null;
 
 bridge.onState(render);
 bridge.onConversationState((state) => {
+  // The open IPC response is authoritative. Host push events emitted by a
+  // previous load must not replace this request's fail-closed loading state.
+  if (pendingConversationOpen) return;
   if (
     state?.phase !== 'idle'
     && state?.agentId
@@ -535,6 +539,7 @@ function conversationView() {
   const project = safeConversationProject(conversationUi.project);
   const projectUnavailable = conversationUi.projectStatus === 'unavailable';
   const loading = conversationUi.phase === 'loading';
+  const ready = conversationUi.phase === 'ready';
   const sending = conversationUi.streaming === true;
   const displayName = conversationUi.displayName || 'Agent';
   const canReopen = conversationUi.phase === 'error' && conversationUi.agentId;
@@ -561,7 +566,7 @@ function conversationView() {
           <h1>${escapeHtml(displayName)}</h1>
           <p>${loading ? '正在由 Host 解析并加载固定主会话…' : '同一账号、同一 Agent、同一个持久主会话'}</p>
         </div>
-        <span class="conversation-state ${sending ? 'working' : ''}">${awaitingPermission ? '等待你的确认' : sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : '已连接'}</span>
+        <span class="conversation-state ${sending ? 'working' : ''}">${awaitingPermission ? '等待你的确认' : sending ? 'Agent 正在处理' : loading ? '正在加载' : conversationUi.phase === 'error' ? '需要重新打开' : ready ? '已连接' : '尚未连接'}</span>
       </header>
       <div class="conversation-gates">${gates}</div>
       <div class="conversation-transcript" id="conversation-transcript" aria-live="polite">
@@ -585,10 +590,10 @@ function conversationView() {
         ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${escapeHtml(displayName)} 正在继续这项工作</span></div>` : ''}
       </div>
       <form class="conversation-composer" id="conversation-form">
-        <textarea name="message" maxlength="16000" rows="3" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${loading || sending || conversationUi.phase === 'error' || modelBlocked ? 'disabled' : ''}></textarea>
+        <textarea name="message" maxlength="16000" rows="3" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${!ready || sending || modelBlocked ? 'disabled' : ''}></textarea>
         <div>
           <span>Renderer 只接收安全文本投影；Session ID、路径和 Provider 凭据留在 Host。</span>
-          <button class="secondary" type="submit" ${loading || sending || conversationUi.phase === 'error' || modelBlocked ? 'disabled' : ''}>发送</button>
+          <button class="secondary" type="submit" ${!ready || sending || modelBlocked ? 'disabled' : ''}>发送</button>
         </div>
       </form>
     </section>`;
@@ -1125,16 +1130,8 @@ async function respondConversationPermission(optionId) {
   if (currentState.phase === 'ready') renderReady(currentState);
 }
 
-async function openConversation(agentId) {
-  const requestRevision = ++conversationOpenRevision;
-  agentManagementRequestRevision += 1;
-  workspaceView = 'agent-detail';
-  agentManagementUi = {
-    ...agentManagementUi,
-    agentId,
-    tab: 'conversation',
-  };
-  conversationUi = {
+function loadingConversationState(agentId) {
+  return {
     phase: 'loading',
     agentId,
     displayName: currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId,
@@ -1151,6 +1148,37 @@ async function openConversation(agentId) {
     streaming: false,
     error: null,
   };
+}
+
+function beginConversationOpen(agentId) {
+  const revision = ++conversationOpenRevision;
+  pendingConversationOpen = { agentId, revision };
+  conversationUi = loadingConversationState(agentId);
+  return revision;
+}
+
+function finishConversationOpen(revision) {
+  if (pendingConversationOpen?.revision === revision) {
+    pendingConversationOpen = null;
+  }
+}
+
+async function openConversation(agentId, pendingRevision = null) {
+  const requestRevision = (
+    pendingRevision !== null
+    && pendingConversationOpen?.agentId === agentId
+    && pendingConversationOpen.revision === pendingRevision
+  )
+    ? pendingRevision
+    : beginConversationOpen(agentId);
+  agentManagementRequestRevision += 1;
+  workspaceView = 'agent-detail';
+  agentManagementUi = {
+    ...agentManagementUi,
+    agentId,
+    tab: 'conversation',
+  };
+  conversationUi = loadingConversationState(agentId);
   renderReady(currentState);
   try {
     const snapshot = await bridge.openAgentConversation(agentId);
@@ -1160,9 +1188,11 @@ async function openConversation(agentId) {
       || agentManagementUi.agentId !== agentId
       || agentManagementUi.tab !== 'conversation'
     ) {
+      finishConversationOpen(requestRevision);
       return;
     }
     conversationUi = snapshot;
+    finishConversationOpen(requestRevision);
   } catch (error) {
     if (
       requestRevision !== conversationOpenRevision
@@ -1170,6 +1200,7 @@ async function openConversation(agentId) {
       || agentManagementUi.agentId !== agentId
       || agentManagementUi.tab !== 'conversation'
     ) {
+      finishConversationOpen(requestRevision);
       return;
     }
     conversationUi = {
@@ -1177,6 +1208,7 @@ async function openConversation(agentId) {
       phase: 'error',
       error: publicError(error, '暂时无法打开此 Agent 的主对话'),
     };
+    finishConversationOpen(requestRevision);
   }
   if (currentState.phase === 'ready') renderReady(currentState);
 }
@@ -2120,6 +2152,9 @@ function agentCustomizationView(agent, kind) {
 async function openAgentDetail(agentId, tab) {
   if (!agentId) return;
   const requestRevision = ++agentManagementRequestRevision;
+  const conversationRequestRevision = tab === 'conversation'
+    ? beginConversationOpen(agentId)
+    : null;
   workspaceView = 'agent-detail';
   agentManagementUi = {
     phase: 'loading',
@@ -2139,7 +2174,9 @@ async function openAgentDetail(agentId, tab) {
     && agentManagementUi.agentId === agentId
     && agentManagementUi.tab === tab
   ) {
-    await openConversation(agentId);
+    await openConversation(agentId, conversationRequestRevision);
+  } else if (conversationRequestRevision !== null) {
+    finishConversationOpen(conversationRequestRevision);
   }
 }
 

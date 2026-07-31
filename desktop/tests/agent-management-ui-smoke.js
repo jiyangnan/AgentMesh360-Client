@@ -14,6 +14,7 @@ let profilesUnavailable = false;
 let customizationConflict = false;
 let hostBridgeState = 'connected';
 let backgroundDelayMs = 0;
+let managementDelayMs = 0;
 let validationRevision = 1;
 let activeAccountId = 7;
 let smokeStep = 'startup';
@@ -56,9 +57,12 @@ app.whenReady().then(async () => {
     event.sender.send('conversation:state', snapshot);
     return snapshot;
   });
-  ipcMain.handle('agent:get-management-snapshot', (_event, agentId) => (
-    managementSnapshot(agentId)
-  ));
+  ipcMain.handle('agent:get-management-snapshot', async (_event, agentId) => {
+    if (managementDelayMs) {
+      await new Promise((resolve) => setTimeout(resolve, managementDelayMs));
+    }
+    return managementSnapshot(agentId);
+  });
   ipcMain.handle('agent:get-model-overview', () => modelOverview());
   ipcMain.handle('runtime:get-background-snapshot', async () => {
     if (backgroundDelayMs) {
@@ -265,12 +269,81 @@ app.whenReady().then(async () => {
     "document.getElementById('nav-agents') !== null",
   ));
   await window.webContents.executeJavaScript("document.getElementById('nav-agents').click()");
+  managementDelayMs = 250;
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText === '正在加载'",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+    falselyConnected: document.querySelector('.conversation-state')?.innerText === '已连接',
+  })`), {
+    textareaDisabled: true,
+    sendDisabled: true,
+    falselyConnected: false,
+  });
+  window.webContents.send('conversation:state', {
+    phase: 'ready',
+    agentId: 'job-agent',
+    displayName: 'Job Agent',
+    messages: [{ id: 'stale-ready', role: 'assistant', text: 'stale ready snapshot' }],
+    activities: [],
+    backgroundTasks: [],
+    backgroundStatus: 'ready',
+    planEntries: [],
+    planStatus: 'ready',
+    artifacts: [],
+    artifactStatus: 'ready',
+    project: null,
+    projectStatus: 'ready',
+    streaming: false,
+    transcriptTruncated: false,
+    error: null,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    state: document.querySelector('.conversation-state')?.innerText,
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+    staleTextVisible: document.body.innerText.includes('stale ready snapshot'),
+  })`), {
+    state: '正在加载',
+    textareaDisabled: true,
+    sendDisabled: true,
+    staleTextVisible: false,
+  });
+  window.webContents.send('conversation:state', { phase: 'idle' });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    state: document.querySelector('.conversation-state')?.innerText,
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+  })`), {
+    state: '正在加载',
+    textareaDisabled: true,
+    sendDisabled: true,
+  });
+  await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.agent-detail-header h1')?.innerText === 'Job Agent'",
   ));
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText === '已连接'",
+  ));
+  managementDelayMs = 0;
+  window.webContents.send('conversation:state', { phase: 'idle' });
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText === '尚未连接'",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+  })`), {
+    textareaDisabled: true,
+    sendDisabled: true,
+  });
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-agent-tab=\"model\"]').click()",
   );
@@ -374,6 +447,28 @@ app.whenReady().then(async () => {
     providerProfileId: 'pp_glm',
     modelId: 'glm-5.2',
   });
+  smokeStep = 'open the resident conversation immediately after first model save';
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-tab=\"conversation\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-state')?.innerText === '已连接'",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+    hasError: document.querySelector('.conversation-error') !== null,
+  })`), {
+    textareaDisabled: false,
+    sendDisabled: false,
+    hasError: false,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-tab=\"model\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('agent-model-form') !== null",
+  ));
 
   smokeStep = 'preserve the resident model selection when save fails';
   modelSaveFailure = true;

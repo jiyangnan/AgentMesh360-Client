@@ -77,6 +77,10 @@ function fixture() {
       calls.push(['history', request]);
       return { bindings: [{ bindingRevision: 1 }] };
     },
+    async resolveSessionBinding(request) {
+      calls.push(['resolve', request]);
+      return { binding: { bindingRevision: 1 } };
+    },
     async switchSessionBinding(request) {
       calls.push(['switch', request]);
       return { binding: { bindingRevision: 2 } };
@@ -161,6 +165,99 @@ test('Agent model save is always an agent/main assignment', async () => {
     agentId: 'job-agent',
     kind: 'explicit_switch',
   });
+});
+
+test('first model save initializes an empty resident Main Session binding', async () => {
+  const { controller, calls } = fixture();
+  controller.host.getSessionBindingHistory = async (request) => {
+    calls.push(['history', request]);
+    return { bindings: [] };
+  };
+
+  await controller.saveModel('job-agent', 'pp_glm', 'glm-5.2');
+
+  assert.deepEqual(calls.find(([kind]) => kind === 'resolve')[1], {
+    sessionId: 'private-session-job-agent',
+    role: 'main',
+    agentId: 'job-agent',
+  });
+  assert.equal(calls.some(([kind]) => kind === 'switch'), false);
+});
+
+test('a committed binding survives a lost Host response without assignment rollback', async () => {
+  const { controller, calls } = fixture();
+  let historyReads = 0;
+  controller.host.getSessionBindingHistory = async (request) => {
+    calls.push(['history', request]);
+    historyReads += 1;
+    return historyReads === 1
+      ? { bindings: [] }
+      : {
+        bindings: [{
+          bindingRevision: 1,
+          route: {
+            providerProfileId: 'pp_glm',
+            modelId: 'glm-5.2',
+          },
+        }],
+      };
+  };
+  controller.host.resolveSessionBinding = async (request) => {
+    calls.push(['resolve', request]);
+    throw new Error('Host response lost after commit');
+  };
+
+  const snapshot = await controller.saveModel('job-agent', 'pp_glm', 'glm-5.2');
+
+  assert.equal(snapshot.bindingIssue, null);
+  assert.equal(calls.some(([kind]) => kind === 'delete-model'), false);
+});
+
+test('a failed binding with a divergent durable route rolls back the assignment', async () => {
+  const { controller, calls } = fixture();
+  controller.host.switchSessionBinding = async () => {
+    throw new Error('turn still running');
+  };
+  controller.host.getSessionBindingHistory = async (request) => {
+    calls.push(['history', request]);
+    return {
+      bindings: [{
+        bindingRevision: 1,
+        route: {
+          providerProfileId: 'pp_prior',
+          modelId: 'prior-model',
+        },
+      }],
+    };
+  };
+
+  await assert.rejects(
+    () => controller.saveModel('job-agent', 'pp_glm', 'glm-5.2'),
+    /turn still running/,
+  );
+  assert.equal(calls.some(([kind]) => kind === 'delete-model'), true);
+});
+
+test('an unknown binding commit outcome never performs a destructive assignment rollback', async () => {
+  const { controller, calls } = fixture();
+  let historyReads = 0;
+  controller.host.getSessionBindingHistory = async (request) => {
+    calls.push(['history', request]);
+    historyReads += 1;
+    if (historyReads === 1) {
+      return { bindings: [{ bindingRevision: 1 }] };
+    }
+    throw new Error('Host unavailable during reconciliation');
+  };
+  controller.host.switchSessionBinding = async () => {
+    throw new Error('Host response lost after possible commit');
+  };
+
+  await assert.rejects(
+    () => controller.saveModel('job-agent', 'pp_glm', 'glm-5.2'),
+    /模型切换结果未知，请重新加载确认/,
+  );
+  assert.equal(calls.some(([kind]) => kind === 'delete-model'), false);
 });
 
 test('failed resident switch rolls back a newly written Agent assignment', async () => {

@@ -1065,7 +1065,7 @@ mod tests {
     use super::*;
     use crate::agentmesh360::model_policy::CapabilityRequirement;
     use crate::agentmesh360::model_routing::ModelRoutingService;
-    use crate::agentmesh360::registry::{AgentRegistry, stable_main_session_id};
+    use crate::agentmesh360::registry::AgentRegistry;
 
     const JOB_MANIFEST: &str = include_str!("packages/job-agent/agentmesh-agent.toml");
     const JOB_PACKAGE_ID: &str = "com.agentmesh360.job-agent";
@@ -1370,7 +1370,9 @@ mod tests {
         let activated = registry
             .prepare_activation(41, "research-agent")
             .expect("activate dynamic Agent");
-        let expected_session = stable_main_session_id(41, "research-agent").to_string();
+        let expected_session = registry
+            .allocated_main_session_id(41, "research-agent")
+            .to_string();
         assert_eq!(
             activated.main_session_id.as_deref(),
             Some(expected_session.as_str())
