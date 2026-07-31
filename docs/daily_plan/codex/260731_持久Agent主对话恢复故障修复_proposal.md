@@ -1,8 +1,8 @@
 # 持久 Agent 主对话恢复故障修复
 
 更新时间：2026-07-31
-状态：进行中
-进度：95%
+状态：已完成
+进度：100%
 
 ## 1. 本轮触发
 
@@ -73,7 +73,7 @@ Owner 在真实安装客户端中完成 Job Agent 的模型保存后，进入“
 
 - 旧 Host 运行新增跨 Workspace 回归：稳定失败并创建第二个同 ID Session；修复后的
   Host 明确 `workspace conflict`，`runtimeState=error` 且目录数保持 1；
-- 真实 Host 跨层：4 passed / 0 failed，包含首次模型保存 → initial Binding →
+- 真实 Host 跨层：5 passed / 0 failed，包含首次模型保存 → initial Binding →
   canonical Main Session → 对话 `ready`，并硬性禁止 `promptSession`；
 - Rust AgentMesh 模块：202 passed / 1 ignored / 0 failed；Clippy `-D warnings` 通过；
 - Desktop Node：142 passed / 5 个显式真实 Host/生命周期 gate skipped / 0 failed；
@@ -93,12 +93,25 @@ Owner 在真实安装客户端中完成 Job Agent 的模型保存后，进入“
 - KimiCLI 本轮独立复核 Host 有界重试、Identity 交接和安装验收；首轮指出外层验收预算
   不足及 readline 清理缺口，修复后复跑 36 条 Node 与 69 条旅程结构校验，最终结论
   `CLEAN`，无 P0/P1/P2；
-- Provider 请求 0、真实 Key/Keychain 读取 0、AgentMesh credits 0、费用 $0。
+- Provider 请求 0、真实 Provider Key/Provider Credential Vault 读取 0、
+  AgentMesh credits 0、费用 $0。
 
-## 6. 待关闭
+## 6. 关闭结果
 
-- 更新 `PROJECT_PROGRESS.md` 和本轮执行记录；
-- clean commit、推送、构建并验证唯一内部包；
-- 保留旧 Leader，用新包单次启动在真实 owner 本地状态中验证 Job Agent 可打开和重开
-  对话，但不发送真实消息；
-- 清理旧包、旧构建证据、仓库 `target/` 与已确认的 P5 测试泄漏目录。
+- 功能与安装包 commit：
+  `2df5b2074acc51e87012fae33619f975b971f48b`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_2df5b2074acc_arm64`；Host runtime
+  `1000.1.1785493634001 (2df5b20)`；
+- 旧 Leader PID `56659` 运行时覆盖安装，只启动新 App 一次；没有预启动新 Host、
+  重启客户端或点击重新验证，同次启动内新 PID `82848` 接管；
+- 真实 owner 本地验收确认订阅有效、持久 Host 已连接、1 个 Agent 常驻、Job Agent
+  首次打开和返回后重开均为 `ready`，输入与发送控件可用；
+- Provider 请求 0、真实 Provider Key/Provider Credential Vault 读取 0、
+  真实消息发送 0、AgentMesh credits 0、外部上传/Apple 服务/费用 0；
+- owner 交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-2df5b20-arm64/`；
+- Downloads 与 `desktop/dist/internal` 各只保留当前一份；旧包、旧构建证据、临时
+  App、挂载目录和 24 GiB 临时编译缓存已清理，仓库根 `target/` 不存在；
+- 被隔离的 57 MiB 历史 P5/Rust Session 证据仍留在
+  `/private/tmp/agentmesh360-cycle143-session-quarantine`，因可能包含会话数据，本轮
+  不做不可恢复删除；它不在真实 `~/.grok/sessions`，也不属于客户端交付包。

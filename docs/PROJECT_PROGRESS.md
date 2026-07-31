@@ -7826,7 +7826,7 @@ KimiCLI 独立交叉测试：
 
 ### 循环 143：持久 Agent 主对话恢复与首次启动接管
 
-状态：进行中（95%）
+状态：已完成
 
 用户实际发现：
 
@@ -7859,18 +7859,41 @@ KimiCLI 独立交叉测试：
   Main Session 打开和跨 Workspace fail-closed；没有执行 `promptSession`；
 - Repository 工具链：306 passed / 0 failed；
 - Agent 管理、Conversation、Provider、Agent Package 四组 Electron smoke 全部通过；
-- 产品旅程新增 `TC-HOST-007`，69 条、14 个领域通过结构校验；该用例的真实安装层仍
-  保持“待执行”，不把单元测试冒充安装包通过；
+- 产品旅程新增 `TC-HOST-007`，69 条、14 个领域通过结构与执行校验；真实安装层已用
+  单次启动的新包完成，不把单元测试冒充安装包通过；
 - KimiCLI 首轮指出安装验收外层超时不足和失败 bridge 的 readline 清理缺口；两项修复
   后独立复跑 36 条 Node 与旅程校验，最终结论 `CLEAN`，无 P0/P1/P2；
-- Provider 请求 0、真实 Key/Keychain 读取 0、AgentMesh credits 0、外部费用 0。
+- Provider 请求 0、真实 Provider Key/Provider Credential Vault 读取 0、消息发送 0、
+  AgentMesh credits 0、外部费用 0。
 
-计划复盘与剩余门禁：
+最终提交、真实安装与内部交付：
+
+- 功能与安装包 commit：
+  `2df5b2074acc51e87012fae33619f975b971f48b`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_2df5b2074acc_arm64`；Desktop `0.1.1`，Host runtime
+  `1000.1.1785493634001 (2df5b20)`；
+- DMG：181435010 bytes，
+  `26787c00d26b90568ff3c6ba46330573e9ec973e486b9671f8654ed7906628a6`；
+- ZIP：181231904 bytes，
+  `ad33dca9b486a629821003356b553645403608b911706dfa271ef6e8829386fe`；
+- receipt verifier、构建/交付双摘要、`hdiutil verify`、ZIP CRC、Host arm64/版本和
+  构建/Downloads 逐字节比较全部通过；
+- 保持旧 Leader PID `56659` 后覆盖安装，只启动新 App 一次；没有预启动新 Host、
+  重启或点击重新验证，新 Leader PID `82848` 在同次启动内接管；
+- 真实 owner 状态验收通过：订阅 active、持久 Host connected、1 个 Agent 常驻，
+  Job Agent 首次打开和返回后重开均为 `ready`，输入与发送控件可用；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-2df5b20-arm64/`；
+- Downloads 与 `desktop/dist/internal` 各只保留当前一份；旧包、两份旧 dist、临时
+  App、空挂载目录和 24 GiB 临时编译缓存已删除，仓库根 `target/` 不存在；
+- 57 MiB 历史 P5/Rust Session 证据继续隔离在
+  `/private/tmp/agentmesh360-cycle143-session-quarantine`，不在真实 Grok Session
+  目录，也不属于交付包；因可能含会话数据，本轮不做不可恢复删除。
+
+计划复盘与下一轮：
 
 - 本轮仍只修复既定“保存 Agent 模型 → 恢复固定 Main Session → 打开主对话”路径，
   没有扩展自动 fallback、价格/余额、在线商店、P7/P8、签名/公证或在线发布；
-- 下一步先提交并推送当前修复，再从该 clean commit 构建唯一内部包；
-- 保持当前旧 Leader 运行，只启动新 App 一次完成真实接管验收；不得人工预启动新 Host、
-  重启客户端或点击重新验证来绕过失败；
-- 新包全部通过后才删除旧 Downloads 包、旧 dist 证据、临时 App、会话隔离目录和
-  仓库 `target/`，最终只保留一份内部测试包。
+- 主对话故障、首次启动接管、完整回归、KimiCLI 复核、唯一内部包和磁盘清理均已关闭；
+- 下一产品切片回到既定首次使用引导；进入下一轮前仍先复核产品计划，不把本次恢复修复
+  延伸成 Provider fallback、在线商店或生产发布。

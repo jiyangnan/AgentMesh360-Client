@@ -984,7 +984,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   清理 ghost bridge 并显示可行动 Host 故障；embedded 模式、spawn error 和 timeout
   不进入版本交接重试。
 - **验证层**：Node + Electron + 安装包
-- **本轮结果**：待执行
+- **本轮结果**：通过
 
 ## TC-SETTINGS-001：设置页四类子菜单
 
@@ -1167,3 +1167,39 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   失败、恢复测试，不能再用测试总数代替状态覆盖；
 - 下一产品切片仍是既定首次使用引导，不扩展自动 fallback、价格/余额、在线商店、
   P7/P8 或生产发布。
+
+### 2026-07-31 持久 Agent 主对话恢复与首次启动接管执行
+
+- 功能与安装包 commit：
+  `2df5b2074acc51e87012fae33619f975b971f48b`，已推送 `origin/main`。
+- 用例结果：69 条、14 个领域通过结构与执行校验；66 条通过、3 条既有外部真实服务
+  阻断、0 条待执行、0 条失败。新增 `TC-HOST-007` 覆盖旧 Leader 在首次
+  `initialize` 期间让位时，新包无需第二次启动即可恢复账号、Host 和主对话。
+- 自动化结果：
+  - Desktop Node：142 passed / 5 个显式真实 Host gate skipped / 0 failed；
+  - 真实 Host 专项：5 passed / 0 failed；
+  - Repository 工具链：306 passed / 0 failed；
+  - Agent 管理、Conversation、Provider、Agent Package 四组 Electron smoke 通过；
+  - 产品旅程校验器：69 条、14 个领域通过；校验器单元测试 3 passed / 0 failed；
+  - Desktop syntax、`git diff --check` 和 KimiCLI 交叉复核通过。
+- 真实覆盖安装只启动新 App 一次，没有预启动新 Host、重启客户端或点击重新验证：
+  - 旧 Leader PID `56659` 让位，新 Leader PID `82848` 接管；
+  - 有效订阅、1 个常驻 Agent 与持久 Host 同次启动恢复；
+  - Job Agent 首次打开和返回后重开均为 `ready`，输入框与发送按钮可用；
+  - Provider 假 Key 草稿与对话假草稿只验证保留后立即清空，Provider 请求 0、
+    AgentMesh credits 0、真实消息发送 0。
+- 安装包结果：
+  - receipt：`desktop_internal_p6_2df5b2074acc_arm64`；
+  - Desktop `0.1.1`，Host runtime
+    `1000.1.1785493634001 (2df5b20)`；
+  - DMG：181435010 bytes，
+    `26787c00d26b90568ff3c6ba46330573e9ec973e486b9671f8654ed7906628a6`；
+  - ZIP：181231904 bytes，
+    `ad33dca9b486a629821003356b553645403608b911706dfa271ef6e8829386fe`；
+  - receipt verifier、构建/交付双摘要、`hdiutil verify`、ZIP CRC 和逐字节比较通过。
+- 单包留存：Downloads 只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-2df5b20-arm64/`，构建证据只保留
+  `desktop/dist/internal/0.1.1-2df5b2074acc-arm64/`；旧包、两份旧 dist、临时 App、
+  空挂载目录和 24 GiB 临时编译缓存已删除，仓库根 `target/` 不存在。
+- 外部副作用：真实 Provider Key/Provider Credential Vault 读取 0、Provider 请求 0、
+  消息发送 0、AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。
