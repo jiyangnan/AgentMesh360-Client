@@ -1,8 +1,8 @@
 # 客户端信息架构与 Agent 管理重设计
 
 更新时间：2026-07-31
-状态：实现、回归与 KimiCLI 交叉审查完成，等待内部包交付
-进度：95%
+状态：已完成
+进度：100%
 
 ## 1. 本轮目标
 
@@ -199,5 +199,24 @@ KimiCLI 在三轮信息架构评审后，又完成三轮实现/安全/测试审�
   3 条单元测试全部通过；
 - 没有读取真实 Key、发起 Provider 请求、消耗 AgentMesh credits 或产生外部费用。
 
-内部 DMG、ZIP、receipt 与单包留存将在 clean pushed commit 构建并复验后补入；只有
-新包通过，才删除上一份最后可用包。
+最终交付证据：
+
+- 功能 commit `461f1af9ab8c981e21669b4b00da2e3d1d7b9373` 已推送
+  `origin/main`；
+- 从该 clean pushed commit 构建 arm64 unsigned internal DMG/ZIP，receipt
+  `desktop_internal_p6_461f1af9ab8c_arm64` 通过；
+- DMG SHA-256：
+  `338323b23311a6765150d100069dee6c2ba9ac5abbf0dd336b96ddbadad1d2ea`；
+- ZIP SHA-256：
+  `46070c7528411e7ec403372cc2bbad62f472e7163fb8e84846b2003776eb79d8`；
+- receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和 ZIP
+  Host/`app.asar` inventory 全部通过；
+- 新包验证后才删除上一份包和旧构建证据；Downloads 与
+  `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 已删除；
+- 当前本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-461f1af-arm64/`。
+
+计划复盘：本轮只重构客户端信息架构、Agent 管理、Provider 职责和对应测试，没有进入
+Provider 价格/余额、自动 fallback、在线商店、P7/P8、Apple Developer ID、公证或在线
+发布。下一产品切片应从这套三入口结构继续既定计划，不能把已移除的模型路由重新塞回
+模型供应商页。

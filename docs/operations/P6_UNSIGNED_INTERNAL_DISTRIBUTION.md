@@ -125,5 +125,25 @@ rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
 这些摘要只绑定上述 commit 的本地内部产物；未来任何重新构建都必须产生新的 receipt
 与摘要，不能沿用本节的数值。
 
+## 最新内部体验版
+
+2026-07-31 已从 clean pushed commit
+`461f1af9ab8c981e21669b4b00da2e3d1d7b9373` 构建并交付当前 arm64 内部体验版：
+
+- receipt：`desktop_internal_p6_461f1af9ab8c_arm64`；
+- Desktop `0.1.1`，Host runtime `1000.1.1785475728001 (461f1af)`；
+- DMG SHA-256：
+  `338323b23311a6765150d100069dee6c2ba9ac5abbf0dd336b96ddbadad1d2ea`；
+- ZIP SHA-256：
+  `46070c7528411e7ec403372cc2bbad62f472e7163fb8e84846b2003776eb79d8`；
+- receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和 ZIP
+  Host/`app.asar` inventory 全部通过；
+- 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-461f1af-arm64/`；
+- 新包验证后才删除上一包和旧构建证据；当前 Downloads 与
+  `desktop/dist/internal` 各只保留这一份，仓库根 `target/` 不存在；
+- 本次仍未签名、未公证、未上传、未请求 Provider，Apple/credits/Provider 费用均为
+  0。
+
 隔离安装、首次启动、Login Item 与打包 Host 的后续矩阵见
 [`P6_UNSIGNED_INTERNAL_INSTALL_LIFECYCLE.md`](P6_UNSIGNED_INTERNAL_INSTALL_LIFECYCLE.md)。

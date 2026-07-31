@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-30
+最近更新：2026-07-31
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -7568,7 +7568,7 @@ owner UAT 与根因：
 
 ### 循环 140：客户端信息架构与 Agent 管理重设计
 
-状态：进行中（实现与交叉回归完成，等待 clean commit 内部包）
+状态：已完成
 
 本轮方向复核：
 
@@ -7623,11 +7623,30 @@ owner UAT 与根因：
 - 自动化只使用 loopback fixture，没有读取真实 Provider Key、发起 Provider 请求、
   消耗 AgentMesh credits、产生外部费用或改变生产状态。
 
-下一步：
+最终提交与内部交付：
 
-1. 将当前完整 diff 提交并推送 `origin/main`；
-2. 从 clean pushed commit 构建 unsigned internal DMG/ZIP，复验 receipt、摘要与 DMG；
-3. 新包全部通过后删除上一包和旧构建证据，Downloads 与 `desktop/dist/internal`
-   始终各只保留一份；
-4. 回填 package commit、摘要和本地交付路径后关闭循环 140。下一产品切片继续按既定
-   计划，不扩展价格、余额、自动 fallback、在线商店、P7/P8 或生产发布。
+- 功能 commit：
+  `461f1af9ab8c981e21669b4b00da2e3d1d7b9373`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_461f1af9ab8c_arm64`；
+- Desktop `0.1.1`，Host runtime
+  `1000.1.1785475728001 (461f1af)`；
+- DMG：181426517 bytes，
+  `338323b23311a6765150d100069dee6c2ba9ac5abbf0dd336b96ddbadad1d2ea`；
+- ZIP：181222446 bytes，
+  `46070c7528411e7ec403372cc2bbad62f472e7163fb8e84846b2003776eb79d8`；
+- receipt verifier、构建目录和交付目录双摘要、`hdiutil verify`、构建/交付副本逐字节
+  比较以及 ZIP Host/`app.asar` inventory 全部通过；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-461f1af-arm64/`；
+- 新包通过后才删除上一包与旧证据；Downloads 和 `desktop/dist/internal` 各只保留
+  当前一份，仓库根 `target/` 已删除。本次共清理约 173 MiB 旧交付、346 MiB
+  旧构建证据和 12 GiB `target`；
+- 构建与验收没有 Provider 请求、AgentMesh credits、Apple 公证请求、外部上传或费用。
+
+计划复盘与下一轮：
+
+- 本轮结果仍严格对应既定“配置模型供应商 → 激活/管理 Agent → 开始或恢复对话”主路径；
+- Provider 页保持单一职责；模型路由、`agent.md`、`user.md` 和激活继续由具体
+  Agent 详情承担；
+- 下一产品切片继续按既定产品计划推进，不扩展价格、余额、自动 fallback、在线商店、
+  P7/P8 或生产发布；进入下一轮前仍须先复核产品计划和本轮实际方向。

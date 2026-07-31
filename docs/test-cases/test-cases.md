@@ -940,3 +940,38 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   DMG 挂载和仓库 `target/` 均已清理。
 - 当前失败：0。GLM 真实付费推理等三项是外部验证阻断，不是本机回归失败。
 - Kimi：按 owner 指示暂停，使用主 Agent 加强自主复核，不冒充独立交叉测试。
+
+### 2026-07-31 信息架构与 Agent 管理重设计执行
+
+- 功能与安装包 commit：
+  `461f1af9ab8c981e21669b4b00da2e3d1d7b9373`，已推送 `origin/main`。
+- 用例结果：62 条、14 个领域通过结构与执行校验；59 条通过、3 条既有外部真实服务
+  阻断、0 条待执行、0 条失败。阻断项仍为 GitHub OAuth、GLM Coding Plan 真实付费
+  最小推理和 Kimi Coding Plan 真实服务，本轮未借用旧授权。
+- 自动化结果：
+  - AgentMesh360 Rust：202 passed / 1 个显式外部源码 checkout ignored / 0 failed；
+  - Desktop Node：129 passed / 3 个显式 real-Host gate skipped / 0 failed；
+  - 产品旅程校验器：62 条、14 个领域通过；校验器单元测试 3 passed / 0 failed；
+  - Clippy `-D warnings`、Rust fmt、Desktop syntax 与 `git diff --check` 全部通过。
+- Electron 交互结果：Agent 管理、Conversation、Provider、添加 Agent 四组 smoke
+  全部通过；Conversation 的异步打开竞态修复后连续复跑两次通过。
+- KimiCLI 交叉测试：
+  - 完成信息架构、页面职责、Host/安全、测试覆盖和最终 diff 多轮审查；
+  - 发现并推动关闭恢复失效绑定、revision 冲突放弃路径、账号切换草稿隔离及
+    Conversation smoke 异步竞态；
+  - 修复后独立复跑，最终结论为“无阻断问题”。
+- 安装包结果：
+  - receipt：`desktop_internal_p6_461f1af9ab8c_arm64`；
+  - Desktop `0.1.1`，Host runtime `1000.1.1785475728001 (461f1af)`；
+  - DMG：181426517 bytes，
+    `338323b23311a6765150d100069dee6c2ba9ac5abbf0dd336b96ddbadad1d2ea`；
+  - ZIP：181222446 bytes，
+    `46070c7528411e7ec403372cc2bbad62f472e7163fb8e84846b2003776eb79d8`；
+  - receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和
+    ZIP Host/`app.asar` inventory 全部通过。
+- 单包留存：只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-461f1af-arm64/` 和对应
+  `desktop/dist/internal/0.1.1-461f1af9ab8c-arm64/`；新包通过后删除旧包、旧证据
+  和约 12 GiB 仓库 `target/`。
+- 外部副作用：Provider 请求 0、AgentMesh credits 0、Apple 公证请求 0、外部上传 0、
+  费用 $0。
