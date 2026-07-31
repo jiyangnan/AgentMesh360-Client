@@ -31,6 +31,9 @@ let providerUi = {
   message: null,
   busy: false,
   editingProfileId: null,
+  editorOpen: false,
+  pendingDelete: null,
+  focusAfterRender: null,
 };
 let providerDraft = null;
 let conversationDrafts = new Map();
@@ -99,6 +102,9 @@ function render(state) {
       message: null,
       busy: false,
       editingProfileId: null,
+      editorOpen: false,
+      pendingDelete: null,
+      focusAfterRender: null,
     };
     providerDraft = null;
     conversationDrafts = new Map();
@@ -2456,16 +2462,11 @@ function providerSettingsView(state) {
     ${providerUi.phase === 'loading' ? providerLoadingView() : ''}
     ${providerUi.phase === 'error' ? `<button class="secondary retry-providers" type="button">重新加载 Provider</button>` : ''}
     ${providerUi.phase === 'ready' ? `
-      <section class="provider-overview" aria-label="Provider 状态">
-        <div><span>已连接</span><strong>${profiles.length}</strong></div>
-        <div><span>检查记录</span><strong>${probes.length}</strong></div>
-        <div><span>供应商目录</span><strong>${escapeHtml(catalog.catalogRevision || '—')}</strong></div>
-        <p>先验证 Key、选择实时返回的模型并测试连接，再安全保存。</p>
-      </section>
       <section class="provider-column provider-only-column">
-        ${providerProfileEditor(catalog, profiles)}
         ${providerProfileList(profiles, probes)}
       </section>
+      ${providerUi.editorOpen ? providerEditorDialog(catalog, profiles) : ''}
+      ${providerUi.pendingDelete ? providerDeleteDialog(profiles) : ''}
     ` : ''}
     <div class="security-row">Provider 数据由本机 Host 独占 · Renderer 只能读取公开配置状态</div>`;
 }
@@ -2475,6 +2476,30 @@ function providerLoadingView() {
     <div class="provider-loading" role="status">
       <div class="spinner" aria-hidden="true"></div>
       <div><strong>正在读取模型供应商</strong><span>供应商、模型目录与检查记录会从本机 Host 安全读取。</span></div>
+    </div>`;
+}
+
+function providerEditorDialog(catalog, profiles) {
+  const editing = profiles.find((item) => item.profileId === providerUi.editingProfileId);
+  const title = editing ? `编辑 ${editing.displayName}` : '配置新供应商';
+  return `
+    <div class="provider-modal-backdrop" data-provider-modal-backdrop>
+      <section class="provider-editor-dialog" role="dialog" aria-modal="true"
+        aria-labelledby="provider-editor-title" aria-describedby="provider-editor-description">
+        <header class="provider-modal-header">
+          <div>
+            <p class="eyebrow">${editing ? 'Edit model provider' : 'Add model provider'}</p>
+            <h2 id="provider-editor-title">${escapeHtml(title)}</h2>
+            <p id="provider-editor-description">验证 Key、读取可用模型并完成连接测试后再保存。</p>
+          </div>
+          <button class="provider-modal-close" type="button" data-close-provider-editor
+            aria-label="暂时关闭供应商配置">×</button>
+        </header>
+        <div class="provider-modal-scroll">
+          ${providerUi.error ? `<div class="provider-notice error provider-modal-notice" role="alert">${escapeHtml(providerUi.error)}</div>` : ''}
+          ${providerProfileEditor(catalog, profiles)}
+        </div>
+      </section>
     </div>`;
 }
 
@@ -2519,11 +2544,10 @@ function providerProfileEditor(catalog, profiles) {
   };
   const advanced = selectedPreset === '__custom__' || Boolean(selectedProvider && !managed);
   return `
-    <form class="control-panel provider-form" id="provider-profile-form"
+    <form class="provider-form provider-modal-form" id="provider-profile-form"
       data-connection-test-passed="${connectionTestPassed ? 'true' : 'false'}"
       data-model-discovery-passed="${modelDiscoveryPassed ? 'true' : 'false'}"
       data-config-revision="${escapeHtml(draft?.configRevision || '0')}">
-      <div class="panel-kicker"><span>01</span><div><strong>${editing ? '编辑供应商' : '添加模型供应商'}</strong><small>选择供应商 → 填 Key 获取模型 → 选择模型 → 测试 → 保存</small></div></div>
       <div class="form-grid two">
         <label class="field"><span>供应商</span>
           <select name="presetId" id="provider-preset" required>
@@ -2602,7 +2626,10 @@ function providerProfileEditor(catalog, profiles) {
         </div>
       </div>
       <div class="panel-actions">
-        ${editing ? '<button class="ghost" id="cancel-profile-edit" type="button">取消编辑</button>' : '<span></span>'}
+        <div class="provider-secondary-actions">
+          <button class="ghost" type="button" data-close-provider-editor>暂时关闭</button>
+          <button class="ghost danger-text" type="button" data-discard-provider-draft>放弃更改</button>
+        </div>
         <div class="provider-save-actions">
           <button class="secondary connection-test-button" id="provider-test-connection" type="button" ${providerUi.busy ? 'disabled' : ''}>测试连接</button>
           <button class="secondary provider-save-button" type="submit" ${providerUi.busy || !connectionTestPassed ? 'disabled' : ''}>安全保存</button>
@@ -2613,40 +2640,123 @@ function providerProfileEditor(catalog, profiles) {
 
 function providerProfileList(profiles, probes) {
   return `
-    <section class="profile-stack">
-      <div class="section-head compact"><h2>已连接 Provider</h2><span>${profiles.length} 个</span></div>
+    <section class="provider-list-shell">
+      <div class="provider-list-toolbar">
+        <div>
+          <h2>已配置的模型供应商</h2>
+          <p>${profiles.length
+    ? `共 ${profiles.length} 个。Agent 使用哪个模型，请在对应 Agent 的“模型”页设置。`
+    : '配置一个供应商后，Agent 才能选择模型并开始工作。'}</p>
+        </div>
+        <button class="primary provider-add-button" type="button" data-open-provider-editor>＋ 配置新供应商</button>
+      </div>
+      <div class="profile-stack" data-provider-count="${profiles.length}">
       ${profiles.length ? profiles.map((profile) => {
-        const latestProbe = probes.find((probe) => probe.providerProfileId === profile.profileId);
+        const latestProbe = latestProviderProbe(probes, profile.profileId);
         const models = Array.isArray(profile.enabledModels) ? profile.enabledModels : [];
+        const status = providerProfileStatus(profile, latestProbe);
         return `
-          <article class="profile-row">
+          <article class="profile-row" data-provider-profile="${escapeHtml(profile.profileId)}">
             <div class="profile-sigil">${escapeHtml((profile.displayName || '?').slice(0, 1).toUpperCase())}</div>
             <div class="profile-copy">
               <strong>${escapeHtml(profile.displayName)}</strong>
-              <span>${escapeHtml(protocolLabel(profile.protocol))} · ${escapeHtml(profile.baseUrl)}</span>
-              <small>${profile.credentialConfigured ? `Key ···· ${escapeHtml(profile.credentialLastFour || '已配置')}` : '尚未配置 Key'} · ${models.length} 个可用模型</small>
+              <span class="provider-row-status ${escapeHtml(status.code)}"><i></i>${escapeHtml(status.label)}</span>
+              <small>${models.length} 个可用模型${profile.credentialConfigured
+    ? ` · Key 尾号 ${escapeHtml(profile.credentialLastFour || '已配置')}`
+    : ' · 尚未配置 Key'}</small>
             </div>
             <div class="row-actions">
-              <button class="ghost" type="button" data-edit-profile="${escapeHtml(profile.profileId)}">编辑</button>
-              <button class="ghost danger-text" type="button" data-delete-profile="${escapeHtml(profile.profileId)}">删除</button>
+              <button class="secondary provider-edit-button" type="button"
+                data-edit-profile="${escapeHtml(profile.profileId)}">编辑</button>
+              <button class="ghost danger-text provider-delete-button" type="button"
+                data-delete-profile="${escapeHtml(profile.profileId)}">删除</button>
             </div>
-            <div class="probe-console">
-              <div class="probe-model">
-                <span>检查模型</span>
-                <select aria-label="${escapeHtml(profile.displayName)} Probe 模型" ${models.length ? '' : 'disabled'}>
-                  ${models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')}
-                </select>
+            <details class="provider-technical-details">
+              <summary>连接详情与诊断</summary>
+              <div class="provider-technical-grid">
+                <div><span>接口兼容方式</span><strong>${escapeHtml(protocolLabel(profile.protocol))}</strong></div>
+                <div><span>接口地址</span><strong>${escapeHtml(profile.baseUrl)}</strong></div>
+                <div><span>最近检查</span><strong>${latestProbe
+    ? escapeHtml(formatProbeTime(latestProbe.completedAt))
+    : '尚未单独检查'}</strong></div>
               </div>
-              <div class="probe-actions">
-                <button class="probe-action local" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="local_validation" ${providerUi.busy || !models.length ? 'disabled' : ''}>本地检查</button>
-                <button class="probe-action metadata" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="metadata" ${providerUi.busy || !models.length ? 'disabled' : ''}>元数据</button>
-                <button class="probe-action inference" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="minimal_inference" ${providerUi.busy || !models.length ? 'disabled' : ''}>真实响应 <i>可能计费</i></button>
+              <div class="probe-console">
+                <div class="probe-model">
+                  <span>检查模型</span>
+                  <select aria-label="${escapeHtml(profile.displayName)} Probe 模型" ${models.length ? '' : 'disabled'}>
+                    ${models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')}
+                  </select>
+                </div>
+                <div class="probe-actions">
+                  <button class="probe-action local" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="local_validation" ${providerUi.busy || !models.length ? 'disabled' : ''}>本地检查</button>
+                  <button class="probe-action metadata" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="metadata" ${providerUi.busy || !models.length ? 'disabled' : ''}>读取元数据</button>
+                  <button class="probe-action inference" type="button" data-probe-profile="${escapeHtml(profile.profileId)}" data-probe-level="minimal_inference" ${providerUi.busy || !models.length ? 'disabled' : ''}>真实响应 <i>可能计费</i></button>
+                </div>
+                ${probeResult(latestProbe)}
               </div>
-              ${probeResult(latestProbe)}
-            </div>
+            </details>
           </article>`;
-      }).join('') : '<div class="empty-provider">还没有 Provider。先从上方接入你的第一个 BYOK 端点。</div>'}
+      }).join('') : `
+        <div class="empty-provider">
+          <div class="empty-provider-icon" aria-hidden="true">＋</div>
+          <strong>还没有模型供应商</strong>
+          <p>配置一个供应商、验证 API Key 并选择可用模型后，你就可以把模型分配给具体 Agent。</p>
+          <button class="secondary" type="button" data-open-provider-editor>配置第一个供应商</button>
+        </div>`}
+      </div>
     </section>`;
+}
+
+function latestProviderProbe(probes, profileId) {
+  return probes
+    .filter((probe) => probe.providerProfileId === profileId)
+    .sort((left, right) => String(right.completedAt || '').localeCompare(String(left.completedAt || '')))[0]
+    || null;
+}
+
+function providerProfileStatus(profile, probe) {
+  if (probe?.status === 'passed') {
+    if (probe.level === 'minimal_inference') return { code: 'passed', label: '最近连接可用' };
+    if (probe.level === 'metadata') return { code: 'passed', label: '元数据读取成功' };
+    return { code: 'passed', label: '本地配置有效' };
+  }
+  if (probe?.status === 'failed') {
+    if (probe.level === 'minimal_inference') return { code: 'failed', label: '最近连接失败' };
+    if (probe.level === 'metadata') return { code: 'failed', label: '元数据检查失败' };
+    return { code: 'failed', label: '本地配置需处理' };
+  }
+  if (probe?.status === 'confirmation_required') return { code: 'warning', label: '需要确认后检查' };
+  if (profile.credentialConfigured && profile.enabledModels?.length) {
+    return { code: 'configured', label: '已配置' };
+  }
+  return { code: 'warning', label: '配置未完成' };
+}
+
+function providerDeleteDialog(profiles) {
+  const pending = providerUi.pendingDelete;
+  const profile = profiles.find((item) => item.profileId === pending?.profileId);
+  if (!pending || !profile) return '';
+  const affected = Array.isArray(pending.affected) ? pending.affected : [];
+  return `
+    <div class="provider-modal-backdrop" data-provider-delete-backdrop>
+      <section class="provider-delete-dialog" role="dialog" aria-modal="true"
+        aria-labelledby="provider-delete-title" aria-describedby="provider-delete-description">
+        <div class="provider-delete-icon" aria-hidden="true">!</div>
+        <h2 id="provider-delete-title">删除“${escapeHtml(profile.displayName)}”？</h2>
+        <p id="provider-delete-description">删除后，本机不会再保留这个供应商的配置和 Key。已有对话历史不会删除。</p>
+        ${affected.length ? `
+          <div class="provider-delete-impact">
+            <strong>${affected.length} 个 Agent 将停止发送新消息</strong>
+            <ul>${affected.map((item) => `<li>${escapeHtml(agentDisplayName(item.agentId))} · ${escapeHtml(item.modelId || '模型未知')}</li>`).join('')}</ul>
+          </div>
+        ` : '<div class="provider-delete-impact safe"><strong>当前没有 Agent 使用这个供应商</strong></div>'}
+        <div class="provider-delete-actions">
+          <button class="secondary" type="button" data-cancel-provider-delete>取消</button>
+          <button class="danger-button" type="button" data-confirm-provider-delete
+            ${providerUi.busy ? 'disabled' : ''}>确认删除</button>
+        </div>
+      </section>
+    </div>`;
 }
 
 function probeResult(probe) {
@@ -2665,11 +2775,17 @@ function probeResult(probe) {
 
 function wireProviderSettings() {
   document.querySelector('.retry-providers')?.addEventListener('click', () => refreshProviderSnapshot());
-  document.getElementById('cancel-profile-edit')?.addEventListener('click', () => {
-    document.getElementById('provider-profile-form')?.remove();
-    providerDraft = null;
-    providerUi.editingProfileId = null;
-    renderReady(currentState);
+  for (const button of document.querySelectorAll('[data-open-provider-editor]')) {
+    button.addEventListener('click', () => openProviderEditor(null));
+  }
+  for (const button of document.querySelectorAll('[data-close-provider-editor]')) {
+    button.addEventListener('click', () => closeProviderEditor({ discard: false }));
+  }
+  document.querySelector('[data-discard-provider-draft]')?.addEventListener('click', () => {
+    closeProviderEditor({ discard: true });
+  });
+  document.querySelector('[data-provider-modal-backdrop]')?.addEventListener('mousedown', (event) => {
+    if (event.target === event.currentTarget) closeProviderEditor({ discard: false });
   });
   document.getElementById('provider-preset')?.addEventListener('change', applySelectedPreset);
   const providerForm = document.getElementById('provider-profile-form');
@@ -2694,25 +2810,121 @@ function wireProviderSettings() {
   document.getElementById('provider-test-connection')?.addEventListener('click', testProviderConnection);
   syncProviderConnectionMode(providerForm);
   for (const button of document.querySelectorAll('[data-edit-profile]')) {
-    button.addEventListener('click', () => {
-      document.getElementById('provider-profile-form')?.remove();
-      providerDraft = null;
-      providerUi.editingProfileId = button.dataset.editProfile;
-      providerUi.message = null;
-      renderReady(currentState);
-      document.getElementById('provider-profile-form')?.scrollIntoView({ behavior: 'smooth' });
-    });
+    button.addEventListener('click', () => openProviderEditor(button.dataset.editProfile));
   }
   for (const button of document.querySelectorAll('[data-delete-profile]')) {
-    button.addEventListener('click', () => deleteProviderProfile(button.dataset.deleteProfile));
+    button.addEventListener('click', () => prepareDeleteProviderProfile(button.dataset.deleteProfile));
+  }
+  document.querySelector('[data-cancel-provider-delete]')?.addEventListener('click', cancelProviderDelete);
+  document.querySelector('[data-confirm-provider-delete]')?.addEventListener('click', confirmProviderDelete);
+  document.querySelector('[data-provider-delete-backdrop]')?.addEventListener('mousedown', (event) => {
+    if (event.target === event.currentTarget) cancelProviderDelete();
+  });
+  const activeModal = document.querySelector('.provider-editor-dialog, .provider-delete-dialog');
+  if (activeModal) {
+    activeModal.addEventListener('keydown', trapProviderModalFocus);
+    requestAnimationFrame(() => {
+      const preferred = activeModal.matches('.provider-editor-dialog')
+        ? activeModal.querySelector('[data-close-provider-editor]')
+        : activeModal.querySelector('[data-cancel-provider-delete]');
+      preferred?.focus();
+    });
+  } else if (providerUi.focusAfterRender) {
+    const selector = providerUi.focusAfterRender;
+    providerUi.focusAfterRender = null;
+    requestAnimationFrame(() => document.querySelector(selector)?.focus());
   }
   for (const button of document.querySelectorAll('[data-probe-profile]')) {
     button.addEventListener('click', () => runProviderProbe(button));
   }
 }
 
+function openProviderEditor(profileId) {
+  const nextProfileId = profileId || null;
+  if (providerDraft?.editingProfileId !== nextProfileId) providerDraft = null;
+  providerUi = {
+    ...providerUi,
+    editorOpen: true,
+    editingProfileId: nextProfileId,
+    pendingDelete: null,
+    error: null,
+    message: null,
+    focusAfterRender: null,
+  };
+  renderReady(currentState);
+}
+
+function closeProviderEditor({ discard }) {
+  const editingProfileId = providerUi.editingProfileId;
+  captureProviderDraft();
+  if (discard) {
+    document.getElementById('provider-profile-form')?.remove();
+    providerDraft = null;
+  }
+  providerUi = {
+    ...providerUi,
+    editorOpen: false,
+    editingProfileId: discard ? null : editingProfileId,
+    error: null,
+    focusAfterRender: editingProfileId
+      ? `[data-edit-profile="${cssEscape(editingProfileId)}"]`
+      : '[data-open-provider-editor]',
+  };
+  renderReady(currentState);
+}
+
+function cancelProviderDelete() {
+  const profileId = providerUi.pendingDelete?.profileId;
+  providerUi = {
+    ...providerUi,
+    pendingDelete: null,
+    error: null,
+    focusAfterRender: profileId
+      ? `[data-delete-profile="${cssEscape(profileId)}"]`
+      : null,
+  };
+  renderReady(currentState);
+}
+
+function trapProviderModalFocus(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (event.currentTarget.matches('.provider-editor-dialog')) {
+      closeProviderEditor({ discard: false });
+    } else {
+      cancelProviderDelete();
+    }
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const focusable = [...event.currentTarget.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+  )].filter((element) => !element.hidden && element.getClientRects().length > 0);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function cssEscape(value) {
+  return String(value).replace(/["\\]/g, '\\$&');
+}
+
 async function refreshProviderSnapshot(message = null) {
-  providerUi = { ...providerUi, phase: 'loading', error: null, message, busy: false };
+  const hasSnapshot = Boolean(providerUi.snapshot);
+  providerUi = {
+    ...providerUi,
+    phase: hasSnapshot ? 'ready' : 'loading',
+    error: null,
+    message,
+    busy: false,
+  };
   if (['providers', 'agents'].includes(workspaceView)) renderReady(currentState);
   try {
     const snapshot = await bridge.getProviderSnapshot();
@@ -2727,7 +2939,7 @@ async function refreshProviderSnapshot(message = null) {
   } catch (error) {
     providerUi = {
       ...providerUi,
-      phase: 'error',
+      phase: hasSnapshot ? 'ready' : 'error',
       error: publicError(error, '无法读取 Provider 配置'),
       message: null,
       busy: false,
@@ -2752,7 +2964,6 @@ async function submitProviderProfile(event) {
   const editingProfileId = providerUi.editingProfileId;
   const apiKey = String(data.get('apiKey') || '').trim();
   const profile = providerProfileFromForm(data);
-  form.elements.apiKey.value = '';
   const saved = await runProviderOperation(async () => {
     if (editingProfileId) {
       await bridge.updateProviderProfile({ profileId: editingProfileId, profile });
@@ -2760,11 +2971,18 @@ async function submitProviderProfile(event) {
     } else {
       await bridge.createProviderProfile({ profile, apiKey });
     }
-    providerUi.editingProfileId = null;
   }, editingProfileId ? 'Provider 已更新，Key 输入已清空。' : 'Provider 已安全保存，Key 输入已清空。');
   if (saved) {
     document.getElementById('provider-profile-form')?.remove();
     providerDraft = null;
+    providerUi = {
+      ...providerUi,
+      editorOpen: false,
+      editingProfileId: null,
+      focusAfterRender: editingProfileId
+        ? `[data-edit-profile="${cssEscape(editingProfileId)}"]`
+        : '[data-open-provider-editor]',
+    };
     if (workspaceView === 'providers' && currentState.phase === 'ready') renderReady(currentState);
   }
 }
@@ -2954,7 +3172,7 @@ async function testProviderConnection(event) {
   }
 }
 
-async function deleteProviderProfile(profileId) {
+async function prepareDeleteProviderProfile(profileId) {
   let overview;
   try {
     overview = await bridge.getAgentModelOverview();
@@ -2970,15 +3188,20 @@ async function deleteProviderProfile(profileId) {
   const affected = (overview?.agents || []).filter(
     (item) => item.providerProfileId === profileId,
   );
-  const impact = affected.length
-    ? `\n\n将受影响的 Agent：\n${affected.map((item) => (
-      `• ${agentDisplayName(item.agentId)}（${item.modelId || '模型未知'}）`
-    )).join('\n')}`
-    : '\n\n当前没有 Agent 使用这个供应商。';
-  if (!window.confirm(
-    `确定删除这个模型供应商吗？${impact}\n\n受影响 Agent 会立即停止发送新消息，直到你重新选择模型；已有对话历史不会删除。`,
-  )) return;
-  await runProviderOperation(() => bridge.deleteProviderProfile(profileId), 'Provider 已删除。');
+  providerUi = {
+    ...providerUi,
+    pendingDelete: { profileId, affected },
+    error: null,
+    message: null,
+  };
+  renderReady(currentState);
+}
+
+async function confirmProviderDelete() {
+  const profileId = providerUi.pendingDelete?.profileId;
+  if (!profileId) return;
+  providerUi = { ...providerUi, pendingDelete: null };
+  await runProviderOperation(() => bridge.deleteProviderProfile(profileId), '模型供应商已删除。');
 }
 
 async function runProviderProbe(button) {

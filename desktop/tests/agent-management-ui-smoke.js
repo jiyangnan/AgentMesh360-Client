@@ -644,23 +644,40 @@ app.whenReady().then(async () => {
     copy: true,
   });
   smokeStep = 'show impacted Agents before Provider deletion';
-  const deletionImpact = await window.webContents.executeJavaScript(`
-    new Promise((resolve) => {
-      window.confirm = (message) => {
-        resolve(message);
-        return false;
-      };
-      document.querySelector('[data-delete-profile="pp_glm"]').click();
-    })
-  `);
-  assert.equal(deletionImpact.includes('Job Agent（glm-5.2）'), true);
+  const deletionCountBeforeCancel = calls.filter(([kind]) => kind === 'delete-provider').length;
+  await window.webContents.executeJavaScript(
+    'document.querySelector(\'[data-delete-profile="pp_glm"]\').click()',
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.provider-delete-dialog') !== null",
+  ));
+  const deletionImpact = await window.webContents.executeJavaScript(
+    "document.querySelector('.provider-delete-dialog').innerText",
+  );
+  assert.equal(deletionImpact.includes('Job Agent'), true);
+  assert.equal(deletionImpact.includes('glm-5.2'), true);
   assert.equal(deletionImpact.includes('已有对话历史不会删除'), true);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-cancel-provider-delete]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.provider-delete-dialog') === null",
+  ));
+  assert.equal(
+    calls.filter(([kind]) => kind === 'delete-provider').length,
+    deletionCountBeforeCancel,
+  );
 
   smokeStep = 'confirm Provider deletion and expose invalid Agent';
-  await window.webContents.executeJavaScript(`
-    window.confirm = () => true;
-    document.querySelector('[data-delete-profile="pp_glm"]').click();
-  `);
+  await window.webContents.executeJavaScript(
+    'document.querySelector(\'[data-delete-profile="pp_glm"]\').click()',
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.provider-delete-dialog') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-confirm-provider-delete]').click()",
+  );
   await waitFor(() => calls.some(([kind]) => kind === 'delete-provider'));
   await window.webContents.executeJavaScript("document.getElementById('nav-agents').click()");
   await waitFor(() => window.webContents.executeJavaScript(

@@ -183,8 +183,20 @@ function acceptanceExpression() {
 
       document.getElementById('nav-providers').click();
       await waitFor(
-        () => document.getElementById('provider-profile-form'),
-        'Provider form did not load',
+        () => document.querySelector('.provider-list-shell'),
+        'Provider list did not load',
+      );
+      if (
+        document.getElementById('provider-profile-form')
+        || document.querySelector('[role="dialog"]')
+      ) {
+        throw new Error('installed Provider page did not open in list-first mode');
+      }
+      document.querySelector('[data-open-provider-editor]')?.click();
+      await waitFor(
+        () => document.querySelector('.provider-editor-dialog[role="dialog"]')
+          && document.getElementById('provider-profile-form'),
+        'Provider configuration dialog did not open',
       );
       const presetIds = [
         ...document.querySelectorAll(
@@ -215,8 +227,9 @@ function acceptanceExpression() {
       document.getElementById('nav-agents').click();
       document.getElementById('nav-providers').click();
       await waitFor(
-        () => document.getElementById('provider-profile-form'),
-        'Provider form did not return after navigation',
+        () => document.querySelector('.provider-editor-dialog[role="dialog"]')
+          && document.getElementById('provider-profile-form'),
+        'Provider configuration dialog did not return after navigation',
       );
       form = document.getElementById('provider-profile-form');
       const providerDraftPreserved =
@@ -232,6 +245,7 @@ function acceptanceExpression() {
       form.elements.presetId.value = '';
       form.elements.displayName.value = '';
       form.elements.apiKey.value = '';
+      document.querySelector('[data-discard-provider-draft]')?.click();
       document.getElementById('nav-agents').click();
 
       const jobButton = document.querySelector(

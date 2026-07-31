@@ -7720,3 +7720,80 @@ owner UAT 与根因：
 - 本轮代码、覆盖补全、双人复核和单包交付已经关闭；
 - 下一产品切片仍按既定计划推进首次使用引导，不因本次局部缺陷延伸到自动 fallback、
   价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布。
+
+### 循环 142：模型供应商列表优先、统一 UI 与 WorkBuddy 调研
+
+状态：功能与回归完成，等待内部包交付
+
+用户实际发现：
+
+- 模型供应商页默认先展示长配置表单，已配置列表被压到首屏以下；
+- 新增、编辑和管理没有清楚的页面层级；
+- 已保存列表存在 7–11px 小字号和字体混用；
+- 需要实际调研本机 WorkBuddy 的产品架构、页面结构和功能分布；
+- 原 Provider smoke 反而要求默认表单存在，并使用 `requestSubmit()` 绕过真实按钮，
+  测试曾固化错误设计。
+
+本轮直接观察与设计结论：
+
+- 实际检查 `/Applications/WorkBuddy.app` 5.3.8；
+- 记录其新建任务、助理、项目、专家·技能·连接器、自动化和更多的一级分布；
+- 记录专家/技能/连接器局部页签，以及技能“查找/上传/创建”、已安装管理和连接器
+  列表优先的二级层次；
+- 明确只借鉴“管理页先展示已有对象，新增/编辑进入下一层”，不复制品牌视觉、导航名称，
+  也不推断 WorkBuddy 内部 Harness、进程、凭据和持久化架构；
+- 完整调研已写入
+  `docs/research/WORKBUDDY_INFORMATION_ARCHITECTURE_AND_AGENTMESH360_LEARNINGS.md`。
+
+本轮已实现：
+
+- Provider 页默认直接展示“已配置的模型供应商”，首屏主行动为“配置新供应商”；
+- 零、一个和多个供应商共享同一列表心智；
+- 新增和编辑复用应用内 `aria-modal` 弹窗；
+- 协议、Base URL 和三档 Probe 收进“连接详情与诊断”折叠区；
+- 删除改为应用内影响确认弹窗，列出受影响 Agent，不再使用原生 `window.confirm`；
+- Escape、关闭、暂时关闭和遮罩关闭保留同账号临时草稿；明确放弃与换账号清空；
+- 弹窗焦点约束和关闭后的焦点恢复已实现；
+- snapshot 有旧数据时静默刷新不再把列表替换成全屏 loading；
+- 建立 `docs/design/DESIGN_SYSTEM.md` 和全局字体、字号、控件高度、圆角、间距 token；
+  Provider 列表名称 16px，状态/元信息/操作不低于 13/12/13px。
+
+测试循环发现并修复：
+
+1. “放弃更改”清空草稿后，`renderReady()` 会再次从旧 DOM 把草稿捕获回来；现已在清空
+   前移除旧表单；
+2. 保存失败前旧实现会先清空 API Key，导致用户无法原地重试；现在失败保留当前
+   Renderer 临时 Key、模型、名称和已测试状态，只有真正保存成功才移除表单和草稿；
+3. Provider 状态文案按 local/metadata/minimal inference 区分“本地配置有效”
+   “元数据读取成功”和“最近连接可用”，不把本地检查冒充真实连接。
+
+当前自主验证：
+
+- Desktop Node：129 passed / 3 个显式 real-Host gate skipped / 0 failed；
+- Provider、Agent 管理、Conversation、添加 Agent 四组 Electron smoke 全部通过；
+- Provider smoke 覆盖列表优先、零/一/二 Profile、真实按钮新增/编辑、创建失败重试、
+  删除取消/成功/失败、草稿、账号隔离、Probe、错误恢复、焦点和 computed style；
+- 产品旅程新增 `TC-PROVIDER-012/013`，65 条、14 个领域通过；校验器单元测试
+  3 passed / 0 failed；
+- 1180×760 Provider 列表和配置弹窗视觉快照已人工检查；
+- installed acceptance 已改为默认验证列表，再主动打开配置弹窗；
+- 测试使用本机 fixture/loopback，真实 Provider 请求 0、真实 Key 0、AgentMesh
+  credits 0、外部上传 0、费用 $0。
+
+KimiCLI 独立交叉测试：
+
+- KimiCLI 0.26.0 使用本机已配置 Coding Highspeed 模型，只读检查完整 diff、
+  WorkBuddy 文档、设计系统、Provider/Agent smoke 和 installed acceptance；
+- 独立复跑 Provider、Agent 管理、Desktop Node 与 65 条旅程校验；
+- 唯一 P2 是配置弹窗 eyebrow 仍为 10px，与设计基线冲突；已改为
+  `--text-caption` 12px；
+- 修复后再次复跑 Provider smoke 并交由 Kimi 复验，最终结论为
+  “P0/P1/P2 全部清零，无阻断问题”。
+
+方向复盘与下一步：
+
+- 本轮仍严格属于既定“Provider 只管理供应商，Agent 内管理模型”的信息架构；
+- 没有进入自动 fallback、价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布；
+- 下一步只提交推送，从 clean pushed commit 构建唯一 unsigned internal 包，复验后
+  删除旧包和根 `target/`；
+- 交付关闭后回到既定首次使用引导切片。

@@ -68,6 +68,12 @@ app.whenReady().then(async () => {
   if (phase === 'provider' || phase === 'provider-bottom') {
     await window.webContents.executeJavaScript("document.getElementById('nav-providers').click()");
     await new Promise((resolve) => setTimeout(resolve, 180));
+    if (phase === 'provider-bottom' || process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET) {
+      await window.webContents.executeJavaScript(
+        "document.querySelector('[data-open-provider-editor]').click()",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
     if (process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET) {
       await window.webContents.executeJavaScript(`
         (() => {
@@ -76,10 +82,6 @@ app.whenReady().then(async () => {
           select.dispatchEvent(new Event('change', { bubbles: true }));
         })()
       `);
-      await new Promise((resolve) => setTimeout(resolve, 120));
-    }
-    if (phase === 'provider-bottom') {
-      await window.webContents.executeJavaScript("document.querySelector('.workspace-main').scrollTo(0, document.querySelector('.workspace-main').scrollHeight)");
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
   } else if (phase === 'package' || phase === 'package-ready') {
