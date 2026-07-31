@@ -16,11 +16,16 @@ test('the product journey document has complete structured cases and domain cove
     'AGENT',
     'AUTH',
     'CONV',
+    'GUIDE',
     'HOST',
     'INSTALL',
+    'MODEL',
+    'NAV',
+    'OVERLAY',
     'PACKAGE',
     'PROVIDER',
     'RELEASE',
+    'SETTINGS',
   ]);
 });
 

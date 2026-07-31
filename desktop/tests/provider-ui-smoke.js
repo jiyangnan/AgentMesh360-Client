@@ -16,6 +16,20 @@ let providerFailure = null;
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
+  ipcMain.handle('agent:get-model-overview', () => ({
+    agents: readyState().agents.map((agent) => ({
+      agentId: agent.agentId,
+      providerProfileId: 'pp_existing',
+      providerDisplayName: 'Existing Provider',
+      modelId: 'existing-model',
+      bindingIssue: null,
+      inheritedFromLegacyGlobal: false,
+    })),
+  }));
+  ipcMain.handle('runtime:get-background-snapshot', () => ({
+    host: { bridgeState: 'connected', mode: 'persistent_leader' },
+    loginItem: { supported: true, openAtLogin: true },
+  }));
   ipcMain.handle('provider:get-snapshot', () => {
     if (providerFailure) throw providerFailure;
     return providerSnapshot();
@@ -52,10 +66,6 @@ app.whenReady().then(async () => {
       },
     };
   });
-  ipcMain.handle('provider:upsert-assignment', (_event, assignment) => {
-    writes.push({ kind: 'assignment', payload: assignment });
-    return { assignment: providerSnapshot().assignments[0] };
-  });
   ipcMain.handle('provider:run-probe', (_event, payload) => {
     writes.push({ kind: 'probe', payload });
     return {
@@ -81,7 +91,6 @@ app.whenReady().then(async () => {
     'provider:update-profile',
     'provider:replace-secret',
     'provider:delete-profile',
-    'provider:delete-assignment',
   ]) {
     ipcMain.handle(channel, () => ({}));
   }
@@ -313,9 +322,12 @@ app.whenReady().then(async () => {
     writes.find((write) => write.kind === 'profile').payload.apiKey,
     'sk-renderer-one-shot',
   );
-  await waitFor(async () => window.webContents.executeJavaScript(
-    "document.querySelector('.provider-notice.success') !== null",
-  ));
+  await waitFor(async () => window.webContents.executeJavaScript(`
+    document.querySelector('.provider-notice.success') !== null
+      && document.querySelector('[name="presetId"]')?.value === ''
+      && document.querySelector('[name="displayName"]')?.value === ''
+      && document.querySelector('[name="apiKey"]')?.value === ''
+  `));
   const publicDom = await window.webContents.executeJavaScript(`({
     apiKeyValue: document.querySelector('[name="apiKey"]').value,
     presetId: document.querySelector('[name="presetId"]').value,
@@ -342,25 +354,15 @@ app.whenReady().then(async () => {
     "document.querySelector('[name=\"presetId\"]').value",
   ), '');
 
-  await window.webContents.executeJavaScript(`
-    (() => {
-      const form = document.getElementById('provider-assignment-form');
-      form.elements.providerProfileId.value = 'pp_openai';
-      form.elements.modelId.value = 'gpt-5';
-      form.requestSubmit();
-    })()
-  `);
-  await waitFor(() => writes.some((write) => write.kind === 'assignment'));
-  assert.deepEqual(
-    writes.find((write) => write.kind === 'assignment').payload,
-    {
-      scopeKind: 'global',
-      scopeId: null,
-      role: 'main',
-      providerProfileId: 'pp_openai',
-      modelId: 'gpt-5',
-    },
-  );
+  const providerBoundary = await window.webContents.executeJavaScript(`({
+    assignmentForm: document.getElementById('provider-assignment-form') !== null,
+    routeMatrix: document.querySelector('.assignment-stack') !== null,
+    body: document.body.innerText,
+  })`);
+  assert.equal(providerBoundary.assignmentForm, false);
+  assert.equal(providerBoundary.routeMatrix, false);
+  assert.equal(providerBoundary.body.includes('分配模型角色'), false);
+  assert.equal(providerBoundary.body.includes('当前路由矩阵'), false);
   await waitFor(async () => window.webContents.executeJavaScript(
     "document.querySelector('[data-probe-level=\"minimal_inference\"]') !== null",
   ));

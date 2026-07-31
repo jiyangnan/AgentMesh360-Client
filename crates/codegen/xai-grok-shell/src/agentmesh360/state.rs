@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-const SCHEMA_VERSION: u32 = 10;
+const SCHEMA_VERSION: u32 = 11;
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS product_agents (
@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS product_agents (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_product_agents_legacy_agent
     ON product_agents(agent_id) WHERE owner_account_id IS NULL;
+
+CREATE TABLE IF NOT EXISTS agent_overlays (
+    owner_account_id INTEGER NOT NULL CHECK(owner_account_id > 0),
+    agent_id TEXT NOT NULL,
+    overlay_kind TEXT NOT NULL CHECK(overlay_kind IN ('agent_md', 'user_md')),
+    content TEXT NOT NULL,
+    revision INTEGER NOT NULL CHECK(revision >= 1),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(owner_account_id, agent_id, overlay_kind)
+);
 
 CREATE TABLE IF NOT EXISTS provider_profiles (
     profile_id TEXT PRIMARY KEY,
@@ -351,7 +361,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_the_shared_v10_schema() {
+    fn initializes_the_shared_v11_schema() {
         let temp = tempfile::tempdir().expect("tempdir");
         let conn = open(temp.path()).expect("open state");
 
@@ -362,7 +372,7 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN \
-                     ('agent_package_registry', 'model_assignments', 'package_registry_fetch_state', 'package_trust_cache', \
+                     ('agent_overlays', 'agent_package_registry', 'model_assignments', 'package_registry_fetch_state', 'package_trust_cache', \
                       'product_agents', 'provider_profiles', 'provider_probe_results', 'session_provider_bindings', \
                       'turn_route_records') ORDER BY name",
                 )
@@ -373,10 +383,11 @@ mod tests {
                 .expect("collect tables")
         };
 
-        assert_eq!(version, 10);
+        assert_eq!(version, 11);
         assert_eq!(
             tables,
             [
+                "agent_overlays",
                 "agent_package_registry",
                 "model_assignments",
                 "package_registry_fetch_state",
@@ -450,7 +461,7 @@ mod tests {
             )
             .expect("assignment table count");
 
-        assert_eq!(version, 10);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(profiles, 1);
         assert_eq!(assignments_table, 1);
     }
@@ -550,7 +561,7 @@ mod tests {
             )
             .expect("binding tables");
 
-        assert_eq!(version, 10);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(owner, 41);
         assert_eq!(binding_tables, 2);
     }
@@ -577,7 +588,7 @@ mod tests {
                 .expect("collect columns")
         };
 
-        assert_eq!(version, 10);
+        assert_eq!(version, SCHEMA_VERSION);
         assert!(columns.contains(&"active_file_manifest_sha256".to_owned()));
         assert!(columns.contains(&"previous_file_manifest_sha256".to_owned()));
     }
@@ -647,7 +658,7 @@ mod tests {
             )
             .expect("Package Registry table");
 
-        assert_eq!(version, 10);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
         assert_eq!(registry_table, 1);
     }
@@ -690,7 +701,7 @@ mod tests {
             })
             .expect("Package Trust Cache row count");
 
-        assert_eq!(version, 10);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(session_id, "11111111-1111-1111-1111-111111111111");
         assert_eq!(cache_rows, 0);
     }
@@ -737,7 +748,7 @@ mod tests {
             )
             .expect("Package Registry fetch state count");
 
-        assert_eq!(version, 10);
+        assert_eq!(version, SCHEMA_VERSION);
         assert_eq!(cached, (7, 42));
         assert_eq!(fetch_rows, 0);
     }

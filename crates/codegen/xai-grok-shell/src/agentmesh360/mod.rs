@@ -6,6 +6,7 @@
 //! deterministic main conversation per activated product agent.
 
 mod access;
+mod agent_overlays;
 mod agent_packages;
 mod background_activities;
 mod credential_lease;
@@ -41,7 +42,7 @@ mod workspace_artifacts;
 mod workspace_project_state;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use agent_client_protocol as acp;
@@ -84,6 +85,7 @@ pub(crate) struct AgentMesh360Runtime {
     state_home: PathBuf,
     credential_vault: credential_vault::RuntimeCredentialVault,
     pinned_sessions: RefCell<HashSet<acp::SessionId>>,
+    applied_overlay_revisions: RefCell<HashMap<String, (u64, u64)>>,
     restore_started: Cell<bool>,
     access_generation: Cell<u64>,
 }
@@ -132,6 +134,7 @@ impl AgentMesh360Runtime {
             state_home,
             credential_vault,
             pinned_sessions: RefCell::default(),
+            applied_overlay_revisions: RefCell::default(),
             restore_started: Cell::default(),
             access_generation: Cell::default(),
         }
@@ -301,8 +304,22 @@ impl AgentMesh360Runtime {
     fn suspend_residency(&self) -> bool {
         let had_pins = !self.pinned_sessions.borrow().is_empty();
         self.pinned_sessions.borrow_mut().clear();
+        self.applied_overlay_revisions.borrow_mut().clear();
         let had_restore = self.restore_started.replace(false);
         had_pins || had_restore
+    }
+
+    fn mark_overlays_applied(&self, session_id: &acp::SessionId, revisions: (u64, u64)) {
+        self.applied_overlay_revisions
+            .borrow_mut()
+            .insert(session_id.0.to_string(), revisions);
+    }
+
+    fn applied_overlay_revisions(&self, session_id: &acp::SessionId) -> Option<(u64, u64)> {
+        self.applied_overlay_revisions
+            .borrow()
+            .get(session_id.0.as_ref())
+            .copied()
     }
 
     fn next_access_generation(&self) -> u64 {
@@ -355,6 +372,29 @@ struct ActivateRequest {
 #[serde(rename_all = "camelCase")]
 struct AgentListResponse {
     agents: Vec<ProductAgentRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentCustomizationGetRequest {
+    agent_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentCustomizationUpsertRequest {
+    agent_id: String,
+    kind: agent_overlays::AgentOverlayKind,
+    content: String,
+    expected_revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentCustomizationClearRequest {
+    agent_id: String,
+    kind: agent_overlays::AgentOverlayKind,
+    expected_revision: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -445,6 +485,44 @@ pub(crate) async fn handle(
             activate(agent, &request.agent_id)
                 .await
                 .and_then(|response| serde_json::to_value(response).map_err(Into::into))
+        }
+        agent_overlays::AGENT_CUSTOMIZATION_GET_METHOD => {
+            let request: AgentCustomizationGetRequest = crate::extensions::parse_params(args)?;
+            let owner_account_id = current_account_id(agent)?;
+            agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home)
+                .snapshot(
+                    agent.agentmesh360.registry(),
+                    owner_account_id,
+                    &request.agent_id,
+                )
+                .and_then(|snapshot| serde_json::to_value(snapshot).map_err(Into::into))
+        }
+        agent_overlays::AGENT_CUSTOMIZATION_UPSERT_METHOD => {
+            let request: AgentCustomizationUpsertRequest = crate::extensions::parse_params(args)?;
+            let owner_account_id = current_account_id(agent)?;
+            agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home)
+                .upsert(
+                    agent.agentmesh360.registry(),
+                    owner_account_id,
+                    &request.agent_id,
+                    request.kind,
+                    &request.content,
+                    request.expected_revision,
+                )
+                .and_then(|record| serde_json::to_value(record).map_err(Into::into))
+        }
+        agent_overlays::AGENT_CUSTOMIZATION_CLEAR_METHOD => {
+            let request: AgentCustomizationClearRequest = crate::extensions::parse_params(args)?;
+            let owner_account_id = current_account_id(agent)?;
+            agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home)
+                .clear(
+                    agent.agentmesh360.registry(),
+                    owner_account_id,
+                    &request.agent_id,
+                    request.kind,
+                    request.expected_revision,
+                )
+                .and_then(|record| serde_json::to_value(record).map_err(Into::into))
         }
         AGENT_ARTIFACTS_LIST_METHOD => {
             let request: workspace_artifacts::WorkspaceArtifactListRequest =
@@ -642,6 +720,69 @@ pub(crate) fn require_product_session_access(
     Ok(())
 }
 
+pub(crate) async fn ensure_product_agent_overlays_applied(
+    agent: &MvpAgent,
+    session_id: &acp::SessionId,
+) -> Result<(), acp::Error> {
+    let identity = agent
+        .agentmesh360
+        .registry()
+        .main_session_identity(session_id.0.as_ref())
+        .map_err(|_| {
+            acp::Error::internal_error().data("failed to read Agent customization identity")
+        })?;
+    let Some((Some(owner_account_id), agent_id)) = identity else {
+        return Ok(());
+    };
+    if agent.agentmesh360.access.current_account_id() != Some(owner_account_id) {
+        return Err(acp::Error::invalid_params().data("session not found"));
+    }
+    let overlays = agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home);
+    let definition = agent
+        .agentmesh360
+        .registry()
+        .agent_definition(&agent_id)
+        .and_then(|definition| {
+            overlays.apply_to_definition(owner_account_id, &agent_id, definition)
+        })
+        .map_err(|_| acp::Error::internal_error().data("failed to prepare Agent customization"))?;
+    let (definition, revisions) = definition;
+    if agent.agentmesh360.applied_overlay_revisions(session_id) == Some(revisions) {
+        return Ok(());
+    }
+    let cmd_tx = agent
+        .sessions
+        .borrow()
+        .get(session_id)
+        .map(|handle| handle.cmd_tx.clone())
+        .ok_or_else(|| acp::Error::invalid_params().data("unknown session id"))?;
+    let (busy_responds_to, busy_response) = tokio::sync::oneshot::channel();
+    cmd_tx
+        .send(crate::session::SessionCommand::IsBusy {
+            respond_to: busy_responds_to,
+        })
+        .map_err(|_| acp::Error::internal_error().data("Agent customization actor closed"))?;
+    if busy_response.await.unwrap_or(true) {
+        return Err(acp::Error::invalid_params().data(
+            "Agent customization is waiting for the current reply to finish; retry this message",
+        ));
+    }
+    let (responds_to, response) = tokio::sync::oneshot::channel();
+    cmd_tx
+        .send(crate::session::SessionCommand::RebuildAgentForDefinition {
+            definition,
+            responds_to,
+        })
+        .map_err(|_| acp::Error::internal_error().data("failed to apply Agent customization"))?;
+    response
+        .await
+        .map_err(|_| acp::Error::internal_error().data("Agent customization actor closed"))??;
+    agent
+        .agentmesh360
+        .mark_overlays_applied(session_id, revisions);
+    Ok(())
+}
+
 pub(crate) fn hidden_product_session_ids(agent: &MvpAgent) -> Result<HashSet<String>, acp::Error> {
     let all_product_sessions = agent
         .agentmesh360
@@ -781,6 +922,9 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("activation did not allocate a workspace"))?;
     let profile = agent.agentmesh360.registry().agent_definition(agent_id)?;
+    let (profile, overlay_revisions) =
+        agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home)
+            .apply_to_definition(owner_account_id, agent_id, profile)?;
     let persisted_cwd = crate::session::resolve_local_session_any_cwd(session_id.0.as_ref());
     let mut meta = acp::Meta::new();
     meta.insert("agentProfile".into(), profile.to_json_value());
@@ -807,6 +951,9 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
 
     match session_result {
         Ok(actual_session_id) if actual_session_id == session_id => {
+            agent
+                .agentmesh360
+                .mark_overlays_applied(&session_id, overlay_revisions);
             agent.agentmesh360.pin(session_id);
             agent.agentmesh360.registry().mark_runtime(
                 owner_account_id,

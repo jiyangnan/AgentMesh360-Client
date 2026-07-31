@@ -15,6 +15,7 @@ const { DesktopOAuthBroker } = require('./auth/oauth-loopback');
 const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
 const { AgentConversationController } = require('./conversation-controller');
+const { AgentManagementController } = require('./agent-management-controller');
 const { IdentityController } = require('./identity-controller');
 const { PackageController } = require('./package-controller');
 const { ProviderController } = require('./provider-controller');
@@ -85,8 +86,17 @@ async function boot() {
   });
   const packages = new PackageController({ identity: controller, host });
   const providers = new ProviderController({ identity: controller, host });
+  const agentManagement = new AgentManagementController({ identity: controller, host });
 
-  registerIpc(controller, providers, packages, conversations, loginItems, host);
+  registerIpc(
+    controller,
+    providers,
+    packages,
+    conversations,
+    agentManagement,
+    loginItems,
+    host,
+  );
   windows.onReady();
   controller.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('identity:state', state);
@@ -143,7 +153,15 @@ function createWindow() {
   return created;
 }
 
-function registerIpc(identity, providers, packages, conversationController, loginItemController, host) {
+function registerIpc(
+  identity,
+  providers,
+  packages,
+  conversationController,
+  agentManagement,
+  loginItemController,
+  host,
+) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
     const hasProvider = Object.hasOwn(credentials || {}, 'provider');
@@ -162,13 +180,34 @@ function registerIpc(identity, providers, packages, conversationController, logi
   });
   ipcMain.handle('identity:logout', () => identity.logout());
   ipcMain.handle('identity:recheck', () => identity.revalidate('manual'));
-  ipcMain.handle('agent:activate', async (_event, agentId) => {
-    if (!/^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$/.test(agentId)) throw new Error('Agent ID 无效');
-    return activateAgentAndEnableBackground({
-      identity,
-      loginItems: loginItemController,
-      agentId,
-    });
+  ipcMain.handle('agent:get-management-snapshot', (_event, agentId) => {
+    return agentManagement.getSnapshot(agentId);
+  });
+  ipcMain.handle('agent:get-model-overview', () => {
+    return agentManagement.getOverview();
+  });
+  ipcMain.handle(
+    'agent:configure-and-activate',
+    async (_event, { agentId, providerProfileId, modelId } = {}) => {
+      await agentManagement.saveModel(agentId, providerProfileId, modelId);
+      return activateAgentAndEnableBackground({
+        identity,
+        loginItems: loginItemController,
+        agentId,
+      });
+    },
+  );
+  ipcMain.handle(
+    'agent:save-model',
+    (_event, { agentId, providerProfileId, modelId } = {}) => {
+      return agentManagement.saveModel(agentId, providerProfileId, modelId);
+    },
+  );
+  ipcMain.handle('agent:save-customization', (_event, request) => {
+    return agentManagement.saveCustomization(request);
+  });
+  ipcMain.handle('agent:clear-customization', (_event, request) => {
+    return agentManagement.clearCustomization(request);
   });
   ipcMain.handle('conversation:get-snapshot', () => conversationController.getSnapshot());
   ipcMain.handle('conversation:open', (_event, agentId) => {
@@ -193,12 +232,6 @@ function registerIpc(identity, providers, packages, conversationController, logi
   });
   ipcMain.handle('provider:delete-profile', (_event, profileId) => {
     return providers.deleteProfile(profileId);
-  });
-  ipcMain.handle('provider:upsert-assignment', (_event, assignment) => {
-    return providers.upsertAssignment(assignment);
-  });
-  ipcMain.handle('provider:delete-assignment', (_event, assignmentId) => {
-    return providers.deleteAssignment(assignmentId);
   });
   ipcMain.handle('provider:run-probe', (_event, request) => {
     return providers.runProbe(request);

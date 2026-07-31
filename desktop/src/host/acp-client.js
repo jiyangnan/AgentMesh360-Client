@@ -107,6 +107,32 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/agents/activate', { agentId });
   }
 
+  async getAgentCustomization(agentId) {
+    return this.#extension('x.agentmesh360/agents/customization/get', { agentId });
+  }
+
+  async upsertAgentCustomization({
+    agentId,
+    kind,
+    content,
+    expectedRevision,
+  }) {
+    return this.#extension('x.agentmesh360/agents/customization/upsert', {
+      agentId,
+      kind,
+      content,
+      expectedRevision,
+    });
+  }
+
+  async clearAgentCustomization({ agentId, kind, expectedRevision }) {
+    return this.#extension('x.agentmesh360/agents/customization/clear', {
+      agentId,
+      kind,
+      expectedRevision,
+    });
+  }
+
   async listWorkspaceArtifacts(agentId) {
     return this.#extension('x.agentmesh360/agents/artifacts/list', { agentId });
   }

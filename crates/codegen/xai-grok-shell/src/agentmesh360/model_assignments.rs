@@ -137,17 +137,19 @@ impl ModelAssignmentStore {
         let input = input.normalized()?;
         let mut conn = super::state::open(&self.state_home)?;
         let transaction = conn.transaction()?;
-        let owns_profile = transaction
+        let enabled_models_json = transaction
             .query_row(
-                "SELECT 1 FROM provider_profiles \
+                "SELECT enabled_models_json FROM provider_profiles \
                  WHERE owner_account_id = ?1 AND profile_id = ?2",
                 params![owner_account_id, input.provider_profile_id],
-                |_| Ok(()),
+                |row| row.get::<_, String>(0),
             )
             .optional()?
-            .is_some();
-        if !owns_profile {
-            bail!("provider profile not found");
+            .ok_or_else(|| anyhow!("provider profile not found"))?;
+        let enabled_models: Vec<String> = serde_json::from_str(&enabled_models_json)
+            .context("parse provider enabled model ids")?;
+        if !enabled_models.iter().any(|model| model == &input.model_id) {
+            bail!("model is not enabled for the selected provider profile");
         }
 
         let current = get_exact(
@@ -373,7 +375,16 @@ mod tests {
                     protocol: ProviderProtocol::OpenaiResponses,
                     base_url: "https://api.openai.com/v1".into(),
                     auth_kind: ProviderAuthKind::BearerApiKey,
-                    enabled_models: vec!["model-main".into()],
+                    enabled_models: vec![
+                        "model-main".into(),
+                        "global-model".into(),
+                        "agent-model".into(),
+                        "session-model".into(),
+                        "main-session-model".into(),
+                        "vision-global-model".into(),
+                        "model-a".into(),
+                        "model-b".into(),
+                    ],
                 }
                 .normalized()
                 .expect("valid profile"),
@@ -556,6 +567,33 @@ mod tests {
         assert!(assignments.list(8).expect("other account").is_empty());
 
         profiles.delete(7, "pp_owner").expect("delete profile");
+        assert!(assignments.list(7).expect("assignments").is_empty());
+    }
+
+    #[test]
+    fn assignment_rejects_a_model_not_enabled_by_the_selected_profile() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let profiles = ProviderProfileStore::in_home(temp.path());
+        let assignments = ModelAssignmentStore::in_home(temp.path());
+        profile(&profiles, 7, "pp_owner", "Owner");
+
+        let error = assignments
+            .upsert(
+                7,
+                assignment(
+                    AssignmentScopeKind::Agent,
+                    Some("job-agent"),
+                    "pp_owner",
+                    "invented-model",
+                ),
+            )
+            .expect_err("model must come from the profile");
+
+        assert!(
+            error
+                .to_string()
+                .contains("model is not enabled for the selected provider profile")
+        );
         assert!(assignments.list(7).expect("assignments").is_empty());
     }
 }

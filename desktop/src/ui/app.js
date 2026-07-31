@@ -5,6 +5,25 @@ const root = document.getElementById('app');
 let currentState = { phase: 'starting' };
 let workspaceView = 'agents';
 let readyAccountId = null;
+let agentManagementUi = {
+  phase: 'idle',
+  agentId: null,
+  tab: 'conversation',
+  snapshot: null,
+  error: null,
+  message: null,
+  busy: false,
+};
+let agentCustomizationDrafts = new Map();
+let agentManagementRequestRevision = 0;
+let agentOverviewUi = {
+  phase: 'idle',
+  snapshot: null,
+  error: null,
+};
+let agentOverviewRequestRevision = 0;
+let conversationOpenRevision = 0;
+let settingsTab = 'account';
 let providerUi = {
   phase: 'idle',
   snapshot: null,
@@ -31,13 +50,27 @@ let backgroundUi = {
   message: null,
   busy: false,
 };
+let backgroundRequestRevision = 0;
 let conversationUi = { phase: 'idle' };
 let permissionResponseInFlight = null;
 
 bridge.onState(render);
 bridge.onConversationState((state) => {
+  if (
+    state?.phase !== 'idle'
+    && state?.agentId
+    && state.agentId !== agentManagementUi.agentId
+  ) {
+    return;
+  }
+  const wasStreaming = conversationUi.streaming === true;
   conversationUi = state || { phase: 'idle' };
-  if (currentState.phase === 'ready' && workspaceView === 'conversation') {
+  const streamingChanged = wasStreaming !== (conversationUi.streaming === true);
+  if (
+    currentState.phase === 'ready'
+    && workspaceView === 'agent-detail'
+    && (agentManagementUi.tab === 'conversation' || streamingChanged)
+  ) {
     renderReady(currentState);
   }
 });
@@ -69,6 +102,23 @@ function render(state) {
     };
     providerDraft = null;
     conversationDrafts = new Map();
+    agentCustomizationDrafts = new Map();
+    agentManagementUi = {
+      phase: 'idle',
+      agentId: null,
+      tab: 'conversation',
+      snapshot: null,
+      error: null,
+      message: null,
+      busy: false,
+    };
+    agentOverviewUi = {
+      phase: 'idle',
+      snapshot: null,
+      error: null,
+    };
+    agentOverviewRequestRevision += 1;
+    settingsTab = 'account';
     packageUi = {
       phase: 'idle',
       snapshot: null,
@@ -85,6 +135,7 @@ function render(state) {
       message: null,
       busy: false,
     };
+    backgroundRequestRevision += 1;
     conversationUi = { phase: 'idle' };
     permissionResponseInFlight = null;
     restoreConversationSnapshot(readyAccountId);
@@ -95,12 +146,29 @@ function render(state) {
     providerUi.phase = 'idle';
     providerDraft = null;
     conversationDrafts = new Map();
+    agentCustomizationDrafts = new Map();
+    agentManagementUi = {
+      phase: 'idle',
+      agentId: null,
+      tab: 'conversation',
+      snapshot: null,
+      error: null,
+      message: null,
+      busy: false,
+    };
+    agentOverviewUi = {
+      phase: 'idle',
+      snapshot: null,
+      error: null,
+    };
+    agentOverviewRequestRevision += 1;
     packageUi.snapshot = null;
     packageUi.phase = 'idle';
     packageUi.pendingApproval = null;
     packageUi.unknownOutcome = null;
     backgroundUi.snapshot = null;
     backgroundUi.phase = 'idle';
+    backgroundRequestRevision += 1;
     conversationUi = { phase: 'idle' };
     permissionResponseInFlight = null;
   }
@@ -113,6 +181,7 @@ function render(state) {
       break;
     case 'ready':
       renderReady(currentState);
+      if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
       break;
     case 'unavailable':
       renderUnavailable(currentState);
@@ -148,6 +217,7 @@ function refreshReadyIdentityMetadata(state) {
     '[data-ready-checked-at]',
     `订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}`,
   );
+  if (backgroundUi.phase !== 'loading') refreshBackgroundSnapshot({ quiet: true });
 }
 
 function setText(selector, value) {
@@ -167,8 +237,20 @@ async function restoreConversationSnapshot(accountId) {
       return;
     }
     conversationUi = state;
-    workspaceView = 'conversation';
+    const requestRevision = ++agentManagementRequestRevision;
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'loading',
+      agentId: state.agentId,
+      tab: 'conversation',
+      snapshot: null,
+      error: null,
+      message: null,
+      busy: false,
+    };
+    workspaceView = 'agent-detail';
     renderReady(currentState);
+    await refreshAgentManagement(null, requestRevision);
   } catch {
     // The Agent cards remain available as the safe recovery path.
   }
@@ -288,65 +370,100 @@ function renderUnavailable(state) {
 function renderReady(state) {
   captureRendererDrafts();
   const account = state.account || {};
+  const agentAreaActive = ['agents', 'agent-detail', 'add-agent'].includes(workspaceView);
+  const hostStatus = hostConnectionStatus();
   root.innerHTML = `
     <section class="shell workspace">
       <aside class="sidebar">
         ${brand()}
-        <p class="nav-label">Workspace</p>
-        <button class="nav-item ${workspaceView === 'agents' ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>常驻 Agent</button>
-        <button class="nav-item ${workspaceView === 'conversation' ? 'active' : ''}" id="nav-conversation" type="button" ${conversationUi.phase === 'idle' ? 'disabled' : ''}><i class="nav-dot"></i>当前对话</button>
-        <button class="nav-item ${workspaceView === 'packages' ? 'active' : ''}" id="nav-packages" type="button"><i class="nav-dot"></i>Agent Package</button>
-        <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>Provider 设置</button>
-        <button class="nav-item ${workspaceView === 'client' ? 'active' : ''}" id="nav-client" type="button"><i class="nav-dot"></i>客户端设置</button>
+        <p class="nav-label">工作区</p>
+        <button class="nav-item ${agentAreaActive ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>Agent</button>
+        <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>模型供应商</button>
+        <button class="nav-item ${workspaceView === 'settings' ? 'active' : ''}" id="nav-settings" type="button"><i class="nav-dot"></i>设置</button>
         <div class="sidebar-spacer"></div>
+        <button class="sidebar-host ${hostStatus.code}" id="sidebar-host" type="button">
+          <i></i><span><strong>后台 Agent 服务</strong><small data-host-status>${escapeHtml(hostStatus.label)} · 点击查看</small></span>
+        </button>
         <div class="sidebar-account">
           <div class="avatar">${escapeHtml(initials(account))}</div>
           <div class="copy"><strong data-ready-account-name>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span data-ready-account-email>${escapeHtml(account.email || '')}</span></div>
           <button class="ghost" id="logout" title="退出登录">↗</button>
         </div>
       </aside>
-      <main class="workspace-main">${workspaceView === 'conversation' ? conversationView() : workspaceView === 'packages' ? packageCenterView() : workspaceView === 'providers' ? providerSettingsView(state) : workspaceView === 'client' ? backgroundSettingsView() : agentWorkspaceView(state)}</main>
+      <main class="workspace-main">${readyWorkspaceContent(state)}</main>
     </section>`;
   document.getElementById('logout').addEventListener('click', () => bridge.logout());
   document.getElementById('nav-agents').addEventListener('click', () => {
     workspaceView = 'agents';
     renderReady(currentState);
-  });
-  document.getElementById('nav-conversation')?.addEventListener('click', () => {
-    workspaceView = 'conversation';
-    renderReady(currentState);
-  });
-  document.getElementById('nav-packages').addEventListener('click', () => {
-    workspaceView = 'packages';
-    renderReady(currentState);
-    if (packageUi.phase === 'idle') refreshPackageSnapshot();
+    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+    if (agentOverviewUi.phase === 'idle') refreshAgentOverview();
   });
   document.getElementById('nav-providers').addEventListener('click', () => {
     workspaceView = 'providers';
     renderReady(currentState);
     if (providerUi.phase === 'idle') refreshProviderSnapshot();
   });
-  document.getElementById('nav-client').addEventListener('click', () => {
-    workspaceView = 'client';
+  document.getElementById('nav-settings').addEventListener('click', () => {
+    workspaceView = 'settings';
+    renderReady(currentState);
+  });
+  document.getElementById('sidebar-host').addEventListener('click', () => {
+    settingsTab = 'background';
+    workspaceView = 'settings';
     renderReady(currentState);
     if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
   });
-  if (workspaceView === 'conversation') {
-    wireConversation();
-  } else if (workspaceView === 'packages') {
+  if (workspaceView === 'agent-detail') {
+    wireAgentDetail();
+  } else if (workspaceView === 'add-agent') {
     wirePackageCenter();
   } else if (workspaceView === 'providers') {
     wireProviderSettings();
-  } else if (workspaceView === 'client') {
-    wireBackgroundSettings();
+  } else if (workspaceView === 'settings') {
+    wireSettings();
   }
-  for (const button of document.querySelectorAll('[data-open-conversation]')) {
-    button.addEventListener('click', () => openConversation(button.dataset.openConversation));
+  for (const button of document.querySelectorAll('[data-manage-agent]')) {
+    button.addEventListener('click', () => {
+      const agent = currentState.agents?.find(
+        (item) => item.agentId === button.dataset.manageAgent,
+      );
+      openAgentDetail(agent?.agentId, isResident(agent) ? 'conversation' : 'model');
+    });
   }
+  document.getElementById('add-agent')?.addEventListener('click', () => {
+    workspaceView = 'add-agent';
+    renderReady(currentState);
+    if (packageUi.phase === 'idle') refreshPackageSnapshot();
+  });
+  document.querySelector('[data-go-view="providers"]')?.addEventListener('click', () => {
+    workspaceView = 'providers';
+    renderReady(currentState);
+    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+  });
+  if (workspaceView === 'agents' && providerUi.phase === 'idle') refreshProviderSnapshot();
+  if (workspaceView === 'agents' && agentOverviewUi.phase === 'idle') refreshAgentOverview();
+}
+
+function readyWorkspaceContent(state) {
+  if (workspaceView === 'agent-detail') return agentDetailView(state);
+  if (workspaceView === 'add-agent') return packageCenterView();
+  if (workspaceView === 'providers') return providerSettingsView(state);
+  if (workspaceView === 'settings') return settingsView(state);
+  return agentWorkspaceView(state);
 }
 
 function captureRendererDrafts() {
   captureProviderDraft();
+  const customizationForm = document.getElementById('agent-customization-form');
+  if (customizationForm && agentManagementUi.agentId) {
+    const kind = String(customizationForm.elements.kind?.value || '');
+    const key = `${readyAccountId}:${agentManagementUi.agentId}:${kind}`;
+    const content = String(customizationForm.elements.content?.value || '');
+    const saved = agentCustomizationRecord(kind)?.content || '';
+    if (content !== saved) agentCustomizationDrafts.set(key, content);
+    else agentCustomizationDrafts.delete(key);
+  }
   const conversationForm = document.getElementById('conversation-form');
   const draftKey = conversationDraftKey();
   if (conversationForm && draftKey) {
@@ -416,10 +533,18 @@ function conversationView() {
   const displayName = conversationUi.displayName || 'Agent';
   const canReopen = conversationUi.phase === 'error' && conversationUi.agentId;
   const awaitingPermission = conversationUi.interaction?.kind === 'permission';
+  const bindingIssue = agentManagementUi.phase === 'ready'
+    ? agentManagementUi.snapshot?.bindingIssue
+    : null;
+  const modelBlocked = Boolean(bindingIssue);
   const gates = `${conversationUi.error ? `
     <div class="conversation-error" role="alert">
       <span>${escapeHtml(conversationUi.error)}</span>
       ${canReopen ? `<button class="ghost" type="button" data-reopen-conversation="${escapeHtml(conversationUi.agentId)}">重新打开</button>` : ''}
+    </div>` : ''}${bindingIssue ? `
+    <div class="conversation-error model-binding-error" role="alert">
+      <span>${escapeHtml(bindingIssue.message || '模型设置不可用，请重新选择。')}</span>
+      <button class="ghost" type="button" id="conversation-fix-model">重新选择模型</button>
     </div>` : ''}${awaitingPermission ? permissionInteractionView(conversationUi.interaction) : ''}`;
   return `
     <section class="conversation-shell" aria-label="固定 Main Session 对话">
@@ -454,10 +579,10 @@ function conversationView() {
         ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${escapeHtml(displayName)} 正在继续这项工作</span></div>` : ''}
       </div>
       <form class="conversation-composer" id="conversation-form">
-        <textarea name="message" maxlength="16000" rows="3" placeholder="继续上次的工作，或告诉这个 Agent 你现在需要什么…" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}></textarea>
+        <textarea name="message" maxlength="16000" rows="3" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${loading || sending || conversationUi.phase === 'error' || modelBlocked ? 'disabled' : ''}></textarea>
         <div>
           <span>Renderer 只接收安全文本投影；Session ID、路径和 Provider 凭据留在 Host。</span>
-          <button class="secondary" type="submit" ${loading || sending || conversationUi.phase === 'error' ? 'disabled' : ''}>发送</button>
+          <button class="secondary" type="submit" ${loading || sending || conversationUi.phase === 'error' || modelBlocked ? 'disabled' : ''}>发送</button>
         </div>
       </form>
     </section>`;
@@ -995,7 +1120,14 @@ async function respondConversationPermission(optionId) {
 }
 
 async function openConversation(agentId) {
-  workspaceView = 'conversation';
+  const requestRevision = ++conversationOpenRevision;
+  agentManagementRequestRevision += 1;
+  workspaceView = 'agent-detail';
+  agentManagementUi = {
+    ...agentManagementUi,
+    agentId,
+    tab: 'conversation',
+  };
   conversationUi = {
     phase: 'loading',
     agentId,
@@ -1015,8 +1147,25 @@ async function openConversation(agentId) {
   };
   renderReady(currentState);
   try {
-    conversationUi = await bridge.openAgentConversation(agentId);
+    const snapshot = await bridge.openAgentConversation(agentId);
+    if (
+      requestRevision !== conversationOpenRevision
+      || workspaceView !== 'agent-detail'
+      || agentManagementUi.agentId !== agentId
+      || agentManagementUi.tab !== 'conversation'
+    ) {
+      return;
+    }
+    conversationUi = snapshot;
   } catch (error) {
+    if (
+      requestRevision !== conversationOpenRevision
+      || workspaceView !== 'agent-detail'
+      || agentManagementUi.agentId !== agentId
+      || agentManagementUi.tab !== 'conversation'
+    ) {
+      return;
+    }
     conversationUi = {
       ...conversationUi,
       phase: 'error',
@@ -1042,9 +1191,10 @@ function packageCenterView() {
   return `
     <header class="workspace-header package-header">
       <div>
-        <p class="eyebrow">Signed Package Center</p>
-        <h1>让新的 Agent 安全进入长期工作区。</h1>
-        <p>Host 独占签名、Registry、下载地址和本地路径；这里仅显示公开身份、权限变化与运行时结果。</p>
+        <button class="ghost package-back" id="back-from-add-agent" type="button">← 返回 Agent</button>
+        <p class="eyebrow">Add Agent</p>
+        <h1>添加 Agent</h1>
+        <p>查看本机已经可信可用的 Agent。来源、签名和版本等技术信息只在需要时展开。</p>
       </div>
       <div class="route-health ${['disabled', 'unavailable'].includes(registry.outcome) ? 'warning-health' : ''}">
         <i></i><span>Remote Registry</span><strong>${escapeHtml(registryStatusLabel(registry))}</strong>
@@ -1068,7 +1218,7 @@ function packageCenterView() {
         <div><span>Issues</span><strong>${issueCount}</strong></div>
         <p>${escapeHtml(registryStatusCopy(registry))}</p>
       </section>
-      <div class="package-toolbar">
+      ${remoteAvailable ? `<div class="package-toolbar">
         <form class="package-install-form" id="package-install-form">
           <label class="field">
             <span>Agent Package ID <em>只提交身份，不提交 URL 或文件</em></span>
@@ -1077,10 +1227,10 @@ function packageCenterView() {
           <button class="secondary" type="submit" ${packageUi.busy || !remoteAvailable ? 'disabled' : ''}>下载并验证</button>
         </form>
         <button class="ghost package-refresh-action" id="refresh-package-registry" type="button" ${packageUi.busy ? 'disabled' : ''}>刷新签名目录</button>
-      </div>
+      </div>` : '<div class="provider-notice warning"><strong>在线添加暂未开放</strong><br>当前只显示内置和本机已验证的 Agent，不会请求未知下载地址。</div>'}
       ${packageUi.pendingApproval ? packageApprovalView(packageUi.pendingApproval) : ''}
       ${remoteDiscoveryView(discovery, remoteAvailable)}
-      <div class="section-head package-section-head"><h2>Runtime Catalog</h2><span>${packages.length} 个 Agent Package</span></div>
+      <div class="section-head package-section-head"><h2>当前可用 Agent</h2><span>${packages.length} 个</span></div>
       <div class="package-grid">
         ${packages.length
     ? packages.map((packageRecord) => packageCard(packageRecord, installed, remoteAvailable)).join('')
@@ -1179,7 +1329,7 @@ function packageCard(packageRecord, installed, remoteAvailable) {
       </div>
       ${current?.issue ? `<div class="package-issue">${escapeHtml(current.issue.summary)}</div>` : ''}
       <div class="package-actions">
-        <button class="ghost" type="button" data-download-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy || !remoteAvailable ? 'disabled' : ''}>下载 / 检查更新</button>
+        ${remoteAvailable ? `<button class="ghost" type="button" data-download-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy ? 'disabled' : ''}>检查在线更新</button>` : ''}
         ${active ? `<button class="ghost" type="button" data-reconcile-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy ? 'disabled' : ''}>恢复可见性</button>` : ''}
         ${previous ? `<button class="ghost danger-text" type="button" data-rollback-package="${escapeHtml(packageRecord.packageId)}" ${packageUi.busy ? 'disabled' : ''}>回滚</button>` : ''}
       </div>
@@ -1202,6 +1352,10 @@ function packageStatusAudit(installed) {
 }
 
 function wirePackageCenter() {
+  document.getElementById('back-from-add-agent')?.addEventListener('click', () => {
+    workspaceView = 'agents';
+    renderReady(currentState);
+  });
   document.querySelector('.retry-packages')?.addEventListener('click', () => refreshPackageSnapshot());
   document.querySelector('.refresh-package-state')?.addEventListener('click', () => refreshPackageSnapshot());
   document.getElementById('refresh-package-registry')?.addEventListener('click', refreshPackageRegistry);
@@ -1239,7 +1393,7 @@ async function refreshPackageSnapshot(message = null) {
     busy: false,
     unknownOutcome: null,
   };
-  if (workspaceView === 'packages') renderReady(currentState);
+  if (workspaceView === 'add-agent') renderReady(currentState);
   try {
     packageUi = {
       ...packageUi,
@@ -1260,7 +1414,7 @@ async function refreshPackageSnapshot(message = null) {
       busy: false,
     };
   }
-  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  if (workspaceView === 'add-agent' && currentState.phase === 'ready') renderReady(currentState);
 }
 
 async function refreshPackageRegistry() {
@@ -1292,7 +1446,7 @@ async function refreshPackageRegistry() {
       message: null,
     };
   }
-  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  if (workspaceView === 'add-agent' && currentState.phase === 'ready') renderReady(currentState);
 }
 
 async function submitPackageDownload(event) {
@@ -1330,7 +1484,7 @@ async function downloadPackage(packageId) {
   } catch (error) {
     setPackageOperationError(error, 'Agent Package 下载失败');
   }
-  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  if (workspaceView === 'add-agent' && currentState.phase === 'ready') renderReady(currentState);
 }
 
 async function approvePendingPackage() {
@@ -1354,7 +1508,7 @@ async function approvePendingPackage() {
     packageUi.pendingApproval = null;
     setPackageOperationError(error, 'Agent Package 安装失败');
   }
-  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  if (workspaceView === 'add-agent' && currentState.phase === 'ready') renderReady(currentState);
 }
 
 async function mutatePackage(operation, packageId, successMessage) {
@@ -1376,7 +1530,7 @@ async function mutatePackage(operation, packageId, successMessage) {
   } catch (error) {
     setPackageOperationError(error, `Agent Package ${operation === 'rollback' ? '回滚' : '恢复'}失败`);
   }
-  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  if (workspaceView === 'add-agent' && currentState.phase === 'ready') renderReady(currentState);
 }
 
 function handleUnknownPackageOutcome(result) {
@@ -1393,7 +1547,7 @@ function handleUnknownPackageOutcome(result) {
       message: result.message || '操作结果未知，请先重新读取状态。',
     },
   };
-  if (workspaceView === 'packages' && currentState.phase === 'ready') renderReady(currentState);
+  if (workspaceView === 'add-agent' && currentState.phase === 'ready') renderReady(currentState);
   return true;
 }
 
@@ -1406,6 +1560,91 @@ function setPackageOperationError(error, fallback) {
     message: null,
     unknownOutcome: null,
   };
+}
+
+function settingsView(state) {
+  const tabs = [
+    ['account', '账号与订阅'],
+    ['background', '后台运行'],
+    ['guide', '使用指南'],
+    ['diagnostics', '高级诊断'],
+  ];
+  return `
+    <nav class="settings-tabs" aria-label="客户端设置">
+      ${tabs.map(([id, label]) => `<button type="button" data-settings-tab="${id}" class="${settingsTab === id ? 'active' : ''}">${label}</button>`).join('')}
+    </nav>
+    ${settingsTab === 'background'
+      ? backgroundSettingsView()
+      : settingsTab === 'guide'
+        ? guideSettingsView()
+        : settingsTab === 'diagnostics'
+          ? diagnosticsSettingsView()
+          : accountSettingsView(state)}
+  `;
+}
+
+function accountSettingsView(state) {
+  const account = state.account || {};
+  const subscription = state.subscription || {};
+  const credits = state.credits || {};
+  return `
+    <header class="workspace-header settings-header">
+      <div><p class="eyebrow">Account</p><h1>账号与订阅</h1><p>客户端使用资格由 AgentMesh360 订阅统一验证；模型费用由你的 BYOK Provider 承担。</p></div>
+    </header>
+    <section class="agent-settings-panel account-settings-card">
+      ${accountChip(account)}
+      <div class="runtime-fact"><span>订阅</span><strong>${escapeHtml(subscriptionLabel(subscription))}</strong></div>
+      <div class="runtime-fact"><span>AgentMesh360 Credits</span><strong>${formatNumber(credits.balance)}</strong></div>
+      <div class="runtime-fact"><span>最近验证</span><strong>${escapeHtml(formatCheckedAt(state.checkedAt))}</strong></div>
+      <button class="ghost danger-text" id="settings-logout" type="button">退出当前账号</button>
+    </section>`;
+}
+
+function guideSettingsView() {
+  return `
+    <header class="workspace-header settings-header">
+      <div><p class="eyebrow">Guide</p><h1>使用指南</h1><p>你随时可以从这里重新查看，不会因为首次引导关闭就找不到操作路径。</p></div>
+    </header>
+    <section class="guide-steps">
+      <article><span>1</span><div><strong>添加模型供应商</strong><p>验证 Key，读取可用模型，测试连接后安全保存。</p></div></article>
+      <article><span>2</span><div><strong>激活一个 Agent</strong><p>选择供应商与模型，明确确认后创建固定主会话。</p></div></article>
+      <article><span>3</span><div><strong>开始长期协作</strong><p>以后从 Agent 列表进入同一个对话；模型、行为和偏好都在 Agent 内管理。</p></div></article>
+      <button class="secondary" id="guide-go-agents" type="button">回到 Agent</button>
+    </section>`;
+}
+
+function diagnosticsSettingsView() {
+  const hostStatus = hostConnectionStatus();
+  return `
+    <header class="workspace-header settings-header">
+      <div><p class="eyebrow">Advanced diagnostics</p><h1>高级诊断</h1><p>这里仅用于排查本机 Host；普通使用不需要理解内部协议或路径。</p></div>
+    </header>
+    <section class="agent-settings-panel">
+      <details>
+        <summary>查看技术状态</summary>
+        <div class="runtime-fact"><span>身份门禁</span><strong>${currentState.phase === 'ready' ? '已通过' : '不可用'}</strong></div>
+        <div class="runtime-fact"><span>桌面与 Host</span><strong>${escapeHtml(hostStatus.label)}</strong></div>
+        <div class="runtime-fact"><span>持久 Agent</span><strong>${(currentState.agents || []).filter(isResident).length}</strong></div>
+      </details>
+    </section>`;
+}
+
+function wireSettings() {
+  document.querySelectorAll('[data-settings-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      settingsTab = button.dataset.settingsTab;
+      renderReady(currentState);
+      if (settingsTab === 'background' && backgroundUi.phase === 'idle') {
+        refreshBackgroundSnapshot();
+      }
+    });
+  });
+  document.getElementById('settings-logout')?.addEventListener('click', () => bridge.logout());
+  document.getElementById('guide-go-agents')?.addEventListener('click', () => {
+    workspaceView = 'agents';
+    renderReady(currentState);
+  });
+  if (settingsTab === 'background') wireBackgroundSettings();
 }
 
 function backgroundSettingsView() {
@@ -1430,7 +1669,7 @@ function backgroundSettingsView() {
     </header>
     ${backgroundUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(backgroundUi.message)}</div>` : ''}
     ${backgroundUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(backgroundUi.error)}</div>` : ''}
-    ${backgroundUi.phase === 'loading' ? providerLoadingView() : ''}
+    ${backgroundUi.phase === 'loading' ? backgroundLoadingView() : ''}
     ${backgroundUi.phase === 'ready' ? `
       <div class="background-grid">
         <section class="control-panel runtime-panel">
@@ -1483,22 +1722,55 @@ function wireBackgroundSettings() {
         error: publicError(error, '无法修改系统登录启动'),
       };
     }
-    if (workspaceView === 'client' && currentState.phase === 'ready') renderReady(currentState);
+    if (workspaceView === 'settings' && settingsTab === 'background' && currentState.phase === 'ready') renderReady(currentState);
   });
 }
 
-async function refreshBackgroundSnapshot() {
-  backgroundUi = { ...backgroundUi, phase: 'loading', error: null, message: null };
-  if (workspaceView === 'client') renderReady(currentState);
+function backgroundLoadingView() {
+  return `
+    <div class="provider-loading" role="status">
+      <div class="spinner" aria-hidden="true"></div>
+      <div><strong>正在读取后台运行状态</strong><span>客户端正在确认 Host 与系统登录启动设置。</span></div>
+    </div>`;
+}
+
+async function refreshBackgroundSnapshot({ quiet = false } = {}) {
+  const requestRevision = ++backgroundRequestRevision;
+  const accountId = readyAccountId;
+  backgroundUi = {
+    ...backgroundUi,
+    phase: 'loading',
+    error: null,
+    message: null,
+  };
+  updateHostStatusDom();
+  if (!quiet && workspaceView === 'settings' && settingsTab === 'background') {
+    renderReady(currentState);
+  }
   try {
+    const snapshot = await bridge.getBackgroundSnapshot();
+    if (
+      requestRevision !== backgroundRequestRevision
+      || currentState.phase !== 'ready'
+      || readyAccountId !== accountId
+    ) {
+      return;
+    }
     backgroundUi = {
       phase: 'ready',
-      snapshot: await bridge.getBackgroundSnapshot(),
+      snapshot,
       error: null,
       message: null,
       busy: false,
     };
   } catch (error) {
+    if (
+      requestRevision !== backgroundRequestRevision
+      || currentState.phase !== 'ready'
+      || readyAccountId !== accountId
+    ) {
+      return;
+    }
     backgroundUi = {
       phase: 'error',
       snapshot: null,
@@ -1507,7 +1779,31 @@ async function refreshBackgroundSnapshot() {
       busy: false,
     };
   }
-  if (workspaceView === 'client' && currentState.phase === 'ready') renderReady(currentState);
+  updateHostStatusDom();
+  if (workspaceView === 'settings' && settingsTab === 'background' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+function hostConnectionStatus() {
+  if (backgroundUi.phase === 'error') {
+    return { code: 'needs-attention', label: '需要处理' };
+  }
+  if (backgroundUi.phase !== 'ready') {
+    return { code: 'recovering', label: '正在恢复' };
+  }
+  if (backgroundUi.snapshot?.host?.bridgeState === 'connected') {
+    return { code: 'connected', label: '已连接' };
+  }
+  return { code: 'needs-attention', label: '需要处理' };
+}
+
+function updateHostStatusDom() {
+  const button = document.getElementById('sidebar-host');
+  const label = button?.querySelector('[data-host-status]');
+  if (!button || !label) return;
+  const status = hostConnectionStatus();
+  button.classList.remove('connected', 'recovering', 'needs-attention');
+  button.classList.add(status.code);
+  label.textContent = `${status.label} · 点击查看`;
 }
 
 function backgroundStatusCopy(loginItem) {
@@ -1524,35 +1820,621 @@ function backgroundStatusCopy(loginItem) {
   return '设备重启后不会自动恢复 Agent；你仍可手动打开客户端继续原有会话。';
 }
 
+async function refreshAgentOverview() {
+  const requestRevision = ++agentOverviewRequestRevision;
+  const accountId = readyAccountId;
+  agentOverviewUi = { ...agentOverviewUi, phase: 'loading', error: null };
+  if (workspaceView === 'agents') renderReady(currentState);
+  try {
+    const snapshot = await bridge.getAgentModelOverview();
+    if (
+      requestRevision !== agentOverviewRequestRevision
+      || currentState.phase !== 'ready'
+      || readyAccountId !== accountId
+    ) {
+      return;
+    }
+    agentOverviewUi = {
+      phase: 'ready',
+      snapshot,
+      error: null,
+    };
+  } catch (error) {
+    if (
+      requestRevision !== agentOverviewRequestRevision
+      || currentState.phase !== 'ready'
+      || readyAccountId !== accountId
+    ) {
+      return;
+    }
+    agentOverviewUi = {
+      phase: 'error',
+      snapshot: null,
+      error: publicError(error, '无法读取 Agent 模型摘要'),
+    };
+  }
+  if (workspaceView === 'agents' && currentState.phase === 'ready') renderReady(currentState);
+}
+
+function agentDisplayName(agentId) {
+  return currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId;
+}
+
 function agentWorkspaceView(state) {
   const account = state.account || {};
   const subscription = state.subscription || {};
   const credits = state.credits || {};
   const agents = Array.isArray(state.agents) ? state.agents : [];
+  const residentCount = agents.filter(isResident).length;
+  const overview = Array.isArray(agentOverviewUi.snapshot?.agents)
+    ? agentOverviewUi.snapshot.agents
+    : [];
+  const invalidAgents = overview.filter((item) => (
+    item.bindingIssue
+    && item.bindingIssue.code !== 'model_not_configured'
+    && agents.some((agent) => agent.agentId === item.agentId && isResident(agent))
+  ));
+  const providerCount = providerUi.snapshot?.profiles?.length || 0;
+  const nextAction = providerCount === 0
+    ? { label: '添加模型供应商', view: 'providers' }
+    : residentCount === 0
+      ? { label: '选择一个 Agent 激活', view: null }
+      : { label: '打开 Agent 继续工作', view: null };
   return `
     <header class="workspace-header">
       <div><p class="eyebrow">Persistent Agent Workspace</p><h1 data-ready-welcome>欢迎回来，${escapeHtml(firstName(account))}</h1><p data-ready-subscription>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
       <div class="credit-card"><span>AgentMesh360 Credits</span><strong data-ready-credits>${formatNumber(credits.balance)}</strong></div>
     </header>
-    <div class="section-head"><h2>你的专业 Agent</h2><span>${agents.filter(isResident).length} 个正在常驻</span></div>
+    <section class="onboarding-strip">
+      <div>
+        <p class="eyebrow">开始使用</p>
+        <strong>${escapeHtml(nextAction.label)}</strong>
+        <span>① 添加模型供应商　② 激活 Agent　③ 在 Agent 对话中开始工作</span>
+      </div>
+      ${nextAction.view ? `<button class="secondary" type="button" data-go-view="${nextAction.view}">${escapeHtml(nextAction.label)}</button>` : ''}
+    </section>
+    ${invalidAgents.length ? `
+      <div class="agent-model-alert" role="alert">
+        <div><strong>${invalidAgents.length} 个 Agent 的模型需要重新选择</strong><span>${escapeHtml(invalidAgents.map((item) => agentDisplayName(item.agentId)).join('、'))}</span></div>
+        <span>进入对应 Agent 的“模型”页即可修复，不会删除对话历史。</span>
+      </div>` : ''}
+    <div class="section-head">
+      <h2>你的 Agent</h2>
+      <span>${residentCount} 个已激活</span>
+      <button class="ghost add-agent-button" id="add-agent" type="button">＋ 添加 Agent</button>
+    </div>
     ${state.activationError ? `<div class="activation-error">${escapeHtml(state.activationError)}</div>` : ''}
-    <div class="agent-grid">${agents.length ? agents.map((agent, index) => agentCard(agent, index, state.activatingAgentId)).join('') : '<div class="empty-agents">当前没有可用的 Agent Package。</div>'}</div>
+    <div class="agent-grid">${agents.length ? agents.map((agent, index) => agentCard(
+    agent,
+    index,
+    state.activatingAgentId,
+    overview.find((item) => item.agentId === agent.agentId),
+  )).join('') : '<div class="empty-agents">当前没有可用的 Agent Package。</div>'}</div>
     <div class="security-row" data-ready-checked-at>订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}</div>`;
+}
+
+function agentDetailView(state) {
+  const agent = (state.agents || []).find(
+    (item) => item.agentId === agentManagementUi.agentId,
+  );
+  if (!agent) {
+    return '<button class="ghost" id="back-to-agents" type="button">← 返回 Agent</button><div class="empty-agents">这个 Agent 当前不可用。</div>';
+  }
+  const resident = isResident(agent);
+  const turnRunning = conversationUi.agentId === agent.agentId
+    && conversationUi.streaming === true;
+  const binding = agentManagementUi.snapshot?.modelBinding;
+  const profile = (agentManagementUi.snapshot?.profiles || []).find(
+    (item) => item.profileId === binding?.providerProfileId,
+  );
+  const modelSummary = binding
+    ? `${profile?.displayName || '供应商不可用'} · ${binding.modelId}`
+    : '尚未选择模型';
+  const tabs = [
+    ['conversation', '对话'],
+    ['model', '模型'],
+    ['agent_md', '行为 agent.md'],
+    ['user_md', '偏好 user.md'],
+  ];
+  return `
+    <header class="agent-detail-header">
+      <button class="ghost" id="back-to-agents" type="button">← 所有 Agent</button>
+      <div>
+        <p class="eyebrow">${resident ? 'Persistent Agent' : 'Ready to activate'}</p>
+        <h1>${escapeHtml(agent.displayName)}</h1>
+        <p>${escapeHtml(agent.description)}</p>
+        <span class="agent-current-model">${escapeHtml(modelSummary)}</span>
+      </div>
+      <span class="agent-status-pill ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
+    </header>
+    <nav class="agent-tabs" aria-label="${escapeHtml(agent.displayName)} 管理">
+      ${tabs.map(([id, label]) => `
+        <button type="button" data-agent-tab="${id}" class="${agentManagementUi.tab === id ? 'active' : ''}" ${(id === 'conversation' && !resident) || (id !== 'conversation' && turnRunning) ? 'disabled' : ''}>${escapeHtml(label)}</button>
+      `).join('')}
+    </nav>
+    ${turnRunning ? '<div class="provider-notice" role="status">当前回答完成后即可修改模型、行为或偏好；正在生成的内容不会被中途改变。</div>' : ''}
+    ${agentManagementUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(agentManagementUi.message)}</div>` : ''}
+    ${agentManagementUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(agentManagementUi.error)}</div>` : ''}
+    ${agentManagementUi.tab === 'conversation'
+      ? conversationView()
+      : agentManagementUi.phase === 'loading'
+        ? '<div class="provider-loading"><div class="spinner"></div><div><strong>正在读取 Agent 设置</strong><span>模型和个性化内容由本机 Host 返回。</span></div></div>'
+        : agentManagementUi.phase === 'error'
+          ? '<button class="secondary retry-agent-management" type="button">重新读取 Agent 设置</button>'
+          : agentManagementUi.tab === 'model'
+            ? agentModelView(agent)
+            : agentCustomizationView(agent, agentManagementUi.tab)}
+  `;
+}
+
+function agentModelView(agent) {
+  const snapshot = agentManagementUi.snapshot || {};
+  const profiles = Array.isArray(snapshot.profiles) ? snapshot.profiles : [];
+  const binding = snapshot.modelBinding || null;
+  const draft = agentManagementUi.modelDraft || {};
+  const turnRunning = conversationUi.agentId === agent.agentId
+    && conversationUi.streaming === true;
+  const selectedProfileId = draft.providerProfileId
+    || binding?.providerProfileId
+    || (profiles.length === 1 ? profiles[0].profileId : '');
+  const selectedProfile = profiles.find((profile) => profile.profileId === selectedProfileId);
+  const models = Array.isArray(selectedProfile?.enabledModels)
+    ? selectedProfile.enabledModels
+    : [];
+  const selectedModel = models.includes(draft.modelId)
+    ? draft.modelId
+    : models.includes(binding?.modelId)
+      ? binding.modelId
+      : '';
+  const resident = isResident(agent);
+  const requestedPermissions = Array.isArray(snapshot.customization?.requestedPermissions)
+    ? snapshot.customization.requestedPermissions
+    : [];
+  if (!profiles.length) {
+    return `
+      <section class="agent-settings-panel empty-agent-setting">
+        <p class="eyebrow">需要先完成一步</p>
+        <h2>先添加模型供应商</h2>
+        <p>Agent 必须绑定一个已验证并保存的模型才能激活或发送消息。</p>
+        <button class="secondary" id="agent-go-providers" type="button">添加模型供应商</button>
+      </section>`;
+  }
+  return `
+    <form class="agent-settings-panel agent-model-form" id="agent-model-form">
+      <div class="agent-setting-heading">
+        <div><p class="eyebrow">${resident ? 'Model for next message' : 'Activation setup'}</p><h2>${resident ? '这个 Agent 使用哪个模型' : '选择模型并激活 Agent'}</h2></div>
+        ${snapshot.inheritedFromLegacyGlobal ? '<span class="migration-badge">已从旧版全局设置迁移</span>' : ''}
+      </div>
+      <p class="agent-setting-copy">${resident
+    ? '保存后从下一条用户消息生效；正在生成的回答仍使用原模型，历史不会改变。'
+    : '激活后会创建这个 Agent 的固定主会话。以后每次打开都会回到同一个进度。'}</p>
+      ${snapshot.bindingIssue ? `<div class="provider-notice error" role="alert">${escapeHtml(snapshot.bindingIssue.message)}</div>` : ''}
+      <div class="form-grid two">
+        <label class="field"><span>模型供应商</span>
+          <select name="providerProfileId" required ${turnRunning ? 'disabled' : ''}>
+            <option value="">请选择</option>
+            ${profiles.map((profile) => `<option value="${escapeHtml(profile.profileId)}" ${profile.profileId === selectedProfileId ? 'selected' : ''}>${escapeHtml(profile.displayName)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="field"><span>可用模型 <em>来自当前供应商验证结果</em></span>
+          <select name="modelId" required ${selectedProfile && !turnRunning ? '' : 'disabled'}>
+            <option value="">请选择</option>
+            ${models.map((model) => `<option value="${escapeHtml(model)}" ${model === selectedModel ? 'selected' : ''}>${escapeHtml(model)}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      ${resident ? '' : `
+        <div class="activation-permissions">
+          <strong>激活后的本机能力范围</strong>
+          <div class="package-permissions">
+            ${requestedPermissions.length
+    ? requestedPermissions.map((permission) => `<span>${escapeHtml(permissionLabel(permission))}</span>`).join('')
+    : '<span>不申请额外系统权限</span>'}
+          </div>
+          <small>Agent 仍受客户端安全确认与订阅门禁约束；外部操作不会因为激活而自动执行。</small>
+        </div>
+        <label class="activation-confirm">
+          <input name="confirmActivation" type="checkbox" ${turnRunning ? 'disabled' : ''}>
+          <span>我已查看上面的能力范围，确认激活 ${escapeHtml(agent.displayName)}，并从首次消息开始使用所选模型。</span>
+        </label>`}
+      <div class="agent-setting-actions">
+        <button class="secondary" type="submit" ${agentManagementUi.busy || turnRunning || !selectedModel || !resident ? 'disabled' : ''}>${resident ? '保存模型设置' : '确认激活 Agent'}</button>
+      </div>
+    </form>`;
+}
+
+function agentCustomizationRecord(kind) {
+  const customization = agentManagementUi.snapshot?.customization;
+  return kind === 'agent_md' ? customization?.agentMd : customization?.userMd;
+}
+
+function agentCustomizationView(agent, kind) {
+  const record = agentCustomizationRecord(kind) || {
+    content: '',
+    revision: 0,
+    customized: false,
+  };
+  const draftKey = `${readyAccountId}:${agent.agentId}:${kind}`;
+  const hasDraft = agentCustomizationDrafts.has(draftKey);
+  const content = hasDraft ? agentCustomizationDrafts.get(draftKey) : record.content;
+  const contentLength = [...(content || '')].length;
+  const isBehavior = kind === 'agent_md';
+  const hasConflict = agentManagementUi.customizationConflict?.kind === kind;
+  const turnRunning = conversationUi.agentId === agent.agentId
+    && conversationUi.streaming === true;
+  return `
+    <form class="agent-settings-panel customization-form" id="agent-customization-form">
+      <input type="hidden" name="kind" value="${kind}">
+      <div class="agent-setting-heading">
+        <div>
+          <p class="eyebrow">${isBehavior ? 'Behavior overlay' : 'User preferences'}</p>
+          <h2>${isBehavior ? '补充这个 Agent 的工作方式' : '告诉这个 Agent 你偏好的协作方式'}</h2>
+        </div>
+        ${hasDraft ? '<span class="unsaved-badge">尚未保存</span>' : ''}
+      </div>
+      <p class="agent-setting-copy">${isBehavior
+    ? '这里是你自己的行为补充，不会修改签名 Package 的基础定义。'
+    : '偏好只属于当前账号和当前 Agent，不会自动共享给其他 Agent。'}</p>
+      ${hasConflict ? `
+        <div class="customization-conflict" role="alert">
+          <div><strong>这项设置已在其他位置更新</strong><span>你的草稿没有丢失。先读取最新版本，再决定继续保存还是放弃本地草稿。</span></div>
+          <div>
+            <button class="ghost preserve-customization-draft" type="button">保留我的版本</button>
+            <button class="ghost danger-text discard-customization-draft" type="button">放弃并重载</button>
+          </div>
+        </div>` : ''}
+      <div class="package-public-meta">
+        <strong>${escapeHtml(agentManagementUi.snapshot?.customization?.packageName || agent.displayName)}</strong>
+        <span>v${escapeHtml(agentManagementUi.snapshot?.customization?.packageVersion || agent.version || '—')} · ${escapeHtml(agentManagementUi.snapshot?.customization?.packageDescription || agent.description)}</span>
+      </div>
+      <label class="field"><span>${isBehavior ? '行为补充' : '用户偏好'} <em>最多 8000 字符，请勿填写 API Key 或私钥</em></span>
+        <textarea name="content" maxlength="16000" rows="14" ${turnRunning ? 'disabled' : ''} placeholder="${isBehavior ? '例如：先给出简短计划，涉及外部发布前必须确认。' : '例如：默认用中文回答；状态更新要简洁；每周五总结进度。'}">${escapeHtml(content || '')}</textarea>
+      </label>
+      <div class="character-count ${contentLength > 8_000 ? 'invalid' : ''}">${contentLength} / 8000</div>
+      <div class="agent-setting-actions">
+        <button class="ghost danger-text" id="restore-customization" type="button" ${record.customized && !turnRunning ? '' : 'disabled'}>恢复默认</button>
+        <button class="secondary" type="submit" ${agentManagementUi.busy || turnRunning || contentLength > 8_000 ? 'disabled' : ''}>保存并从下一条消息生效</button>
+      </div>
+    </form>`;
+}
+
+async function openAgentDetail(agentId, tab) {
+  if (!agentId) return;
+  const requestRevision = ++agentManagementRequestRevision;
+  workspaceView = 'agent-detail';
+  agentManagementUi = {
+    phase: 'loading',
+    agentId,
+    tab,
+    snapshot: null,
+    error: null,
+    message: null,
+    busy: false,
+  };
+  renderReady(currentState);
+  await refreshAgentManagement(null, requestRevision);
+  if (
+    tab === 'conversation'
+    && requestRevision === agentManagementRequestRevision
+    && workspaceView === 'agent-detail'
+    && agentManagementUi.agentId === agentId
+    && agentManagementUi.tab === tab
+  ) {
+    await openConversation(agentId);
+  }
+}
+
+async function refreshAgentManagement(message = null, requestRevision = null) {
+  const agentId = agentManagementUi.agentId;
+  if (!agentId) return;
+  const activeRevision = requestRevision ?? ++agentManagementRequestRevision;
+  agentManagementUi = {
+    ...agentManagementUi,
+    phase: 'loading',
+    error: null,
+    message,
+    busy: false,
+  };
+  if (workspaceView === 'agent-detail') renderReady(currentState);
+  try {
+    const snapshot = await bridge.getAgentManagementSnapshot(agentId);
+    if (
+      activeRevision !== agentManagementRequestRevision
+      || workspaceView !== 'agent-detail'
+      || agentManagementUi.agentId !== agentId
+    ) {
+      return;
+    }
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'ready',
+      snapshot,
+      error: null,
+      message,
+      busy: false,
+    };
+  } catch (error) {
+    if (
+      activeRevision !== agentManagementRequestRevision
+      || workspaceView !== 'agent-detail'
+      || agentManagementUi.agentId !== agentId
+    ) {
+      return;
+    }
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'error',
+      error: publicError(error, '无法读取 Agent 设置'),
+      message: null,
+      busy: false,
+    };
+  }
+  if (workspaceView === 'agent-detail') renderReady(currentState);
+}
+
+function wireAgentDetail() {
+  document.getElementById('back-to-agents')?.addEventListener('click', () => {
+    workspaceView = 'agents';
+    renderReady(currentState);
+  });
+  document.querySelector('.retry-agent-management')?.addEventListener(
+    'click',
+    () => refreshAgentManagement(),
+  );
+  document.querySelectorAll('[data-agent-tab]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const tab = button.dataset.agentTab;
+      if (tab === 'conversation') {
+        await openConversation(agentManagementUi.agentId);
+        return;
+      }
+      agentManagementUi = { ...agentManagementUi, tab, message: null, error: null };
+      renderReady(currentState);
+      if (!agentManagementUi.snapshot && agentManagementUi.phase !== 'loading') {
+        await refreshAgentManagement();
+      }
+    });
+  });
+  if (agentManagementUi.tab === 'conversation') wireConversation();
+  document.getElementById('conversation-fix-model')?.addEventListener('click', () => {
+    agentManagementUi = {
+      ...agentManagementUi,
+      tab: 'model',
+      error: null,
+      message: null,
+    };
+    renderReady(currentState);
+  });
+  const modelForm = document.getElementById('agent-model-form');
+  modelForm?.elements.providerProfileId?.addEventListener('change', (event) => {
+    agentManagementUi.modelDraft = {
+      providerProfileId: event.currentTarget.value,
+      modelId: '',
+    };
+    renderReady(currentState);
+  });
+  modelForm?.elements.modelId?.addEventListener('change', (event) => {
+    agentManagementUi.modelDraft = {
+      providerProfileId: modelForm.elements.providerProfileId.value,
+      modelId: event.currentTarget.value,
+    };
+    if (modelForm.elements.confirmActivation) {
+      modelForm.querySelector('button[type="submit"]').disabled = !(
+        modelForm.elements.confirmActivation.checked
+        && modelForm.elements.providerProfileId.value
+        && event.currentTarget.value
+      );
+    }
+  });
+  modelForm?.elements.confirmActivation?.addEventListener('change', (event) => {
+    modelForm.querySelector('button[type="submit"]').disabled = !(
+      event.currentTarget.checked
+      && modelForm.elements.providerProfileId.value
+      && modelForm.elements.modelId.value
+    );
+  });
+  modelForm?.addEventListener('submit', saveAgentModel);
+  document.getElementById('agent-go-providers')?.addEventListener('click', () => {
+    workspaceView = 'providers';
+    renderReady(currentState);
+    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+  });
+  const customizationForm = document.getElementById('agent-customization-form');
+  customizationForm?.elements.content?.addEventListener('input', (event) => {
+    const key = `${readyAccountId}:${agentManagementUi.agentId}:${customizationForm.elements.kind.value}`;
+    agentCustomizationDrafts.set(key, event.currentTarget.value);
+    const counter = customizationForm.querySelector('.character-count');
+    const length = [...event.currentTarget.value].length;
+    if (counter) {
+      counter.textContent = `${length} / 8000`;
+      counter.classList.toggle('invalid', length > 8_000);
+    }
+    customizationForm.querySelector('button[type="submit"]').disabled = (
+      agentManagementUi.busy || length > 8_000
+    );
+  });
+  customizationForm?.addEventListener('submit', saveAgentCustomization);
+  document.querySelector('.preserve-customization-draft')?.addEventListener(
+    'click',
+    async () => {
+      agentManagementUi.customizationConflict = null;
+      await refreshAgentManagement('已读取最新版本；你的草稿仍保留，请确认后再次保存。');
+    },
+  );
+  document.querySelector('.discard-customization-draft')?.addEventListener(
+    'click',
+    async () => {
+      const key = `${readyAccountId}:${agentManagementUi.agentId}:${agentManagementUi.tab}`;
+      document.getElementById('agent-customization-form')?.remove();
+      agentCustomizationDrafts.delete(key);
+      agentManagementUi.customizationConflict = null;
+      await refreshAgentManagement('已放弃本地草稿并读取最新版本。');
+    },
+  );
+  document.getElementById('restore-customization')?.addEventListener(
+    'click',
+    clearAgentCustomization,
+  );
+}
+
+async function saveAgentModel(event) {
+  event.preventDefault();
+  if (
+    conversationUi.agentId === agentManagementUi.agentId
+    && conversationUi.streaming === true
+  ) return;
+  const form = event.currentTarget;
+  const agentId = agentManagementUi.agentId;
+  const agent = currentState.agents?.find((item) => item.agentId === agentId);
+  if (!agent || (!isResident(agent) && !form.elements.confirmActivation?.checked)) return;
+  const request = {
+    agentId,
+    providerProfileId: form.elements.providerProfileId.value,
+    modelId: form.elements.modelId.value,
+  };
+  agentManagementUi = { ...agentManagementUi, busy: true, error: null, message: null };
+  renderReady(currentState);
+  try {
+    if (isResident(agent)) {
+      agentManagementUi.snapshot = await bridge.saveAgentModel(request);
+      agentManagementUi.message = '模型设置已保存，将从下一条消息开始使用。';
+      agentManagementUi.phase = 'ready';
+      agentManagementUi.busy = false;
+      agentManagementUi.modelDraft = null;
+      renderReady(currentState);
+      refreshAgentOverview();
+    } else {
+      await bridge.configureAndActivateAgent(request);
+      if (
+        workspaceView !== 'agent-detail'
+        || agentManagementUi.agentId !== agentId
+        || agentManagementUi.tab !== 'model'
+      ) {
+        return;
+      }
+      agentManagementUi.busy = false;
+      agentManagementUi.message = 'Agent 已激活，正在打开固定主对话。';
+      refreshAgentOverview();
+      await refreshAgentManagement(agentManagementUi.message);
+      if (
+        workspaceView === 'agent-detail'
+        && agentManagementUi.agentId === agentId
+        && agentManagementUi.tab === 'model'
+      ) {
+        await openConversation(agentId);
+      }
+    }
+  } catch (error) {
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'ready',
+      busy: false,
+      error: publicError(error, '无法保存 Agent 模型设置'),
+    };
+    renderReady(currentState);
+  }
+}
+
+async function saveAgentCustomization(event) {
+  event.preventDefault();
+  if (
+    conversationUi.agentId === agentManagementUi.agentId
+    && conversationUi.streaming === true
+  ) return;
+  const form = event.currentTarget;
+  const kind = form.elements.kind.value;
+  const content = form.elements.content.value;
+  const agentId = agentManagementUi.agentId;
+  const record = agentCustomizationRecord(kind) || { revision: 0 };
+  agentManagementUi = { ...agentManagementUi, busy: true, error: null, message: null };
+  renderReady(currentState);
+  try {
+    const updated = await bridge.saveAgentCustomization({
+      agentId,
+      kind,
+      content,
+      expectedRevision: record.revision,
+    });
+    const customization = { ...(agentManagementUi.snapshot?.customization || {}) };
+    customization[kind === 'agent_md' ? 'agentMd' : 'userMd'] = updated;
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'ready',
+      busy: false,
+      snapshot: { ...agentManagementUi.snapshot, customization },
+      message: '已保存，将从下一条消息开始生效。',
+      customizationConflict: null,
+    };
+    agentCustomizationDrafts.delete(`${readyAccountId}:${agentId}:${kind}`);
+  } catch (error) {
+    const conflict = /revision conflict/i.test(String(error?.message || ''));
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'ready',
+      busy: false,
+      error: conflict
+        ? '这项设置已在其他位置更新；你的草稿仍保留，请选择如何处理。'
+        : publicError(error, '无法保存 Agent 自定义内容'),
+      customizationConflict: conflict ? { kind } : null,
+    };
+  }
+  renderReady(currentState);
+}
+
+async function clearAgentCustomization() {
+  if (
+    conversationUi.agentId === agentManagementUi.agentId
+    && conversationUi.streaming === true
+  ) return;
+  const kind = agentManagementUi.tab;
+  const record = agentCustomizationRecord(kind);
+  if (!record?.customized) return;
+  agentManagementUi = { ...agentManagementUi, busy: true, error: null, message: null };
+  renderReady(currentState);
+  try {
+    const updated = await bridge.clearAgentCustomization({
+      agentId: agentManagementUi.agentId,
+      kind,
+      expectedRevision: record.revision,
+    });
+    const customization = { ...(agentManagementUi.snapshot?.customization || {}) };
+    customization[kind === 'agent_md' ? 'agentMd' : 'userMd'] = updated;
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'ready',
+      busy: false,
+      snapshot: { ...agentManagementUi.snapshot, customization },
+      message: '已恢复默认设置，将从下一条消息开始生效。',
+      customizationConflict: null,
+    };
+    agentCustomizationDrafts.delete(`${readyAccountId}:${agentManagementUi.agentId}:${kind}`);
+  } catch (error) {
+    const conflict = /revision conflict/i.test(String(error?.message || ''));
+    agentManagementUi = {
+      ...agentManagementUi,
+      phase: 'ready',
+      busy: false,
+      error: conflict
+        ? '这项设置已在其他位置更新，请重新读取后再恢复默认。'
+        : publicError(error, '无法恢复默认设置'),
+      customizationConflict: conflict ? { kind } : null,
+    };
+  }
+  renderReady(currentState);
 }
 
 function providerSettingsView(state) {
   const profiles = providerUi.snapshot?.profiles || [];
-  const assignments = providerUi.snapshot?.assignments || [];
   const probes = providerUi.snapshot?.probes || [];
   const catalog = providerUi.snapshot?.catalog || { providers: [] };
   return `
     <header class="workspace-header provider-header">
       <div>
-        <p class="eyebrow">BYOK Routing Console</p>
-        <h1>你的模型，按角色就位。</h1>
-        <p>Provider 凭据保存在本机 Host Vault；Agent 只获得短时租约，永远读不到 Key。</p>
+        <p class="eyebrow">BYOK Model Providers</p>
+        <h1>模型供应商</h1>
+        <p>在这里添加、验证和维护模型供应商。具体 Agent 使用哪个模型，请到对应 Agent 的“模型”页设置。</p>
       </div>
-      <div class="route-health"><i></i><span>Host Authority</span><strong>${profiles.length} 个 Provider</strong></div>
+      <div class="route-health"><i></i><span>本机安全存储</span><strong>${profiles.length} 个供应商</strong></div>
     </header>
     ${providerUi.message ? `<div class="provider-notice success" role="status">${escapeHtml(providerUi.message)}</div>` : ''}
     ${providerUi.error ? `<div class="provider-notice error" role="alert">${escapeHtml(providerUi.error)}</div>` : ''}
@@ -1560,22 +2442,15 @@ function providerSettingsView(state) {
     ${providerUi.phase === 'error' ? `<button class="secondary retry-providers" type="button">重新加载 Provider</button>` : ''}
     ${providerUi.phase === 'ready' ? `
       <section class="provider-overview" aria-label="Provider 状态">
-        <div><span>Profiles</span><strong>${profiles.length}</strong></div>
-        <div><span>Assignments</span><strong>${assignments.length}</strong></div>
-        <div><span>Probe records</span><strong>${probes.length}</strong></div>
-        <div><span>Catalog revision</span><strong>${escapeHtml(catalog.catalogRevision || '—')}</strong></div>
-        <p>新 Provider 必须先测试连接，再保存到本机 Vault。</p>
+        <div><span>已连接</span><strong>${profiles.length}</strong></div>
+        <div><span>检查记录</span><strong>${probes.length}</strong></div>
+        <div><span>供应商目录</span><strong>${escapeHtml(catalog.catalogRevision || '—')}</strong></div>
+        <p>先验证 Key、选择实时返回的模型并测试连接，再安全保存。</p>
       </section>
-      <div class="provider-layout">
-        <section class="provider-column">
-          ${providerProfileEditor(catalog, profiles)}
-          ${providerProfileList(profiles, assignments, probes)}
-        </section>
-        <section class="provider-column route-column">
-          ${providerAssignmentEditor(state, profiles, catalog)}
-          ${providerAssignmentList(assignments, profiles)}
-        </section>
-      </div>
+      <section class="provider-column provider-only-column">
+        ${providerProfileEditor(catalog, profiles)}
+        ${providerProfileList(profiles, probes)}
+      </section>
     ` : ''}
     <div class="security-row">Provider 数据由本机 Host 独占 · Renderer 只能读取公开配置状态</div>`;
 }
@@ -1584,7 +2459,7 @@ function providerLoadingView() {
   return `
     <div class="provider-loading" role="status">
       <div class="spinner" aria-hidden="true"></div>
-      <div><strong>正在读取 Host 路由状态</strong><span>Profile、Catalog 与 Assignment 会在本机汇合。</span></div>
+      <div><strong>正在读取模型供应商</strong><span>供应商、模型目录与检查记录会从本机 Host 安全读取。</span></div>
     </div>`;
 }
 
@@ -1637,7 +2512,7 @@ function providerProfileEditor(catalog, profiles) {
       <div class="form-grid two">
         <label class="field"><span>供应商</span>
           <select name="presetId" id="provider-preset" required>
-            <option value="" ${selectedPreset ? '' : 'selected'} disabled>请选择供应商</option>
+            <option value="" ${selectedPreset ? '' : 'selected'}>请选择供应商</option>
             ${officialProviders.length ? `<optgroup label="官方供应商（自动配置）">
               ${officialProviders.map((provider) => `<option value="${escapeHtml(provider.presetId)}" ${selectedPreset === provider.presetId ? 'selected' : ''}>${escapeHtml(provider.displayName)}</option>`).join('')}
             </optgroup>` : ''}
@@ -1721,12 +2596,11 @@ function providerProfileEditor(catalog, profiles) {
     </form>`;
 }
 
-function providerProfileList(profiles, assignments, probes) {
+function providerProfileList(profiles, probes) {
   return `
     <section class="profile-stack">
       <div class="section-head compact"><h2>已连接 Provider</h2><span>${profiles.length} 个</span></div>
       ${profiles.length ? profiles.map((profile) => {
-        const routes = assignments.filter((assignment) => assignment.providerProfileId === profile.profileId).length;
         const latestProbe = probes.find((probe) => probe.providerProfileId === profile.profileId);
         const models = Array.isArray(profile.enabledModels) ? profile.enabledModels : [];
         return `
@@ -1735,7 +2609,7 @@ function providerProfileList(profiles, assignments, probes) {
             <div class="profile-copy">
               <strong>${escapeHtml(profile.displayName)}</strong>
               <span>${escapeHtml(protocolLabel(profile.protocol))} · ${escapeHtml(profile.baseUrl)}</span>
-              <small>${profile.credentialConfigured ? `Key ···· ${escapeHtml(profile.credentialLastFour || '已配置')}` : '尚未配置 Key'} · ${routes} 条路由</small>
+              <small>${profile.credentialConfigured ? `Key ···· ${escapeHtml(profile.credentialLastFour || '已配置')}` : '尚未配置 Key'} · ${models.length} 个可用模型</small>
             </div>
             <div class="row-actions">
               <button class="ghost" type="button" data-edit-profile="${escapeHtml(profile.profileId)}">编辑</button>
@@ -1774,61 +2648,6 @@ function probeResult(probe) {
     </div>`;
 }
 
-function providerAssignmentEditor(state, profiles, catalog) {
-  const agents = Array.isArray(state.agents) ? state.agents : [];
-  const modelOptions = collectModelOptions(profiles, catalog);
-  return `
-    <form class="control-panel assignment-form" id="provider-assignment-form">
-      <div class="panel-kicker"><span>02</span><div><strong>分配模型角色</strong><small>Global → Agent → Session</small></div></div>
-      <div class="route-diagram" aria-hidden="true"><b>Agent</b><i></i><b>Role</b><i></i><b>Provider</b></div>
-      <div class="form-grid two">
-        <label class="field"><span>范围</span>
-          <select name="scopeKind" id="assignment-scope">
-            ${option('global', '全局默认', 'global')}
-            ${option('agent', '指定 Agent', null)}
-          </select>
-        </label>
-        <label class="field" id="assignment-agent-field"><span>Agent</span>
-          <select name="scopeId" disabled>
-            ${agents.map((agent) => `<option value="${escapeHtml(agent.agentId)}">${escapeHtml(agent.displayName)}</option>`).join('')}
-          </select>
-        </label>
-      </div>
-      <label class="field"><span>模型角色</span>
-        <select name="role">
-          ${[
-            'main', 'subagent', 'vision', 'permission_classifier', 'compaction',
-            'laziness', 'recap', 'memory', 'side_question', 'suggestion',
-          ].map((role) => `<option value="${role}">${escapeHtml(role)}</option>`).join('')}
-        </select>
-      </label>
-      <label class="field"><span>Provider Profile</span>
-        <select name="providerProfileId" required>
-          <option value="">选择 Provider</option>
-          ${profiles.map((profile) => `<option value="${escapeHtml(profile.profileId)}">${escapeHtml(profile.displayName)}</option>`).join('')}
-        </select>
-      </label>
-      <label class="field"><span>模型 ID</span><input name="modelId" list="provider-model-options" required placeholder="选择或输入模型 ID"></label>
-      <datalist id="provider-model-options">${modelOptions.map((model) => `<option value="${escapeHtml(model)}"></option>`).join('')}</datalist>
-      <button class="secondary route-submit" type="submit" ${providerUi.busy || !profiles.length ? 'disabled' : ''}>保存 Assignment</button>
-    </form>`;
-}
-
-function providerAssignmentList(assignments, profiles) {
-  const profileNames = new Map(profiles.map((profile) => [profile.profileId, profile.displayName]));
-  return `
-    <section class="assignment-stack">
-      <div class="section-head compact"><h2>当前路由矩阵</h2><span>${assignments.length} 条</span></div>
-      ${assignments.length ? assignments.map((assignment) => `
-        <article class="assignment-row">
-          <div><strong>${escapeHtml(assignment.role)}</strong><span>${escapeHtml(scopeLabel(assignment))}</span></div>
-          <i></i>
-          <div class="assignment-target"><strong>${escapeHtml(profileNames.get(assignment.providerProfileId) || assignment.providerProfileId)}</strong><span>${escapeHtml(assignment.modelId)}</span></div>
-          <button class="ghost danger-text" type="button" data-delete-assignment="${escapeHtml(assignment.assignmentId)}">×</button>
-        </article>`).join('') : '<div class="empty-provider">尚未设置模型角色。至少配置一条 global / main 路由，产品 Agent 才能开始推理。</div>'}
-    </section>`;
-}
-
 function wireProviderSettings() {
   document.querySelector('.retry-providers')?.addEventListener('click', () => refreshProviderSnapshot());
   document.getElementById('cancel-profile-edit')?.addEventListener('click', () => {
@@ -1839,6 +2658,13 @@ function wireProviderSettings() {
   });
   document.getElementById('provider-preset')?.addEventListener('change', applySelectedPreset);
   const providerForm = document.getElementById('provider-profile-form');
+  if (
+    providerForm
+    && !providerUi.editingProfileId
+    && !providerDraft?.presetId
+  ) {
+    providerForm.elements.presetId.value = '';
+  }
   if (
     providerForm?.elements.apiKey
     && providerDraft?.editingProfileId === (providerUi.editingProfileId || null)
@@ -1852,9 +2678,6 @@ function wireProviderSettings() {
   document.getElementById('provider-discover-models')?.addEventListener('click', discoverProviderModels);
   document.getElementById('provider-test-connection')?.addEventListener('click', testProviderConnection);
   syncProviderConnectionMode(providerForm);
-  document.getElementById('provider-assignment-form')?.addEventListener('submit', submitAssignment);
-  document.getElementById('assignment-scope')?.addEventListener('change', syncAssignmentScope);
-  syncAssignmentScope();
   for (const button of document.querySelectorAll('[data-edit-profile]')) {
     button.addEventListener('click', () => {
       document.getElementById('provider-profile-form')?.remove();
@@ -1868,9 +2691,6 @@ function wireProviderSettings() {
   for (const button of document.querySelectorAll('[data-delete-profile]')) {
     button.addEventListener('click', () => deleteProviderProfile(button.dataset.deleteProfile));
   }
-  for (const button of document.querySelectorAll('[data-delete-assignment]')) {
-    button.addEventListener('click', () => deleteAssignment(button.dataset.deleteAssignment));
-  }
   for (const button of document.querySelectorAll('[data-probe-profile]')) {
     button.addEventListener('click', () => runProviderProbe(button));
   }
@@ -1878,7 +2698,7 @@ function wireProviderSettings() {
 
 async function refreshProviderSnapshot(message = null) {
   providerUi = { ...providerUi, phase: 'loading', error: null, message, busy: false };
-  if (workspaceView === 'providers') renderReady(currentState);
+  if (['providers', 'agents'].includes(workspaceView)) renderReady(currentState);
   try {
     const snapshot = await bridge.getProviderSnapshot();
     providerUi = {
@@ -1898,7 +2718,7 @@ async function refreshProviderSnapshot(message = null) {
       busy: false,
     };
   }
-  if (workspaceView === 'providers' && currentState.phase === 'ready') renderReady(currentState);
+  if (['providers', 'agents'].includes(workspaceView) && currentState.phase === 'ready') renderReady(currentState);
 }
 
 async function submitProviderProfile(event) {
@@ -2119,26 +2939,31 @@ async function testProviderConnection(event) {
   }
 }
 
-async function submitAssignment(event) {
-  event.preventDefault();
-  const data = new FormData(event.currentTarget);
-  const scopeKind = String(data.get('scopeKind'));
-  await runProviderOperation(() => bridge.upsertModelAssignment({
-    scopeKind,
-    scopeId: scopeKind === 'global' ? null : data.get('scopeId'),
-    role: data.get('role'),
-    providerProfileId: data.get('providerProfileId'),
-    modelId: data.get('modelId'),
-  }), '模型角色已写入 Host 路由表。');
-}
-
 async function deleteProviderProfile(profileId) {
-  if (!window.confirm('删除 Provider 会同时移除依赖它的 Assignment。已有 Session Binding 仍保留历史快照。继续吗？')) return;
+  let overview;
+  try {
+    overview = await bridge.getAgentModelOverview();
+  } catch (error) {
+    providerUi = {
+      ...providerUi,
+      error: publicError(error, '无法确认哪些 Agent 正在使用这个供应商，因此没有执行删除。'),
+      message: null,
+    };
+    renderReady(currentState);
+    return;
+  }
+  const affected = (overview?.agents || []).filter(
+    (item) => item.providerProfileId === profileId,
+  );
+  const impact = affected.length
+    ? `\n\n将受影响的 Agent：\n${affected.map((item) => (
+      `• ${agentDisplayName(item.agentId)}（${item.modelId || '模型未知'}）`
+    )).join('\n')}`
+    : '\n\n当前没有 Agent 使用这个供应商。';
+  if (!window.confirm(
+    `确定删除这个模型供应商吗？${impact}\n\n受影响 Agent 会立即停止发送新消息，直到你重新选择模型；已有对话历史不会删除。`,
+  )) return;
   await runProviderOperation(() => bridge.deleteProviderProfile(profileId), 'Provider 已删除。');
-}
-
-async function deleteAssignment(assignmentId) {
-  await runProviderOperation(() => bridge.deleteModelAssignment(assignmentId), 'Assignment 已删除。');
 }
 
 async function runProviderProbe(button) {
@@ -2180,6 +3005,7 @@ async function runProviderOperation(operation, successMessage) {
   try {
     await operation();
     await refreshProviderSnapshot(successMessage);
+    await refreshAgentOverview();
     return true;
   } catch (error) {
     providerUi = {
@@ -2406,27 +3232,6 @@ function transportSafeErrorMessage(error) {
     .replace(/^HostRequestError:\s*/i, '');
 }
 
-function syncAssignmentScope() {
-  const scope = document.getElementById('assignment-scope');
-  const field = document.getElementById('assignment-agent-field');
-  if (!scope || !field) return;
-  const select = field.querySelector('select');
-  const isAgent = scope.value === 'agent';
-  select.disabled = !isAgent;
-  field.classList.toggle('field-disabled', !isAgent);
-}
-
-function collectModelOptions(profiles, catalog) {
-  const models = new Set();
-  for (const profile of profiles) {
-    for (const model of profile.enabledModels || []) models.add(model);
-  }
-  for (const provider of catalog.providers || []) {
-    for (const model of provider.models || []) models.add(model.modelId);
-  }
-  return [...models].sort();
-}
-
 function parseModels(value) {
   return [...new Set(String(value || '').split(/[\n,]/).map((item) => item.trim()).filter(Boolean))];
 }
@@ -2541,11 +3346,6 @@ function protocolLabel(protocol) {
   })[protocol] || protocol || '未知协议';
 }
 
-function scopeLabel(assignment) {
-  if (assignment.scopeKind === 'global') return '全局默认';
-  return `${assignment.scopeKind} / ${assignment.scopeId || '—'}`;
-}
-
 function probeStatusLabel(probe) {
   if (probe.level === 'minimal_inference' && probe.status === 'passed') return '模型已真实响应';
   if (probe.level === 'local_validation' && probe.status === 'passed') return '本地配置有效';
@@ -2604,21 +3404,32 @@ function publicError(error, fallback) {
     .slice(0, 500);
 }
 
-function agentCard(agent, index, activatingAgentId) {
+function agentCard(agent, index, activatingAgentId, overview = null) {
   const resident = isResident(agent);
   const activating = activatingAgentId === agent.agentId;
   const tones = ['tone-violet', 'tone-mint', 'tone-blue'];
   const symbol = Array.from(String(agent.displayName || agent.agentId || '').trim())[0]
     ?.toUpperCase() || 'A';
-  const buttonAttribute = `data-open-conversation="${escapeHtml(agent.agentId)}"`;
+  const buttonAttribute = `data-manage-agent="${escapeHtml(agent.agentId)}"`;
   const buttonLabel = activating
     ? '正在唤醒…'
-    : resident ? '打开对话' : '激活并打开';
+    : resident ? '打开 Agent' : '设置并激活';
+  const modelSummary = overview?.modelId
+    ? `${overview.providerDisplayName || '供应商不可用'} · ${overview.modelId}`
+    : '尚未选择模型';
+  const bindingInvalid = Boolean(
+    overview?.bindingIssue
+    && overview.bindingIssue.code !== 'model_not_configured',
+  );
   return `
     <article class="agent-card ${tones[index % tones.length]}">
       <div class="agent-symbol">${escapeHtml(symbol)}</div>
       <h3>${escapeHtml(agent.displayName)}</h3>
       <p>${escapeHtml(agent.description)}</p>
+      <div class="agent-model-summary ${bindingInvalid ? 'invalid' : ''}">
+        <span>${bindingInvalid ? '模型需要处理' : '当前模型'}</span>
+        <strong>${escapeHtml(modelSummary)}</strong>
+      </div>
       <div class="agent-meta">
         <span class="runtime ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
         <button class="agent-action" ${buttonAttribute} ${activating ? 'disabled' : ''}>${buttonLabel}</button>

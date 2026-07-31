@@ -8,10 +8,59 @@ const opens = [];
 const prompts = [];
 const permissionResponses = [];
 let currentConversation = { phase: 'idle' };
+let managementBindingIssue = null;
 
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => currentConversation);
+  ipcMain.handle('agent:get-model-overview', () => ({
+    agents: readyState().agents.map((agent) => ({
+      agentId: agent.agentId,
+      providerProfileId: 'pp_test',
+      providerDisplayName: 'Test Provider',
+      modelId: 'test-model',
+      bindingIssue: null,
+      inheritedFromLegacyGlobal: false,
+    })),
+  }));
+  ipcMain.handle('runtime:get-background-snapshot', () => ({
+    host: { bridgeState: 'connected', mode: 'persistent_leader' },
+    loginItem: { supported: true, openAtLogin: true },
+  }));
+  ipcMain.handle('provider:get-snapshot', () => ({
+    profiles: [{
+      profileId: 'pp_test',
+      displayName: 'Test Provider',
+      enabledModels: ['test-model'],
+    }],
+    catalog: { providers: [], catalogRevision: 1 },
+    probes: [],
+  }));
+  ipcMain.handle('agent:get-management-snapshot', (_event, agentId) => ({
+    agentId,
+    profiles: [{
+      profileId: 'pp_test',
+      displayName: 'Test Provider',
+      enabledModels: ['test-model'],
+    }],
+    modelBinding: {
+      scopeKind: 'agent',
+      scopeId: agentId,
+      role: 'main',
+      providerProfileId: 'pp_test',
+      modelId: 'test-model',
+    },
+    bindingIssue: managementBindingIssue,
+    inheritedFromLegacyGlobal: false,
+    customization: {
+      packageName: readyState().agents.find((agent) => agent.agentId === agentId)?.displayName,
+      packageVersion: '1.0.0',
+      packageDescription: 'Public package description',
+      requestedPermissions: [],
+      agentMd: { kind: 'agent_md', content: '', revision: 0, customized: false },
+      userMd: { kind: 'user_md', content: '', revision: 0, customized: false },
+    },
+  }));
   ipcMain.handle('conversation:open', (event, agentId) => {
     opens.push(agentId);
     assert.equal(readyState().agents.some((agent) => agent.agentId === agentId), true);
@@ -69,36 +118,26 @@ app.whenReady().then(async () => {
   });
   await window.loadFile(path.join(__dirname, '..', 'src', 'ui', 'index.html'));
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-open-conversation=\"job-agent\"]') !== null",
+    "document.querySelector('[data-manage-agent=\"job-agent\"]') !== null",
   ));
   const agentActions = await window.webContents.executeJavaScript(`({
-    jobConversation: document.querySelector('[data-open-conversation="job-agent"]') !== null,
-    lectureConversation: document.querySelector('[data-open-conversation="lecturecast-agent"]') !== null,
-    deployConversation: document.querySelector('[data-open-conversation="deploy-agent"]') !== null,
-    dynamicConversation: document.querySelector('[data-open-conversation="future-agent"]') !== null,
-    activationOnly: document.querySelectorAll('[data-activate-agent]').length,
+    jobAgent: document.querySelector('[data-manage-agent="job-agent"]') !== null,
+    lectureAgent: document.querySelector('[data-manage-agent="lecturecast-agent"]') !== null,
+    deployAgent: document.querySelector('[data-manage-agent="deploy-agent"]') !== null,
+    dynamicAgent: document.querySelector('[data-manage-agent="future-agent"]') !== null,
+    topLevelConversation: document.getElementById('nav-conversation') !== null,
     symbols: Array.from(document.querySelectorAll('.agent-symbol'), (node) => node.textContent),
   })`);
   assert.deepEqual(agentActions, {
-    jobConversation: true,
-    lectureConversation: true,
-    deployConversation: true,
-    dynamicConversation: true,
-    activationOnly: 0,
+    jobAgent: true,
+    lectureAgent: true,
+    deployAgent: true,
+    dynamicAgent: true,
+    topLevelConversation: false,
     symbols: ['J', 'L', 'D', 'F'],
   });
   await window.webContents.executeJavaScript(
-    "document.querySelector('[data-open-conversation=\"future-agent\"]').click()",
-  );
-  await waitFor(() => opens.length === 1);
-  await waitFor(() => window.webContents.executeJavaScript(
-    "document.body.innerText.includes('Future Agent')",
-  ));
-  await window.webContents.executeJavaScript(
-    "document.querySelector('.conversation-back').click()",
-  );
-  await window.webContents.executeJavaScript(
-    "document.querySelector('[data-open-conversation=\"job-agent\"]').click()",
+    "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('conversation-form') !== null",
@@ -109,7 +148,7 @@ app.whenReady().then(async () => {
     messages: document.querySelectorAll('.conversation-message').length,
     emptyGatesDisplay: getComputedStyle(document.querySelector('.conversation-gates')).display,
   })`);
-  assert.deepEqual(opens, ['future-agent', 'job-agent']);
+  assert.deepEqual(opens, ['job-agent']);
   assert.equal(openedDom.messages, 2);
   assert.equal(openedDom.emptyGatesDisplay, 'none');
   assert.equal(openedDom.body.includes('上次的 job-agent 工作还在吗？'), true);
@@ -121,7 +160,7 @@ app.whenReady().then(async () => {
       document.querySelector('#conversation-form [name="message"]').value =
         '未发送的对话草稿';
       document.querySelector('.conversation-back').click();
-      document.getElementById('nav-conversation').click();
+      document.querySelector('[data-manage-agent="job-agent"]').click();
     })()
   `);
   await waitFor(() => window.webContents.executeJavaScript(
@@ -147,7 +186,7 @@ app.whenReady().then(async () => {
     "document.querySelector('.conversation-back').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-open-conversation=\"job-agent\"]') !== null",
+    "document.querySelector('[data-manage-agent=\"job-agent\"]') !== null",
   ));
   window.webContents.send('conversation:state', {
     ...conversationState('job-agent', [
@@ -157,11 +196,15 @@ app.whenReady().then(async () => {
   });
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(await window.webContents.executeJavaScript(
-    "document.querySelector('[data-open-conversation=\"job-agent\"]') !== null",
+    "document.querySelector('[data-manage-agent=\"job-agent\"]') !== null",
   ), true);
   await window.webContents.executeJavaScript(
-    "document.getElementById('nav-conversation').click()",
+    "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
   );
+  await waitFor(() => opens.length === 2);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('conversation-form') !== null",
+  ));
 
   await window.webContents.executeJavaScript(`
     (() => {
@@ -420,8 +463,42 @@ app.whenReady().then(async () => {
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-reopen-conversation=\"job-agent\"]').click()",
   );
-  await waitFor(() => opens.length === 3);
-  assert.deepEqual(opens, ['future-agent', 'job-agent', 'job-agent']);
+  await waitFor(() => opens.length === 4);
+  assert.deepEqual(opens, ['job-agent', 'job-agent', 'job-agent', 'job-agent']);
+
+  currentConversation = conversationState('job-agent', [
+    { id: 'restored-1', role: 'assistant', text: '这是重启后恢复的历史。' },
+  ]);
+  managementBindingIssue = {
+    code: 'provider_unavailable',
+    message: '原模型供应商已被删除或不可用，请重新选择。',
+  };
+  const restoreWindow = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    show: false,
+    backgroundColor: '#090d16',
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'src', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  await restoreWindow.loadFile(path.join(__dirname, '..', 'src', 'ui', 'index.html'));
+  await waitFor(() => restoreWindow.webContents.executeJavaScript(
+    "document.getElementById('conversation-fix-model') !== null",
+  ));
+  assert.deepEqual(await restoreWindow.webContents.executeJavaScript(`({
+    restored: document.body.innerText.includes('这是重启后恢复的历史。'),
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+  })`), {
+    restored: true,
+    textareaDisabled: true,
+    sendDisabled: true,
+  });
+  restoreWindow.destroy();
   await app.quit();
 }).catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);

@@ -13,7 +13,49 @@ contextBridge.exposeInMainWorld('agentmesh360', {
   }),
   logout: () => ipcRenderer.invoke('identity:logout'),
   recheck: () => ipcRenderer.invoke('identity:recheck'),
-  activateAgent: (agentId) => ipcRenderer.invoke('agent:activate', String(agentId || '').slice(0, 100)),
+  getAgentManagementSnapshot: (agentId) => ipcRenderer.invoke(
+    'agent:get-management-snapshot',
+    String(agentId || '').slice(0, 100),
+  ),
+  getAgentModelOverview: () => ipcRenderer.invoke('agent:get-model-overview'),
+  configureAndActivateAgent: ({ agentId, providerProfileId, modelId }) => ipcRenderer.invoke(
+    'agent:configure-and-activate',
+    {
+      agentId: String(agentId || '').slice(0, 100),
+      providerProfileId: String(providerProfileId || '').slice(0, 200),
+      modelId: String(modelId || '').slice(0, 200),
+    },
+  ),
+  saveAgentModel: ({ agentId, providerProfileId, modelId }) => ipcRenderer.invoke(
+    'agent:save-model',
+    {
+      agentId: String(agentId || '').slice(0, 100),
+      providerProfileId: String(providerProfileId || '').slice(0, 200),
+      modelId: String(modelId || '').slice(0, 200),
+    },
+  ),
+  saveAgentCustomization: ({
+    agentId,
+    kind,
+    content,
+    expectedRevision,
+  }) => ipcRenderer.invoke('agent:save-customization', {
+    agentId: String(agentId || '').slice(0, 100),
+    kind: String(kind || '').slice(0, 20),
+    // Keep valid 8,000-code-point text intact, including surrogate pairs.
+    // Oversized input remains oversized so Main rejects it instead of saving
+    // a silently truncated value.
+    content: String(content ?? '').slice(0, 16_002),
+    expectedRevision,
+  }),
+  clearAgentCustomization: ({ agentId, kind, expectedRevision }) => ipcRenderer.invoke(
+    'agent:clear-customization',
+    {
+      agentId: String(agentId || '').slice(0, 100),
+      kind: String(kind || '').slice(0, 20),
+      expectedRevision,
+    },
+  ),
   getConversationSnapshot: () => ipcRenderer.invoke('conversation:get-snapshot'),
   openAgentConversation: (agentId) => ipcRenderer.invoke(
     'conversation:open',
@@ -45,14 +87,6 @@ contextBridge.exposeInMainWorld('agentmesh360', {
   deleteProviderProfile: (profileId) => ipcRenderer.invoke(
     'provider:delete-profile',
     String(profileId || '').slice(0, 200),
-  ),
-  upsertModelAssignment: (assignment) => ipcRenderer.invoke(
-    'provider:upsert-assignment',
-    assignment,
-  ),
-  deleteModelAssignment: (assignmentId) => ipcRenderer.invoke(
-    'provider:delete-assignment',
-    String(assignmentId || '').slice(0, 200),
   ),
   runProviderProbe: ({
     profileId,

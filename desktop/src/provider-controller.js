@@ -6,7 +6,6 @@ const PROVIDER_PROTOCOLS = new Set([
   'anthropic_messages',
 ]);
 const PROVIDER_AUTH_KINDS = new Set(['bearer_api_key', 'x_api_key']);
-const ASSIGNMENT_SCOPES = new Set(['global', 'agent', 'session']);
 const PROVIDER_PROBE_LEVELS = new Set([
   'local_validation',
   'metadata',
@@ -40,16 +39,14 @@ class ProviderController {
 
   async getSnapshot() {
     this.#requireReady();
-    const [profiles, catalog, assignments, probes] = await Promise.all([
+    const [profiles, catalog, probes] = await Promise.all([
       this.host.listProviderProfiles(),
       this.host.getProviderCatalog(),
-      this.host.listModelAssignments(),
       this.host.listProviderProbes(),
     ]);
     return publicProviderPayload({
       profiles: profiles?.profiles || [],
       catalog: catalog?.catalog || null,
-      assignments: assignments?.assignments || [],
       probes: probes?.probes || [],
     });
   }
@@ -89,22 +86,6 @@ class ProviderController {
     return publicProviderPayload(
       await this.host.deleteProviderProfile(
         normalizeIdentifier(profileId, 'Provider Profile ID'),
-      ),
-    );
-  }
-
-  async upsertAssignment(assignment) {
-    this.#requireReady();
-    return publicProviderPayload(
-      await this.host.upsertModelAssignment(normalizeModelAssignment(assignment)),
-    );
-  }
-
-  async deleteAssignment(assignmentId) {
-    this.#requireReady();
-    return publicProviderPayload(
-      await this.host.deleteModelAssignment(
-        normalizeIdentifier(assignmentId, 'Model Assignment ID'),
       ),
     );
   }
@@ -216,36 +197,6 @@ function normalizeProviderProfile(value) {
   };
 }
 
-function normalizeModelAssignment(value) {
-  if (!isPlainObject(value)) throw new Error('模型 Assignment 无效');
-  rejectUnknownKeys(value, [
-    'scopeKind',
-    'scopeId',
-    'role',
-    'providerProfileId',
-    'modelId',
-  ], '模型 Assignment');
-  const scopeKind = String(value.scopeKind || '');
-  if (!ASSIGNMENT_SCOPES.has(scopeKind)) throw new Error('模型 Assignment scope 无效');
-  const rawScopeId = value.scopeId == null ? '' : String(value.scopeId).trim();
-  if (scopeKind === 'global' && rawScopeId) {
-    throw new Error('global Assignment 不能包含 scopeId');
-  }
-  if (scopeKind !== 'global' && !rawScopeId) {
-    throw new Error('agent/session Assignment 必须包含 scopeId');
-  }
-  if (rawScopeId && (rawScopeId.length > 200 || /[\u0000-\u001f\u007f]/.test(rawScopeId))) {
-    throw new Error('模型 Assignment scopeId 无效');
-  }
-  return {
-    scopeKind,
-    scopeId: rawScopeId || null,
-    role: normalizeIdentifier(value.role, '模型 role'),
-    providerProfileId: normalizeIdentifier(value.providerProfileId, 'Provider Profile ID'),
-    modelId: normalizeModelId(value.modelId),
-  };
-}
-
 function normalizeIdentifier(value, label) {
   const normalized = String(value || '').trim();
   if (!IDENTIFIER.test(normalized)) throw new Error(`${label} 无效`);
@@ -307,7 +258,6 @@ function deepFreeze(value) {
 
 module.exports = {
   ProviderController,
-  normalizeModelAssignment,
   normalizeProviderProfile,
   publicProviderPayload,
 };

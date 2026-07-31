@@ -20,10 +20,15 @@ const REQUIRED_DOMAINS = new Set([
   'AUTH',
   'ACCESS',
   'AGENT',
+  'NAV',
+  'GUIDE',
+  'MODEL',
+  'OVERLAY',
   'CONV',
   'PROVIDER',
   'PACKAGE',
   'HOST',
+  'SETTINGS',
   'RELEASE',
 ]);
 

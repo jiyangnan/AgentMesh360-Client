@@ -24,6 +24,7 @@ app.whenReady().then(async () => {
     snapshot: packageFixture(),
   }));
   ipcMain.handle('provider:get-snapshot', () => providerFixture());
+  ipcMain.handle('agent:get-model-overview', () => modelOverviewFixture());
   ipcMain.handle('runtime:get-background-snapshot', () => backgroundFixture());
   ipcMain.handle('runtime:set-background-startup', (_event, enabled) => {
     backgroundWrites.push(enabled);
@@ -40,8 +41,6 @@ app.whenReady().then(async () => {
     'provider:update-profile',
     'provider:replace-secret',
     'provider:delete-profile',
-    'provider:upsert-assignment',
-    'provider:delete-assignment',
     'provider:run-probe',
     'provider:test-connection',
     'provider:discover-models',
@@ -84,25 +83,31 @@ app.whenReady().then(async () => {
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
   } else if (phase === 'package' || phase === 'package-ready') {
-    await window.webContents.executeJavaScript("document.getElementById('nav-packages').click()");
+    await window.webContents.executeJavaScript("document.getElementById('add-agent').click()");
     await new Promise((resolve) => setTimeout(resolve, 180));
   } else if (phase === 'background') {
-    await window.webContents.executeJavaScript("document.getElementById('nav-client').click()");
+    await window.webContents.executeJavaScript(`
+      (() => {
+        document.getElementById('nav-settings').click();
+        document.querySelector('[data-settings-tab="background"]').click();
+      })()
+    `);
     await new Promise((resolve) => setTimeout(resolve, 180));
   }
   const image = await window.webContents.capturePage();
   fs.writeFileSync(output, image.toPNG());
   if (phase === 'package') {
     const closedControls = await window.webContents.executeJavaScript(`({
-      installDisabled: document.querySelector('#package-install-form button[type="submit"]').disabled,
-      downloadButtonsDisabled: [...document.querySelectorAll('[data-download-package]')]
-        .every((button) => button.disabled),
-      refreshDisabled: document.getElementById('refresh-package-registry').disabled,
+      hasInstallForm: document.getElementById('package-install-form') !== null,
+      hasDownloadButtons: document.querySelector('[data-download-package]') !== null,
+      hasRefreshButton: document.getElementById('refresh-package-registry') !== null,
+      explainsClosedState: document.body.innerText.includes('在线添加暂未开放'),
     })`);
     assert.deepEqual(closedControls, {
-      installDisabled: true,
-      downloadButtonsDisabled: true,
-      refreshDisabled: false,
+      hasInstallForm: false,
+      hasDownloadButtons: false,
+      hasRefreshButton: false,
+      explainsClosedState: true,
     });
   } else if (phase === 'background') {
     await window.webContents.executeJavaScript("document.getElementById('toggle-background-startup').click()");
@@ -285,6 +290,22 @@ function backgroundFixture() {
       status: backgroundEnabled ? 'enabled' : 'not-registered',
       reason: null,
     },
+  };
+}
+
+function modelOverviewFixture() {
+  return {
+    agents: (fixtureState(phase).agents || []).map((agent) => ({
+      agentId: agent.agentId,
+      providerProfileId: agent.agentId === 'lecturecast-agent' ? null : 'pp_openai',
+      providerDisplayName: agent.agentId === 'lecturecast-agent' ? null : 'Personal OpenAI',
+      modelId: agent.agentId === 'lecturecast-agent' ? null : 'gpt-5',
+      bindingIssue: agent.agentId === 'lecturecast-agent' ? {
+        code: 'model_not_configured',
+        message: '这个 Agent 尚未选择模型。',
+      } : null,
+      inheritedFromLegacyGlobal: false,
+    })),
   };
 }
 

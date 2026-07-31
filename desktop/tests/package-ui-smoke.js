@@ -14,6 +14,28 @@ let rollbackCalls = 0;
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
+  ipcMain.handle('agent:get-model-overview', () => ({
+    agents: readyState().agents.map((agent) => ({
+      agentId: agent.agentId,
+      providerProfileId: null,
+      providerDisplayName: null,
+      modelId: null,
+      bindingIssue: {
+        code: 'model_not_configured',
+        message: '这个 Agent 尚未选择模型。',
+      },
+      inheritedFromLegacyGlobal: false,
+    })),
+  }));
+  ipcMain.handle('runtime:get-background-snapshot', () => ({
+    host: { bridgeState: 'connected', mode: 'persistent_leader' },
+    loginItem: { supported: true, openAtLogin: true },
+  }));
+  ipcMain.handle('provider:get-snapshot', () => ({
+    profiles: [],
+    catalog: { catalogRevision: 1, providers: [] },
+    probes: [],
+  }));
   ipcMain.handle('package:get-snapshot', () => {
     snapshotReads += 1;
     return packageSnapshot();
@@ -113,12 +135,12 @@ app.whenReady().then(async () => {
   });
   smokeStep = 'load renderer';
   await window.loadFile(path.join(__dirname, '..', 'src', 'ui', 'index.html'));
-  smokeStep = 'wait for package navigation';
+  smokeStep = 'wait for add Agent action';
   await waitFor(async () => window.webContents.executeJavaScript(
-    "document.getElementById('nav-packages') !== null",
+    "document.getElementById('add-agent') !== null",
   ));
   smokeStep = 'open package center';
-  await window.webContents.executeJavaScript("document.getElementById('nav-packages').click()");
+  await window.webContents.executeJavaScript("document.getElementById('add-agent').click()");
   smokeStep = 'wait for package form';
   await waitFor(async () => window.webContents.executeJavaScript(
     "document.getElementById('package-install-form') !== null",

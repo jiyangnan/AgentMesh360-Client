@@ -1992,6 +1992,11 @@ impl acp::Agent for MvpAgent {
             .session_handle_waiting_for_load(&arguments.session_id)
             .await
             .ok_or_else(|| acp::Error::invalid_params().data("unknown session id"))?;
+        crate::agentmesh360::ensure_product_agent_overlays_applied(
+            self,
+            &arguments.session_id,
+        )
+        .await?;
         if self.models_manager.allowlist_excludes_all() {
             self.send_model_auto_switched(
                     &arguments.session_id,

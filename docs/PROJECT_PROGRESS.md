@@ -7565,3 +7565,69 @@ owner UAT 与根因：
 - 本轮代码、测试基线、真实安装和单包留存均已关闭；下一产品切片仍是首次使用引导，
   把“配置 Provider → 激活/打开 Agent →
   开始对话”的路径直接展示给首次用户；不会因本轮测试体系建设改变既定产品顺序。
+
+### 循环 140：客户端信息架构与 Agent 管理重设计
+
+状态：进行中（实现与交叉回归完成，等待 clean commit 内部包）
+
+本轮方向复核：
+
+1. Owner 明确 Provider 页面只负责模型供应商；Agent 的激活、模型绑定、对话、
+   `agent.md` 和 `user.md` 必须归入具体 Agent 管理；
+2. 本轮仍然服务于既定“配置 Provider → 激活 Agent → 开始对话”路径，没有进入
+   Provider 价格/余额、自动 fallback、在线商店、生产发布或 P7/P8；
+3. KimiCLI 0.26.0 已完成三轮只读源码与交互评审，主 Agent 逐项回答其 17 个产品问题，
+   最终确认不设置重复首页，一级导航只保留“Agent / 模型供应商 / 设置”；
+4. Agent 列表承担默认落点、首次引导、待继续工作和已激活/未激活分组；Agent 详情包含
+   “对话 / 模型 / 行为 agent.md / 偏好 user.md”；Package 入口改为“添加 Agent”；
+5. Provider 页删除 Assignment、Role、Scope 和路由矩阵，只保留供应商接入、模型发现、
+   连接测试、保存、编辑、删除和 Probe；
+6. 模型变更从下一条消息生效，当前 Turn 使用旧冻结 Route；配置失效时禁止静默
+   fallback；旧 global/main 只做升级兼容映射；
+7. `agent.md` 与 `user.md` 是账户+Agent 级本地 overlay，不修改签名 Package，也不展示
+   内部基础 Prompt；Host 承担 8000 Unicode 字符、明显秘密拒绝与 revision 冲突控制。
+
+本轮已完成：
+
+- 新增 `docs/architecture/CLIENT_INFORMATION_ARCHITECTURE_V1.md`，固化导航、页面地图、
+  状态机、职责和本轮边界；
+- 新增当日实施计划并记录 Kimi 三轮评审和问答结论；
+- 产品用户旅程由 45 条、9 个领域扩展为 62 条、14 个领域，覆盖导航、引导、Agent 激活、
+  Agent 模型、行为/偏好 overlay、Provider 职责、添加 Agent 与设置结构；
+- 纠正旧 `TC-PROVIDER-009` 将未完整桌面交互写成“已实现、通过”的过度声明；
+- 一级导航已收敛为“Agent / 模型供应商 / 设置”；Agent 列表承担默认落点和三步路径，
+  Package 入口改为“添加 Agent”，对话迁入具体 Agent；
+- Agent 详情新增“模型 / 行为 agent.md / 偏好 user.md”；模型严格来自所选 Profile 的
+  `enabledModels`，切换失败恢复原 Assignment，失效时禁发且不 fallback；
+- Provider 页已移除 Assignment、Role、Scope 和路由矩阵；删除前列出受影响 Agent，
+  保存事务结束后 Key、供应商和名称稳定清空；
+- Host 新增账户+Agent 级 overlay、schema v11、8000 Unicode 字符、明显秘密拒绝、
+  revision 冲突和下一条 Prompt 前重建；
+- Renderer 草稿跨页与后台复验保留，账号切换清除；冲突的“保留我的版本”和“放弃并
+  重载”均完成点击级测试；
+- Host 三态、设置四类子菜单、零/单 Provider 激活规则、生成中锁定、重启恢复时绑定
+  失效立即禁发均已完成。
+
+当前验证：
+
+- `validate-product-journey-cases.mjs --require-executed`：62 条、14 个领域通过，
+  59 通过 / 3 个既有外部真实服务阻断 / 0 待执行 / 0 失败；
+- 产品旅程校验器单元测试：3 passed / 0 failed；
+- Desktop Node：129 passed / 3 个显式 real-Host gate skipped / 0 failed；
+- AgentMesh360 Rust：202 passed / 1 个显式外部源码 checkout ignored / 0 failed；
+- Agent 管理、Conversation、Provider、添加 Agent 四组 Electron smoke 全部通过；
+- Clippy `-D warnings`、Rust fmt、Desktop syntax 与三张高分辨率视觉状态通过；
+- KimiCLI 完成信息架构、Host/安全、测试覆盖与最终 diff 多轮审查；最终结论为“无阻断
+  问题”。它最后提出的三个 P2 观察也已继续补齐：重启恢复失效绑定、冲突放弃路径、
+  账号切换草稿隔离；
+- 自动化只使用 loopback fixture，没有读取真实 Provider Key、发起 Provider 请求、
+  消耗 AgentMesh credits、产生外部费用或改变生产状态。
+
+下一步：
+
+1. 将当前完整 diff 提交并推送 `origin/main`；
+2. 从 clean pushed commit 构建 unsigned internal DMG/ZIP，复验 receipt、摘要与 DMG；
+3. 新包全部通过后删除上一包和旧构建证据，Downloads 与 `desktop/dist/internal`
+   始终各只保留一份；
+4. 回填 package commit、摘要和本地交付路径后关闭循环 140。下一产品切片继续按既定
+   计划，不扩展价格、余额、自动 fallback、在线商店、P7/P8 或生产发布。

@@ -4,7 +4,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   ProviderController,
-  normalizeModelAssignment,
   normalizeProviderProfile,
   publicProviderPayload,
 } = require('../src/provider-controller');
@@ -103,42 +102,6 @@ test('profile validation rejects unknown fields and credential-bearing URLs', ()
   assert.throws(
     () => normalizeProviderProfile({ ...profile, protocol: 'invented_protocol' }),
     /协议无效/,
-  );
-});
-
-test('assignment validation mirrors Host scope and identifier rules', () => {
-  assert.deepEqual(normalizeModelAssignment({
-    scopeKind: 'agent',
-    scopeId: 'job-agent',
-    role: 'subagent',
-    providerProfileId: 'pp_1234',
-    modelId: 'openai/gpt-5:latest',
-  }), {
-    scopeKind: 'agent',
-    scopeId: 'job-agent',
-    role: 'subagent',
-    providerProfileId: 'pp_1234',
-    modelId: 'openai/gpt-5:latest',
-  });
-  assert.throws(
-    () => normalizeModelAssignment({
-      scopeKind: 'global',
-      scopeId: 'job-agent',
-      role: 'main',
-      providerProfileId: 'pp_1234',
-      modelId: 'gpt-5',
-    }),
-    /不能包含 scopeId/,
-  );
-  assert.throws(
-    () => normalizeModelAssignment({
-      scopeKind: 'session',
-      scopeId: null,
-      role: 'main',
-      providerProfileId: 'pp_1234',
-      modelId: 'gpt-5',
-    }),
-    /必须包含 scopeId/,
   );
 });
 
