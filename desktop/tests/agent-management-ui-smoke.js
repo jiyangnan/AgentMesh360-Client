@@ -7,6 +7,8 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const calls = [];
 let bindingIssue = null;
+let jobBindingMissing = false;
+let modelSaveFailure = false;
 let deletedProvider = false;
 let profilesUnavailable = false;
 let customizationConflict = false;
@@ -77,8 +79,13 @@ app.whenReady().then(async () => {
     return {};
   });
   ipcMain.handle('agent:save-model', (_event, request) => {
+    if (modelSaveFailure) {
+      calls.push(['save-model-failed', request]);
+      throw new Error('fixture model save failed');
+    }
     calls.push(['save-model', request]);
     bindingIssue = null;
+    jobBindingMissing = false;
     return managementSnapshot(request.agentId, request);
   });
   ipcMain.handle('agent:configure-and-activate', (_event, request) => {
@@ -296,11 +303,109 @@ app.whenReady().then(async () => {
       const form = document.getElementById('agent-model-form');
       form.elements.modelId.value = 'glm-4.7';
       form.elements.modelId.dispatchEvent(new Event('change', { bubbles: true }));
-      form.requestSubmit();
     })()
   `);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').disabled",
+  ), false);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').click()",
+  );
   await waitFor(() => calls.some(([kind]) => kind === 'save-model'));
   assert.deepEqual(calls.find(([kind]) => kind === 'save-model')[1], {
+    agentId: 'job-agent',
+    providerProfileId: 'pp_glm',
+    modelId: 'glm-4.7',
+  });
+
+  smokeStep = 'save a real selection for a resident Agent without a binding';
+  jobBindingMissing = true;
+  bindingIssue = null;
+  await window.webContents.executeJavaScript(`
+    document.getElementById('nav-agents').click();
+    document.querySelector('[data-manage-agent="job-agent"]').click();
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-tab=\"model\"]') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-agent-tab=\"model\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('agent-model-form') !== null",
+  ));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').disabled",
+  ), true);
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('agent-model-form');
+      form.elements.providerProfileId.value = 'pp_glm';
+      form.elements.providerProfileId.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('agent-model-form');
+      form.elements.modelId.value = 'glm-5.2';
+      form.elements.modelId.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').disabled",
+  ), false);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('.agent-current-model').innerText.includes('glm-5.2（尚未保存）')",
+  ), true);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form .provider-notice').innerText.includes('点击下方按钮保存后生效')",
+  ), true);
+  if (process.env.AGENTMESH360_MODEL_EMPTY_SCREENSHOT) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const image = await window.webContents.capturePage();
+    fs.writeFileSync(process.env.AGENTMESH360_MODEL_EMPTY_SCREENSHOT, image.toPNG());
+  }
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').click()",
+  );
+  await waitFor(() => calls.filter(([kind]) => kind === 'save-model').length === 2);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'save-model')[1][1], {
+    agentId: 'job-agent',
+    providerProfileId: 'pp_glm',
+    modelId: 'glm-5.2',
+  });
+
+  smokeStep = 'preserve the resident model selection when save fails';
+  modelSaveFailure = true;
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('agent-model-form');
+      form.elements.modelId.value = 'glm-4.7';
+      form.elements.modelId.dispatchEvent(new Event('change', { bubbles: true }));
+    })()
+  `);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').click()",
+  );
+  await waitFor(() => calls.some(([kind]) => kind === 'save-model-failed'));
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.provider-notice.error') !== null",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    modelId: document.querySelector('#agent-model-form [name="modelId"]').value,
+    submitDisabled: document.querySelector('#agent-model-form button[type="submit"]').disabled,
+    unsaved: document.querySelector('.agent-current-model').innerText.includes('尚未保存'),
+  })`), {
+    modelId: 'glm-4.7',
+    submitDisabled: false,
+    unsaved: true,
+  });
+  modelSaveFailure = false;
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#agent-model-form button[type=\"submit\"]').click()",
+  );
+  await waitFor(() => calls.filter(([kind]) => kind === 'save-model').length === 3);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'save-model')[2][1], {
     agentId: 'job-agent',
     providerProfileId: 'pp_glm',
     modelId: 'glm-4.7',
@@ -723,7 +828,7 @@ function managementSnapshot(agentId, binding = null) {
         providerProfileId: binding.providerProfileId,
         modelId: binding.modelId,
       }
-      : agentId === 'job-agent'
+      : agentId === 'job-agent' && !jobBindingMissing
         ? {
           scopeKind: 'agent',
           scopeId: agentId,
@@ -732,7 +837,7 @@ function managementSnapshot(agentId, binding = null) {
           modelId: 'glm-5.2',
         }
         : null,
-    bindingIssue: agentId === 'job-agent' ? bindingIssue : {
+    bindingIssue: agentId === 'job-agent' && !jobBindingMissing ? bindingIssue : {
       code: 'model_not_configured',
       message: '这个 Agent 尚未选择模型。',
     },
@@ -752,16 +857,21 @@ function modelOverview() {
   return {
     agents: readyState().agents.map((agent) => ({
       agentId: agent.agentId,
-      providerProfileId: agent.agentId === 'job-agent' ? 'pp_glm' : null,
-      providerDisplayName: agent.agentId === 'job-agent' && !deletedProvider
+      providerProfileId: agent.agentId === 'job-agent' && !jobBindingMissing ? 'pp_glm' : null,
+      providerDisplayName: agent.agentId === 'job-agent' && !jobBindingMissing && !deletedProvider
         ? '智谱 GLM Coding Plan'
         : null,
-      modelId: agent.agentId === 'job-agent' ? 'glm-5.2' : null,
+      modelId: agent.agentId === 'job-agent' && !jobBindingMissing ? 'glm-5.2' : null,
       bindingIssue: agent.agentId === 'job-agent'
-        ? (bindingIssue || (deletedProvider ? {
-          code: 'provider_unavailable',
-          message: '原模型供应商已被删除或不可用，请重新选择。',
-        } : null))
+        ? (jobBindingMissing
+          ? {
+            code: 'model_not_configured',
+            message: '这个 Agent 尚未选择模型。',
+          }
+          : (bindingIssue || (deletedProvider ? {
+            code: 'provider_unavailable',
+            message: '原模型供应商已被删除或不可用，请重新选择。',
+          } : null)))
         : {
         code: 'model_not_configured',
         message: '这个 Agent 尚未选择模型。',

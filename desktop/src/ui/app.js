@@ -1927,9 +1927,18 @@ function agentDetailView(state) {
   const profile = (agentManagementUi.snapshot?.profiles || []).find(
     (item) => item.profileId === binding?.providerProfileId,
   );
-  const modelSummary = binding
-    ? `${profile?.displayName || '供应商不可用'} · ${binding.modelId}`
-    : '尚未选择模型';
+  const draftBinding = agentManagementUi.modelDraft?.providerProfileId
+    && agentManagementUi.modelDraft?.modelId
+    ? agentManagementUi.modelDraft
+    : null;
+  const draftProfile = (agentManagementUi.snapshot?.profiles || []).find(
+    (item) => item.profileId === draftBinding?.providerProfileId,
+  );
+  const modelSummary = draftBinding
+    ? `${draftProfile?.displayName || '所选供应商'} · ${draftBinding.modelId}（尚未保存）`
+    : binding
+      ? `${profile?.displayName || '供应商不可用'} · ${binding.modelId}`
+      : '尚未选择模型';
   const tabs = [
     ['conversation', '对话'],
     ['model', '模型'],
@@ -2008,7 +2017,11 @@ function agentModelView(agent) {
       <p class="agent-setting-copy">${resident
     ? '保存后从下一条用户消息生效；正在生成的回答仍使用原模型，历史不会改变。'
     : '激活后会创建这个 Agent 的固定主会话。以后每次打开都会回到同一个进度。'}</p>
-      ${snapshot.bindingIssue ? `<div class="provider-notice error" role="alert">${escapeHtml(snapshot.bindingIssue.message)}</div>` : ''}
+      ${snapshot.bindingIssue
+    ? selectedModel
+      ? `<div class="provider-notice" role="status">已选择 ${escapeHtml(selectedProfile?.displayName || '模型供应商')} · ${escapeHtml(selectedModel)}，点击下方按钮保存后生效。</div>`
+      : `<div class="provider-notice error" role="alert">${escapeHtml(snapshot.bindingIssue.message)}</div>`
+    : ''}
       <div class="form-grid two">
         <label class="field"><span>模型供应商</span>
           <select name="providerProfileId" required ${turnRunning ? 'disabled' : ''}>
@@ -2218,13 +2231,15 @@ function wireAgentDetail() {
       providerProfileId: modelForm.elements.providerProfileId.value,
       modelId: event.currentTarget.value,
     };
-    if (modelForm.elements.confirmActivation) {
-      modelForm.querySelector('button[type="submit"]').disabled = !(
-        modelForm.elements.confirmActivation.checked
-        && modelForm.elements.providerProfileId.value
-        && event.currentTarget.value
-      );
+    if (!modelForm.elements.confirmActivation) {
+      renderReady(currentState);
+      return;
     }
+    modelForm.querySelector('button[type="submit"]').disabled = !(
+      modelForm.elements.confirmActivation.checked
+      && modelForm.elements.providerProfileId.value
+      && event.currentTarget.value
+    );
   });
   modelForm?.elements.confirmActivation?.addEventListener('change', (event) => {
     modelForm.querySelector('button[type="submit"]').disabled = !(

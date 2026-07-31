@@ -7650,3 +7650,52 @@ owner UAT 与根因：
   Agent 详情承担；
 - 下一产品切片继续按既定产品计划推进，不扩展价格、余额、自动 fallback、在线商店、
   P7/P8 或生产发布；进入下一轮前仍须先复核产品计划和本轮实际方向。
+
+### 循环 141：常驻 Agent 首次绑定模型无法保存
+
+状态：进行中（实现、自主回归与 KimiCLI 交叉测试完成，等待内部包）
+
+用户实际发现：
+
+- Job Agent 已常驻但没有 Agent/main 模型绑定；
+- 模型页视觉上已经选择“智谱 GLM Coding Plan / glm-5.2”；
+- 页面仍显示“尚未选择模型”，保存按钮保持禁用，真实鼠标无法提交。
+
+根因与测试缺口：
+
+- 模型 `change` 事件更新了 Renderer 草稿，但只有未激活 Agent 的
+  `confirmActivation` 分支会重新计算提交按钮；
+- 原 smoke 通过程序化 `requestSubmit()` 提交，没有先断言按钮可点击，绕过了真实用户
+  交互限制；
+- 因此循环 140 的 62 条用例数量虽然覆盖了模型级联和失效绑定，却没有覆盖“常驻、
+  从未绑定、选择后真实点击”这个状态转换，不能称为完整覆盖。
+
+本轮已实现：
+
+- 常驻 Agent 选择模型后立即刷新草稿状态并启用保存按钮；
+- 标题显示“供应商 · 模型（尚未保存）”，原错误提示改为“点击保存后生效”；
+- Host 保存失败时保留选择、恢复可点击按钮，用户可直接重试；
+- Electron smoke 新增修复前稳定失败的真实状态，并改用按钮 `click()`，同时覆盖成功、
+  失败保留和重试；
+- 新增 `TC-MODEL-005` 和当前可交互功能覆盖矩阵，明确每个页面模块、控件及其成功、
+  失败、恢复状态对应的测试编号。
+
+当前自主验证：
+
+- 修复前新增 Electron 断言稳定失败：保存按钮 `true !== false`；
+- 修复后 Agent 管理 Electron smoke 通过；
+- Desktop Node：129 passed / 3 个显式 real-Host gate skipped / 0 failed；
+- Conversation、Provider、添加 Agent Electron smoke 全部通过；
+- Desktop syntax 通过；
+- 产品旅程：63 条、14 个领域通过；校验器单元测试 3 passed / 0 failed；
+- KimiCLI 只读审查修复、真实点击测试和覆盖矩阵，连续两次复跑 Agent 管理 smoke，
+  并复跑 Desktop Node、其余三组 Electron 与旅程校验；最终结论为“无阻断问题，
+  P1/P2 均无”；
+- 测试只使用 fixture 和 loopback，不读取真实 Key、不请求 Provider、不消耗 credits。
+
+方向复盘与下一步：
+
+- Provider 页面仍只管理模型供应商；模型绑定继续属于具体 Agent，没有产品职责回退；
+- 本轮不扩展自动 fallback、价格/余额、在线商店、P7/P8、Apple 签名/公证或在线发布；
+- 下一步提交推送，从 clean pushed commit 构建新内部包；新包通过前保留
+  `461f1af` 上一包，通过后再执行单包留存清理。
