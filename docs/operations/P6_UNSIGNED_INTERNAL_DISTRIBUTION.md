@@ -128,19 +128,21 @@ rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
 ## 最新内部体验版
 
 2026-07-31 已从 clean pushed commit
-`20773b4c39c7876e0cff8d8b52bb7aa76fa4680e` 构建并交付当前 arm64 内部体验版：
+`687e4d7d77e21608d92f498df0d0d5b69137d243` 构建并交付当前 arm64 内部体验版：
 
-- receipt：`desktop_internal_p6_20773b4c39c7_arm64`；
-- Desktop `0.1.1`，Host runtime `1000.1.1785478545001 (20773b4)`；
+- receipt：`desktop_internal_p6_687e4d7d77e2_arm64`；
+- Desktop `0.1.1`，Host runtime `1000.1.1785511674001 (687e4d7)`；
 - DMG SHA-256：
-  `a30deceae0ca110ded20bdedb1f2f2392f6e8be646062cfe5977688d44c17616`；
+  `ea7ee5d3120ff16c3bb34195c804d7028ba0b8565fe2faae6044746decff306e`；
 - ZIP SHA-256：
-  `9c02e09628e8b031f68a135be8ccda8eb241b37300e82c50d43e8cd1d63d2d32`；
-- receipt verifier、`SHA256SUMS`、`hdiutil verify`、构建/交付副本逐字节比较和 ZIP
-  Host/`app.asar` inventory 全部通过；
+  `02a2e2919509fe10375dff02b70131d1524e9eb14ff3ca4598bc3c9118cf05e3`；
+- receipt verifier、构建与交付双 `SHA256SUMS`、`hdiutil verify`、ZIP CRC、构建/交付
+  副本逐字节比较以及 arm64 Host/版本、`app.asar`、`Info.plist` inventory 全部通过；
+- 真实覆盖安装恢复 active 订阅、持久 Host、1 个常驻 Agent 和可用主会话；旧 Leader
+  已让位给新包。验收消息发送、Provider 请求和 AgentMesh credits 均为 0；
 - 本地交付目录：
-  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-20773b4-arm64/`；
-- 新包验证后才删除 `461f1af` 上一包和旧构建证据；当前 Downloads 与
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-687e4d7-arm64/`；
+- 新包验证并完成真实安装后才删除 `2df5b20` 上一包和旧构建证据；当前 Downloads 与
   `desktop/dist/internal` 各只保留这一份，仓库根 `target/` 不存在；
 - 本次仍未签名、未公证、未上传、未请求 Provider，Apple/credits/Provider 费用均为
   0。

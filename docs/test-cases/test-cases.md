@@ -1287,6 +1287,8 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 
 ### 2026-07-31 Agent 工作区对话与会话导航重构执行
 
+- 功能与安装包 commit：
+  `687e4d7d77e21608d92f498df0d0d5b69137d243`，已推送 `origin/main`。
 - 用例结果：73 条、14 个领域通过结构与执行校验；70 条通过、3 条既有外部真实服务
   阻断、0 条待执行、0 条失败。新增 `TC-NAV-003`、`TC-MODEL-006`、`TC-CONV-010`
   和 `TC-CONV-011`，覆盖三栏 Agent/会话导航、异步设置归属、对话阅读与安全文本、
@@ -1304,5 +1306,23 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   `git diff --check` 通过。
 - KimiCLI：首轮发现 Host `idle` 过渡死锁和 11px 状态字号；两项修复后独立复跑关键
   Electron 与旅程校验，最终结论 `CLEAN`，P0/P1/P2 为 0。
+- 安装包结果：
+  - receipt：`desktop_internal_p6_687e4d7d77e2_arm64`；Desktop `0.1.1`，Host runtime
+    `1000.1.1785511674001 (687e4d7)`；
+  - DMG：181448562 bytes，
+    `ea7ee5d3120ff16c3bb34195c804d7028ba0b8565fe2faae6044746decff306e`；
+  - ZIP：181235977 bytes，
+    `02a2e2919509fe10375dff02b70131d1524e9eb14ff3ca4598bc3c9118cf05e3`；
+  - receipt、构建/交付双摘要、DMG、ZIP CRC、交付副本、arm64 Host/版本、`app.asar`
+    和 `Info.plist` 均通过。
+- 真实安装验收：有效订阅、持久 Host、1 个常驻 Agent 与 Job Agent ready；三栏、唯一
+  主会话、齿轮设置、草稿跨设置恢复和旧页签移除通过；旧 PID `14573` 让位，新 Leader
+  PID `21201` 接管；消息发送 0、Provider 请求 0、credits 0，假草稿已清空。
+- 隔离生命周期执行器因真实 Login Item 已处于 enabled 而按设计 fail-closed；没有为
+  让测试通过而改写用户设置，真实覆盖安装和对应不变式已单独通过。
+- 单包留存：只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-687e4d7-arm64/` 与
+  `desktop/dist/internal/0.1.1-687e4d7d77e2-arm64/`；上一包和临时产物已清理，仓库根
+  `target/` 不存在。
 - 外部副作用：真实 Provider Key/Vault 读取 0、Provider 请求 0、真实消息发送 0、
   AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。

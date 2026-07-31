@@ -7900,7 +7900,7 @@ KimiCLI 独立交叉测试：
 
 ### 循环 144：Agent 工作区对话、设置与会话导航重构
 
-状态：功能、全量回归与 KimiCLI 终审通过，内部包交付进行中
+状态：已完成
 
 owner UAT 直接暴露：旧 Agent 详情把 Agent 介绍、模型、`agent.md`、`user.md` 和对话
 放在同一视觉层级，Agent 名称与主会话标题重复，消息正文和输入字号偏小；全局导航与
@@ -7944,11 +7944,39 @@ owner UAT 直接暴露：旧 Agent 详情把 Agent 介绍、模型、`agent.md`�
   以及状态字号低于 12px 两项问题；修复后独立复跑 syntax、Conversation、Agent 管理和
   产品旅程，最终结论 `CLEAN`，P0/P1/P2 为 0。
 
+最终提交、真实安装与内部交付：
+
+- 功能与安装包 commit：
+  `687e4d7d77e21608d92f498df0d0d5b69137d243`，已推送 `origin/main`；
+- receipt：`desktop_internal_p6_687e4d7d77e2_arm64`；Desktop `0.1.1`，Host runtime
+  `1000.1.1785511674001 (687e4d7)`；
+- DMG：181448562 bytes，
+  `ea7ee5d3120ff16c3bb34195c804d7028ba0b8565fe2faae6044746decff306e`；
+- ZIP：181235977 bytes，
+  `02a2e2919509fe10375dff02b70131d1524e9eb14ff3ca4598bc3c9118cf05e3`；
+- receipt verifier、构建与 Downloads 双 `SHA256SUMS`、`hdiutil verify`、ZIP CRC、
+  构建/交付副本逐字节比较、arm64 Host/版本、`app.asar` 与 `Info.plist` inventory
+  全部通过；应用仍为明确的 ad-hoc unsigned internal 包，没有 Developer ID 或公证；
+- 真实 owner 覆盖安装验收通过：订阅 active、持久 Host connected、1 个常驻 Agent、
+  Job Agent 主会话 ready，三栏工作区、唯一主会话、44px 齿轮设置和旧同级设置页签
+  移除均符合合同；Provider 与对话假草稿验证后清空，消息发送 0、Provider 请求 0、
+  AgentMesh credits 0；
+- 旧 Leader PID `14573` 让位，新 Leader PID `21201` 接管；验收调试端口随后关闭，
+  安装版已按普通方式重新打开。隔离生命周期执行器检测到真实 Login Item 已启用后
+  按 fail-closed 约束停止，本轮没有为了测试改变用户开机启动设置；
+- owner 本地交付目录：
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-687e4d7-arm64/`；
+- 新包全部通过后才删除 `2df5b20` 上一包、旧 dist、旧 App 备份、临时挂载和解包目录；
+  Downloads 与 `desktop/dist/internal` 各只保留当前一份，仓库根 `target/` 不存在；
+  `/private/tmp/agentmesh360-cycle143-session-quarantine` 保持原样；
+- 外部副作用：真实 Provider Key/Vault 读取 0、Provider 请求 0、消息发送 0、
+  AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。
+
 计划复盘与后续门禁：
 
 - 本轮只重排既定 Agent 工作区并补齐交互竞态，没有伪造多会话；新增、重命名、删除、
   搜索和归档会话仍等待 Host 提供账户隔离的真实 Session Index；
 - Provider 页仍只管理供应商；模型、行为和偏好仍归具体 Agent；未扩展自动 fallback、
   价格/余额、在线商店、P7/P8、签名/公证或在线发布；
-- 只有 clean commit push、唯一内部包复验和真实覆盖安装通过后，本循环才可关闭；
-  KimiCLI 终审已通过；之后回到既定首次使用引导切片。
+- clean commit push、唯一内部包复验、真实覆盖安装、KimiCLI 终审和磁盘清理均已通过，
+  本循环关闭；下一产品切片回到既定首次使用引导。

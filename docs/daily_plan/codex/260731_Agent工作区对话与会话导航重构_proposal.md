@@ -1,6 +1,6 @@
 # Agent 工作区对话与会话导航重构
 
-状态：功能、全量回归与 KimiCLI 终审通过，内部交付进行中
+状态：已完成
 
 日期：2026-07-31
 
@@ -91,4 +91,26 @@
 - 修复后成功与失败两条 send IPC 都在 pending 窗口注入 `idle` 快照并真实点击复验；
   `.conversation-state` 和 Composer 关键提示统一为 12px 并增加计算样式断言；
 - KimiCLI 复跑 Desktop syntax、Conversation、Agent 管理和 73 条产品旅程后最终结论
-  `CLEAN`，P0/P1/P2 为 0；下一步只做既定唯一 unsigned internal 包和覆盖安装验收。
+  `CLEAN`，P0/P1/P2 为 0；
+- 功能与安装包 commit 为
+  `687e4d7d77e21608d92f498df0d0d5b69137d243`，已推送 `origin/main`；receipt 为
+  `desktop_internal_p6_687e4d7d77e2_arm64`，Desktop `0.1.1`，Host runtime 为
+  `1000.1.1785511674001 (687e4d7)`；
+- DMG 为 181448562 bytes，SHA-256
+  `ea7ee5d3120ff16c3bb34195c804d7028ba0b8565fe2faae6044746decff306e`；ZIP 为
+  181235977 bytes，SHA-256
+  `02a2e2919509fe10375dff02b70131d1524e9eb14ff3ca4598bc3c9118cf05e3`；receipt、
+  构建与交付双摘要、DMG、ZIP CRC、arm64 Host、Host 版本、`app.asar` 和
+  `Info.plist` 均通过复验；
+- 真实覆盖安装验收恢复 owner 有效订阅、持久 Host、1 个常驻 Agent 和可用 Job Agent
+  主会话；三栏工作区、唯一主会话、齿轮设置和旧同级页签移除全部通过。假 Provider/
+  对话草稿验证后已清空，消息发送 0、Provider 请求 0、credits 0；
+- 旧 Leader PID `14573` 已让位，新包 Leader PID `21201` 接管；验收调试实例退出后已
+  无调试端口，并正常重新打开安装版。额外隔离生命周期执行器因用户真实 Login Item
+  已启用而按设计拒绝启动，本轮没有为测试改写该用户设置；
+- 只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-687e4d7-arm64/` 和对应
+  `desktop/dist/internal/0.1.1-687e4d7d77e2-arm64/`；上一包、旧证据、临时 App、挂载和
+  解包目录已删除，仓库根 `target/` 不存在；
+- 本轮到此关闭。下一产品切片回到既定首次使用引导，不扩展 Provider fallback、价格、
+  在线商店、P7/P8、Apple 签名/公证或在线发布。
