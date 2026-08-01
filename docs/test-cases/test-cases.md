@@ -660,10 +660,12 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **优先级**：P0
 - **设计状态**：已实现
 - **前置条件**：常驻 Agent 主会话含普通段落、粗体、列表、行内代码与恶意 HTML fixture。
-- **输入**：`**粗体**`、列表、行内代码、`<script>` 和事件属性文本；1180×760 与宽屏窗口。
+- **输入**：`**粗体**`、列表、行内代码、`<script>` 和事件属性文本；1180×760、
+  1280×800 与 1440×900 窗口。
 - **交互步骤**：打开主会话；检查消息、输入框、阅读列、齿轮和固定 Composer；缩放到两档窗口。
-- **预期输出**：正文和输入不小于 15px，关键辅助文字不小于 12px，齿轮点击区至少
-  44×44px；消息集中在不超过 900px 的阅读列；Composer 始终位于主区底部；无横向溢出；
+- **预期输出**：消息正文为 14px、输入不小于 15px，关键辅助文字不小于 12px，齿轮
+  点击区至少 44×44px；消息集中在不超过 900px 的阅读列；Composer 始终位于主区底部；
+  无横向或纵向逃逸；
   只渲染经过转义后的段落、粗体、列表与行内代码，不生成 `script`、事件属性或模型原始 HTML。
 - **失败与恢复**：不支持的 Markdown 按普通文本显示；恶意内容不得执行，也不能让整个对话
   页面失败。
@@ -690,6 +692,25 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   pending turn 永久锁死，当前 turn 的 authority 和完成结果保持有效。
 - **失败与恢复**：B 自身真实打开失败时才显示 B 的重试行动；旧请求不得制造当前错误。
 - **验证层**：Node + Electron
+- **本轮结果**：通过
+
+## TC-CONV-012：13 寸长回复不得挤出输入框
+
+- **用户故事**：作为使用 13 寸 MacBook Pro 的用户，我希望长回复在对话区内滚动，输入框
+  始终完整可见；否则我读完内容后无法继续输入。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：Job Agent 主会话包含一条超过当前 Transcript 高度的 Markdown 长回复；
+  Composer 使用两行默认输入高度。
+- **输入**：分别以 1280×800 和 1440×900 BrowserWindow 打开同一长回复 fixture。
+- **交互步骤**：进入 Job Agent 主会话，等待历史恢复并自动滚动；读取 Workspace、主区、
+  Transcript、Composer Dock、Form 和 Textarea 的实际矩形及滚动高度。
+- **预期输出**：页面与主区高度不超过 `window.innerHeight`；Transcript 的
+  `scrollHeight > clientHeight` 且 `overflow-y` 为 `auto/scroll`；Transcript 底部不超过
+  Composer 顶部；Dock、Form 和 Textarea 底部均不超过视口；消息为 14px、输入为 15px。
+- **失败与恢复**：不得用固定 Transcript 高度或隐藏 Composer 规避；较长历史只增加
+  Transcript 内部滚动，不改变会话、草稿或 Provider 状态。
+- **验证层**：Electron 计算布局 + 视觉快照 + 安装包
 - **本轮结果**：通过
 
 ## 8. BYOK Provider

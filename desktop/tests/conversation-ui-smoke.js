@@ -246,7 +246,7 @@ app.whenReady().then(async () => {
   assert.equal(openedDom.gearLabel, '打开 Job Agent 设置');
   assert.equal(openedDom.gearWidth >= 44, true);
   assert.equal(openedDom.gearHeight >= 44, true);
-  assert.equal(openedDom.messageFont >= 15, true);
+  assert.equal(openedDom.messageFont >= 14 && openedDom.messageFont < 15, true);
   assert.equal(openedDom.senderFont >= 12, true);
   assert.equal(openedDom.composerFont >= 15, true);
   assert.equal(openedDom.stateFont >= 12, true);

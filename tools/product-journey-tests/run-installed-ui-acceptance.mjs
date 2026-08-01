@@ -348,6 +348,35 @@ function acceptanceExpression() {
         throw new Error('installed Agent conversation still exposes peer-level configuration tabs');
       }
 
+      const transcript = document.querySelector('.conversation-transcript');
+      const composerDock = document.querySelector('.conversation-composer-dock');
+      const composerForm = document.getElementById('conversation-form');
+      const composerTextarea = composerForm?.elements.message;
+      const messageBody = document.querySelector('.conversation-message-body');
+      const transcriptRect = transcript?.getBoundingClientRect();
+      const composerDockRect = composerDock?.getBoundingClientRect();
+      const composerFormRect = composerForm?.getBoundingClientRect();
+      const composerTextareaRect = composerTextarea?.getBoundingClientRect();
+      const messageFontReady = !messageBody || (
+        parseFloat(getComputedStyle(messageBody).fontSize) >= 14
+        && parseFloat(getComputedStyle(messageBody).fontSize) < 15
+      );
+      const compactConversationLayoutReady = Boolean(
+        transcriptRect
+        && composerDockRect
+        && composerFormRect
+        && composerTextareaRect
+        && transcriptRect.bottom <= composerDockRect.top + 1
+        && composerDockRect.bottom <= window.innerHeight + 1
+        && composerFormRect.bottom <= window.innerHeight + 1
+        && composerTextareaRect.bottom <= window.innerHeight + 1
+        && messageFontReady
+        && parseFloat(getComputedStyle(composerTextarea).fontSize) >= 15
+      );
+      if (!compactConversationLayoutReady) {
+        throw new Error('installed Agent composer is not fully visible in the current viewport');
+      }
+
       const conversationMessagesBefore = JSON.stringify(
         firstConversationSnapshot.messages || [],
       );
@@ -443,6 +472,7 @@ function acceptanceExpression() {
         singlePersistentMainSession: true,
         agentSettingsGearPresent: true,
         legacyAgentTabsAbsent: true,
+        compactConversationLayoutReady,
         conversationMessagesSent: 0,
         providerRequests: 0,
         agentMeshCreditsUsed: 0,

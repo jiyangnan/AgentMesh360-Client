@@ -298,7 +298,7 @@ async function assertConversationVisual(window) {
   assert.equal(metrics.gearLabel, '打开 Job Agent 设置');
   assert.equal(metrics.gearWidth, 44);
   assert.equal(metrics.gearHeight, 44);
-  assert.equal(metrics.messageFont >= 15, true);
+  assert.equal(metrics.messageFont >= 14 && metrics.messageFont < 15, true);
   assert.equal(metrics.composerFont >= 15, true);
   assert.equal(metrics.stateFont >= 12, true);
   assert.equal(metrics.feedWidth <= 900, true);

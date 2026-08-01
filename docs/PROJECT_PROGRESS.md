@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-07-31
+最近更新：2026-08-01
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -7980,3 +7980,41 @@ owner UAT 直接暴露：旧 Agent 详情把 Agent 介绍、模型、`agent.md`�
   价格/余额、在线商店、P7/P8、签名/公证或在线发布；
 - clean commit push、唯一内部包复验、真实覆盖安装、KimiCLI 终审和磁盘清理均已通过，
   本循环关闭；下一产品切片回到既定首次使用引导。
+
+### 循环 145：13 寸对话视口与输入框可见性
+
+状态：执行中
+
+owner 在 13 寸 MacBook Pro 全屏实测发现：较长的 Job Agent 欢迎回复会把 Composer
+推到视口下方，只露出输入区顶部边框；消息正文在该显示密度下也仍偏大。
+
+已完成的修复与自主验证：
+
+- 将 Agent 主区、Conversation Workspace 与内部 Shell 的高度链收紧；Shell 改为纵向
+  Flex，Gates 与 Composer 明确不可收缩，只有 Transcript 使用剩余高度并独立滚动；
+- 消息正文从 15px 小幅调整为 14px、行高从 1.72 调整为 1.68，Composer 输入仍为
+  15px，消息间距从 26px 收紧为 22px；未修改全局字号或 Provider/设置页面；
+- 新增独立长回复矮屏 Electron 回归。旧实现的 1280×800 基线中，Renderer 实际高度为
+  768px，但 Composer Form 底部达到 884px；修复后 1280×800 的 Form 底部为 750px，
+  1440×900 的 Form 底部为 823px，均完整位于视口内；两档 Transcript 都满足
+  `scrollHeight > clientHeight` 并保持 `overflow-y: auto`；
+- Desktop syntax、Desktop Node 142 passed / 5 个显式 real-Host gate skipped / 0 failed；
+  Conversation、Agent 管理、Provider、Agent Package 四组 Electron smoke 全部通过；
+  1280×800、1440×900 长回复和既有 1180×760 对话视觉快照通过；
+- 沙箱内 Node 首轮因禁止 OAuth loopback 监听出现 5 个环境性失败；按环境边界在沙箱外
+  原命令复跑后 142/142 实际执行用例通过，不把沙箱限制冒充产品回归；
+- 产品旅程 74 条、14 个领域通过结构和执行校验，校验器 3 passed / 0 failed；完整
+  `git diff --check` 通过；
+- KimiCLI 独立读取完整 diff，并亲自复跑 syntax、两档长回复、Conversation 与产品旅程
+  回归；其测得 1280×800 的 Form 底部为 750px、1440×900 为 823px，最终结论
+  `CLEAN`，P0/P1/P2 均为 0；
+- 测试使用本机 fixture，不发送消息、不读取 Provider Key、不请求 Provider、不消耗
+  AgentMesh credits，也不产生外部费用。
+
+待关闭门禁：
+
+- clean commit push、唯一 unsigned internal 包、覆盖安装布局验收、旧包清理与最终文档关闭。
+
+计划复盘：本轮只修正既定 Agent 对话工作区的响应式可用性，没有增加多会话、Provider
+fallback、在线商店、价格/余额、P7/P8、Apple 签名/公证或在线发布；下一产品切片仍为
+既定首次使用引导，不因本轮矮屏修复改变产品顺序。
