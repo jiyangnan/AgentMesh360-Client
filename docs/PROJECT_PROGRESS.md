@@ -7983,7 +7983,7 @@ owner UAT 直接暴露：旧 Agent 详情把 Agent 介绍、模型、`agent.md`�
 
 ### 循环 145：13 寸对话视口与输入框可见性
 
-状态：执行中
+状态：已完成
 
 owner 在 13 寸 MacBook Pro 全屏实测发现：较长的 Job Agent 欢迎回复会把 Composer
 推到视口下方，只露出输入区顶部边框；消息正文在该显示密度下也仍偏大。
@@ -8011,10 +8011,29 @@ owner 在 13 寸 MacBook Pro 全屏实测发现：较长的 Job Agent 欢迎回�
 - 测试使用本机 fixture，不发送消息、不读取 Provider Key、不请求 Provider、不消耗
   AgentMesh credits，也不产生外部费用。
 
-待关闭门禁：
+最终提交、真实安装与内部交付：
 
-- clean commit push、唯一 unsigned internal 包、覆盖安装布局验收、旧包清理与最终文档关闭。
+- 功能与安装包 commit 为
+  `6506f2e0a4e8aec6a63a5fb7ad14f51396b3da24`，已推送 `origin/main`；receipt 为
+  `desktop_internal_p6_6506f2e0a4e8_arm64`，Desktop `0.1.1`，Host runtime 为
+  `1000.1.1785553986001 (6506f2e)`；
+- DMG 为 181448595 bytes，SHA-256
+  `9b465ea6cfb434893511d4da530dac8f0286d107890d68299f571abda13da10e`；ZIP 为
+  181236110 bytes，SHA-256
+  `a3df76c723abfa16f0dd50ce074e2d79d590e16cb8d4d8ea7d3d281926937e70`；receipt、
+  构建与交付双摘要、`hdiutil verify`、ZIP CRC 和构建/Downloads 逐字节比较均通过；
+- 真实 owner 覆盖安装验收通过：账号与 active 订阅恢复、持久 Host connected、1 个常驻
+  Agent、Job Agent 主会话 ready、三栏工作区、唯一主会话、齿轮设置和紧凑视口 Composer
+  全部符合合同；假 Provider/对话草稿已清空，消息发送 0、Provider 请求 0、credits 0；
+- 旧 Leader PID `19356` 已让位，新 Leader PID `60924` 接管；临时调试端口已关闭，安装版
+  已按普通方式重新打开，Host 版本确认为 `6506f2e`；
+- 只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-08-01-6506f2e-arm64/` 和对应
+  `desktop/dist/internal/0.1.1-6506f2e0a4e8-arm64/`；上一包、旧 dist、旧 App 回滚副本和
+  构建/安装临时目录已删除，仓库根 `target/` 不存在；
+- `/private/tmp/agentmesh360-cycle143-session-quarantine` 保持原样；没有 Apple 服务请求、
+  外部上传、Provider 调用或费用。
 
 计划复盘：本轮只修正既定 Agent 对话工作区的响应式可用性，没有增加多会话、Provider
 fallback、在线商店、价格/余额、P7/P8、Apple 签名/公证或在线发布；下一产品切片仍为
-既定首次使用引导，不因本轮矮屏修复改变产品顺序。
+既定首次使用引导，不因本轮矮屏修复改变产品顺序。本循环门禁均已关闭。

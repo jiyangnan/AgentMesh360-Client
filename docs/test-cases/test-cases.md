@@ -712,6 +712,9 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   Transcript 内部滚动，不改变会话、草稿或 Provider 状态。
 - **验证层**：Electron 计算布局 + 视觉快照 + 安装包
 - **本轮结果**：通过
+- **执行证据**：1280×800、1440×900 两档长回复和权限提示计算布局均通过；KimiCLI
+  独立复跑结论为 `CLEAN`；安装包 `6506f2e` 的 `compactConversationLayoutReady` 通过，
+  且消息发送、Provider 请求、credits 均为 0。
 
 ## 8. BYOK Provider
 
