@@ -8040,7 +8040,7 @@ fallback、在线商店、价格/余额、P7/P8、Apple 签名/公证或在线�
 
 ### 循环 146：Agent 首页三步引导层级修正
 
-状态：执行中
+状态：已完成
 
 owner UAT 指出首页引导卡把“打开 Agent 继续工作”放在主标题位置，会让用户误以为它是
 可以点击的入口；真正表达产品顺序的三个步骤反而过小，无法形成“先配置供应商，再激活
@@ -8059,5 +8059,29 @@ Agent，最后开始对话”的清晰心智。
 Node 测试（142 通过、5 项真实 Host 用例按环境跳过、0 失败）、Agent 管理 Electron 烟测、
 1180×760 与 1280×800 两档视觉烟测，以及 74 个产品旅程用例/14 个领域校验。KimiCLI
 0.26.0 独立只读复核与另一只读审查 Agent 均给出 `CLEAN`，无 P0/P1/P2。全程使用 fixture，
-没有发送消息、调用真实 Provider、消耗 credits 或改变安装状态。下一步仅执行既定 clean
-push、内部包与真实安装只读验收，验收通过前保留旧包。
+没有发送消息、调用真实 Provider 或消耗 credits。随后按既定门禁完成 clean push、内部包
+与真实安装只读验收，并在新包通过前始终保留旧包。
+
+交付与安装验收：
+
+1. 功能、测试与设计合同已由 commit `9f2712c9b6c7791da002e0822c8fe9e49611edf0`
+   clean push 到 `origin/main`；
+2. arm64 未签名内部包回执 `desktop_internal_p6_9f2712c9b6c7_arm64` 为 `passed`，构建
+   证据记录 0 Provider 请求、0 credits、0 Apple service 请求和 0 美元；
+3. DMG SHA-256 为
+   `4b93516fb10a44c6689fb769f39e73b32015a0fe98a03f47f28a3a0c9250527b`，ZIP SHA-256
+   为 `deb600a2f44d25c6644b7e367811bf222d740cb3b76a158c537e27508d9b7660`；两者通过
+   `SHA256SUMS`，DMG 通过 `hdiutil verify`，ZIP CRC 无错误，构建目录与 Downloads 四个
+   交付文件逐一 `cmp` 一致，打包 Host 报告 `grok 1000.1.1785674110001 (9f2712c)`；
+4. 新包替换 `/Applications/AgentMesh360.app` 后，真实安装只读验收恢复有效账号、有效订阅、
+   持久 Host、1 个常驻 Agent、10 个官方 Provider 预设、三栏主会话和紧凑对话布局；新增
+   `agentHomeOrderedGuide=true`。验收发送消息 0、Provider 请求 0、credits 0，并清空全部
+   假草稿；
+5. 临时调试端口已关闭，客户端已按普通方式重新打开。旧 Downloads 包、旧 dist 构建和安装
+   备份已删除；目前 Downloads 与 `desktop/dist/internal` 各只保留
+   `9f2712c` 对应的一份包。
+
+计划复盘与下一轮：本轮只完成首页固定三步提示的层级与误导修复，没有改变 Provider、Agent
+激活、会话或 Harness 业务，也没有新增 onboarding 状态机、价格/余额、自动 fallback、在线
+商店、P7/P8、签名、公证或在线发布。下一轮仍按既定产品顺序继续首次使用引导切片；开始前
+先复核蓝图、当前 UAT 与本轮边界，不把局部文案修复扩展成未经计划的重构。

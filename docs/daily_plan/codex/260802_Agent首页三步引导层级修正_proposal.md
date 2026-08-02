@@ -1,6 +1,6 @@
 # Agent 首页三步引导层级修正
 
-状态：实现与交叉测试完成，待内部包安装验收
+状态：已完成
 
 日期：2026-08-02
 
@@ -44,4 +44,14 @@ Agent 首页引导卡把动态文案“打开 Agent 继续工作”作为标题�
 - KimiCLI 0.26.0 完整 diff 只读复核与独立复跑结论为 `CLEAN`，无 P0/P1/P2；另一只读
   审查 Agent 结论同为 `CLEAN`；
 - 测试全程使用 fixture，未发送消息、未调用真实 Provider、未消耗 credits、未改变已安装
-  客户端状态。剩余门禁只有 clean push、新内部包、真实安装只读验收和旧包清理。
+  客户端状态；
+- 功能 commit `9f2712c9b6c7791da002e0822c8fe9e49611edf0` 已 clean push。arm64 内部包回执
+  `desktop_internal_p6_9f2712c9b6c7_arm64` 通过，DMG SHA-256 为
+  `4b93516fb10a44c6689fb769f39e73b32015a0fe98a03f47f28a3a0c9250527b`，ZIP
+  SHA-256 为 `deb600a2f44d25c6644b7e367811bf222d740cb3b76a158c537e27508d9b7660`；
+- 新包通过 SHA-256、`hdiutil verify`、ZIP CRC、来源/Downloads `cmp` 和 arm64 Host
+  `--version` 复验。真实安装验收恢复有效账号、订阅、1 个常驻 Agent、10 个官方 Provider
+  预设及可用主会话，`agentHomeOrderedGuide=true`；消息、Provider 请求和 credits 均为 0，
+  临时草稿已清空；
+- 客户端已关闭临时调试端口并按普通方式重新打开。旧构建、旧 Downloads 包及安装备份已
+  清理；`desktop/dist/internal` 与 Downloads 目前各仅保留本轮一份包。
