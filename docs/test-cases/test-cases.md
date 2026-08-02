@@ -1431,3 +1431,24 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   `target/` 不存在。
 - 外部副作用：真实 Provider Key/Vault 读取 0、Provider 请求 0、真实消息发送 0、
   AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。
+
+### 2026-08-03 Grok-first 多内容 Composer V1 执行
+
+- 用例范围：78 条、14 个领域通过结构与执行校验；本轮新增/扩展 `TC-CONV-003`、
+  `TC-CONV-012`～`TC-CONV-016`，覆盖附件发现、添加/删除、系统选择、拖放、截图粘贴、
+  仅附件发送、私有暂存、限制、账户/Agent 隔离、ACP Block、模型能力与失败恢复。
+- 自动化：定向 Node 65 passed；Desktop 全量 Node 150 passed、5 个显式 real-Host gate
+  skipped、0 failed；产品旅程校验器 3 passed；Agent 管理、Provider、Conversation、
+  1280×768 紧凑布局和 Package 五组 Electron smoke 全部通过。
+- 13 寸布局：10 个附件时附件条 47px 且横向滚动，Composer Form bottom 750px，页面高度
+  768px，消息 14px、输入 15px，Textarea 与发送按钮均完整可见。
+- 安全/恢复：公开快照无路径、原始 URL、字节或 Base64；伪图片、未知二进制、URL 凭据、
+  符号链接作用域、20 MiB 单文件、50 MiB 总量和第 11 个附件均失败关闭；成功销毁，失败
+  保留，Agent/账号不串线。
+- 内部包：commit `0ba1a289942902462c6ac70f7c51f68c1173593c`，receipt
+  `desktop_internal_p6_0ba1a2899429_arm64`；DMG/ZIP 摘要、`hdiutil verify`、ZIP CRC 与
+  构建/Downloads `cmp` 通过。旧包删除后两个位置各只保留 `0ba1a28` 一份，仓库根
+  `target/` 构建缓存已删除。
+- 真实安装状态：待 owner 从本地包手动覆盖安装；本轮不把包完整性验证记作
+  `TC-INSTALL-001～003` 的新版本人工通过。Provider 请求、消息发送、credits、Apple 服务
+  和外部上传均为 0，费用 $0。

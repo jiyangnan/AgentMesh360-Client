@@ -1,6 +1,6 @@
 # Grok-first 多内容 Composer V1
 
-状态：已实现并进入内部包验收
+状态：已实现并通过内部包完整性验收；等待 owner 手动安装 UAT
 日期：2026-08-02
 适用范围：AgentMesh360 Client 持久 Agent 主会话
 

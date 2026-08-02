@@ -8088,7 +8088,7 @@ Node 测试（142 通过、5 项真实 Host 用例按环境跳过、0 失败）�
 
 ### 循环 147：Agent 后台切换、入口真实性与统一下拉
 
-状态：源码模块已完成，等待随循环 148 的唯一内部包统一交付
+状态：已完成，并随循环 148 的 `0ba1a28` 唯一内部包统一交付
 
 owner UAT 继续沿“配置 Provider → 激活 Agent → 多 Agent 对话”主路径发现三项问题：尚不能
 兑现的“添加 Agent”入口仍公开展示；全部 7 个下拉使用 macOS 原生弹出菜单；一个 Agent
@@ -8111,7 +8111,7 @@ localhost 和 GUI `SIGABRT`，已在正常本机环境用原命令复跑，不�
 
 ### 循环 148：Grok-first Composer V1
 
-状态：源码、自动化与本机 Electron 验收已完成；等待唯一内部包安装验收
+状态：源码、自动化、Electron 与唯一内部包完整性验收已完成；等待 owner 手动安装 UAT
 
 owner 指出当前输入区只有文字，没有图片、文档、链接等工作入口。源码核对确认 Grok Build
 Harness 已支持 ACP `Text`、`Image`、`ResourceLink` 和 `EmbeddedResource`，但 Desktop
@@ -8162,3 +8162,23 @@ Package、Main Session、权限审批或生产发布 authority，也没有增加
 多会话、自动 fallback、P7/P8、签名、公证或在线发布。内部包通过后下一轮只回到既定产品
 计划，先以安装版沿“Provider → 激活 Agent → 带附件对话”做 owner UAT；新问题按结构化用户
 旅程修复，不顺手扩展新的 Harness 功能。
+
+内部交付：
+
+1. 功能源码 commit `0ba1a289942902462c6ac70f7c51f68c1173593c` 已 clean push 至
+   `origin/main`；该 commit 同时包含循环 147 的后台 Agent 切换、统一下拉和入口修正；
+2. 未签名 arm64 内部构建回执为 `desktop_internal_p6_0ba1a2899429_arm64`，Desktop
+   `0.1.1`，打包 Host runtime `1000.1.1785691149001 (0ba1a28)`；Developer ID、
+   notarization、自动更新、外部上传和 Apple 凭据全部关闭；
+3. DMG 为 181439425 bytes，SHA-256
+   `458a2e2c2998bd9745a70c5a5c354de41640c9b00ab7ad234df6e054095cada6`；ZIP 为
+   181250299 bytes，SHA-256
+   `665e4aa94b67192b80f0addee5ed95d510eccd939aefccb46f64192122fdefab`；`SHA256SUMS`、
+   `hdiutil verify`、ZIP CRC 与构建/Downloads 四个交付文件逐字节比较全部通过；
+4. 新包全部通过后才删除 `9f2712c` 旧包；现在 `desktop/dist/internal` 和 Downloads 各只
+   保留 `0ba1a28` 一份，下载目录为
+   `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-0ba1a28-arm64/`；本轮重新生成的
+   2.7 GiB 仓库根 `target/` 已在打包后删除；
+5. 构建和自动化读取真实 Provider Key 0、Provider 请求 0、消息发送 0、AgentMesh credits
+   0、Apple 服务请求 0、外部上传 0、费用 $0。因为用户要求从本地取得并自行安装，本轮不
+   覆盖 `/Applications/AgentMesh360.app`，不把包完整性验证冒充真实安装验收。
