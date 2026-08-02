@@ -64,6 +64,13 @@ app.whenReady().then(async () => {
       projectStatus: 'ready',
       streaming: false,
       transcriptTruncated: false,
+      draftAttachments: Array.from({ length: 10 }, (_, index) => ({
+        attachmentId: `attachment-00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+        kind: index === 0 ? 'image' : 'file',
+        name: index === 0 ? 'screen.png' : `document-${index}.pdf`,
+        mimeType: index === 0 ? 'image/png' : 'application/pdf',
+        sizeBytes: 24_000 + index,
+      })),
       error: null,
       stopReason: 'end_turn',
     };
@@ -162,6 +169,7 @@ app.whenReady().then(async () => {
     const dock = document.querySelector('.conversation-composer-dock');
     const form = document.getElementById('conversation-form');
     const textarea = form?.elements.message;
+    const attachmentStrip = document.querySelector('.composer-attachment-strip');
     const messageBody = document.querySelector('.conversation-message.assistant .conversation-message-body');
     const rect = (node) => {
       const value = node.getBoundingClientRect();
@@ -186,6 +194,11 @@ app.whenReady().then(async () => {
       transcriptOverflowY: getComputedStyle(transcript).overflowY,
       messageFont: parseFloat(getComputedStyle(messageBody).fontSize),
       composerFont: parseFloat(getComputedStyle(textarea).fontSize),
+      attachmentCount: document.querySelectorAll('.composer-attachment-chip').length,
+      attachmentStripHeight: attachmentStrip.getBoundingClientRect().height,
+      attachmentStripClientWidth: attachmentStrip.clientWidth,
+      attachmentStripScrollWidth: attachmentStrip.scrollWidth,
+      attachmentOnlySendEnabled: document.querySelector('.composer-send').disabled === false,
     };
   })()`);
 
@@ -210,6 +223,10 @@ app.whenReady().then(async () => {
   assert.equal(['auto', 'scroll'].includes(metrics.transcriptOverflowY), true);
   assert.equal(metrics.messageFont >= 14 && metrics.messageFont < 15, true);
   assert.equal(metrics.composerFont >= 15, true);
+  assert.equal(metrics.attachmentCount, 10);
+  assert.equal(metrics.attachmentStripHeight < 55, true);
+  assert.equal(metrics.attachmentStripScrollWidth > metrics.attachmentStripClientWidth, true);
+  assert.equal(metrics.attachmentOnlySendEnabled, true);
 
   conversationSnapshot = {
     ...conversationSnapshot,

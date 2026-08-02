@@ -10,6 +10,7 @@ const permissionResponses = [];
 const delayedConversationOpens = new Map();
 let delayedConversationSend = null;
 let conversationSendFailure = false;
+let attachmentCounter = 0;
 const unsafeMarkdownText = [
   '在，我们可以从**上次进度**继续。',
   '',
@@ -88,9 +89,55 @@ app.whenReady().then(async () => {
     event.sender.send('conversation:state', currentConversation);
     return currentConversation;
   });
-  ipcMain.handle('conversation:send', async (event, text) => {
+  ipcMain.handle('conversation:pick-attachments', (event) => {
+    const attachment = fixtureAttachment('file', '岗位说明.pdf', 'application/pdf', 24_801);
+    currentConversation = {
+      ...currentConversation,
+      draftAttachments: [...(currentConversation.draftAttachments || []), attachment],
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  ipcMain.handle('conversation:stage-paths', () => {
+    throw new Error('fixture does not expose local paths');
+  });
+  ipcMain.handle('conversation:stage-bytes', (event, items) => {
+    assert.equal(Array.isArray(items), true);
+    assert.equal(items.length > 0, true);
+    const attachments = items.map((item) => fixtureAttachment(
+      'image',
+      item.name,
+      item.mimeType,
+      item.bytes.byteLength,
+    ));
+    currentConversation = {
+      ...currentConversation,
+      draftAttachments: [...(currentConversation.draftAttachments || []), ...attachments],
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  ipcMain.handle('conversation:stage-link', (event, url) => {
+    const attachment = fixtureAttachment('link', new URL(url).hostname, 'text/uri-list', url.length);
+    currentConversation = {
+      ...currentConversation,
+      draftAttachments: [...(currentConversation.draftAttachments || []), attachment],
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  ipcMain.handle('conversation:discard-attachment', (event, attachmentId) => {
+    currentConversation = {
+      ...currentConversation,
+      draftAttachments: (currentConversation.draftAttachments || [])
+        .filter((attachment) => attachment.attachmentId !== attachmentId),
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  ipcMain.handle('conversation:send', async (event, request) => {
     const sendingAgentId = currentConversation.agentId;
-    prompts.push(text);
+    prompts.push(request);
     const delayedSend = delayedConversationSend;
     delayedConversationSend = null;
     if (delayedSend) await delayedSend.promise;
@@ -101,7 +148,7 @@ app.whenReady().then(async () => {
     const completedConversation = conversationState(sendingAgentId, [
       { id: 'message-1', role: 'user', text: '上次的岗位分析还在吗？' },
       { id: 'message-2', role: 'assistant', text: '在，我们可以从证据匹配继续。' },
-      { id: 'message-3', role: 'user', text },
+      { id: 'message-3', role: 'user', text: request.text || '请查看我附加的内容。' },
       { id: 'message-4', role: 'assistant', text: '已继续分析。' },
     ]);
     if (currentConversation.agentId !== sendingAgentId) return currentConversation;
@@ -181,6 +228,7 @@ app.whenReady().then(async () => {
     const messageBody = document.querySelector('.conversation-message-body');
     const sender = document.querySelector('.conversation-message b');
     const composer = document.querySelector('#conversation-form textarea');
+    const composerAdd = document.getElementById('composer-add-button');
     const state = document.querySelector('.conversation-state');
     const gearRect = gear.getBoundingClientRect();
     const sidebarRect = sidebar.getBoundingClientRect();
@@ -213,6 +261,10 @@ app.whenReady().then(async () => {
       messageFont: parseFloat(getComputedStyle(messageBody).fontSize),
       senderFont: parseFloat(getComputedStyle(sender).fontSize),
       composerFont: parseFloat(getComputedStyle(composer).fontSize),
+      composerAddWidth: composerAdd.getBoundingClientRect().width,
+      composerAddHeight: composerAdd.getBoundingClientRect().height,
+      composerMenuHidden: document.getElementById('composer-tool-menu').hidden,
+      composerPrivacyCopy: document.querySelector('.composer-footer span')?.textContent.trim(),
       stateFont: parseFloat(getComputedStyle(state).fontSize),
       feedWidth: feed.getBoundingClientRect().width,
       transcriptWidth: transcript.getBoundingClientRect().width,
@@ -252,6 +304,10 @@ app.whenReady().then(async () => {
   assert.equal(openedDom.messageFont >= 14 && openedDom.messageFont < 15, true);
   assert.equal(openedDom.senderFont >= 12, true);
   assert.equal(openedDom.composerFont >= 15, true);
+  assert.equal(openedDom.composerAddWidth >= 40, true);
+  assert.equal(openedDom.composerAddHeight >= 40, true);
+  assert.equal(openedDom.composerMenuHidden, true);
+  assert.match(openedDom.composerPrivacyCopy, /不会上传到 AgentMesh360 Core/u);
   assert.equal(openedDom.stateFont >= 12, true);
   assert.equal(openedDom.feedWidth <= 881, true);
   assert.equal(openedDom.feedWidth <= openedDom.transcriptWidth, true);
@@ -539,7 +595,7 @@ app.whenReady().then(async () => {
     hasLecturecastPrompt: true,
     jobDisabled: false,
   });
-  assert.deepEqual(prompts, ['继续匹配这份 JD', '同时继续课程规划']);
+  assert.deepEqual(prompts.map((prompt) => prompt.text), ['继续匹配这份 JD', '同时继续课程规划']);
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-switch-resident-agent=\"job-agent\"]').click()",
   );
@@ -588,6 +644,96 @@ app.whenReady().then(async () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()
   `);
+
+  await window.webContents.executeJavaScript(`
+    (() => {
+      document.getElementById('composer-add-button').click();
+      return {
+        expanded: document.getElementById('composer-add-button').getAttribute('aria-expanded'),
+        hidden: document.getElementById('composer-tool-menu').hidden,
+        items: Array.from(document.querySelectorAll('#composer-tool-menu [role="menuitem"]'), (node) => node.innerText),
+      };
+    })()
+  `).then((menu) => {
+    assert.equal(menu.expanded, 'true');
+    assert.equal(menu.hidden, false);
+    assert.equal(menu.items.some((text) => text.includes('图片或文件')), true);
+    assert.equal(menu.items.some((text) => text.includes('网页链接')), true);
+  });
+  await window.webContents.executeJavaScript(
+    "document.getElementById('composer-pick-files').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelectorAll('.composer-attachment-chip').length === 1",
+  ));
+  await window.webContents.executeJavaScript(`
+    (() => {
+      document.getElementById('composer-add-button').click();
+      document.getElementById('composer-add-link').click();
+      const input = document.querySelector('[name="attachmentLink"]');
+      input.value = 'https://example.com/research';
+      document.getElementById('composer-save-link').click();
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelectorAll('.composer-attachment-chip').length === 2",
+  ));
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const file = new File([
+        new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82]),
+      ], 'clipboard.png', { type: 'image/png' });
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', { value: { files: [file] } });
+      document.querySelector('#conversation-form textarea').dispatchEvent(event);
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelectorAll('.composer-attachment-chip').length === 3",
+  ));
+  const attachmentDom = await window.webContents.executeJavaScript(`({
+    names: Array.from(document.querySelectorAll('.composer-attachment-chip strong'), (node) => node.textContent),
+    kinds: Array.from(document.querySelectorAll('.composer-attachment-chip'), (node) =>
+      ['image', 'file', 'link'].find((kind) => node.classList.contains(kind))),
+    stripOverflowX: getComputedStyle(document.querySelector('.composer-attachment-strip')).overflowX,
+    sendDisabled: document.querySelector('.composer-send').disabled,
+    helper: document.querySelector('.composer-footer span').textContent,
+    hasPath: document.documentElement.innerHTML.includes('/private/')
+      || document.documentElement.innerHTML.includes('/Users/'),
+  })`);
+  assert.deepEqual(attachmentDom.names, ['岗位说明.pdf', 'example.com', 'clipboard.png']);
+  assert.deepEqual(attachmentDom.kinds, ['file', 'link', 'image']);
+  assert.equal(attachmentDom.stripOverflowX, 'auto');
+  assert.equal(attachmentDom.sendDisabled, false);
+  assert.match(attachmentDom.helper, /视觉能力/u);
+  assert.equal(attachmentDom.hasPath, false);
+  await window.webContents.executeJavaScript(`
+    (() => {
+      document.querySelector('.composer-attachment-chip.file [data-remove-attachment]').click();
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelectorAll('.composer-attachment-chip').length === 2",
+  ));
+  await window.webContents.executeJavaScript(`
+    (() => {
+      document.querySelector('.composer-attachment-chip.image [data-remove-attachment]').click();
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelectorAll('.composer-attachment-chip').length === 1"
+      + " && document.querySelector('.composer-attachment-chip.link') !== null",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.getElementById('conversation-form').requestSubmit()",
+  );
+  await waitFor(() => prompts.length === 4);
+  assert.equal(prompts[3].text, '');
+  assert.equal(prompts[3].attachmentIds.length, 1);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelectorAll('.composer-attachment-chip').length === 0"
+      + " && document.body.innerText.includes('已继续分析。')",
+  ));
 
   currentConversation = {
     ...currentConversation,
@@ -779,7 +925,7 @@ app.whenReady().then(async () => {
 
   await window.reload();
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.body.innerText.includes('上次的 job-agent 工作还在吗？')",
+    "document.body.innerText.includes('已继续分析。')",
   ));
   assert.equal(await window.webContents.executeJavaScript(
     "document.getElementById('conversation-form') !== null",
@@ -917,6 +1063,18 @@ function readyState() {
   };
 }
 
+function fixtureAttachment(kind, name, mimeType, sizeBytes) {
+  attachmentCounter += 1;
+  const suffix = attachmentCounter.toString(16).padStart(12, '0');
+  return {
+    attachmentId: `attachment-00000000-0000-4000-8000-${suffix}`,
+    kind,
+    name,
+    mimeType,
+    sizeBytes,
+  };
+}
+
 function conversationState(agentId, messages) {
   const displayName = readyState().agents
     .find((agent) => agent.agentId === agentId)?.displayName || agentId;
@@ -935,6 +1093,7 @@ function conversationState(agentId, messages) {
     projectStatus: 'ready',
     streaming: false,
     transcriptTruncated: false,
+    draftAttachments: [],
     error: null,
     stopReason: 'end_turn',
   };

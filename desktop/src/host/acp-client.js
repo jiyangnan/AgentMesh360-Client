@@ -163,11 +163,14 @@ class AcpHostClient extends EventEmitter {
     }, this.sessionLoadTimeoutMs);
   }
 
-  async promptSession({ sessionId, text }) {
+  async promptSession({ sessionId, prompt, text }) {
     await this.start();
+    const content = prompt === undefined
+      ? [{ type: 'text', text: String(text || '') }]
+      : validatePromptBlocks(prompt);
     return this.#request('session/prompt', {
       sessionId,
-      prompt: [{ type: 'text', text }],
+      prompt: content,
     }, this.sessionPromptTimeoutMs);
   }
 
@@ -660,6 +663,74 @@ function hostExtensionErrorCode(error) {
     : 'host_extension_failed';
 }
 
+function validatePromptBlocks(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 11) {
+    throw new HostRequestError('invalid_prompt', '消息内容无效');
+  }
+  let textBlocks = 0;
+  for (const block of value) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) {
+      throw new HostRequestError('invalid_prompt', '消息内容无效');
+    }
+    if (block.type === 'text') {
+      textBlocks += 1;
+      if (typeof block.text !== 'string' || block.text.length < 1 || block.text.length > 20_000) {
+        throw new HostRequestError('invalid_prompt', '消息文本无效');
+      }
+      continue;
+    }
+    if (block.type === 'image') {
+      if (
+        typeof block.data !== 'string'
+        || block.data.length < 4
+        || block.data.length > 28_000_000
+        || !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(block.mimeType)
+      ) {
+        throw new HostRequestError('invalid_prompt', '图片附件无效');
+      }
+      continue;
+    }
+    if (block.type === 'resource_link') {
+      let parsed;
+      try {
+        parsed = new URL(block.uri);
+      } catch {
+        throw new HostRequestError('invalid_prompt', '链接附件无效');
+      }
+      if (
+        !['http:', 'https:'].includes(parsed.protocol)
+        || typeof block.name !== 'string'
+        || block.name.length < 1
+        || block.name.length > 180
+      ) {
+        throw new HostRequestError('invalid_prompt', '链接附件无效');
+      }
+      continue;
+    }
+    if (block.type === 'resource') {
+      const resource = block.resource;
+      const hasText = typeof resource?.text === 'string';
+      const hasBlob = typeof resource?.blob === 'string';
+      if (
+        !resource
+        || typeof resource.uri !== 'string'
+        || !resource.uri.startsWith('file:///agentmesh360-attachment/')
+        || hasText === hasBlob
+        || (hasText && resource.text.length > 20 * 1024 * 1024)
+        || (hasBlob && (resource.blob.length < 4 || resource.blob.length > 28_000_000))
+        || typeof resource.mimeType !== 'string'
+        || resource.mimeType.length > 160
+      ) {
+        throw new HostRequestError('invalid_prompt', '文件附件无效');
+      }
+      continue;
+    }
+    throw new HostRequestError('invalid_prompt', '暂不支持此消息内容');
+  }
+  if (textBlocks !== 1) throw new HostRequestError('invalid_prompt', '消息必须包含一段文本');
+  return value;
+}
+
 function resolveHostCommand({
   env = process.env,
   resourcesPath = process.resourcesPath,
@@ -685,4 +756,5 @@ module.exports = {
   HostRequestError,
   INITIALIZE_PARAMS,
   resolveHostCommand,
+  validatePromptBlocks,
 };

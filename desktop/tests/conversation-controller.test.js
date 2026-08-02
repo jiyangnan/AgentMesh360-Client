@@ -1423,6 +1423,110 @@ test('conversation bounds and validates Session plan snapshots without closing t
   assert.equal(fixture.controller.getSnapshot().planStatus, 'ready');
 });
 
+test('conversation sends structured attachment prompts, supports attachment-only turns, and consumes drafts on success', async () => {
+  const attachmentId = 'attachment-11111111-1111-4111-8111-111111111111';
+  const records = new Map([[
+    attachmentId,
+    {
+      attachmentId,
+      kind: 'image',
+      name: 'screen.png',
+      mimeType: 'image/png',
+      sizeBytes: 16,
+    },
+  ]]);
+  const preparedPrompt = [
+    { type: 'text', text: '请查看我附加的内容。\n\n[本条消息附带内容]\n- 图片：screen.png' },
+    { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+  ];
+  const attachmentStore = {
+    prepareCalls: [],
+    consumeCalls: [],
+    list: () => [...records.values()].map((record) => ({ ...record })),
+    async preparePrompt(request) {
+      this.prepareCalls.push(request);
+      return { prompt: preparedPrompt, attachmentIds: request.attachmentIds };
+    },
+    async consume(request) {
+      this.consumeCalls.push(request);
+      request.attachmentIds.forEach((id) => records.delete(id));
+    },
+    async clearAccount() {},
+  };
+  const fixture = makeFixture({ attachmentStore });
+  const opened = await fixture.controller.open('job-agent');
+  assert.deepEqual(opened.draftAttachments, [...records.values()]);
+  fixture.host.promptImpl = async (request) => {
+    assert.equal(request.sessionId, 'private-session-id');
+    assert.equal(request.text, '');
+    assert.equal(request.prompt, preparedPrompt);
+    return { stopReason: 'end_turn' };
+  };
+
+  const sent = await fixture.controller.send({ text: '', attachmentIds: [attachmentId] });
+
+  assert.equal(sent.phase, 'ready');
+  assert.deepEqual(sent.draftAttachments, []);
+  assert.deepEqual(attachmentStore.prepareCalls, [{
+    accountId: 7,
+    agentId: 'job-agent',
+    text: '',
+    attachmentIds: [attachmentId],
+  }]);
+  assert.equal(attachmentStore.consumeCalls.length, 1);
+  assert.equal(JSON.stringify(sent).includes('iVBORw0KGgo'), false);
+});
+
+test('conversation keeps staged attachments and a retryable snapshot when structured prompt delivery fails', async () => {
+  const attachmentId = 'attachment-22222222-2222-4222-8222-222222222222';
+  const record = {
+    attachmentId,
+    kind: 'file',
+    name: 'brief.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 4_096,
+  };
+  let consumed = false;
+  const attachmentStore = {
+    list: () => consumed ? [] : [{ ...record }],
+    async preparePrompt({ attachmentIds }) {
+      return {
+        prompt: [
+          { type: 'text', text: '分析这个文件' },
+          {
+            type: 'resource',
+            resource: {
+              uri: 'file:///agentmesh360-attachment/brief.pdf',
+              mimeType: 'application/pdf',
+              blob: 'JVBERg==',
+            },
+          },
+        ],
+        attachmentIds,
+      };
+    },
+    async consume() { consumed = true; },
+    async clearAccount() {},
+  };
+  const fixture = makeFixture({ attachmentStore });
+  await fixture.controller.open('job-agent');
+  fixture.host.promptImpl = async () => {
+    throw Object.assign(new Error('provider rejected vision'), { code: 'provider_error' });
+  };
+
+  const failed = await fixture.controller.send({
+    text: '分析这个文件',
+    attachmentIds: [attachmentId],
+  });
+
+  assert.equal(failed.phase, 'ready');
+  assert.equal(failed.streaming, false);
+  assert.match(failed.error, /包含附件/u);
+  assert.deepEqual(failed.draftAttachments, [record]);
+  assert.equal(consumed, false);
+  assert.equal(JSON.stringify(failed).includes('JVBERg'), false);
+});
+
 function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   return {
     requestId,
@@ -1439,7 +1543,7 @@ function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   };
 }
 
-function makeFixture() {
+function makeFixture({ attachmentStore = null } = {}) {
   const identity = Object.assign(new EventEmitter(), {
     state: readyIdentity(),
     getState() { return this.state; },
@@ -1566,6 +1670,7 @@ function makeFixture() {
       activationCalls += 1;
       return identity.getState();
     },
+    attachmentStore,
   });
   return fixture;
 }

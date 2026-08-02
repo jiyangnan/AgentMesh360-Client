@@ -105,10 +105,11 @@ const SAFE_STOP_REASONS = new Set([
 ]);
 
 class AgentConversationController {
-  constructor({ identity, host, activateAgent }) {
+  constructor({ identity, host, activateAgent, attachmentStore = null }) {
     this.identity = identity;
     this.host = host;
     this.activateAgent = activateAgent;
+    this.attachmentStore = attachmentStore || unavailableAttachmentStore();
     this.listeners = new Set();
     this.authority = null;
     this.accountId = null;
@@ -175,7 +176,7 @@ class AgentConversationController {
   }
 
   async send(value) {
-    const text = validatePrompt(value);
+    const { text, attachmentIds } = validatePromptRequest(value);
     const authority = this.authority;
     if (!authority) {
       const message = this.snapshot.phase === 'error'
@@ -194,11 +195,23 @@ class AgentConversationController {
       stopReason: null,
     });
     try {
+      const prepared = await this.attachmentStore.preparePrompt({
+        accountId: authority.accountId,
+        agentId: authority.agentId,
+        text,
+        attachmentIds,
+      });
       const response = await this.host.promptSession({
         sessionId: authority.sessionId,
         text,
+        prompt: prepared.prompt,
       });
       if (this.authority !== authority) return this.snapshot;
+      await this.attachmentStore.consume({
+        accountId: authority.accountId,
+        agentId: authority.agentId,
+        attachmentIds: prepared.attachmentIds,
+      }).catch(() => {});
       this.#cancelPermission();
       await this.#refreshBackgroundTasks(authority);
       if (this.authority !== authority) return this.snapshot;
@@ -238,11 +251,56 @@ class AgentConversationController {
         ...this.#conversationBase(authority),
         phase: 'ready',
         streaming: false,
-        error: safeConversationError(error, '发送失败，请稍后重试。'),
+        error: safeConversationError(
+          error,
+          attachmentIds.length
+            ? '当前模型未能处理这条包含附件的消息。请确认模型支持相应内容，或更换模型后重试。'
+            : '发送失败，请稍后重试。',
+        ),
         stopReason: null,
       });
     }
     return this.snapshot;
+  }
+
+  async stageAttachmentPaths(paths) {
+    const authority = this.#requireAttachmentAuthority();
+    await this.attachmentStore.stagePaths({
+      accountId: authority.accountId,
+      agentId: authority.agentId,
+      paths,
+    });
+    return this.#publishDraftAttachments(authority);
+  }
+
+  async stageAttachmentBytes(items) {
+    const authority = this.#requireAttachmentAuthority();
+    await this.attachmentStore.stageBytes({
+      accountId: authority.accountId,
+      agentId: authority.agentId,
+      items,
+    });
+    return this.#publishDraftAttachments(authority);
+  }
+
+  async stageAttachmentLink(url) {
+    const authority = this.#requireAttachmentAuthority();
+    this.attachmentStore.stageLink({
+      accountId: authority.accountId,
+      agentId: authority.agentId,
+      url,
+    });
+    return this.#publishDraftAttachments(authority);
+  }
+
+  async discardAttachment(attachmentId) {
+    const authority = this.#requireAttachmentAuthority();
+    await this.attachmentStore.discard({
+      accountId: authority.accountId,
+      agentId: authority.agentId,
+      attachmentId,
+    });
+    return this.#publishDraftAttachments(authority);
   }
 
   respondToPermission(interactionId, optionId = null) {
@@ -404,11 +462,15 @@ class AgentConversationController {
   #handleIdentity(state) {
     if (state?.phase === 'ready') {
       const nextAccountId = state.account?.id ?? null;
-      if (this.accountId !== null && this.accountId !== nextAccountId) this.#reset();
+      if (this.accountId !== null && this.accountId !== nextAccountId) {
+        this.attachmentStore.clearAccount(this.accountId).catch(() => {});
+        this.#reset();
+      }
       this.accountId = nextAccountId;
       return;
     }
     if (['signed_out', 'blocked', 'unavailable'].includes(state?.phase)) {
+      if (this.accountId !== null) this.attachmentStore.clearAccount(this.accountId).catch(() => {});
       this.accountId = null;
       this.#reset();
     }
@@ -727,10 +789,44 @@ class AgentConversationController {
       project: this.#publicProject(),
       projectStatus: this.projectStatus,
       transcriptTruncated: this.transcriptTruncated,
+      draftAttachments: this.#draftAttachments(authority),
       ...(this.permissionInteraction?.authority === authority
         ? { interaction: { ...this.permissionInteraction.public } }
         : {}),
     };
+  }
+
+  #draftAttachments(authority) {
+    try {
+      return this.attachmentStore.list({
+        accountId: authority.accountId,
+        agentId: authority.agentId,
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  #requireAttachmentAuthority() {
+    const authority = this.authority;
+    if (!authority || !['ready', 'sending'].includes(this.snapshot.phase)) {
+      throw new Error('请先打开 Agent 对话');
+    }
+    this.#requireReadyAccount(authority.accountId);
+    if (this.snapshot.streaming) throw new Error('请等待当前回复完成后再添加附件');
+    return authority;
+  }
+
+  #publishDraftAttachments(authority) {
+    if (this.authority !== authority) return this.snapshot;
+    this.#publish({
+      ...this.#conversationBase(authority),
+      phase: this.snapshot.phase,
+      streaming: this.snapshot.streaming === true,
+      error: null,
+      stopReason: this.snapshot.stopReason ?? null,
+    });
+    return this.snapshot;
   }
 
   #publicMessages() {
@@ -1313,6 +1409,42 @@ function validatePrompt(value) {
   return text;
 }
 
+function validatePromptRequest(value) {
+  if (typeof value === 'string') return { text: validatePrompt(value), attachmentIds: [] };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('消息格式无效');
+  }
+  const text = String(value.text || '').trim();
+  if (text.length > MAX_PROMPT_CHARS) throw new Error('消息过长');
+  if (!Array.isArray(value.attachmentIds) || value.attachmentIds.length > 10) {
+    throw new Error('附件列表无效');
+  }
+  const attachmentIds = value.attachmentIds.map((attachmentId) => {
+    if (typeof attachmentId !== 'string' || attachmentId.length > 64) {
+      throw new Error('附件标识无效');
+    }
+    return attachmentId;
+  });
+  if (!text && attachmentIds.length === 0) throw new Error('请输入消息或添加附件');
+  return { text, attachmentIds };
+}
+
+function unavailableAttachmentStore() {
+  return {
+    list: () => [],
+    stagePaths: async () => { throw new Error('附件服务不可用'); },
+    stageBytes: async () => { throw new Error('附件服务不可用'); },
+    stageLink: () => { throw new Error('附件服务不可用'); },
+    discard: async () => { throw new Error('附件服务不可用'); },
+    clearAccount: async () => {},
+    preparePrompt: async ({ text, attachmentIds }) => {
+      if (attachmentIds.length) throw new Error('附件服务不可用');
+      return { prompt: [{ type: 'text', text }], attachmentIds: [] };
+    },
+    consume: async () => {},
+  };
+}
+
 function validatePrivateSessionId(value) {
   if (typeof value !== 'string' || value.length < 8 || value.length > 200) {
     throw new Error('Main Session 无效');
@@ -1351,4 +1483,5 @@ module.exports = {
   safeConversationError,
   validateAgentId,
   validatePrompt,
+  validatePromptRequest,
 };

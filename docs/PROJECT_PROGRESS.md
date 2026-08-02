@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 文本对话、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP、11/11 隔离安装/生命周期矩阵及其留存证据已通过；种子下载无授权预检固定为 blocked，真实 quarantine 单应用“仍要打开”、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 多内容对话，支持文字、图片、文件、网页链接、拖放与截图粘贴，并保留恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP、11/11 隔离安装/生命周期矩阵及其留存证据已通过；种子下载无授权预检固定为 blocked，真实 quarantine 单应用“仍要打开”、音视频/云附件库、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -8111,7 +8111,7 @@ localhost 和 GUI `SIGABRT`，已在正常本机环境用原命令复跑，不�
 
 ### 循环 148：Grok-first Composer V1
 
-状态：设计与实现进行中
+状态：源码、自动化与本机 Electron 验收已完成；等待唯一内部包安装验收
 
 owner 指出当前输入区只有文字，没有图片、文档、链接等工作入口。源码核对确认 Grok Build
 Harness 已支持 ACP `Text`、`Image`、`ResourceLink` 和 `EmbeddedResource`，但 Desktop
@@ -8126,3 +8126,39 @@ Host Session authority 或可伪造的任意路径，主进程负责附件暂存
 
 本轮明确不实现音频/视频输入、DOCX/XLSX 专用富解析、云端文件库、多会话、消息队列、自动
 fallback、P7/P8、签名、公证或在线发布；这些能力不得借 Composer 改造越过各自计划门。
+
+源码实现：
+
+1. 新增 Main-owned `ConversationAttachmentStore`：按账户和 Agent 隔离暂存，目录权限
+   `0700`、文件 `0600`，拒绝符号链接/非普通文件、伪图片、未知二进制、URL 凭据、超限
+   文件和第 11 个附件；单文件 20 MiB、单条总计 50 MiB；冷启动和账号退出清理遗留内容；
+2. Preload 只把用户显式选择、拖入或粘贴的文件交给 Main。Renderer 快照只含随机 ID、
+   名称、媒体类型、类别和大小，不含本机路径、字节、Base64 或 Host Session authority；
+3. 对话请求兼容旧纯文本，同时可生成 ACP `Text`、`Image`、`ResourceLink` 与
+   `EmbeddedResource`；Grok Host 声明 image 与 embedded context 能力。成功后销毁附件，
+   Provider/模型失败时保留草稿并给出可重试中文提示；
+4. Composer 增加统一“＋”菜单、系统选择、Finder 拖放、截图粘贴、网页链接、单行横向
+   Chip 和删除；文字或附件至少有一个时才可发送，附件单独发送有效；输入区说明 Core 不
+   接收附件，但用户所选 BYOK Provider 会为推理处理内容；
+5. 附件草稿随普通页面往返和 Agent 切换保留且不串线，注销/换账号清除；不引入附件长期
+   文件库，也不把原始 URL、路径或内容投影进公开错误和消息历史。
+
+自主验证：
+
+- 定向附件/Controller/ACP Node 65/65 passed；Desktop 全量 Node 150 passed、5 个明确
+  real-Host gate skipped、0 failed；产品旅程结构校验 3/3 passed；
+- Agent 管理、Provider、Conversation、Package 和 13 寸紧凑布局五组 Electron smoke
+  全部通过；对话 smoke 覆盖系统文件、链接、粘贴截图、Chip 删除、仅附件发送、成功清理、
+  失败保留与无路径泄露；
+- 1280×768 放满 10 个附件和长回复时，页面/主区高度均为 768px，Composer Form bottom
+  750px，附件条 47px 且横向滚动，消息 14px、输入 15px，发送按钮完整可见；
+- `npm run check`、`cargo fmt --check` 和正常本机 `cargo check` 均通过。受限沙箱首次
+  `cargo check` 仅因 protoc 无权写 `/dev/stdout`，已在正常环境用相同源码复跑通过；
+- 用户明确要求本轮不调用 Kimi，因此由主 Agent 完成完整 diff、安全边界、测试矩阵和
+  计划一致性自审，不伪造交叉测试结论。
+
+计划复盘：实现只接通 Grok Build 已存在的多内容 Prompt，没有改变订阅、Provider、Agent
+Package、Main Session、权限审批或生产发布 authority，也没有增加音视频、云附件库、真正
+多会话、自动 fallback、P7/P8、签名、公证或在线发布。内部包通过后下一轮只回到既定产品
+计划，先以安装版沿“Provider → 激活 Agent → 带附件对话”做 owner UAT；新问题按结构化用户
+旅程修复，不顺手扩展新的 Harness 功能。

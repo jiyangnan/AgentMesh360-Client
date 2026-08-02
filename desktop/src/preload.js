@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('agentmesh360', {
   getState: () => ipcRenderer.invoke('identity:get-state'),
@@ -61,10 +61,47 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     'conversation:open',
     String(agentId || '').slice(0, 100),
   ),
-  sendConversationMessage: (text) => ipcRenderer.invoke(
-    'conversation:send',
-    String(text || '').slice(0, 16_001),
+  pickConversationAttachments: () => ipcRenderer.invoke('conversation:pick-attachments'),
+  stageConversationFiles: async (files) => {
+    const list = Array.from(files || []);
+    if (list.length < 1 || list.length > 10) throw new Error('每次请选择 1 至 10 个文件');
+    const paths = [];
+    const items = [];
+    for (const file of list) {
+      const filePath = webUtils.getPathForFile(file);
+      if (filePath) {
+        paths.push(String(filePath).slice(0, 4_097));
+        continue;
+      }
+      if (Number(file?.size) > 20 * 1024 * 1024) throw new Error('单个附件不能超过 20 MB');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      items.push({
+        name: String(file?.name || 'clipboard-image.png').slice(0, 181),
+        mimeType: String(file?.type || '').slice(0, 161),
+        bytes,
+      });
+    }
+    let state = null;
+    if (paths.length) state = await ipcRenderer.invoke('conversation:stage-paths', paths);
+    if (items.length) state = await ipcRenderer.invoke('conversation:stage-bytes', items);
+    return state;
+  },
+  stageConversationLink: (url) => ipcRenderer.invoke(
+    'conversation:stage-link',
+    String(url || '').slice(0, 2_049),
   ),
+  discardConversationAttachment: (attachmentId) => ipcRenderer.invoke(
+    'conversation:discard-attachment',
+    String(attachmentId || '').slice(0, 65),
+  ),
+  sendConversationMessage: (request) => ipcRenderer.invoke('conversation:send', {
+    text: String(
+      typeof request === 'string' ? request : request?.text || '',
+    ).slice(0, 16_001),
+    attachmentIds: Array.isArray(request?.attachmentIds)
+      ? request.attachmentIds.slice(0, 11).map((value) => String(value || '').slice(0, 65))
+      : [],
+  }),
   respondConversationPermission: (interactionId, optionId = null) => ipcRenderer.invoke(
     'conversation:respond-permission',
     String(interactionId || '').slice(0, 100),

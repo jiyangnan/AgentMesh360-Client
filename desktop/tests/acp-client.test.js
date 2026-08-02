@@ -853,6 +853,58 @@ test('ACP session methods keep Main Session authority private and forward stream
   await client.stop();
 });
 
+test('ACP prompt forwards validated image, embedded file, and link blocks without rewriting them', async () => {
+  const received = [];
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} };
+    if (request.method === 'session/prompt') return { stopReason: 'end_turn' };
+    return {};
+  });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+  const prompt = [
+    { type: 'text', text: '请分析附件' },
+    { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+    {
+      type: 'resource',
+      resource: {
+        uri: 'file:///agentmesh360-attachment/brief.md',
+        mimeType: 'text/markdown',
+        text: '# Brief',
+      },
+    },
+    {
+      type: 'resource_link',
+      name: 'example.com',
+      title: 'https://example.com/research',
+      uri: 'https://example.com/research',
+      _meta: { agentmesh360: { kind: 'user_link' } },
+    },
+  ];
+
+  await client.promptSession({ sessionId: 'private-main-session', prompt });
+
+  assert.deepEqual(received.at(-1), {
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'session/prompt',
+    params: { sessionId: 'private-main-session', prompt },
+  });
+  await assert.rejects(
+    client.promptSession({
+      sessionId: 'private-main-session',
+      prompt: [{ type: 'audio', data: 'abc', mimeType: 'audio/mpeg' }],
+    }),
+    /暂不支持/u,
+  );
+  await client.stop();
+});
+
 test('ACP client handles standard permission reverse requests without exposing arbitrary responses', async () => {
   const received = [];
   let child;

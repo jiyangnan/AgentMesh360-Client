@@ -503,7 +503,7 @@ flowchart LR
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现并完成生产真实验收** | 服务端 bootstrap、Google/GitHub 系统浏览器登录、邮箱密码兼容登录、loopback + S256 PKCE 一次性交接、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；owner Google 账号已通过 Core/Host 双 active 和新进程加密恢复 |
 | BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 已真实通过；桌面接入流程已简化** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；官方供应商现在自动锁定协议、认证和官方地址，兼容协议只在自定义高级设置中出现；新 Profile 使用未保存配置与零化内存 Key 完成最小推理连接测试，成功后才解锁保存，测试不写 Vault/Profile/Assignment/Binding/Turn Route；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a/F0b 验证 Gemini Streaming、Function Calling、Structured Output、Reasoning 与重启 Tool Loop；P5 又用真实 owner 订阅验证 Profile/Assignment、Agent Main Turn Route、无 fallback 失败和加密重启恢复 |
 | 动态 Agent Package | **H0/H1 至 H2d4 与 P1-P5 已完成；P5 v2 Package canary 已通过并完整清场** | H2d4 已在 Artifact/Envelope 前 bounded fetch Release Manifest，核对 Registry SHA、canonical strict 文档、Client/Host projection 与 H1 metadata。P2/P3/P4 分别完成测试 key ceremony、四 Agent 双构建 provenance 与隔离分发演练并清场；P5 已完成四 Agent baseline、两个 Job 更新、两 Root/Publisher、四段 Trust、五版 Registry、单 SGP1 Droplet、双 Spaces bucket、DNS-only Origin、61/61 Registry-last 发布、14 项 live Host 加 7 项证据/契约场景。21 场景真实暴露并修复 Origin 覆写、签名 expiry 精度、Package receipt/JS 安全整数、持久 Host/矩阵收口等合同问题。Registry-first 清场后 Root、Publisher、Release、DNS、Droplet、limited key、Bucket、Provider、Keychain、Host 与 26 GiB 隔离 Client 全部归零；生产 Root、Publisher Bundle、endpoint 和发布仍关闭 |
-| 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 文本对话、三栏 Agent 工作区、齿轮设置、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现；P6 R4 no-authority preflight、unsigned internal arm64 build、隔离安装/生命周期及 strict 留存验收已完成** | 已激活 Agent 默认进入纯对话；二级栏上半区列真正常驻 Agent、下半区当前只列 Host 权威支持的唯一主会话；模型、agent.md 和 user.md 收入设置。三个首方 Agent 已由打包 Host 通过真实 detach/Leader 替换恢复；P6 内部版固定无 Developer ID、公证、自动更新/上传，含 receipt + SHA-256、DMG/ZIP 一致性、首启/单实例和 Login Item 清理证据。真正多会话、生产 R4、签名/更新/rollback 场景、P7/P8、Scheduler、Subagent、Agent 专属垂直 UI 和生产 authority 不自动启动 |
+| 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 多内容对话、三栏 Agent 工作区、齿轮设置、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现；P6 R4 no-authority preflight、unsigned internal arm64 build、隔离安装/生命周期及 strict 留存验收已完成** | 已激活 Agent 默认进入对话；Composer 支持文字、图片、文件、网页链接、拖放和截图粘贴，通过 ACP `Text` / `Image` / `ResourceLink` / `EmbeddedResource` 进入 Grok Harness；Renderer 不读取本机路径或附件字节。二级栏上半区列真正常驻 Agent、下半区当前只列 Host 权威支持的唯一主会话；模型、agent.md 和 user.md 收入设置。三个首方 Agent 已由打包 Host 通过真实 detach/Leader 替换恢复；P6 内部版固定无 Developer ID、公证、自动更新/上传。真正多会话、音视频输入、云附件库、生产 R4、签名/更新/rollback 场景、P7/P8、Scheduler、Subagent、Agent 专属垂直 UI 和生产 authority 不自动启动 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
 
 Cycle 134 修复了 Cycle 133 后台复验与 Host 授权更新之间的竞态：桌面 ACP Client 会
@@ -526,6 +526,14 @@ Cycle 144 将用户已验证可用的主对话重构为三栏 Agent 工作区：
 草稿键扩展为账户+Agent+公开会话键，并修复直接切 Agent 时旧 DOM 草稿写入新 Agent 的
 竞态；消息使用先转义的安全段落/粗体/列表/行内代码投影。真正多会话仍需先补 Host-owned
 Registry、账户隔离路由和公开会话接口，本轮没有扩展该范围。
+
+Cycle 147 修正多 Agent 后台切换、尚未兑现的新增入口和 macOS 原生下拉；Cycle 148 在不
+改变固定 Main Session 和 Provider 路由合同的前提下，把 Composer 接通 Grok Build 已有的
+多内容 ACP Prompt。图片、文件和网页链接先由 Main 在账户+Agent 作用域私有暂存，Renderer
+只见公开元数据；成功后销毁，失败可重试，切换 Agent 不串线，冷启动清理遗留草稿。当前
+限制为每条最多 10 个、单文件 20 MiB、总计 50 MiB，只接受明确支持的图片、常用文档、
+文本/代码和 http(s) 链接；音视频、云文件库、专用 Office 富解析与自动模型 fallback 仍不在
+本轮范围。完整合同见 [`GROK_FIRST_COMPOSER_V1.md`](GROK_FIRST_COMPOSER_V1.md)。
 
 Job Agent、LectureCast Agent 和 Deploy Agent 已从相同的 Manifest v1 载入，不再
 分别硬编码 Registry 元数据与 Agent Profile。Host 现在会在启动时复验并合并本地

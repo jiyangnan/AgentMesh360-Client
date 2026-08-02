@@ -42,6 +42,8 @@ let providerUi = {
 };
 let providerDraft = null;
 let conversationDrafts = new Map();
+let conversationAttachmentErrors = new Map();
+let conversationAttachmentMutationInFlight = false;
 let packageUi = {
   phase: 'idle',
   snapshot: null,
@@ -125,6 +127,8 @@ function render(state) {
     };
     providerDraft = null;
     conversationDrafts = new Map();
+    conversationAttachmentErrors = new Map();
+    conversationAttachmentMutationInFlight = false;
     agentCustomizationDrafts = new Map();
     agentManagementUi = {
       phase: 'idle',
@@ -174,6 +178,8 @@ function render(state) {
     providerUi.phase = 'idle';
     providerDraft = null;
     conversationDrafts = new Map();
+    conversationAttachmentErrors = new Map();
+    conversationAttachmentMutationInFlight = false;
     agentCustomizationDrafts = new Map();
     agentManagementUi = {
       phase: 'idle',
@@ -675,6 +681,11 @@ function conversationView() {
     ? agentManagementUi.snapshot?.bindingIssue
     : null;
   const modelBlocked = Boolean(bindingIssue);
+  const draftAttachments = safeConversationDraftAttachments(conversationUi.draftAttachments);
+  const draftKey = conversationDraftKey();
+  const attachmentError = draftKey ? conversationAttachmentErrors.get(draftKey) : null;
+  const composerDisabled = !ready || sending || modelBlocked;
+  const canSubmitAttachmentOnly = draftAttachments.length > 0;
   const gates = `${conversationUi.error ? `
     <div class="conversation-error" role="alert">
       <span>${escapeHtml(conversationUi.error)}</span>
@@ -716,15 +727,103 @@ function conversationView() {
           data-account-id="${escapeHtml(String(readyAccountId || ''))}"
           data-agent-id="${escapeHtml(String(conversationUi.agentId || agentManagementUi.agentId || ''))}"
           data-session-key="main"
+          data-composer-enabled="${composerDisabled ? 'false' : 'true'}"
         >
-          <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${!ready || sending || modelBlocked ? 'disabled' : ''}></textarea>
-          <div>
-            <span>内容会保留在这个 Agent 的主会话中</span>
-            <button class="secondary" type="submit" ${!ready || sending || modelBlocked ? 'disabled' : ''}>发送</button>
+          ${draftAttachments.length ? `
+            <div class="composer-attachment-strip" role="list" aria-label="待发送附件">
+              ${draftAttachments.map(conversationAttachmentChip).join('')}
+            </div>` : ''}
+          <div class="composer-entry-row">
+            <div class="composer-tool-wrap">
+              <button
+                class="composer-tool-button"
+                id="composer-add-button"
+                type="button"
+                aria-label="添加图片、文件或链接"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                ${composerDisabled ? 'disabled' : ''}
+              >+</button>
+              <div class="composer-tool-menu" id="composer-tool-menu" role="menu" hidden>
+                <button type="button" role="menuitem" id="composer-pick-files">
+                  <i aria-hidden="true">↥</i><span><strong>图片或文件</strong><small>选择、拖放或粘贴，最多 10 个</small></span>
+                </button>
+                <button type="button" role="menuitem" id="composer-add-link">
+                  <i aria-hidden="true">↗</i><span><strong>网页链接</strong><small>把网址作为上下文交给 Agent</small></span>
+                </button>
+              </div>
+            </div>
+            <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${composerDisabled ? 'disabled' : ''}></textarea>
+          </div>
+          <div class="composer-link-entry" id="composer-link-entry" hidden>
+            <input name="attachmentLink" type="url" maxlength="2048" inputmode="url" autocomplete="off" placeholder="https://example.com">
+            <button class="ghost" type="button" id="composer-cancel-link">取消</button>
+            <button class="secondary" type="button" id="composer-save-link">添加链接</button>
+          </div>
+          ${attachmentError ? `<div class="composer-attachment-error" role="alert">${escapeHtml(attachmentError)}</div>` : ''}
+          <div class="composer-footer">
+            <span>${draftAttachments.some((attachment) => attachment.kind === 'image')
+    ? '图片会交给当前模型；能否理解取决于该模型的视觉能力'
+    : '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360 Core'}</span>
+            <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitAttachmentOnly ? 'disabled' : ''}>发送</button>
           </div>
         </form>
       </div>
     </section>`;
+}
+
+function safeConversationDraftAttachments(value) {
+  if (!Array.isArray(value)) return [];
+  const safeKinds = new Set(['image', 'file', 'link']);
+  const seen = new Set();
+  return value.slice(0, 10).flatMap((attachment) => {
+    const attachmentId = typeof attachment?.attachmentId === 'string'
+      ? attachment.attachmentId
+      : '';
+    const name = typeof attachment?.name === 'string' ? attachment.name.trim() : '';
+    const mimeType = typeof attachment?.mimeType === 'string' ? attachment.mimeType : '';
+    if (
+      !/^attachment-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(attachmentId)
+      || seen.has(attachmentId)
+      || !safeKinds.has(attachment?.kind)
+      || !name
+      || name.length > 180
+      || /[\u0000-\u001F\u007F-\u009F]/u.test(name)
+      || !Number.isSafeInteger(attachment?.sizeBytes)
+      || attachment.sizeBytes < 0
+      || attachment.sizeBytes > 20 * 1024 * 1024
+      || mimeType.length > 160
+    ) {
+      return [];
+    }
+    seen.add(attachmentId);
+    return [{
+      attachmentId,
+      kind: attachment.kind,
+      name,
+      mimeType,
+      sizeBytes: attachment.sizeBytes,
+    }];
+  });
+}
+
+function conversationAttachmentChip(attachment) {
+  const glyph = attachment.kind === 'image' ? '图' : attachment.kind === 'link' ? '链' : '文';
+  const detail = attachment.kind === 'link'
+    ? '网页链接'
+    : `${attachment.kind === 'image' ? '图片' : '文件'} · ${formatAttachmentBytes(attachment.sizeBytes)}`;
+  return `
+    <article class="composer-attachment-chip ${escapeHtml(attachment.kind)}" role="listitem" title="${escapeHtml(attachment.name)}">
+      <i aria-hidden="true">${glyph}</i>
+      <span><strong>${escapeHtml(attachment.name)}</strong><small>${escapeHtml(detail)}</small></span>
+      <button type="button" data-remove-attachment="${escapeHtml(attachment.attachmentId)}" aria-label="移除 ${escapeHtml(attachment.name)}">×</button>
+    </article>`;
+}
+
+function formatAttachmentBytes(value) {
+  if (value < 1_024) return `${value} B`;
+  if (value < 1_048_576) return `${Math.max(0.1, value / 1_024).toFixed(1)} KB`;
+  return `${(value / 1_048_576).toFixed(1)} MB`;
 }
 
 function safeConversationBackgroundTasks(value) {
@@ -1252,18 +1351,173 @@ function wireConversation() {
   );
   const restoredDraft = conversationDrafts.get(formDraftKey) || '';
   if (form?.elements.message && restoredDraft) form.elements.message.value = restoredDraft;
+  const textarea = form?.elements.message;
+  const sendButton = form?.querySelector('.composer-send');
+  const addButton = form?.querySelector('#composer-add-button');
+  const toolMenu = form?.querySelector('#composer-tool-menu');
+  const linkEntry = form?.querySelector('#composer-link-entry');
+  const linkInput = form?.elements.attachmentLink;
+  const attachmentIds = safeConversationDraftAttachments(conversationUi.draftAttachments)
+    .map((attachment) => attachment.attachmentId);
+  const composerEnabled = form?.dataset.composerEnabled === 'true';
+  const updateSendState = () => {
+    if (!sendButton) return;
+    sendButton.disabled = !composerEnabled
+      || conversationAttachmentMutationInFlight
+      || (!String(textarea?.value || '').trim() && attachmentIds.length === 0);
+  };
+  const closeToolMenu = () => {
+    if (!toolMenu || !addButton) return;
+    toolMenu.hidden = true;
+    addButton.setAttribute('aria-expanded', 'false');
+  };
+  const showAttachmentError = (error, fallback) => {
+    if (formDraftKey) {
+      conversationAttachmentErrors.set(formDraftKey, publicError(error, fallback));
+    }
+  };
+  const applyAttachmentState = (state) => {
+    if (!state || state.agentId !== form?.dataset.agentId) return false;
+    conversationUi = state;
+    if (formDraftKey) conversationAttachmentErrors.delete(formDraftKey);
+    return true;
+  };
+  const runAttachmentMutation = async (operation, fallback) => {
+    if (!form || !composerEnabled || conversationAttachmentMutationInFlight) return;
+    conversationAttachmentMutationInFlight = true;
+    form.classList.add('attachment-busy');
+    updateSendState();
+    try {
+      applyAttachmentState(await operation());
+    } catch (error) {
+      showAttachmentError(error, fallback);
+    } finally {
+      conversationAttachmentMutationInFlight = false;
+      if (currentState.phase === 'ready') renderReady(currentState);
+    }
+  };
+  addButton?.addEventListener('click', () => {
+    const willOpen = toolMenu?.hidden === true;
+    if (!toolMenu) return;
+    toolMenu.hidden = !willOpen;
+    addButton.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) {
+      setTimeout(() => {
+        document.addEventListener('pointerdown', (event) => {
+          if (!form?.querySelector('.composer-tool-wrap')?.contains(event.target)) closeToolMenu();
+        }, { once: true });
+      }, 0);
+    }
+  });
+  form?.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (form && !form.contains(document.activeElement)) closeToolMenu();
+    }, 0);
+  });
+  form?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeToolMenu();
+      if (linkEntry && !linkEntry.hidden) {
+        linkEntry.hidden = true;
+        textarea?.focus();
+      }
+    }
+    if (event.key === 'Enter' && event.target === linkInput) {
+      event.preventDefault();
+      form.querySelector('#composer-save-link')?.click();
+    }
+  });
+  form?.querySelector('#composer-pick-files')?.addEventListener('click', () => {
+    closeToolMenu();
+    runAttachmentMutation(
+      () => bridge.pickConversationAttachments(),
+      '没有成功添加文件',
+    );
+  });
+  form?.querySelector('#composer-add-link')?.addEventListener('click', () => {
+    closeToolMenu();
+    if (!linkEntry) return;
+    linkEntry.hidden = false;
+    linkInput?.focus();
+  });
+  form?.querySelector('#composer-cancel-link')?.addEventListener('click', () => {
+    if (!linkEntry) return;
+    linkEntry.hidden = true;
+    if (linkInput) linkInput.value = '';
+    textarea?.focus();
+  });
+  form?.querySelector('#composer-save-link')?.addEventListener('click', () => {
+    const url = String(linkInput?.value || '').trim();
+    if (!url) {
+      showAttachmentError(new Error('请输入完整链接'), '链接无效');
+      if (currentState.phase === 'ready') renderReady(currentState);
+      return;
+    }
+    runAttachmentMutation(
+      () => bridge.stageConversationLink(url),
+      '没有成功添加链接',
+    );
+  });
+  for (const button of form?.querySelectorAll('[data-remove-attachment]') || []) {
+    button.addEventListener('click', () => {
+      runAttachmentMutation(
+        () => bridge.discardConversationAttachment(button.dataset.removeAttachment),
+        '没有成功移除附件',
+      );
+    });
+  }
+  const stageDroppedFiles = (files) => {
+    if (!files?.length) return;
+    runAttachmentMutation(
+      () => bridge.stageConversationFiles(files),
+      '没有成功添加文件',
+    );
+  };
+  form?.addEventListener('dragenter', (event) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return;
+    event.preventDefault();
+    form.classList.add('drag-active');
+  });
+  form?.addEventListener('dragover', (event) => {
+    if (!event.dataTransfer?.types?.includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    form.classList.add('drag-active');
+  });
+  form?.addEventListener('dragleave', (event) => {
+    if (!form.contains(event.relatedTarget)) form.classList.remove('drag-active');
+  });
+  form?.addEventListener('drop', (event) => {
+    form.classList.remove('drag-active');
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (!files.length) return;
+    event.preventDefault();
+    stageDroppedFiles(files);
+  });
+  textarea?.addEventListener('paste', (event) => {
+    const files = Array.from(event.clipboardData?.files || []);
+    if (!files.length) return;
+    event.preventDefault();
+    stageDroppedFiles(files);
+  });
   form?.elements.message?.addEventListener('input', (event) => {
     if (!formDraftKey) return;
     const value = String(event.currentTarget.value || '');
     if (value) conversationDrafts.set(formDraftKey, value);
     else conversationDrafts.delete(formDraftKey);
+    updateSendState();
   });
+  updateSendState();
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const textarea = form.elements.message;
     const text = textarea.value.trim();
     const agentId = form.dataset.agentId;
-    if (!text || !agentId || conversationTurnIsRunning(agentId)) return;
+    if (
+      (!text && attachmentIds.length === 0)
+      || !agentId
+      || conversationTurnIsRunning(agentId)
+      || conversationAttachmentMutationInFlight
+    ) return;
     const draftKey = formDraftKey;
     const mutation = {
       accountId: readyAccountId,
@@ -1272,6 +1526,7 @@ function wireConversation() {
     };
     textarea.value = '';
     if (draftKey) conversationDrafts.delete(draftKey);
+    if (draftKey) conversationAttachmentErrors.delete(draftKey);
     conversationSendPendingByAgent.set(
       conversationPendingKey(mutation.accountId, mutation.agentId),
       mutation,
@@ -1279,7 +1534,7 @@ function wireConversation() {
     conversationUi = { ...conversationUi, error: null };
     if (currentState.phase === 'ready') renderReady(currentState);
     try {
-      const state = await bridge.sendConversationMessage(text);
+      const state = await bridge.sendConversationMessage({ text, attachmentIds });
       const mutationIsCurrent = (
         conversationSendIsCurrent(mutation)
         && state?.agentId === mutation.agentId
@@ -1291,6 +1546,7 @@ function wireConversation() {
         return;
       }
       conversationUi = state;
+      if (state?.error && draftKey && text) conversationDrafts.set(draftKey, text);
     } catch (error) {
       const mutationIsCurrent = conversationSendIsCurrent(mutation);
       clearConversationSend(mutation);

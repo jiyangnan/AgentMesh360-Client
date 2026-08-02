@@ -586,7 +586,7 @@ app.whenReady().then(async () => {
     hasError: document.querySelector('.conversation-error') !== null,
   })`), {
     textareaDisabled: false,
-    sendDisabled: false,
+    sendDisabled: true,
     hasError: false,
   });
   await window.webContents.executeJavaScript(
