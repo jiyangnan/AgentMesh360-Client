@@ -138,6 +138,8 @@ app.whenReady().then(async () => {
     await assertConversationVisual(window);
   } else if (phase === 'agent-settings') {
     await assertAgentSettingsVisual(window);
+  } else if (phase === 'ready') {
+    await assertAgentHomeVisual(window);
   } else if (phase === 'package') {
     const closedControls = await window.webContents.executeJavaScript(`({
       hasInstallForm: document.getElementById('package-install-form') !== null,
@@ -200,6 +202,47 @@ function fixtureState(selected) {
     };
   }
   return { phase: 'signed_out' };
+}
+
+async function assertAgentHomeVisual(window) {
+  const metrics = await window.webContents.executeJavaScript(`(() => {
+    const strip = document.querySelector('.onboarding-strip');
+    const list = document.querySelector('.onboarding-steps');
+    const steps = [...document.querySelectorAll('.onboarding-step')];
+    const stripRect = strip?.getBoundingClientRect();
+    return {
+      ariaLabel: strip?.getAttribute('aria-label'),
+      listTag: list?.tagName,
+      stepLabels: steps.map((step) => step.querySelector('strong')?.textContent.trim()),
+      stepNumbers: steps.map((step) => step.querySelector('.onboarding-step-number')?.textContent.trim()),
+      interactiveCount: strip?.querySelectorAll('button, a').length,
+      containsMisleadingCopy: strip?.textContent.includes('开始使用')
+        || strip?.textContent.includes('打开 Agent 继续工作'),
+      stepFontSizes: steps.map((step) => (
+        parseFloat(getComputedStyle(step.querySelector('strong')).fontSize)
+      )),
+      stripFitsViewport: Boolean(
+        stripRect
+        && stripRect.left >= 0
+        && stripRect.right <= window.innerWidth + 1
+      ),
+      noDocumentOverflow: document.documentElement.scrollWidth
+        <= document.documentElement.clientWidth + 1,
+    };
+  })()`);
+  assert.equal(metrics.ariaLabel, 'Agent 使用顺序');
+  assert.equal(metrics.listTag, 'OL');
+  assert.deepEqual(metrics.stepLabels, [
+    '添加模型供应商',
+    '激活 Agent',
+    '在 Agent 对话中开始工作',
+  ]);
+  assert.deepEqual(metrics.stepNumbers, ['1', '2', '3']);
+  assert.equal(metrics.interactiveCount, 0);
+  assert.equal(metrics.containsMisleadingCopy, false);
+  assert.equal(metrics.stepFontSizes.every((value) => value >= 13), true);
+  assert.equal(metrics.stripFitsViewport, true);
+  assert.equal(metrics.noDocumentOverflow, true);
 }
 
 async function assertAgentWorkspaceBase(window) {

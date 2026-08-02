@@ -193,10 +193,24 @@ app.whenReady().then(async () => {
     jobModel: document.querySelector('[data-manage-agent="job-agent"]')
       ?.closest('.agent-card')?.querySelector('.agent-model-summary strong')?.innerText,
     guide: document.querySelector('.onboarding-strip')?.innerText,
+    guideTag: document.querySelector('.onboarding-steps')?.tagName,
+    guideSteps: [...document.querySelectorAll('.onboarding-step strong')]
+      .map((item) => item.innerText.trim()),
+    guideStepNumbers: [...document.querySelectorAll('.onboarding-step-number')]
+      .map((item) => item.innerText.trim()),
+    guideStepCount: document.querySelectorAll('.onboarding-steps > li').length,
+    guideInteractiveCount: document.querySelectorAll(
+      '.onboarding-strip button, .onboarding-strip a',
+    ).length,
   })`);
   assert.deepEqual({
     ...navigation,
     guide: undefined,
+    guideTag: undefined,
+    guideSteps: undefined,
+    guideStepNumbers: undefined,
+    guideStepCount: undefined,
+    guideInteractiveCount: undefined,
   }, {
     labels: ['Agent', '模型供应商', '设置'],
     currentConversation: false,
@@ -204,10 +218,26 @@ app.whenReady().then(async () => {
     hostStatus: '已连接 · 点击查看',
     jobModel: '智谱 GLM Coding Plan · glm-5.2',
     guide: undefined,
+    guideTag: undefined,
+    guideSteps: undefined,
+    guideStepNumbers: undefined,
+    guideStepCount: undefined,
+    guideInteractiveCount: undefined,
   });
-  assert.equal(navigation.guide.includes('① 添加模型供应商'), true);
-  assert.equal(navigation.guide.includes('② 激活 Agent'), true);
-  assert.equal(navigation.guide.includes('③ 在 Agent 对话中开始工作'), true);
+  assert.equal(navigation.guide.includes('添加模型供应商'), true);
+  assert.equal(navigation.guide.includes('激活 Agent'), true);
+  assert.equal(navigation.guide.includes('在 Agent 对话中开始工作'), true);
+  assert.equal(navigation.guide.includes('开始使用'), false);
+  assert.equal(navigation.guide.includes('打开 Agent 继续工作'), false);
+  assert.equal(navigation.guideTag, 'OL');
+  assert.equal(navigation.guideStepCount, 3);
+  assert.equal(navigation.guideInteractiveCount, 0);
+  assert.deepEqual(navigation.guideSteps, [
+    '添加模型供应商',
+    '激活 Agent',
+    '在 Agent 对话中开始工作',
+  ]);
+  assert.deepEqual(navigation.guideStepNumbers, ['1', '2', '3']);
 
   smokeStep = 'show Host recovering and attention states';
   backgroundDelayMs = 150;

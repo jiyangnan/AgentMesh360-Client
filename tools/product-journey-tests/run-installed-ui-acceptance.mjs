@@ -183,6 +183,33 @@ function acceptanceExpression() {
         throw new Error('installed client did not recover a resident Agent');
       }
 
+      const onboardingStrip = document.querySelector('.onboarding-strip');
+      const onboardingSteps = [...document.querySelectorAll(
+        '.onboarding-steps > .onboarding-step',
+      )];
+      const agentHomeOrderedGuide = Boolean(
+        onboardingStrip
+        && onboardingStrip.getAttribute('aria-label') === 'Agent 使用顺序'
+        && onboardingStrip.querySelector('ol.onboarding-steps')
+        && onboardingSteps.length === 3
+        && JSON.stringify(onboardingSteps.map((step) => (
+          step.querySelector('strong')?.textContent.trim()
+        ))) === JSON.stringify([
+          '添加模型供应商',
+          '激活 Agent',
+          '在 Agent 对话中开始工作',
+        ])
+        && JSON.stringify(onboardingSteps.map((step) => (
+          step.querySelector('.onboarding-step-number')?.textContent.trim()
+        ))) === JSON.stringify(['1', '2', '3'])
+        && onboardingStrip.querySelectorAll('button, a').length === 0
+        && !onboardingStrip.textContent.includes('开始使用')
+        && !onboardingStrip.textContent.includes('打开 Agent 继续工作')
+      );
+      if (!agentHomeOrderedGuide) {
+        throw new Error('installed Agent home does not expose the ordered three-step guide');
+      }
+
       const providerProbeBaseline = JSON.stringify(
         (await window.agentmesh360.getProviderSnapshot())?.probes || [],
       );
@@ -463,6 +490,7 @@ function acceptanceExpression() {
         subscriptionValid: true,
         persistentHostConnected: true,
         residentAgentCount,
+        agentHomeOrderedGuide,
         officialProviderCount: presetIds.length,
         providerDraftPreserved,
         conversationDraftPreserved,

@@ -431,7 +431,6 @@ function renderReady(state) {
   document.getElementById('nav-agents').addEventListener('click', () => {
     workspaceView = 'agents';
     renderReady(currentState);
-    if (providerUi.phase === 'idle') refreshProviderSnapshot();
     if (agentOverviewUi.phase === 'idle') refreshAgentOverview();
   });
   document.getElementById('nav-providers').addEventListener('click', () => {
@@ -478,12 +477,6 @@ function renderReady(state) {
     renderReady(currentState);
     if (packageUi.phase === 'idle') refreshPackageSnapshot();
   });
-  document.querySelector('[data-go-view="providers"]')?.addEventListener('click', () => {
-    workspaceView = 'providers';
-    renderReady(currentState);
-    if (providerUi.phase === 'idle') refreshProviderSnapshot();
-  });
-  if (workspaceView === 'agents' && providerUi.phase === 'idle') refreshProviderSnapshot();
   if (workspaceView === 'agents' && agentOverviewUi.phase === 'idle') refreshAgentOverview();
 }
 
@@ -2157,24 +2150,17 @@ function agentWorkspaceView(state) {
     && item.bindingIssue.code !== 'model_not_configured'
     && agents.some((agent) => agent.agentId === item.agentId && isResident(agent))
   ));
-  const providerCount = providerUi.snapshot?.profiles?.length || 0;
-  const nextAction = providerCount === 0
-    ? { label: '添加模型供应商', view: 'providers' }
-    : residentCount === 0
-      ? { label: '选择一个 Agent 激活', view: null }
-      : { label: '打开 Agent 继续工作', view: null };
   return `
     <header class="workspace-header">
       <div><p class="eyebrow">Persistent Agent Workspace</p><h1 data-ready-welcome>欢迎回来，${escapeHtml(firstName(account))}</h1><p data-ready-subscription>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
       <div class="credit-card"><span>AgentMesh360 Credits</span><strong data-ready-credits>${formatNumber(credits.balance)}</strong></div>
     </header>
-    <section class="onboarding-strip">
-      <div>
-        <p class="eyebrow">开始使用</p>
-        <strong>${escapeHtml(nextAction.label)}</strong>
-        <span>① 添加模型供应商　② 激活 Agent　③ 在 Agent 对话中开始工作</span>
-      </div>
-      ${nextAction.view ? `<button class="secondary" type="button" data-go-view="${nextAction.view}">${escapeHtml(nextAction.label)}</button>` : ''}
+    <section class="onboarding-strip" aria-label="Agent 使用顺序">
+      <ol class="onboarding-steps">
+        <li class="onboarding-step"><span class="onboarding-step-number" aria-hidden="true">1</span><strong>添加模型供应商</strong></li>
+        <li class="onboarding-step"><span class="onboarding-step-number" aria-hidden="true">2</span><strong>激活 Agent</strong></li>
+        <li class="onboarding-step"><span class="onboarding-step-number" aria-hidden="true">3</span><strong>在 Agent 对话中开始工作</strong></li>
+      </ol>
     </section>
     ${invalidAgents.length ? `
       <div class="agent-model-alert" role="alert">
