@@ -29,10 +29,11 @@
 - Host 已提供账户隔离的 Provider Profile CRUD 和只写秘密管理 ACP 方法；Provider
   API Key 在 macOS 进入 Host 直接访问的独立 Keychain 项，`state.db` 只保存不透明
   引用和最后四位；Host 还提供声明式 Catalog 与三层 Model Assignment 管理方法；
-- Renderer 已有 Provider 设置页、Profile/Assignment 管理、三档显式 Probe 与付费
-  二次确认；
-- Renderer 已有 Agent Package Center，按 `packageId` 展示发现、下载、权限批准、
-  reconcile 与 rollback；URL、digest、签名材料和本机路径仍只由 Host 持有；
+- Renderer 已有列表优先的 Provider 设置页、Profile 管理、动态模型发现、应用内统一
+  Combobox/Listbox、三档显式 Probe 与付费二次确认；具体模型绑定位于各 Agent 设置；
+- Agent Package Center 的发现、下载、权限批准、reconcile 与 rollback 底层仍按
+  `packageId` 保留；当前用户不能完成自助新增，因此首页不展示公开“添加 Agent”入口，
+  URL、digest、签名材料和本机路径仍只由 Host 持有；
 - H2d4 已补齐 Release Manifest 消费门，但生产 Root、Trust Bundle、Registry endpoint
   和上传发布保持关闭，所以当前 Package Center 不会取得真实生产远端内容；
 - 当前账号 Host Catalog 返回的所有产品 Agent 都复用固定 Main Session 文本对话：
@@ -41,6 +42,8 @@
   凭据和原始 Host 错误不进入页面；
 - Renderer 重建会恢复主进程中的有界安全对话 snapshot；账号切换清空旧 authority，
   Leader 重连或 Prompt 超时后可在原对话内显式重新打开。
+- 一个 Agent 初始化或生成时只锁定自己的 Composer/设置；其他常驻 Agent 仍可切换和
+  聊天，旧 Agent 的迟到 push/IPC 结果不会覆盖当前 Agent。
 - 标准 ACP `session/request_permission` 由主进程持有原始请求、Session、Tool 和
   Option authority；页面只显示安全工具摘要，并只能“仅本次允许”“仅本次拒绝”或
   取消。永久/未知选项以及订阅、账号、Agent、重连、Host、Prompt 和超时变化均失败

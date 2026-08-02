@@ -209,6 +209,11 @@ function acceptanceExpression() {
       if (!agentHomeOrderedGuide) {
         throw new Error('installed Agent home does not expose the ordered three-step guide');
       }
+      const agentAddEntryHidden = !document.getElementById('add-agent')
+        && !document.body.textContent.includes('＋ 添加 Agent');
+      if (!agentAddEntryHidden) {
+        throw new Error('installed Agent home still exposes an unavailable add-Agent entry');
+      }
 
       const providerProbeBaseline = JSON.stringify(
         (await window.agentmesh360.getProviderSnapshot())?.probes || [],
@@ -250,6 +255,21 @@ function acceptanceExpression() {
       ];
       if (JSON.stringify(presetIds) !== JSON.stringify(expectedPresets)) {
         throw new Error('installed Provider catalog does not match the product contract');
+      }
+      const providerSelects = [
+        ...document.querySelectorAll('#provider-profile-form select'),
+      ];
+      const appOwnedProviderSelects = providerSelects.length === 4
+        && providerSelects.every((select) => (
+          select.classList.contains('app-select-native')
+          && select.tabIndex === -1
+          && select.getAttribute('aria-hidden') === 'true'
+        ))
+        && document.querySelectorAll(
+          '#provider-profile-form button.app-select-trigger[role="combobox"]',
+        ).length === 4;
+      if (!appOwnedProviderSelects) {
+        throw new Error('installed Provider form still exposes native select interaction');
       }
 
       let form = document.getElementById('provider-profile-form');
@@ -426,6 +446,21 @@ function acceptanceExpression() {
         ),
         'Agent settings did not open from the conversation gear',
       );
+      const agentModelSelects = [
+        ...document.querySelectorAll('#agent-model-form select'),
+      ];
+      const appOwnedAgentModelSelects = agentModelSelects.length === 2
+        && agentModelSelects.every((select) => (
+          select.classList.contains('app-select-native')
+          && select.tabIndex === -1
+          && select.getAttribute('aria-hidden') === 'true'
+        ))
+        && document.querySelectorAll(
+          '#agent-model-form button.app-select-trigger[role="combobox"]',
+        ).length === 2;
+      if (!appOwnedAgentModelSelects) {
+        throw new Error('installed Agent model form still exposes native select interaction');
+      }
       if (
         document.querySelector('.agent-tabs')
         || document.querySelector('[data-agent-tab]')
@@ -491,7 +526,10 @@ function acceptanceExpression() {
         persistentHostConnected: true,
         residentAgentCount,
         agentHomeOrderedGuide,
+        agentAddEntryHidden,
         officialProviderCount: presetIds.length,
+        appOwnedProviderSelects,
+        appOwnedAgentModelSelects,
         providerDraftPreserved,
         conversationDraftPreserved,
         conversationDraftPreservedViaSettings: true,

@@ -107,6 +107,14 @@ app.whenReady().then(async () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
+    if (phase === 'provider-bottom') {
+      await window.webContents.executeJavaScript(
+        "document.querySelector('[data-select-name=\"presetId\"]').click()",
+      );
+      await waitFor(() => window.webContents.executeJavaScript(
+        "document.querySelector('.app-select-menu[data-open=\"true\"]') !== null",
+      ));
+    }
     if (process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET) {
       await window.webContents.executeJavaScript(`
         (() => {
@@ -118,7 +126,11 @@ app.whenReady().then(async () => {
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
   } else if (phase === 'package' || phase === 'package-ready') {
-    await window.webContents.executeJavaScript("document.getElementById('add-agent').click()");
+    await window.webContents.executeJavaScript(`
+      workspaceView = 'add-agent';
+      renderReady(currentState);
+      refreshPackageSnapshot();
+    `);
     await new Promise((resolve) => setTimeout(resolve, 180));
   } else if (phase === 'background') {
     await window.webContents.executeJavaScript(`
@@ -140,6 +152,8 @@ app.whenReady().then(async () => {
     await assertAgentSettingsVisual(window);
   } else if (phase === 'ready') {
     await assertAgentHomeVisual(window);
+  } else if (phase === 'provider-bottom') {
+    await assertProviderSelectVisual(window);
   } else if (phase === 'package') {
     const closedControls = await window.webContents.executeJavaScript(`({
       hasInstallForm: document.getElementById('package-install-form') !== null,
@@ -243,6 +257,32 @@ async function assertAgentHomeVisual(window) {
   assert.equal(metrics.stepFontSizes.every((value) => value >= 13), true);
   assert.equal(metrics.stripFitsViewport, true);
   assert.equal(metrics.noDocumentOverflow, true);
+}
+
+async function assertProviderSelectVisual(window) {
+  const result = await window.webContents.executeJavaScript(`(() => {
+    const menu = document.querySelector('.app-select-menu[data-open="true"]');
+    const trigger = document.querySelector('[data-select-name="presetId"]');
+    const rect = menu?.getBoundingClientRect();
+    return {
+      hasMenu: Boolean(menu),
+      expanded: trigger?.getAttribute('aria-expanded'),
+      optionCount: menu?.querySelectorAll('[role="option"]').length || 0,
+      fontMatches: menu
+        ? getComputedStyle(menu).fontFamily === getComputedStyle(document.body).fontFamily
+        : false,
+      insideViewport: Boolean(rect)
+        && rect.left >= 0
+        && rect.top >= 0
+        && rect.right <= window.innerWidth
+        && rect.bottom <= window.innerHeight,
+    };
+  })()`);
+  assert.equal(result.hasMenu, true);
+  assert.equal(result.expanded, 'true');
+  assert.equal(result.optionCount >= 3, true);
+  assert.equal(result.fontMatches, true);
+  assert.equal(result.insideViewport, true);
 }
 
 async function assertAgentWorkspaceBase(window) {

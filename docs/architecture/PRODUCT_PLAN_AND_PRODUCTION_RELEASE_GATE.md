@@ -1176,7 +1176,8 @@ owner UAT 从“Provider 配置成功后如何真正使用 Agent”继续向前�
    的真实会话；当前 Host 只有确定性 Main Session，因此只展示“主会话”，不伪造多会话；
 5. 同一账号、Agent 和 Main Session 的历史及草稿持续保留；切屏、后台复验、快速切换、
    异步保存响应和旧 Host 推送均不得把内容写到另一个账号、Agent 或页面；
-6. 当前回答生成中阻止切换到另一 Agent；模型改变从下一条消息生效，不修改历史回答。
+6. 当前回答生成中只锁定该 Agent 自己的 Composer 与设置写入；其他常驻 Agent 仍可打开
+   和聊天，旧 Agent 的迟到结果不能覆盖当前窗口；模型改变从下一条消息生效，不修改历史回答。
 
 本轮三栏布局、纯对话工具栏、齿轮设置、15px 正文/输入、固定 Composer、latest-intent
 和异步 mutation 归属已进入 Electron 点击级回归。多会话创建、命名、删除、搜索、归档
@@ -1187,3 +1188,15 @@ owner UAT 从“Provider 配置成功后如何真正使用 Agent”继续向前�
 Host 持久权威、Package 签名信任和 fail-closed 边界不变；没有授权 P7/P8、在线分发、
 生产自动更新、Developer ID/notarization、模型价格/余额或自动 fallback。完成本轮唯一
 本地安装包后，产品顺序回到首次使用引导，不因会话栏预留位置提前扩展多会话后端。
+
+## 69. 循环 147 owner UAT：后台 Agent 切换与控件真实性
+
+沿“配置供应商 → 激活 Agent → 多 Agent 对话”主路径继续验收后，本轮只关闭三个现有
+交互缺口：隐藏当前无法兑现的“添加 Agent”公开入口；把 Agent/Provider 共 7 个系统原生
+下拉统一为应用内 Combobox/Listbox；把 pending、streaming 和初始化状态从全局锁改为
+Agent 级归属。A 在后台处理时，B/C 可正常打开和聊天，A 的迟到 push 或 IPC 结果只清理
+自己的状态，不覆盖当前 Agent。
+
+Package Controller、签名、更新与回滚底层继续保留，未来动态 Agent 接入计划不变；本轮
+不开放在线商店、多会话、自动 fallback、价格/余额、P7/P8 或在线发布。验证继续要求
+fixture 0 Provider 请求、0 AgentMesh credits，并在 KimiCLI CLEAN 后才允许内部打包。

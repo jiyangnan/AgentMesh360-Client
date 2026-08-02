@@ -89,6 +89,7 @@ app.whenReady().then(async () => {
     return currentConversation;
   });
   ipcMain.handle('conversation:send', async (event, text) => {
+    const sendingAgentId = currentConversation.agentId;
     prompts.push(text);
     const delayedSend = delayedConversationSend;
     delayedConversationSend = null;
@@ -97,14 +98,16 @@ app.whenReady().then(async () => {
       conversationSendFailure = false;
       throw new Error('fixture conversation send failed');
     }
-    currentConversation = conversationState(currentConversation.agentId, [
+    const completedConversation = conversationState(sendingAgentId, [
       { id: 'message-1', role: 'user', text: '上次的岗位分析还在吗？' },
       { id: 'message-2', role: 'assistant', text: '在，我们可以从证据匹配继续。' },
       { id: 'message-3', role: 'user', text },
       { id: 'message-4', role: 'assistant', text: '已继续分析。' },
     ]);
-    event.sender.send('conversation:state', currentConversation);
-    return currentConversation;
+    if (currentConversation.agentId !== sendingAgentId) return currentConversation;
+    currentConversation = completedConversation;
+    event.sender.send('conversation:state', completedConversation);
+    return completedConversation;
   });
   ipcMain.handle('conversation:respond-permission', (event, interactionId, optionId) => {
     permissionResponses.push({ interactionId, optionId });
@@ -421,27 +424,54 @@ app.whenReady().then(async () => {
   assert.equal(await window.webContents.executeJavaScript(
     "document.querySelector('[data-manage-agent=\"job-agent\"]') !== null",
   ), true);
-  const opensBeforeBlockedAgentSwitch = opens.length;
+  const opensBeforeBackgroundAgentSwitch = opens.length;
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('[data-manage-agent=\"lecturecast-agent\"]')?.disabled",
+  ), false);
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-manage-agent=\"lecturecast-agent\"]').click()",
   );
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  assert.equal(opens.length, opensBeforeBlockedAgentSwitch);
-  assert.equal(await window.webContents.executeJavaScript(
-    "document.querySelector('[data-manage-agent=\"lecturecast-agent\"]') !== null",
-  ), true);
-  await window.webContents.executeJavaScript(
-    "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
-  );
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.getElementById('conversation-form') !== null",
+    "document.querySelector('#conversation-form[data-agent-id=\"lecturecast-agent\"]') !== null",
   ));
-  assert.equal(opens.length, opensBeforeBlockedAgentSwitch);
-
+  assert.equal(opens.length, opensBeforeBackgroundAgentSwitch + 1);
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    activeAgent: document.querySelector('[data-switch-resident-agent].active')
+      ?.dataset.switchResidentAgent,
+    jobDisabled: document.querySelector(
+      '[data-switch-resident-agent="job-agent"]',
+    )?.disabled,
+    jobStatus: document.querySelector(
+      '[data-switch-resident-agent="job-agent"] small',
+    )?.innerText,
+  })`), {
+    activeAgent: 'lecturecast-agent',
+    jobDisabled: false,
+    jobStatus: '正在处理',
+  });
   window.webContents.send('conversation:state', {
-    ...currentConversation,
+    ...conversationState('job-agent', [
+      { id: 'late-job', role: 'assistant', text: 'Job Agent 的迟到结果不能覆盖当前对话。' },
+    ]),
     streaming: false,
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    activeAgent: document.querySelector('[data-switch-resident-agent].active')
+      ?.dataset.switchResidentAgent,
+    formAgent: document.getElementById('conversation-form')?.dataset.agentId,
+    hasLateJobResult: document.body.innerText.includes('Job Agent 的迟到结果不能覆盖当前对话。'),
+  })`), {
+    activeAgent: 'lecturecast-agent',
+    formAgent: 'lecturecast-agent',
+    hasLateJobResult: false,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-switch-resident-agent=\"job-agent\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form[data-agent-id=\"job-agent\"]') !== null",
+  ));
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.conversation-state')?.innerText === '已连接'",
   ));
@@ -470,31 +500,52 @@ app.whenReady().then(async () => {
   })`), {
     state: 'Agent 正在处理',
     sendDisabled: true,
-    lecturecastDisabled: true,
+    lecturecastDisabled: false,
   });
   await window.webContents.executeJavaScript(
-    "document.getElementById('nav-agents').click()",
+    "document.querySelector('[data-switch-resident-agent=\"lecturecast-agent\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('[data-manage-agent=\"lecturecast-agent\"]')?.disabled === true",
+    "document.querySelector('#conversation-form[data-agent-id=\"lecturecast-agent\"]') !== null",
   ));
-  await window.webContents.executeJavaScript(
-    "document.querySelector('[data-manage-agent=\"lecturecast-agent\"]').click()",
-  );
-  await new Promise((resolve) => setTimeout(resolve, 75));
-  assert.equal(opens.length, opensBeforePendingSendSwitch);
-  await window.webContents.executeJavaScript(
-    "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
-  );
+  assert.equal(opens.length, opensBeforePendingSendSwitch + 1);
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('conversation-form');
+      form.elements.message.value = '同时继续课程规划';
+      form.requestSubmit();
+    })()
+  `);
+  await waitFor(() => prompts.length === 2);
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.getElementById('conversation-form') !== null",
+    "document.body.innerText.includes('同时继续课程规划')"
+      + " && document.body.innerText.includes('已继续分析。')",
   ));
-  assert.equal(opens.length, opensBeforePendingSendSwitch);
   pendingSend.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    activeAgent: document.querySelector('[data-switch-resident-agent].active')
+      ?.dataset.switchResidentAgent,
+    formAgent: document.getElementById('conversation-form')?.dataset.agentId,
+    hasJobPrompt: document.body.innerText.includes('继续匹配这份 JD'),
+    hasLecturecastPrompt: document.body.innerText.includes('同时继续课程规划'),
+    jobDisabled: document.querySelector(
+      '[data-switch-resident-agent="job-agent"]',
+    )?.disabled,
+  })`), {
+    activeAgent: 'lecturecast-agent',
+    formAgent: 'lecturecast-agent',
+    hasJobPrompt: false,
+    hasLecturecastPrompt: true,
+    jobDisabled: false,
+  });
+  assert.deepEqual(prompts, ['继续匹配这份 JD', '同时继续课程规划']);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-switch-resident-agent=\"job-agent\"]').click()",
+  );
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.body.innerText.includes('已继续分析。')",
+    "document.querySelector('#conversation-form[data-agent-id=\"job-agent\"]') !== null",
   ));
-  assert.deepEqual(prompts, ['继续匹配这份 JD']);
 
   const pendingFailedSend = createBarrier();
   delayedConversationSend = pendingFailedSend;
@@ -507,7 +558,7 @@ app.whenReady().then(async () => {
       form.requestSubmit();
     })()
   `);
-  await waitFor(() => prompts.length === 2);
+  await waitFor(() => prompts.length === 3);
   window.webContents.send('conversation:state', { phase: 'idle' });
   await new Promise((resolve) => setTimeout(resolve, 50));
   assert.deepEqual(await window.webContents.executeJavaScript(`({
@@ -517,7 +568,7 @@ app.whenReady().then(async () => {
   })`), {
     state: 'Agent 正在处理',
     sendDisabled: true,
-    lecturecastDisabled: true,
+    lecturecastDisabled: false,
   });
   pendingFailedSend.resolve();
   await waitFor(() => window.webContents.executeJavaScript(
@@ -728,7 +779,7 @@ app.whenReady().then(async () => {
 
   await window.reload();
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.body.innerText.includes('已继续分析。')",
+    "document.body.innerText.includes('上次的 job-agent 工作还在吗？')",
   ));
   assert.equal(await window.webContents.executeJavaScript(
     "document.getElementById('conversation-form') !== null",
@@ -779,10 +830,11 @@ app.whenReady().then(async () => {
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('[data-reopen-conversation=\"job-agent\"]') !== null",
   ));
+  const opensBeforeReconnectRetry = opens.length;
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-reopen-conversation=\"job-agent\"]').click()",
   );
-  await waitFor(() => opens.length === opensBeforeBlockedAgentSwitch + 1);
+  await waitFor(() => opens.length === opensBeforeReconnectRetry + 1);
   assert.equal(opens.at(-1), 'job-agent');
 
   currentConversation = conversationState('job-agent', [

@@ -8085,3 +8085,44 @@ Node 测试（142 通过、5 项真实 Host 用例按环境跳过、0 失败）�
 激活、会话或 Harness 业务，也没有新增 onboarding 状态机、价格/余额、自动 fallback、在线
 商店、P7/P8、签名、公证或在线发布。下一轮仍按既定产品顺序继续首次使用引导切片；开始前
 先复核蓝图、当前 UAT 与本轮边界，不把局部文案修复扩展成未经计划的重构。
+
+### 循环 147：Agent 后台切换、入口真实性与统一下拉
+
+状态：源码模块已完成，等待随循环 148 的唯一内部包统一交付
+
+owner UAT 继续沿“配置 Provider → 激活 Agent → 多 Agent 对话”主路径发现三项问题：尚不能
+兑现的“添加 Agent”入口仍公开展示；全部 7 个下拉使用 macOS 原生弹出菜单；一个 Agent
+初始化或处理时，Renderer 又把其他常驻 Agent 一起禁用。
+
+本轮严格只修正这三项既定 UAT 缺口：隐藏公开新增入口但保留 Package 底层；建立复用的
+应用内 Combobox/Listbox；把 pending/streaming 状态按 Agent 隔离，使其他 Agent 可切换和
+继续聊天，并阻止旧结果覆盖当前页面。不开放商店、多会话、fallback、P7/P8 或在线发布。
+
+源码实现与加强自主复核已经完成：Desktop syntax 通过；正常本机环境 Node 143 passed、
+5 个显式 real-Host gate skipped、0 failed；Agent 管理、Provider、Conversation、13 寸长
+对话与 Package 五组 Electron smoke 全部通过；完整 diff 审计、`git diff --check` 和秘密
+模式扫描没有发现产品秘密。沙箱内 OAuth loopback 与 Electron 首轮失败分别来自禁止监听
+localhost 和 GUI `SIGABRT`，已在正常本机环境用原命令复跑，不冒充产品失败。
+
+用户随后明确要求当前任务由主 Agent 独立完成、不调用 Kimi，因此本循环按用户指示采用
+加强自主复核，不记录虚假的 Kimi `CLEAN`。为避免连续生成两个内部包，本循环只做独立源码
+提交；其安装验收将与紧接着的循环 148 Composer V1 一起进入同一个最新内部包。计划复盘
+确认本轮没有改变 Provider authority、Agent Package 发布门或持久 Session 合同。
+
+### 循环 148：Grok-first Composer V1
+
+状态：设计与实现进行中
+
+owner 指出当前输入区只有文字，没有图片、文档、链接等工作入口。源码核对确认 Grok Build
+Harness 已支持 ACP `Text`、`Image`、`ResourceLink` 和 `EmbeddedResource`，但 Desktop
+Bridge 把 `session/prompt` 固定收窄为单个 Text Block；因此问题属于客户端未接通能力，
+不是 Grok Build 底座缺失。
+
+本轮目标按新的产品设计升级 Composer：提供克制的“＋”附件入口、拖拽、粘贴、附件 Chip、
+删除与明确失败反馈；图片、普通文件和 http(s) 链接使用结构化 Prompt；Renderer 不取得
+Host Session authority 或可伪造的任意路径，主进程负责附件暂存、校验和生命周期；附件
+内容不上传 AgentMesh360 Core，但推理所需内容会按用户选择的 BYOK Provider 发送。同步补齐
+单元、Electron、负向、安全、恢复与 13 寸视口回归，再更新设计、测试用例和下一轮计划。
+
+本轮明确不实现音频/视频输入、DOCX/XLSX 专用富解析、云端文件库、多会话、消息队列、自动
+fallback、P7/P8、签名、公证或在线发布；这些能力不得借 Composer 改造越过各自计划门。

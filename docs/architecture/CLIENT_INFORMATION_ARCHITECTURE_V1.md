@@ -19,8 +19,9 @@
 不设置一级“当前对话”。对话属于具体 Agent 的固定 Main Session；打开常驻 Agent 后，
 主内容默认直接进入对话，不再先经过详情头部或“对话”页签。
 
-不设置一级“Agent Package”。原 Package Center 迁入 Agent 页内的“添加 Agent”；
-Registry、revision、digest 等信息只进入“高级与审计”折叠区域。
+不设置一级“Agent Package”。Package Center 的底层安装、更新、回滚能力继续保留，
+但在用户还不能真正新增 Agent 的阶段不提供公开入口。将来只有完整的可信目录、安装与
+恢复流程可以兑现时，才按独立产品切片重新开放。
 
 ## 2. 页面地图
 
@@ -33,7 +34,6 @@ flowchart TD
     AGENTS --> GUIDE["快速开始引导"]
     AGENTS --> RESUME["继续上次工作"]
     AGENTS --> LIST["已激活 / 可激活 Agent"]
-    AGENTS --> ADD["添加 Agent"]
     LIST --> WORKSPACE["Agent 工作区"]
     WORKSPACE --> CHAT["主会话（默认）"]
     WORKSPACE --> GEAR["右上角 Agent 设置"]
@@ -76,8 +76,7 @@ Agent 页按以下顺序组织：
 3. 老用户显示“继续上次工作”；
 4. `needs_input` Agent 进入“正在等待你”区，但它是运行状态，不是未读；
 5. 已激活 Agent；
-6. 可激活 Agent；
-7. “添加 Agent”入口。
+6. 可激活 Agent。
 
 卡片只显示用户需要的内容：名称、公开描述、运行状态、当前 Provider/模型摘要和主要
 操作。Package、Session ID、Workspace 路径、role、Assignment、Binding、revision
@@ -117,6 +116,11 @@ Agent 页按以下顺序组织：
 打开常驻 Agent 后直接展示同一个确定性 Main Session；项目、计划、后台任务、活动、
 产物、消息、权限确认和草稿合同不变。顶部只保留 Agent 身份、主会话状态和设置齿轮；
 模型、行为和偏好不与对话处于同一视觉层级。
+
+Agent 的初始化与 Turn 状态按 Agent 隔离：A 正在唤醒、生成或等待 Host 响应时，B/C
+仍可从二级栏或 Agent 列表打开并正常聊天。A 在后台继续；其迟到的 push、成功或失败只
+更新 A 的状态，不得覆盖当前 B/C 的消息、错误或草稿。只有正在工作的 Agent 自己锁定
+Composer 和设置写入。
 
 ### 6.2 模型
 
@@ -164,7 +168,8 @@ Agent 页按以下顺序组织：
 - Host 拒绝明显的 Authorization/Bearer 值、私钥块和典型 API Key 值；
 - 任何拒绝都不写入部分内容；
 - 保存成功不改变正在运行的 Turn；模型、行为和偏好编辑器在生成期间锁定，Host 在下一条
-  Prompt 前按 revision 重建 Agent，确保新内容只从下一条消息生效。
+  Prompt 前按 revision 重建 Agent，确保新内容只从下一条消息生效；该锁只属于当前
+  Agent，不阻止切换到其他 Agent。
 
 ## 8. 模型供应商页
 
@@ -192,10 +197,15 @@ Agent 页按以下顺序组织：
 删除正在被 Agent 使用的 Provider 前，必须列出受影响 Agent；确认删除后相关 Agent
 进入可理解的模型失效状态，不静默换到其他 Provider。
 
-## 9. 添加 Agent 与设置
+所有模型与 Provider 下拉统一使用客户端自有 Combobox/Listbox，不调用 macOS 原生弹出
+菜单。控件保留原生 `select` 作为表单值来源，但它不进入焦点序列或视觉交互；应用控件
+必须支持鼠标、方向键、Home/End、Enter/Space、Escape、Tab、分组、禁用态和动态模型同步。
 
-“添加 Agent”当前只展示内置/已安装 Agent，并明确“在线添加暂未开放”；不显示看似
-可用但实际禁用的远端下载表单。生产 Registry 未开放前不能承诺在线商店。
+## 9. 内部 Package 能力与设置
+
+当前用户不能自行新增 Agent，因此 Agent 首页不显示“添加 Agent”，首次进入也不读取
+Package snapshot。Package Controller、IPC、签名校验、更新、回滚和内部自动化继续保留，
+但只作为迁移与未来动态集成基础；生产 Registry 未开放前不承诺在线商店。
 
 设置二级固定为：
 

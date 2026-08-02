@@ -64,6 +64,58 @@ async function run() {
     window,
     "document.activeElement?.matches('[data-close-provider-editor]') === true",
   );
+  const providerSelectSurface = await window.webContents.executeJavaScript(`({
+    nativeCount: document.querySelectorAll('#provider-profile-form select').length,
+    hiddenNativeCount: document.querySelectorAll(
+      '#provider-profile-form select.app-select-native[tabindex="-1"]',
+    ).length,
+    comboboxCount: document.querySelectorAll(
+      '#provider-profile-form button[role="combobox"]',
+    ).length,
+  })`);
+  assert.deepEqual(providerSelectSurface, {
+    nativeCount: 4,
+    hiddenNativeCount: 4,
+    comboboxCount: 4,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-select-name=\"presetId\"]').click()",
+  );
+  await waitForDom(
+    window,
+    "document.querySelector('.app-select-menu[data-open=\"true\"]') !== null",
+  );
+  const openMenu = await window.webContents.executeJavaScript(`(() => {
+    const menu = document.querySelector('.app-select-menu[data-open="true"]');
+    const rect = menu.getBoundingClientRect();
+    return {
+      expanded: document.querySelector('[data-select-name="presetId"]')
+        .getAttribute('aria-expanded'),
+      portaled: menu.closest('.provider-editor-dialog') === null,
+      officialGroup: [...menu.querySelectorAll('.app-select-group-label')]
+        .some((label) => label.innerText.startsWith('官方')),
+      optionCount: menu.querySelectorAll('[role="option"]').length,
+      insideViewport: rect.left >= 0 && rect.top >= 0
+        && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+    };
+  })()`);
+  assert.deepEqual(openMenu, {
+    expanded: 'true',
+    portaled: true,
+    officialGroup: true,
+    optionCount: 12,
+    insideViewport: true,
+  });
+  await window.webContents.executeJavaScript(`
+    document.querySelector('[data-select-name="presetId"]').dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+  `);
+  await waitForDom(
+    window,
+    "document.querySelector('.app-select-menu[data-open=\"true\"]') === null"
+      + " && document.querySelector('.provider-editor-dialog') !== null",
+  );
   await window.webContents.executeJavaScript(`
     document.querySelector('.provider-editor-dialog').dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
@@ -691,20 +743,27 @@ async function configureOfficialProvider(window, { displayName, apiKey, modelId 
     const select = document.getElementById('provider-model-select');
     return {
       values: [...select.options].map((option) => option.value).filter(Boolean),
+      triggerDisabled: document.querySelector('[data-select-name="enabledModels"]').disabled,
+      triggerLabel: document.querySelector('[data-select-name="enabledModels"]')
+        .querySelector('.app-select-value').innerText,
       saveDisabled: document.querySelector('.provider-save-button').disabled,
     };
   })()`);
   assert.deepEqual(discovered, {
     values: ['gpt-5', 'gpt-5-mini'],
+    triggerDisabled: false,
+    triggerLabel: '请选择一个可用模型',
     saveDisabled: true,
   });
 
   const testCount = writes.filter((write) => write.kind === 'connection-test').length;
   await window.webContents.executeJavaScript(`
     (() => {
-      const select = document.getElementById('provider-model-select');
-      select.value = ${JSON.stringify(modelId)};
-      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const trigger = document.querySelector('[data-select-name="enabledModels"]');
+      trigger.click();
+      document.querySelector(
+        '.app-select-menu[data-open="true"] [role="option"][data-value=${JSON.stringify(modelId)}]',
+      ).click();
       window.confirm = () => true;
       document.getElementById('provider-test-connection').click();
     })()
@@ -778,6 +837,21 @@ async function profileRowSnapshot(window, profileId) {
 
 async function assertProbeActions(window, profileId) {
   const probeCount = writes.filter((write) => write.kind === 'probe').length;
+  assert.deepEqual(await window.webContents.executeJavaScript(`(() => {
+    const row = document.querySelector('[data-edit-profile="${profileId}"]')
+      .closest('.profile-row');
+    const select = row.querySelector('.probe-model select');
+    const trigger = row.querySelector('.probe-model button[role="combobox"]');
+    return {
+      nativeHidden: select.classList.contains('app-select-native') && select.tabIndex === -1,
+      customTrigger: Boolean(trigger),
+      selectedModel: trigger?.querySelector('.app-select-value')?.textContent.trim(),
+    };
+  })()`), {
+    nativeHidden: true,
+    customTrigger: true,
+    selectedModel: 'gpt-5',
+  });
   await window.webContents.executeJavaScript(`
     (() => {
       const row = document.querySelector('[data-edit-profile="${profileId}"]')

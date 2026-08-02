@@ -17,6 +17,7 @@ let backgroundDelayMs = 0;
 let managementDelayMs = 0;
 let modelSaveBarrier = null;
 let customizationSaveBarrier = null;
+let activationBarrier = null;
 let validationRevision = 1;
 let activeAccountId = 7;
 let smokeStep = 'startup';
@@ -106,8 +107,14 @@ app.whenReady().then(async () => {
     jobBindingMissing = false;
     return managementSnapshot(request.agentId, request);
   });
-  ipcMain.handle('agent:configure-and-activate', (_event, request) => {
+  ipcMain.handle('agent:configure-and-activate', async (event, request) => {
     calls.push(['activate', request]);
+    event.sender.send('identity:state', {
+      ...readyState(),
+      activatingAgentId: request.agentId,
+    });
+    if (activationBarrier) await activationBarrier.promise;
+    event.sender.send('identity:state', readyState());
     return readyState();
   });
   ipcMain.handle('agent:save-customization', async (_event, request) => {
@@ -189,6 +196,7 @@ app.whenReady().then(async () => {
     labels: [...document.querySelectorAll('.nav-item')].map((item) => item.innerText.trim()),
     currentConversation: document.getElementById('nav-conversation') !== null,
     packages: document.getElementById('nav-packages') !== null,
+    addAgentEntry: document.getElementById('add-agent') !== null,
     hostStatus: document.querySelector('[data-host-status]')?.innerText,
     jobModel: document.querySelector('[data-manage-agent="job-agent"]')
       ?.closest('.agent-card')?.querySelector('.agent-model-summary strong')?.innerText,
@@ -215,6 +223,7 @@ app.whenReady().then(async () => {
     labels: ['Agent', '模型供应商', '设置'],
     currentConversation: false,
     packages: false,
+    addAgentEntry: false,
     hostStatus: '已连接 · 点击查看',
     jobModel: '智谱 GLM Coding Plan · glm-5.2',
     guide: undefined,
@@ -298,6 +307,7 @@ app.whenReady().then(async () => {
     })()
   `);
   smokeStep = 'confirm inactive Agent activation';
+  activationBarrier = createBarrier();
   await window.webContents.executeJavaScript(`
     (() => {
       const form = document.getElementById('agent-model-form');
@@ -314,6 +324,36 @@ app.whenReady().then(async () => {
     providerProfileId: 'pp_glm',
     modelId: 'glm-5.2',
   });
+
+  smokeStep = 'switch to an existing Agent while another Agent activates in background';
+  await window.webContents.executeJavaScript("document.getElementById('nav-agents').click()");
+  await waitFor(() => window.webContents.executeJavaScript(`(() => {
+    const activating = document.querySelector('[data-manage-agent="lecturecast-agent"]');
+    const existing = document.querySelector('[data-manage-agent="job-agent"]');
+    return activating?.disabled === true
+      && activating?.innerText === '正在唤醒…'
+      && existing?.disabled === false;
+  })()`));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-manage-agent=\"job-agent\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form[data-agent-id=\"job-agent\"]') !== null",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    title: document.querySelector('.agent-chat-identity h1')?.innerText,
+    activeAgent: document.querySelector('[data-switch-resident-agent].active')
+      ?.dataset.switchResidentAgent,
+  })`), {
+    title: 'Job Agent',
+    activeAgent: 'job-agent',
+  });
+  activationBarrier.resolve();
+  activationBarrier = null;
+  await new Promise((resolve) => setTimeout(resolve, 75));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('.agent-chat-identity h1')?.innerText",
+  ), 'Job Agent');
 
   smokeStep = 'return to Agent list';
   await waitFor(() => window.webContents.executeJavaScript(
@@ -418,6 +458,11 @@ app.whenReady().then(async () => {
   const modelForm = await window.webContents.executeJavaScript(`({
     agent: document.querySelector('.agent-settings-header h1')?.innerText,
     modelTag: document.querySelector('#agent-model-form [name="modelId"]').tagName,
+    nativeSelectsHidden: [...document.querySelectorAll('#agent-model-form select')]
+      .every((select) => select.classList.contains('app-select-native') && select.tabIndex === -1),
+    customComboboxes: document.querySelectorAll(
+      '#agent-model-form button[role="combobox"]',
+    ).length,
     models: [...document.querySelectorAll('#agent-model-form [name="modelId"] option')]
       .map((option) => option.value).filter(Boolean),
     hasFreeText: document.querySelector('#agent-model-form input[name="modelId"]') !== null,
@@ -426,6 +471,8 @@ app.whenReady().then(async () => {
   assert.deepEqual(modelForm, {
     agent: 'Job Agent',
     modelTag: 'SELECT',
+    nativeSelectsHidden: true,
+    customComboboxes: 2,
     models: ['glm-5.2', 'glm-4.7'],
     hasFreeText: false,
     requiresActivation: false,
@@ -438,11 +485,25 @@ app.whenReady().then(async () => {
   smokeStep = 'save resident Agent model';
   await window.webContents.executeJavaScript(`
     (() => {
-      const form = document.getElementById('agent-model-form');
-      form.elements.modelId.value = 'glm-4.7';
-      form.elements.modelId.dispatchEvent(new Event('change', { bubbles: true }));
+      const trigger = document.querySelector(
+        '#agent-model-form [data-select-name="modelId"]',
+      );
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     })()
   `);
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    value: document.querySelector('#agent-model-form [name="modelId"]').value,
+    expanded: document.querySelector(
+      '#agent-model-form [data-select-name="modelId"]',
+    ).getAttribute('aria-expanded'),
+    openListboxes: document.querySelectorAll('.app-select-menu[data-open="true"]').length,
+  })`), {
+    value: 'glm-4.7',
+    expanded: 'false',
+    openListboxes: 0,
+  });
   assert.equal(await window.webContents.executeJavaScript(
     "document.querySelector('#agent-model-form button[type=\"submit\"]').disabled",
   ), false);

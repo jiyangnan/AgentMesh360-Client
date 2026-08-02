@@ -180,6 +180,51 @@ test('login persists only the refresh token and activation is available only fro
   assert.equal(fixture.host.calls.activateAgent, 1);
 });
 
+test('an existing resident Agent stays usable while another Agent activates', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  let deployResident = false;
+  let releaseDeploy;
+  const deployBarrier = new Promise((resolve) => { releaseDeploy = resolve; });
+  fixture.host.listAgents = async () => ({
+    agents: [
+      {
+        agentId: 'job-agent',
+        displayName: 'Job Agent',
+        description: 'Career copilot',
+        version: '0.1.0',
+        runtimeState: 'resident',
+        desiredState: 'running',
+      },
+      {
+        agentId: 'deploy-agent',
+        displayName: 'Deploy Agent',
+        description: 'Deployment copilot',
+        version: '0.1.0',
+        runtimeState: deployResident ? 'resident' : 'available',
+        desiredState: deployResident ? 'running' : 'stopped',
+      },
+    ],
+  });
+  fixture.host.activateAgent = async (agentId) => {
+    fixture.host.calls.activateAgent += 1;
+    assert.equal(agentId, 'deploy-agent');
+    await deployBarrier;
+    deployResident = true;
+  };
+  await fixture.controller.start();
+
+  const deployActivation = fixture.controller.activateAgent('deploy-agent');
+  await waitFor(() => fixture.controller.getState().activatingAgentId === 'deploy-agent');
+  const jobState = await fixture.controller.activateAgent('job-agent');
+
+  assert.equal(jobState.activatingAgentId, 'deploy-agent');
+  assert.equal(jobState.agents.find((agent) => agent.agentId === 'job-agent').runtimeState, 'resident');
+  assert.equal(fixture.host.calls.activateAgent, 1);
+  releaseDeploy();
+  const completed = await deployActivation;
+  assert.equal(completed.agents.find((agent) => agent.agentId === 'deploy-agent').runtimeState, 'resident');
+});
+
 test('OAuth login persists only the refresh token before the same subscription gate', async () => {
   const fixture = makeFixture({ storedRefreshToken: null });
   const state = await fixture.controller.loginWithOAuth('google');

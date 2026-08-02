@@ -3,6 +3,12 @@
 const { CoreRequestError } = require('./auth/core-client');
 
 const DEFAULT_REVALIDATE_INTERVAL_MS = 5 * 60 * 1000;
+const USABLE_RESIDENT_STATES = new Set([
+  'resident',
+  'working',
+  'needs_input',
+  'dormant',
+]);
 
 class IdentityController {
   constructor({
@@ -130,6 +136,20 @@ class IdentityController {
   }
 
   activateAgent(agentId) {
+    const anotherAgentIsActivating = Boolean(
+      this.activeOperation
+      && this.state.phase === 'ready'
+      && this.state.activatingAgentId
+      && this.state.activatingAgentId !== agentId,
+    );
+    const requestedAgentIsAlreadyResident = this.state.agents?.some((agent) => (
+      agent.agentId === agentId
+      && agent.desiredState === 'running'
+      && USABLE_RESIDENT_STATES.has(agent.runtimeState)
+    )) === true;
+    if (anotherAgentIsActivating && requestedAgentIsAlreadyResident) {
+      return Promise.resolve(this.state);
+    }
     return this.#exclusive(async () => {
       if (this.state.phase !== 'ready' || !this.accessToken) {
         throw new Error('当前账号尚未通过订阅验证');

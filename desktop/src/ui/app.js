@@ -26,7 +26,8 @@ let conversationOpenRevision = 0;
 let pendingConversationOpen = null;
 let conversationOpenTail = Promise.resolve();
 let conversationSendRevision = 0;
-let conversationSendPending = null;
+let conversationSendPendingByAgent = new Map();
+let conversationStreamingAgents = new Set();
 let settingsTab = 'account';
 let providerUi = {
   phase: 'idle',
@@ -63,6 +64,8 @@ let permissionResponseInFlight = null;
 
 bridge.onState(render);
 bridge.onConversationState((state) => {
+  const previousTurnRunning = conversationTurnIsRunning(conversationUi.agentId);
+  const streamingStateChanged = trackConversationStreamingState(state);
   // The open IPC response is authoritative. Host push events emitted by a
   // previous load must not replace this request's fail-closed loading state.
   if (pendingConversationOpen) return;
@@ -70,24 +73,19 @@ bridge.onConversationState((state) => {
   // current send IPC is still resolving. Keep the known Agent snapshot and
   // local pending-turn owner until that IPC either returns a full state or
   // rejects; otherwise the missing agentId would strand the turn lock.
-  if (conversationSendPending && state?.phase === 'idle' && !state?.agentId) return;
-  if (
-    state?.phase !== 'idle'
-    && state?.agentId
-    && state.agentId !== agentManagementUi.agentId
-  ) {
+  if (conversationSendPendingByAgent.size && state?.phase === 'idle' && !state?.agentId) return;
+  if (state?.agentId && state.agentId !== agentManagementUi.agentId) {
+    if (
+      streamingStateChanged
+      && currentState.phase === 'ready'
+      && workspaceView === 'agent-detail'
+    ) {
+      renderReady(currentState);
+    }
     return;
   }
-  const wasTurnRunning = conversationTurnIsRunning();
-  if (
-    conversationSendPending
-    && state?.agentId === conversationSendPending.agentId
-    && state?.streaming === true
-  ) {
-    conversationSendPending = null;
-  }
   conversationUi = state || { phase: 'idle' };
-  const turnRunningChanged = wasTurnRunning !== conversationTurnIsRunning();
+  const turnRunningChanged = previousTurnRunning !== conversationTurnIsRunning();
   if (
     currentState.phase === 'ready'
     && workspaceView === 'agent-detail'
@@ -146,7 +144,8 @@ function render(state) {
     conversationOpenRevision += 1;
     pendingConversationOpen = null;
     conversationSendRevision += 1;
-    conversationSendPending = null;
+    conversationSendPendingByAgent = new Map();
+    conversationStreamingAgents = new Set();
     settingsTab = 'account';
     packageUi = {
       phase: 'idle',
@@ -194,7 +193,8 @@ function render(state) {
     conversationOpenRevision += 1;
     pendingConversationOpen = null;
     conversationSendRevision += 1;
-    conversationSendPending = null;
+    conversationSendPendingByAgent = new Map();
+    conversationStreamingAgents = new Set();
     packageUi.snapshot = null;
     packageUi.phase = 'idle';
     packageUi.pendingApproval = null;
@@ -205,6 +205,7 @@ function render(state) {
     conversationUi = { phase: 'idle' };
     permissionResponseInFlight = null;
   }
+  if (currentState.phase !== 'ready') window.AgentMeshSelect?.destroyAll();
   switch (currentState.phase) {
     case 'signed_out':
       renderSignedOut(currentState);
@@ -269,6 +270,7 @@ async function restoreConversationSnapshot(accountId) {
     ) {
       return;
     }
+    trackConversationStreamingState(state);
     conversationUi = state;
     const requestRevision = ++agentManagementRequestRevision;
     agentManagementUi = {
@@ -402,6 +404,7 @@ function renderUnavailable(state) {
 
 function renderReady(state) {
   captureRendererDrafts();
+  window.AgentMeshSelect?.destroyAll();
   const account = state.account || {};
   const agentAreaActive = ['agents', 'agent-detail', 'add-agent'].includes(workspaceView);
   const hostStatus = hostConnectionStatus();
@@ -463,7 +466,6 @@ function renderReady(state) {
       const agent = currentState.agents?.find(
         (item) => item.agentId === button.dataset.manageAgent,
       );
-      if (conversationTurnBlocksAgentSwitch(agent?.agentId)) return;
       if (
         isResident(agent)
         && conversationTurnIsRunning(agent.agentId)
@@ -472,12 +474,8 @@ function renderReady(state) {
       openAgentDetail(agent?.agentId, isResident(agent) ? 'conversation' : 'model');
     });
   }
-  document.getElementById('add-agent')?.addEventListener('click', () => {
-    workspaceView = 'add-agent';
-    renderReady(currentState);
-    if (packageUi.phase === 'idle') refreshPackageSnapshot();
-  });
   if (workspaceView === 'agents' && agentOverviewUi.phase === 'idle') refreshAgentOverview();
+  window.AgentMeshSelect?.enhance(root);
 }
 
 function readyWorkspaceContent(state) {
@@ -507,17 +505,18 @@ function agentWorkspaceRail(state) {
         <nav class="resident-agent-list" aria-label="选择持久 Agent">
           ${agents.map((agent) => {
     const active = agent.agentId === activeAgent?.agentId;
-    const disabled = conversationTurnBlocksAgentSwitch(agent.agentId);
+    const status = conversationTurnIsRunning(agent.agentId)
+      ? '正在处理'
+      : runtimeLabel(agent.runtimeState, agent.desiredState);
     return `
             <button
               type="button"
               class="agent-rail-item ${active ? 'active' : ''}"
               data-switch-resident-agent="${escapeHtml(agent.agentId)}"
               ${active ? 'aria-current="true"' : ''}
-              ${disabled ? 'disabled title="当前回答完成后可切换 Agent"' : ''}
             >
               <span class="agent-rail-avatar">${escapeHtml(agentInitial(agent))}</span>
-              <span><strong>${escapeHtml(agent.displayName)}</strong><small>${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</small></span>
+              <span><strong>${escapeHtml(agent.displayName)}</strong><small>${escapeHtml(status)}</small></span>
             </button>`;
   }).join('') || '<p class="agent-rail-empty">尚未激活持久 Agent</p>'}
         </nav>
@@ -551,14 +550,12 @@ function wireAgentWorkspaceRail() {
     button.addEventListener('click', () => {
       const agentId = button.dataset.switchResidentAgent;
       if (!agentId) return;
-      if (conversationTurnBlocksAgentSwitch(agentId)) return;
       if (showExistingConversation(agentId)) return;
       openAgentDetail(agentId, 'conversation');
     });
   });
   document.querySelector('[data-agent-session="main"]')?.addEventListener('click', () => {
     if (!agentManagementUi.agentId) return;
-    if (conversationTurnBlocksAgentSwitch(agentManagementUi.agentId)) return;
     if (showExistingConversation(agentManagementUi.agentId)) return;
     openConversation(agentManagementUi.agentId);
   });
@@ -568,7 +565,7 @@ function showExistingConversation(agentId) {
   if (
     !agentId
     || conversationUi.agentId !== agentId
-    || !['loading', 'ready', 'error'].includes(conversationUi.phase)
+    || !['loading', 'sending', 'ready', 'error'].includes(conversationUi.phase)
   ) {
     return false;
   }
@@ -1275,17 +1272,32 @@ function wireConversation() {
     };
     textarea.value = '';
     if (draftKey) conversationDrafts.delete(draftKey);
-    conversationSendPending = mutation;
+    conversationSendPendingByAgent.set(
+      conversationPendingKey(mutation.accountId, mutation.agentId),
+      mutation,
+    );
     conversationUi = { ...conversationUi, error: null };
     if (currentState.phase === 'ready') renderReady(currentState);
     try {
       const state = await bridge.sendConversationMessage(text);
-      if (!conversationSendIsCurrent(mutation)) return;
-      conversationSendPending = null;
+      const mutationIsCurrent = (
+        conversationSendIsCurrent(mutation)
+        && state?.agentId === mutation.agentId
+      );
+      clearConversationSend(mutation);
+      trackConversationStreamingState(state);
+      if (!mutationIsCurrent) {
+        if (currentState.phase === 'ready') renderReady(currentState);
+        return;
+      }
       conversationUi = state;
     } catch (error) {
-      if (!conversationSendIsCurrent(mutation)) return;
-      conversationSendPending = null;
+      const mutationIsCurrent = conversationSendIsCurrent(mutation);
+      clearConversationSend(mutation);
+      if (!mutationIsCurrent) {
+        if (currentState.phase === 'ready') renderReady(currentState);
+        return;
+      }
       // The pending-state render owns a fresh, intentionally empty form. Remove
       // it before restoring the failed message so captureRendererDrafts() cannot
       // overwrite the restored draft with that transient empty value.
@@ -1379,29 +1391,54 @@ function conversationSendIsCurrent(context) {
   );
 }
 
-function conversationTurnAgentId() {
-  if (
-    conversationSendPending
-    && readyAccountId === conversationSendPending.accountId
-  ) {
-    return conversationSendPending.agentId;
-  }
-  return conversationUi.streaming === true ? conversationUi.agentId : null;
+function conversationPendingKey(accountId, agentId) {
+  return `${String(accountId || '')}:${String(agentId || '')}`;
+}
+
+function pendingConversationSend(agentId, accountId = readyAccountId) {
+  if (!accountId || !agentId) return null;
+  return conversationSendPendingByAgent.get(conversationPendingKey(accountId, agentId)) || null;
+}
+
+function conversationSendOwnsPending(context) {
+  return Boolean(
+    context
+    && pendingConversationSend(context.agentId, context.accountId)?.revision === context.revision,
+  );
+}
+
+function clearConversationSend(context) {
+  if (!conversationSendOwnsPending(context)) return;
+  conversationSendPendingByAgent.delete(
+    conversationPendingKey(context.accountId, context.agentId),
+  );
+  conversationStreamingAgents.delete(context.agentId);
+}
+
+function trackConversationStreamingState(state) {
+  const agentId = state?.agentId;
+  if (!agentId) return false;
+  const wasStreaming = conversationStreamingAgents.has(agentId);
+  if (state.streaming === true) conversationStreamingAgents.add(agentId);
+  else conversationStreamingAgents.delete(agentId);
+  return wasStreaming !== conversationStreamingAgents.has(agentId);
 }
 
 function conversationTurnIsRunning(agentId = conversationUi.agentId) {
   if (!agentId) return false;
-  return conversationTurnAgentId() === agentId;
-}
-
-function conversationTurnBlocksAgentSwitch(agentId) {
-  const runningAgentId = conversationTurnAgentId();
-  return Boolean(runningAgentId && agentId && runningAgentId !== agentId);
+  return Boolean(
+    pendingConversationSend(agentId)
+    || conversationStreamingAgents.has(agentId)
+    || (conversationUi.agentId === agentId && conversationUi.streaming === true),
+  );
 }
 
 async function openConversation(agentId, pendingRevision = null) {
-  if (conversationTurnIsRunning()) {
-    if (agentId === conversationTurnAgentId()) showExistingConversation(agentId);
+  if (
+    conversationUi.agentId === agentId
+    && conversationTurnIsRunning(agentId)
+  ) {
+    showExistingConversation(agentId);
     return;
   }
   const requestRevision = (
@@ -1434,6 +1471,7 @@ async function openConversation(agentId, pendingRevision = null) {
       finishConversationOpen(requestRevision);
       return;
     }
+    trackConversationStreamingState(snapshot);
     conversationUi = snapshot;
     finishConversationOpen(requestRevision);
   } catch (error) {
@@ -2170,7 +2208,6 @@ function agentWorkspaceView(state) {
     <div class="section-head">
       <h2>你的 Agent</h2>
       <span>${residentCount} 个已激活</span>
-      <button class="ghost add-agent-button" id="add-agent" type="button">＋ 添加 Agent</button>
     </div>
     ${state.activationError ? `<div class="activation-error">${escapeHtml(state.activationError)}</div>` : ''}
     <div class="agent-grid">${agents.length ? agents.map((agent, index) => agentCard(
@@ -2441,7 +2478,6 @@ function agentCustomizationView(agent, kind) {
 async function openAgentDetail(agentId, tab) {
   if (!agentId) return;
   if (tab === 'conversation') {
-    if (conversationTurnBlocksAgentSwitch(agentId)) return;
     if (conversationTurnIsRunning(agentId) && showExistingConversation(agentId)) return;
   }
   const requestRevision = ++agentManagementRequestRevision;
@@ -3280,7 +3316,11 @@ function trapProviderModalFocus(event) {
   if (event.key !== 'Tab') return;
   const focusable = [...event.currentTarget.querySelectorAll(
     'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-  )].filter((element) => !element.hidden && element.getClientRects().length > 0);
+  )].filter((element) => (
+    !element.hidden
+    && element.tabIndex >= 0
+    && element.getClientRects().length > 0
+  ));
   if (!focusable.length) return;
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
@@ -3444,6 +3484,7 @@ async function discoverProviderModels(event) {
       return;
     }
     resetDiscoveredModels(form);
+    modelSelect.options[0].textContent = '请选择一个可用模型';
     for (const model of result.models) {
       const optionElement = document.createElement('option');
       optionElement.value = model.modelId;
@@ -4026,14 +4067,18 @@ function publicError(error, fallback) {
 function agentCard(agent, index, activatingAgentId, overview = null) {
   const resident = isResident(agent);
   const activating = activatingAgentId === agent.agentId;
-  const turnLocked = conversationTurnBlocksAgentSwitch(agent.agentId);
+  const anotherActivationPending = Boolean(
+    activatingAgentId
+    && activatingAgentId !== agent.agentId
+    && !resident,
+  );
   const tones = ['tone-violet', 'tone-mint', 'tone-blue'];
   const symbol = agentInitial(agent);
   const buttonAttribute = `data-manage-agent="${escapeHtml(agent.agentId)}"`;
   const buttonLabel = activating
     ? '正在唤醒…'
-    : turnLocked
-      ? '当前回答完成后可切换'
+    : anotherActivationPending
+      ? '等待当前激活完成'
       : resident ? '打开 Agent' : '设置并激活';
   const modelSummary = overview?.modelId
     ? `${overview.providerDisplayName || '供应商不可用'} · ${overview.modelId}`
@@ -4053,7 +4098,7 @@ function agentCard(agent, index, activatingAgentId, overview = null) {
       </div>
       <div class="agent-meta">
         <span class="runtime ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
-        <button class="agent-action" ${buttonAttribute} ${activating || turnLocked ? 'disabled' : ''}>${buttonLabel}</button>
+        <button class="agent-action" ${buttonAttribute} ${activating || anotherActivationPending ? 'disabled' : ''}>${buttonLabel}</button>
       </div>
     </article>`;
 }

@@ -135,12 +135,20 @@ app.whenReady().then(async () => {
   });
   smokeStep = 'load renderer';
   await window.loadFile(path.join(__dirname, '..', 'src', 'ui', 'index.html'));
-  smokeStep = 'wait for add Agent action';
+  smokeStep = 'verify unavailable add Agent entry stays hidden';
   await waitFor(async () => window.webContents.executeJavaScript(
-    "document.getElementById('add-agent') !== null",
+    "document.querySelector('[data-manage-agent]') !== null",
   ));
-  smokeStep = 'open package center';
-  await window.webContents.executeJavaScript("document.getElementById('add-agent').click()");
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.getElementById('add-agent') === null",
+  ), true);
+  assert.equal(snapshotReads, 0);
+  smokeStep = 'open retained package center through internal test route';
+  await window.webContents.executeJavaScript(`
+    workspaceView = 'add-agent';
+    renderReady(currentState);
+    refreshPackageSnapshot();
+  `);
   smokeStep = 'wait for package form';
   await waitFor(async () => window.webContents.executeJavaScript(
     "document.getElementById('package-install-form') !== null",

@@ -1,7 +1,7 @@
 # AgentMesh360 Client 产品用户旅程测试用例
 
-版本：1.1
-更新时间：2026-07-31
+版本：1.2
+更新时间：2026-08-02
 产品依据：`docs/architecture/PRODUCT_BLUEPRINT.md`
 执行原则：文档中的“设计状态”和“本轮结果”分开；没有真实执行证据不得写成通过。
 
@@ -20,7 +20,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **多 Agent 用户**：在 Job、LectureCast、Deploy 之间切换，但不希望每个 Agent 复制一套
   完整 Host；
 - **BYOK 用户**：持有 OpenAI、xAI、Anthropic、Gemini、DeepSeek、GLM 或 Kimi Key；
-- **Package 使用者**：安装或更新新的签名 Agent，同时要求旧版本可恢复；
+- **内部 Package 维护者**：验证签名 Agent 的安装、更新与恢复合同；公开新增入口尚未开放；
 - **受限用户**：未登录、订阅失效、网络暂不可用、Key 无权限或 Package 不可信。
 
 ## 2. 状态与结果定义
@@ -42,7 +42,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 持久 Agent | 激活后长期找到同一个 Agent，并管理其模型与行为 | TC-AGENT-001 ～ 006、TC-MODEL-001 ～ 006、TC-OVERLAY-001 ～ 005 |
 | 对话和工作区 | 对话、切屏、恢复、审批和产物不断档 | TC-CONV-001 ～ 011 |
 | BYOK Provider | 添加、验证、测试和管理模型供应商 | TC-PROVIDER-001 ～ 013 |
-| Agent Package | 从 Agent 管理中安全发现、安装、更新与回滚 | TC-PACKAGE-001 ～ 006 |
+| Agent Package | 在无公开入口阶段持续验证安全发现、安装、更新与回滚底层 | TC-PACKAGE-001 ～ 006 |
 | 后台 Host 和设置 | UI 关闭仍工作，设置结构清楚且故障可恢复 | TC-HOST-001 ～ 007、TC-SETTINGS-001 |
 | 发布与本地交付 | 只保留一个可复核内部包 | TC-RELEASE-001 ～ 003 |
 
@@ -56,13 +56,13 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | --- | --- | --- | --- |
 | 登录与订阅 | Google/GitHub 登录、重新验证、退出、订阅入口 | 成功、取消、state 错配、过期、订阅阻断、后台复验 | Node；TC-AUTH-001～004、TC-ACCESS-001～004 |
 | 左侧导航与引导 | Agent、模型供应商、设置、Host 状态、三步引导 | 默认落点、切页、Host 三态、恢复引导 | Electron；TC-NAV-001～003、TC-GUIDE-001 |
-| Agent 列表 | 管理、激活、添加 Agent、失效修复入口 | 已激活、未激活、模型失效、零 Agent | Node + Electron；TC-AGENT-001～006 |
+| Agent 列表 | 管理、激活、失效修复；不展示尚不可兑现的新增入口 | 已激活、未激活、模型失效、零 Agent、公开新增入口缺席 | Node + Electron；TC-AGENT-001～006 |
 | Agent 对话 | Agent/会话二级栏、发送、齿轮设置、权限确认、模型修复、活动/计划/产物 | 流式、失败、Agent 切换草稿、重启恢复、安全 Markdown、字号与布局、旧事件、无 fallback、快速切换 latest-intent | Node + Electron + Rust；TC-CONV-001～011 |
-| Agent 模型 | Provider 下拉、模型下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、Turn 锁定、异步响应归属 | Node + Electron + Rust；TC-MODEL-001～006 |
+| Agent 模型 | Provider/模型应用内下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、本 Agent Turn 锁定、异步响应归属 | Node + Electron + Rust；TC-MODEL-001～006 |
 | 行为 `agent.md` | 编辑、保存、恢复默认、冲突处理 | 草稿、8000/8001 字符、秘密拒绝、revision 冲突、Turn 锁定 | Node + Electron + Rust；TC-OVERLAY-001～005 |
 | 偏好 `user.md` | 编辑、保存、恢复默认、冲突处理 | 账户+Agent 隔离、草稿、秘密拒绝、账号切换清理 | Node + Electron + Rust；TC-OVERLAY-001～005 |
-| 模型供应商 | 选择预设、填 Key、获取模型、测试、保存、编辑、删除 | 动态模型、错误 Key/地址、连接失败、列表层级、草稿、删除影响、认证刷新 | Node + Electron；TC-PROVIDER-001～013 |
-| 添加 Agent | 刷新目录、权限预览、批准、安装/更新/回滚 | 关闭态、LKG、未知权限、失败原子性、远端不可用 | Node + Electron + Rust；TC-PACKAGE-001～006 |
+| 模型供应商 | 应用内选择预设、填 Key、获取模型、测试、保存、编辑、删除 | 动态模型、键盘/ARIA/分组/视口、错误 Key/地址、连接失败、列表层级、草稿、删除影响、认证刷新 | Node + Electron；TC-PROVIDER-001～013 |
+| 内部 Package（无公开入口） | 自动化调用刷新目录、权限预览、批准、安装/更新/回滚 | 首页入口缺席、关闭态、LKG、未知权限、失败原子性、远端不可用 | Node + Electron + Rust；TC-PACKAGE-001～006 |
 | 设置 | 账号与订阅、后台运行、使用指南、高级诊断 | 四子页、登录启动、Host 异常、诊断不可用 | Node + Electron；TC-HOST-001～007、TC-SETTINGS-001 |
 | 内部交付 | DMG/ZIP、receipt、SHA、单包留存 | clean pushed commit、失败保留旧包、生产发布门关闭 | Node + 安装包；TC-RELEASE-001～003 |
 
@@ -318,8 +318,11 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **设计状态**：已实现
 - **前置条件**：至少两个 Agent 已激活。
 - **输入**：在多个 Agent 之间连续切换、分别发送消息。
-- **交互步骤**：观察 Session、Workspace、Leader/PID 和各自历史。
-- **预期输出**：每个 Agent 只有自己的固定 Main Session；共享同一个 Host/Leader 与 Harness 基础设施；上下文不串线。
+- **交互步骤**：观察 Session、Workspace、Leader/PID 和各自历史；再让 A 保持初始化或
+  生成中，切换到 B 并发送消息，最后让 A 返回成功、失败和迟到 push。
+- **预期输出**：每个 Agent 只有自己的固定 Main Session；共享同一个 Host/Leader 与
+  Harness 基础设施；A 在后台继续时 B 可选择、打开和聊天；A 的迟到状态不覆盖 B，
+  上下文与草稿不串线。
 - **失败与恢复**：一个 Agent Turn 失败不重启或清空其他 Agent。
 - **验证层**：Rust + Node + Electron + 人工
 - **本轮结果**：通过
@@ -543,7 +546,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 
 ## TC-CONV-002：切换 Agent、进入设置、退出 UI 与恢复
 
-- **用户故事**：作为用户，我处理中途查看模型供应商、添加 Agent 或 Agent 设置后返回时不想丢进度。
+- **用户故事**：作为用户，我处理中途查看模型供应商或 Agent 设置后返回时不想丢进度。
 - **优先级**：P0
 - **设计状态**：已实现
 - **前置条件**：当前 Session 有历史或正在运行的 Turn。
@@ -684,16 +687,15 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **设计状态**：已实现
 - **前置条件**：Agent A/B 均常驻；A 的 `conversation:open` IPC 可人为延迟。
 - **输入**：A 打开尚未返回时点击 B；A 随后返回成功、失败或过期 push；另覆盖 A 正在
-  生成时点击 A/B，以及发送 IPC 已提交但 Host 尚未发出首个 streaming push 的窗口；
+  初始化/生成时点击 A/B，以及发送 IPC 已提交但 Host 尚未发出首个 streaming push 的窗口；
   该窗口再注入 Host 让位时短暂出现的无 Agent `idle` 快照。
 - **交互步骤**：真实点击 A 后快速点击 B；释放 A 响应；等待 B 串行打开；再注入 A 的旧
   push。生成中回到 Agent 列表并点击 A/B；再延迟 `conversation:send`，提交后立即从二级栏
   和全局列表尝试切换。
 - **预期输出**：Renderer 将 Host 打开请求串行化，并只兑现最后一次仍有效的 B 意图；A
-  的旧响应与 push 不覆盖 B，页面不出现“重新打开”。从发送按钮点击开始，其他 Agent 的
-  入口立即锁定，不等待 Host push；点击当前 Agent 只复用 Renderer 中的现有会话查看进度，
-  不再次调用 Host `conversation:open`；无 Agent `idle` 快照不清除当前会话归属，也不会让
-  pending turn 永久锁死，当前 turn 的 authority 和完成结果保持有效。
+  的旧响应与 push 不覆盖 B，页面不出现“重新打开”。从发送按钮点击开始只锁定 A 自己的
+  Composer/设置，B/C 入口仍可用且可以继续聊天；点击 A 复用现有状态查看进度，不重复提交；
+  无 Agent `idle` 快照不清除 pending 归属，A 完成后只清理 A 的 busy 状态，不改写当前 B。
 - **失败与恢复**：B 自身真实打开失败时才显示 B 的重试行动；旧请求不得制造当前错误。
 - **验证层**：Node + Electron
 - **本轮结果**：通过
@@ -728,10 +730,12 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **优先级**：P0
 - **设计状态**：已实现
 - **前置条件**：Catalog revision 3。
-- **输入**：打开 Provider 下拉菜单。
+- **输入**：打开应用内 Provider 下拉菜单，并用鼠标与键盘选择。
 - **交互步骤**：逐项选择 OpenAI、xAI、Anthropic、Gemini、DeepSeek、GLM API、
   GLM Coding Plan、Kimi 国际、Kimi 中国、Kimi Coding Plan。
-- **预期输出**：十个入口完整；官方协议、认证和地址自动锁定；技术信息默认折叠；自定义端点独立存在。
+- **预期输出**：十个入口完整；使用与客户端一致的 Combobox/Listbox，不弹出 macOS 原生
+  菜单；分组、焦点、Escape、Home/End、方向键和视口边界正确；官方协议、认证和地址自动
+  锁定；技术信息默认折叠；自定义端点独立存在。
 - **失败与恢复**：Catalog 失败使用受信内置/LKG，不显示半截供应商。
 - **验证层**：Rust + Node + Electron
 - **本轮结果**：通过
@@ -867,7 +871,8 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   展开一个条目的连接详情。
 - **预期输出**：默认首先展示“已配置的模型供应商”列表或带行动入口的空状态；仅保留
   供应商添加/编辑、Key 验证、动态模型发现、连接测试、保存、删除和折叠 Probe；
-  没有 Agent、Role、Scope、Assignment、路由矩阵或模型自由文本。
+  所有可见下拉使用统一应用控件且动态模型能同步；没有 Agent、Role、Scope、Assignment、
+  路由矩阵或模型自由文本。
 - **失败与恢复**：若 Profile 正被 Agent 使用，删除前明确影响；删除后按 TC-MODEL-003 处理。
 - **验证层**：Node + Electron + 人工
 - **本轮结果**：通过
@@ -915,9 +920,10 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **优先级**：P0
 - **设计状态**：已实现
 - **前置条件**：生产 Trust/Registry 常量为空。
-- **输入**：启动 Host，从“Agent > 添加 Agent”刷新目录。
+- **输入**：启动 Host，由内部 Electron 自动化直接进入 Package Center 并刷新目录。
 - **交互步骤**：读取本地 Active Catalog 与远端状态。
-- **预期输出**：只显示内置/本地可信 Package；远端不可用时显示“在线添加暂未开放”的静态说明，
+- **预期输出**：Agent 首页不存在“添加 Agent”入口，首次进入不读取 Package snapshot；
+  内部自动化仍只显示内置/本地可信 Package；远端不可用时显示“在线添加暂未开放”的静态说明，
   不显示伪装成可操作的禁用下载表单；无生产网络副作用。
 - **失败与恢复**：新目录失败保留 LKG，不清空现有 Agent。
 - **验证层**：Rust + Node + Electron
@@ -975,13 +981,13 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **验证层**：Rust
 - **本轮结果**：通过
 
-## TC-PACKAGE-006：添加 Agent 的用户语言与技术信息折叠
+## TC-PACKAGE-006：内部 Package 页面语言与技术信息折叠
 
-- **用户故事**：作为用户，我希望按能力理解能添加什么 Agent，需要时才查看签名和 Package 细节。
+- **用户故事**：作为内部维护者，我希望按能力理解 Package，需要时才查看签名和技术细节。
 - **优先级**：P1
 - **设计状态**：已实现
 - **前置条件**：存在内置、已安装和远端不可用三类目录状态。
-- **输入**：进入“Agent > 添加 Agent”。
+- **输入**：通过内部自动化路由进入 Package Center；公开 Agent 首页保持无入口。
 - **交互步骤**：查看 Agent 卡片、状态、权限预览和折叠技术信息。
 - **预期输出**：主信息使用 Agent 名称、用途、状态和主行动；Package 版本、来源、签名、摘要在
   技术信息内；已安装项不会重复出现“安装”。
