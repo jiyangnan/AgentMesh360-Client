@@ -8460,3 +8460,31 @@ P7/P8、签名、公证或在线发布。
 原定安全与发布边界。下一步不是继续堆功能，而是由 owner 安装唯一新包，使用自己的 xAI
 语音 Provider 做一次“首击披露 → 明确开始 → 完成只回填 → 手动发送”的真实麦克风 UAT，
 并顺手验证图片、文档、链接、`/`、`$`、`@`、历史、粘贴卡与运行中 Queue 的日常体验。
+
+### 循环 157：输入系统 V2 完成性审计与四档视口门禁补强
+
+状态：产品实现和唯一内部包保持完成；完成性证据已纠偏，真实麦克风 UAT 仍待 owner
+
+本轮没有把循环 156 的绿色结果直接当成目标完成，而是重新从设计合同逐项核对源码、测试
+和包。审计关闭两类证据缺口：
+
+1. 架构文档首页仍误写“唯一新内部包待门禁”，已同步为自动化和唯一包完成、真实安装
+   麦克风 UAT 待 owner；
+2. `TC-CONV-024` 原来把 fixture、包结构和权限文案通过写成了真实麦克风人工通过，现诚实
+   改为阻断；当前 87 条旅程为 83 通过、4 条外部真实服务阻断、0 待执行、0 失败；
+3. 紧凑布局脚本原先只默认覆盖一档，还把 BrowserWindow 外窗高度当作内容视口；现改为
+   单窗口 `setContentSize` 默认连续验证 1180×760、1280×768、1280×800、1440×900；
+4. Conversation Electron 新增 Slash 上下键选择、`aria-expanded`/`aria-selected`/
+   `aria-activedescendant` 同步，以及旧 `@` 搜索迟到后不能覆盖新结果的回归。
+
+当前重新执行证据：Desktop syntax 和全量 Node `192 passed / 0 failed / 5 skipped`；
+Conversation Electron 与四档布局通过，1180×760 截图人工确认输入框、附件条和发送按钮完整；
+Rust fmt、wire `6/6`、Input Capability `2/2`、可信 Skill 集成 `1/1`、Dictation `5/5`、
+Queue Actor `34/34`、Pager Queue `289/289`。首次 Rust 冷构建只被沙箱禁止 `protoc` 写
+`/dev/stdout`，本机隔离复跑全部通过，不是代码失败。
+
+包影响复核：本轮没有修改 `desktop/src`、Rust 产品源码或 `desktop/package.json`，唯一包仍
+精确对应产品 commit `e77703a6dbad1afae6c0501e3559731bf2c8ced3`，无需制造内容相同但
+哈希不同的新包。下一步只执行 `TC-CONV-024` 真实安装 UAT；在 owner 明确允许麦克风和 xAI
+听写调用前，目标保持未最终验收，不扩展 Audio 内容块、云文件库、fallback、P7/P8、签名、
+公证或在线发布。

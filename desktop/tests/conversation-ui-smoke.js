@@ -18,6 +18,8 @@ const workspaceId = 'workspace-12345678-1234-1234-1234-123456789abc';
 const historyId = 'history-1234567890abcdef1234567890abcdef';
 const delayedConversationOpens = new Map();
 let delayedConversationSend = null;
+let delayedWorkspaceSearch = null;
+const workspaceSearchCalls = [];
 let conversationSendFailure = false;
 let attachmentCounter = 0;
 const unsafeMarkdownText = [
@@ -77,21 +79,28 @@ app.whenReady().then(async () => {
     agentId: currentConversation.agentId,
     workspaces: [],
   }));
-  ipcMain.handle('conversation:search-workspace-files', (_event, request = {}) => ({
-    schemaVersion: 1,
-    agentId: currentConversation.agentId,
-    workspaces: [{ workspaceId, displayName: '求职材料' }],
-    files: String(request.query || '').includes('岗位') || !request.query
-      ? [{
-        workspaceId,
-        workspaceName: '求职材料',
-        relativePath: '申请/岗位说明.pdf',
-        displayPath: '申请/岗位说明.pdf',
-        name: '岗位说明.pdf',
-        sizeBytes: 24_801,
-      }]
-      : [],
-  }));
+  ipcMain.handle('conversation:search-workspace-files', async (_event, request = {}) => {
+    const query = String(request.query || '');
+    workspaceSearchCalls.push(query);
+    const delayed = delayedWorkspaceSearch;
+    delayedWorkspaceSearch = null;
+    if (delayed) await delayed.promise;
+    return {
+      schemaVersion: 1,
+      agentId: currentConversation.agentId,
+      workspaces: [{ workspaceId, displayName: '求职材料' }],
+      files: query.includes('岗位') || !query
+        ? [{
+          workspaceId,
+          workspaceName: '求职材料',
+          relativePath: '申请/岗位说明.pdf',
+          displayPath: '申请/岗位说明.pdf',
+          name: '岗位说明.pdf',
+          sizeBytes: 24_801,
+        }]
+        : [],
+    };
+  });
   ipcMain.handle('conversation:stage-workspace-file', (event, request) => {
     stagedWorkspaceFiles.push(request);
     const attachment = fixtureAttachment('file', '岗位说明.pdf', 'application/pdf', 24_801);
@@ -527,20 +536,41 @@ app.whenReady().then(async () => {
     visible: document.getElementById('composer-suggestions')?.hidden === false,
     positioned: getComputedStyle(document.getElementById('composer-suggestions')).position,
     hasNativeSelect: document.querySelector('#conversation-form select') !== null,
+    expanded: document.querySelector('#conversation-form [name="message"]')?.getAttribute('aria-expanded'),
+    activeDescendant: document.querySelector('#conversation-form [name="message"]')?.getAttribute('aria-activedescendant'),
+    selectedText: document.querySelector('[data-composer-suggestion][aria-selected="true"]')?.innerText,
     text: document.getElementById('composer-suggestions')?.innerText,
   })`);
   assert.equal(commandMenu.visible, true);
   assert.equal(commandMenu.positioned, 'absolute');
   assert.equal(commandMenu.hasNativeSelect, false);
+  assert.equal(commandMenu.expanded, 'true');
+  assert.equal(commandMenu.activeDescendant, 'composer-suggestion-0');
+  assert.equal(commandMenu.selectedText.includes('/compact'), true);
   assert.equal(commandMenu.text.includes('/compact'), true);
   assert.equal(commandMenu.text.includes('/yolo'), false);
   await window.webContents.executeJavaScript(`(() => {
-    Array.from(document.querySelectorAll('[data-composer-suggestion]'))
-      .find((node) => node.innerText.includes('/compact'))?.click();
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  })()`);
+  const keyboardSelection = await window.webContents.executeJavaScript(`({
+    activeDescendant: document.querySelector('#conversation-form [name="message"]')?.getAttribute('aria-activedescendant'),
+    selectedText: document.querySelector('[data-composer-suggestion][aria-selected="true"]')?.innerText,
+  })`);
+  assert.equal(keyboardSelection.activeDescendant, 'composer-suggestion-1');
+  assert.equal(keyboardSelection.selectedText.includes('/context · 查看上下文用量'), true);
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   })()`);
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('#conversation-form [name=\"message\"]')?.value === '/compact '",
   ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    expanded: document.querySelector('#conversation-form [name="message"]')?.getAttribute('aria-expanded'),
+    hidden: document.getElementById('composer-suggestions')?.hidden,
+  })`), { expanded: 'false', hidden: true });
   assert.equal(prompts.length, promptsBeforeInputTools);
 
   await window.webContents.executeJavaScript(`(() => {
@@ -573,6 +603,15 @@ app.whenReady().then(async () => {
   ));
   assert.equal(prompts.length, promptsBeforeInputTools);
 
+  const staleWorkspaceSearch = createBarrier();
+  delayedWorkspaceSearch = staleWorkspaceSearch;
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '@旧结果';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor(() => workspaceSearchCalls.at(-1) === '旧结果' && delayedWorkspaceSearch === null);
   await window.webContents.executeJavaScript(`(() => {
     const input = document.querySelector('#conversation-form [name="message"]');
     input.value = '@岗位';
@@ -582,9 +621,14 @@ app.whenReady().then(async () => {
   await waitFor(() => window.webContents.executeJavaScript(
     "Array.from(document.querySelectorAll('[data-composer-suggestion]')).some((node) => node.innerText.includes('岗位说明.pdf'))",
   ));
+  staleWorkspaceSearch.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 220));
   const fileSuggestions = await window.webContents.executeJavaScript(
     "document.getElementById('composer-suggestions')?.innerText",
   );
+  assert.deepEqual(workspaceSearchCalls.slice(-2), ['旧结果', '岗位']);
+  assert.equal(fileSuggestions.includes('岗位说明.pdf'), true);
+  assert.equal(fileSuggestions.includes('没有找到匹配内容'), false);
   assert.equal(fileSuggestions.includes('/Users/'), false);
   assert.equal(fileSuggestions.includes(workspaceId), false);
   await window.webContents.executeJavaScript(`(() => {

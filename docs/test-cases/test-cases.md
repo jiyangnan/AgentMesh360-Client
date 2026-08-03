@@ -927,8 +927,12 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   完成结果只插入当前 Agent 的可编辑草稿，不调用 conversation send；取消不改变输入框。
 - **失败与恢复**：权限/设备/Provider 错误使用稳定中文和配置入口；旧账号 Promise、低 revision
   或其他 Agent 结果不发布；切屏不取消，系统锁屏/休眠与退出会取消活动录音。
-- **验证层**：Rust + Node + Electron + 内部安装包人工
-- **本轮结果**：通过
+- **验证层**：Rust + Node + Electron + 包结构；真实安装包麦克风链路由 owner UAT
+- **本轮结果**：阻断
+- **阻断原因**：Rust/Node/Electron fixture、包内 Host、`Info.plist` 与权限文案已经通过；
+  本轮没有获得请求真实麦克风和调用 xAI 听写 Provider 的授权，因此不能把自动化结果冒充
+  真实安装通过。owner 需在唯一内部包中执行一次“首击披露 → 明确开始 → 完成只回填 →
+  手动发送”后再改为通过。
 
 ## TC-CONV-025：输入浮层并发、可访问性与 13 寸布局
 
@@ -1606,3 +1610,25 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - 真实安装状态：待 owner 从本地包手动覆盖安装；本轮不把包完整性验证记作
   `TC-INSTALL-001～003` 的新版本人工通过。Provider 请求、消息发送、credits、Apple 服务
   和外部上传均为 0，费用 $0。
+
+### 2026-08-03 Grok-first 输入系统 V2 完成性审计
+
+- 用例范围：87 条、14 个领域通过结构与执行记录校验；83 条通过、4 条外部真实服务阻断、
+  0 条待执行、0 条失败。新增阻断项仅为 `TC-CONV-024` 真实安装麦克风/xAI 听写 UAT；
+  GitHub OAuth、GLM Coding Plan 与 Kimi Coding Plan 三条既有外部验证阻断不变；
+- Desktop：语法检查通过；全量 Node 192 passed / 5 个显式 real-Host gate skipped /
+  0 failed。Conversation Electron 补充验证 Slash 键盘选择、ARIA 状态和迟到工作区搜索
+  不覆盖新意图；最小视口截图人工确认输入框、附件条与发送按钮完整；
+- 四档内容视口：紧凑布局 smoke 现在默认一次覆盖 1180×760、1280×768、1280×800、
+  1440×900，不再把 macOS 外窗高度误当内容视口。四档均保持页面/Main 无纵向逃逸、
+  Transcript 独立滚动、十个附件横向滚动、消息 14px、输入 15px 和 Composer 完整可见；
+- Rust：fmt、Prompt Queue wire 6/6、Input Capability 2/2、可信 Skill/Agent 隔离集成 1/1、
+  Dictation 5/5、Prompt Queue Actor 34/34、Pager Queue 289/289；首次沙箱构建只因 `protoc`
+  无权写 `/dev/stdout` 中止，移到本机隔离环境后同一测试全部通过；
+- 交付：产品源码仍精确为已打包 commit `e77703a6dbad1afae6c0501e3559731bf2c8ced3`，
+  本轮只修改测试编排和文档，不改变 `desktop/src`、Rust 产品源码或 `desktop/package.json`，
+  因而唯一内部包无需重打；DMG 摘要仍为
+  `b828453282957b5bbad77f1cf04784f345302a0e0987f09009cffa5a5f614432`；
+- 外部副作用：真实麦克风请求 0、Provider Key/Vault 读取 0、Provider 请求 0、消息发送 0、
+  AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。完成目标仍需 owner 执行
+  `TC-CONV-024` 的真实安装 UAT，未完成前不把整个输入系统 V2 标记为最终验收通过。
