@@ -14,6 +14,12 @@ const permissionResponses = [];
 const stagedWorkspaceFiles = [];
 const selectedHistory = [];
 const dictationStarts = [];
+const localDictationService = Object.freeze({
+  serviceId: 'macos-on-device-speech',
+  displayName: 'macOS 本机听写',
+  processing: 'on_device',
+});
+const localDictationDisclosure = '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。';
 const workspaceId = 'workspace-12345678-1234-1234-1234-123456789abc';
 const historyId = 'history-1234567890abcdef1234567890abcdef';
 const delayedConversationOpens = new Map();
@@ -131,9 +137,9 @@ app.whenReady().then(async () => {
     interimText: '',
     transcript: '',
     error: null,
-    service: { providerProfileId: 'pp_test', displayName: 'Test Voice' },
+    service: { ...localDictationService },
     limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
-    disclosure: '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+    disclosure: localDictationDisclosure,
     ...overrides,
   });
   let currentDictation = {
@@ -146,7 +152,7 @@ app.whenReady().then(async () => {
     error: null,
     service: null,
     limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
-    disclosure: '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+    disclosure: localDictationDisclosure,
   };
   ipcMain.handle('dictation:get-snapshot', () => currentDictation);
   ipcMain.handle('dictation:open', (event) => {
@@ -157,14 +163,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('dictation:start', async (event, request) => {
     assert.equal(request.disclosureAccepted, true);
     dictationStarts.push(currentConversation.agentId);
+    currentDictation = dictationState('starting');
+    event.sender.send('dictation:state', currentDictation);
     await new Promise((resolve) => setTimeout(resolve, 80));
     currentDictation = dictationState('listening', { interimText: '这是一段' });
     event.sender.send('dictation:state', currentDictation);
     return currentDictation;
   });
   ipcMain.handle('dictation:stop', (event) => {
-    currentDictation = dictationState('complete', { transcript: '这是一段听写结果' });
+    currentDictation = dictationState('transcribing');
     event.sender.send('dictation:state', currentDictation);
+    setTimeout(() => {
+      currentDictation = dictationState('complete', { transcript: '这是一段听写结果' });
+      if (!event.sender.isDestroyed()) event.sender.send('dictation:state', currentDictation);
+    }, 80);
     return currentDictation;
   });
   ipcMain.handle('dictation:cancel', (event) => {
@@ -673,8 +685,26 @@ app.whenReady().then(async () => {
     document.querySelector('.composer-dictation-button').click();
   })()`);
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.getElementById('composer-suggestions')?.innerText.includes('录音会发送给你选择的听写服务')",
+    "document.querySelector('.composer-suggestion-header strong')?.innerText === 'macOS 本机听写'",
   ));
+  const dictationDisclosure = await window.webContents.executeJavaScript(`(() => ({
+    title: document.querySelector('.composer-suggestion-header strong')?.innerText,
+    disclosure: document.querySelector('.composer-suggestion-header small')?.innerText,
+    actions: Array.from(
+      document.querySelectorAll('[data-composer-suggestion] strong'),
+      (node) => node.innerText,
+    ),
+    mentionsProvider: document.getElementById('composer-suggestions')?.innerText.includes('Provider'),
+  }))()`);
+  assert.deepEqual(dictationDisclosure, {
+    title: 'macOS 本机听写',
+    disclosure: localDictationDisclosure,
+    actions: ['开始听写'],
+    mentionsProvider: false,
+  });
+  assert.equal(currentDictation.phase, 'idle');
+  assert.deepEqual(currentDictation.service, localDictationService);
+  assert.equal(currentDictation.disclosure, localDictationDisclosure);
   assert.equal(dictationStarts.length, 0);
   assert.equal(prompts.length, promptsBeforeInputTools);
   await window.webContents.executeJavaScript(`(() => {
@@ -688,15 +718,22 @@ app.whenReady().then(async () => {
   await waitFor(() => window.webContents.executeJavaScript(
     "document.getElementById('composer-suggestions')?.innerText.includes('完成听写')",
   ));
+  assert.deepEqual(currentDictation.service, localDictationService);
   await window.webContents.executeJavaScript(`(() => {
     Array.from(document.querySelectorAll('[data-composer-suggestion]'))
       .find((node) => node.innerText.includes('完成听写'))?.click();
   })()`);
   await waitFor(() => window.webContents.executeJavaScript(
-    "document.querySelector('#conversation-form [name=\"message\"]')?.value.includes('这是一段听写结果')",
+    "document.getElementById('composer-suggestions')?.innerText.includes('正在把语音转换为文字')",
+  ));
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value === '这是一段听写结果'",
   ));
   assert.deepEqual(dictationStarts, ['job-agent']);
   assert.equal(prompts.length, promptsBeforeInputTools);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.hidden",
+  ), true);
   await window.webContents.executeJavaScript(`(() => {
     const input = document.querySelector('#conversation-form [name="message"]');
     input.value = '';

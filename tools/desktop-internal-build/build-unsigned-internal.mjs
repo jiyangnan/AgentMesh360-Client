@@ -21,6 +21,7 @@ import {
   sha256File,
   verifyUnsignedInternalBuild,
 } from './verify-unsigned-internal.mjs';
+import { buildMacOSLocalDictationHelper } from '../local-dictation/build-macos-helper.mjs';
 
 const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(MODULE_DIRECTORY, '../..');
@@ -176,6 +177,7 @@ export function readDesktopManifest(bytes) {
     throw new Error('desktop package manifest is invalid JSON');
   }
   const targets = manifest.build?.mac?.target;
+  const helperFiles = manifest.build?.extraFiles;
   const executableBuilderHooks = [
     'afterAllArtifactBuild',
     'afterPack',
@@ -191,6 +193,14 @@ export function readDesktopManifest(bytes) {
     || manifest.build?.productName !== 'AgentMesh360'
     || !Array.isArray(targets)
     || targets.join(',') !== 'dmg,zip'
+    || !Array.isArray(helperFiles)
+    || helperFiles.length !== 1
+    || helperFiles[0]?.from !== '.native-build/AgentMesh360SpeechHelper.app'
+    || helperFiles[0]?.to !== 'Helpers/AgentMesh360SpeechHelper.app'
+    || manifest.build?.mac?.extendInfo?.NSMicrophoneUsageDescription
+      !== 'AgentMesh360 仅在你主动开启本机听写时使用麦克风，将语音转换为可编辑文字。'
+    || manifest.build?.mac?.extendInfo?.NSSpeechRecognitionUsageDescription
+      !== 'AgentMesh360 仅在你主动开启听写时，使用 macOS 本机语音识别将语音转换为可编辑文字。'
     || manifest.build?.publish !== undefined
     || manifest.build?.mac?.identity !== undefined
     || manifest.build?.mac?.notarize !== undefined
@@ -298,6 +308,7 @@ async function collectArtifacts(outputDirectory) {
 export async function verifyPackagedHostAndPrune({
   outputDirectory,
   hostBinary,
+  helperBundle,
   architecture,
   productName,
 }) {
@@ -367,6 +378,75 @@ export async function verifyPackagedHostAndPrune({
   if (await sha256File(packagedHost) !== await sha256File(hostBinary)) {
     throw new Error('packaged internal Host does not match the release Host');
   }
+  const helperRelativePath = path.join(
+    'Contents/Helpers/AgentMesh360SpeechHelper.app',
+  );
+  const packagedHelperBundle = path.join(
+    outputDirectory,
+    expectedDirectory,
+    `${productName}.app`,
+    helperRelativePath,
+  );
+  const packagedHelper = path.join(
+    packagedHelperBundle,
+    'Contents/MacOS/agentmesh360-speech-helper',
+  );
+  const sourceHelper = path.join(
+    helperBundle,
+    'Contents/MacOS/agentmesh360-speech-helper',
+  );
+  const packagedHelperInfo = path.join(packagedHelperBundle, 'Contents/Info.plist');
+  const sourceHelperInfo = path.join(helperBundle, 'Contents/Info.plist');
+  const packagedHelperFile = await lstat(packagedHelper);
+  const sourceHelperFile = await lstat(sourceHelper);
+  for (const [info, label] of [
+    [packagedHelperFile, 'packaged local dictation helper'],
+    [sourceHelperFile, 'release local dictation helper'],
+  ]) {
+    if (!info.isFile() || info.isSymbolicLink() || (info.mode & 0o111) === 0) {
+      throw new Error(`${label} is invalid`);
+    }
+  }
+  if (await sha256File(packagedHelper) !== await sha256File(sourceHelper)) {
+    throw new Error('packaged local dictation helper does not match the release helper');
+  }
+  if (
+    (await readFile(packagedHelperInfo)).compare(await readFile(sourceHelperInfo)) !== 0
+  ) {
+    throw new Error('packaged local dictation helper privacy metadata changed');
+  }
+  const mainInfo = path.join(
+    outputDirectory,
+    expectedDirectory,
+    `${productName}.app/Contents/Info.plist`,
+  );
+  for (const [plist, key, expected] of [
+    [
+      mainInfo,
+      'NSMicrophoneUsageDescription',
+      'AgentMesh360 仅在你主动开启本机听写时使用麦克风，将语音转换为可编辑文字。',
+    ],
+    [
+      mainInfo,
+      'NSSpeechRecognitionUsageDescription',
+      'AgentMesh360 仅在你主动开启听写时，使用 macOS 本机语音识别将语音转换为可编辑文字。',
+    ],
+    [
+      packagedHelperInfo,
+      'NSMicrophoneUsageDescription',
+      'AgentMesh360 仅在你主动开启听写时使用麦克风，将语音转换为可编辑文字。',
+    ],
+    [
+      packagedHelperInfo,
+      'NSSpeechRecognitionUsageDescription',
+      'AgentMesh360 仅在你主动开启听写时，使用 macOS 本机语音识别将语音转换为可编辑文字。',
+    ],
+  ]) {
+    const actual = run('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, plist], {
+      errorMessage: `internal ${key} inspection failed`,
+    });
+    if (actual !== expected) throw new Error(`internal ${key} changed`);
+  }
 
   await rm(path.join(outputDirectory, expectedDirectory), {
     recursive: true,
@@ -425,6 +505,11 @@ async function build() {
     path.join(os.tmpdir(), 'agentmesh360-desktop-internal-'),
   );
   try {
+    const helperBundle = path.join(temporaryRoot, 'AgentMesh360SpeechHelper.app');
+    await buildMacOSLocalDictationHelper({
+      outputPath: helperBundle,
+      architecture: process.arch,
+    });
     const cargoTarget = path.join(temporaryRoot, 'cargo-target');
     run(
       'cargo',
@@ -482,6 +567,12 @@ async function build() {
           to: 'bin/agentmesh360-host',
         },
       ],
+      extraFiles: [
+        {
+          from: helperBundle,
+          to: 'Helpers/AgentMesh360SpeechHelper.app',
+        },
+      ],
       mac: {
         ...manifest.build.mac,
         identity: null,
@@ -518,6 +609,7 @@ async function build() {
     await verifyPackagedHostAndPrune({
       outputDirectory,
       hostBinary,
+      helperBundle,
       architecture: process.arch,
       productName: manifest.build.productName,
     });

@@ -831,7 +831,7 @@ function conversationView() {
         : composerIntent === 'now'
           ? '这条消息会立即执行，并打断当前任务…'
       : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${composerDisabled ? 'disabled' : ''}></textarea>
-            <button class="composer-dictation-button" type="button" aria-label="语音听写" title="语音听写" ${composerDisabled ? 'disabled' : ''}>◉</button>
+            <button class="composer-dictation-button" type="button" aria-label="本机听写" title="本机听写" ${composerDisabled ? 'disabled' : ''}>◉</button>
           </div>
           <div class="composer-suggestions" id="composer-suggestions" role="listbox" hidden></div>
           <div class="composer-link-entry" id="composer-link-entry" hidden>
@@ -1218,7 +1218,7 @@ function safeConversationDictationSnapshot(value) {
         : 1_920_000,
     },
     disclosure: safeText(value?.disclosure, 200)
-      || '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+      || '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。',
   };
 }
 
@@ -1233,7 +1233,7 @@ function emptyConversationDictationSnapshot() {
     error: null,
     service: null,
     limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
-    disclosure: '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+    disclosure: '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。',
   };
 }
 
@@ -2109,15 +2109,15 @@ function wireConversation() {
     const active = dictationBelongsToComposer(state)
       && ['starting', 'listening', 'transcribing'].includes(state.phase);
     dictationButton.setAttribute('aria-pressed', active ? 'true' : 'false');
-    dictationButton.setAttribute('aria-label', active ? '管理语音听写' : '语音听写');
-    dictationButton.title = active ? '管理语音听写' : '语音听写';
+    dictationButton.setAttribute('aria-label', active ? '管理本机听写' : '本机听写');
+    dictationButton.title = active ? '管理本机听写' : '本机听写';
   };
   const showDictationDisclosure = (state = conversationDictationUi) => {
     dictationDisclosureVisible = true;
     setSuggestionState({
       mode: 'dictation',
-      title: '语音听写',
-      hint: state?.disclosure || '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+      title: 'macOS 本机听写',
+      hint: state?.disclosure || '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。',
       token: null,
       items: [{
         glyph: '◉',
@@ -2134,20 +2134,30 @@ function wireConversation() {
   };
   const showDictationError = (state) => {
     dictationDisclosureVisible = false;
-    const providerRequired = state?.error?.code === 'dictation_provider_required';
+    const setupRequired = [
+      'dictation_language_unavailable',
+      'dictation_on_device_unavailable',
+    ].includes(state?.error?.code);
+    const permissionRequired = [
+      'microphone_permission_denied',
+      'speech_recognition_permission_denied',
+      'speech_recognition_restricted',
+    ].includes(state?.error?.code);
     setSuggestionState({
       mode: 'dictation',
-      title: '听写没有完成',
+      title: setupRequired ? '需要先开启本机听写' : '听写没有完成',
       hint: state?.error?.message || '听写服务暂时不可用，请稍后重试。',
       token: null,
       items: [{
-        glyph: providerRequired ? '设' : '↻',
-        title: providerRequired ? '配置支持听写的模型供应商' : '重新开始听写',
-        detail: providerRequired
-          ? '前往模型供应商页面检查支持听写的配置'
-          : '重新确认说明后，再次请求麦克风',
-        actionLabel: providerRequired ? '去配置' : '重试',
-        action: providerRequired ? 'configure_dictation_provider' : 'show_dictation_disclosure',
+        glyph: setupRequired || permissionRequired ? '设' : '↻',
+        title: setupRequired ? '开启 macOS 听写后重试' : '重新开始听写',
+        detail: setupRequired
+          ? '前往“系统设置 → 键盘 → 听写”，启用并下载当前语言'
+          : permissionRequired
+            ? '请在“系统设置 → 隐私与安全性”中允许 AgentMesh360'
+            : '重新确认说明后，再次请求麦克风',
+        actionLabel: '重试',
+        action: 'show_dictation_disclosure',
       }],
       loading: false,
       error: null,
@@ -2222,8 +2232,8 @@ function wireConversation() {
         mode: 'dictation',
         title: projected.phase === 'starting' ? '正在准备听写' : '正在生成文字',
         hint: projected.service?.displayName
-          ? `由 ${projected.service.displayName} 转写；结果不会自动发送`
-          : '听写结果只会放入当前输入框',
+          ? `由 ${projected.service.displayName} 转写；语音不会上传到 AgentMesh360`
+          : '语音只在本机转换为文字，结果不会自动发送',
         token: null,
         items: [],
         loading: true,
@@ -2351,7 +2361,7 @@ function wireConversation() {
       setSuggestionState({
         mode: 'dictation',
         title: '正在准备听写',
-        hint: '听写结果只会放入当前输入框，不会自动发送',
+        hint: '语音只在本机转换为文字，听写结果只会放入当前输入框',
         token: null,
         items: [],
         loading: true,
@@ -2380,14 +2390,6 @@ function wireConversation() {
     }
     if (item.action === 'insert_dictation_transcript') {
       insertDictationTranscript(conversationDictationUi);
-      return;
-    }
-    if (item.action === 'configure_dictation_provider') {
-      dictationDisclosureVisible = false;
-      closeSuggestions();
-      workspaceView = 'providers';
-      renderReady(currentState);
-      if (providerUi.phase === 'idle') refreshProviderSnapshot();
       return;
     }
     if (item.action === 'authorize_workspace') {
@@ -2678,7 +2680,7 @@ function wireConversation() {
     showDictationDisclosure(conversationDictationUi);
     runDictationOperation(
       () => bridge.openConversationDictation(),
-      '暂时无法打开语音听写',
+      '暂时无法打开本机听写',
     );
   });
   form?.querySelector('#composer-cancel-link')?.addEventListener('click', () => {
@@ -2866,7 +2868,7 @@ function wireConversation() {
   ) {
     if (dictationButton) {
       dictationButton.disabled = true;
-      dictationButton.title = '当前版本暂不支持语音听写';
+      dictationButton.title = '当前版本暂不支持本机听写';
     }
   } else {
     activeConversationDictationSink = (state) => {

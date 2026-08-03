@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>zh_CN</string>
+  <key>CFBundleDisplayName</key>
+  <string>AgentMesh360</string>
+  <key>CFBundleExecutable</key>
+  <string>agentmesh360-speech-helper</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.agentmesh360.client.speech-helper</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>AgentMesh360</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSBackgroundOnly</key>
+  <true/>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>AgentMesh360 仅在你主动开启听写时使用麦克风，将语音转换为可编辑文字。</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>AgentMesh360 仅在你主动开启听写时，使用 macOS 本机语音识别将语音转换为可编辑文字。</string>
+</dict>
+</plist>

@@ -29,11 +29,18 @@ const TEMPORARY_PREFIX = 'agentmesh360-desktop-install-';
 const PRODUCT_NAME = 'AgentMesh360';
 const BUNDLE_ID = 'com.agentmesh360.client';
 const MAX_OUTPUT_BYTES = 1024 * 1024;
+const SPEECH_HELPER_BUNDLE_RELATIVE_PATH =
+  'Contents/Helpers/AgentMesh360SpeechHelper.app';
+const SPEECH_HELPER_EXECUTABLE_RELATIVE_PATH =
+  `${SPEECH_HELPER_BUNDLE_RELATIVE_PATH}/Contents/MacOS/agentmesh360-speech-helper`;
+const SPEECH_HELPER_INFO_RELATIVE_PATH =
+  `${SPEECH_HELPER_BUNDLE_RELATIVE_PATH}/Contents/Info.plist`;
 const SCENARIOS = Object.freeze([
   'artifact_boundary',
   'dmg_verify_and_isolated_copy',
   'zip_and_dmg_payload_match',
   'bundle_and_packaged_host',
+  'bundle_and_packaged_speech_helper',
   'developer_id_absent_and_manual_gatekeeper',
   'signed_out_first_launch',
   'single_instance_window_restore',
@@ -231,6 +238,59 @@ async function inspectExecutable(filePath, label) {
     `${label} must be an executable regular file`,
   );
   return direct;
+}
+
+async function inspectRegularFile(filePath, label) {
+  const direct = await lstat(filePath);
+  assertCondition(
+    direct.isFile()
+      && !direct.isSymbolicLink()
+      && direct.size > 0,
+    `${label} must be a non-empty regular file`,
+  );
+  return direct;
+}
+
+async function assertByteIdentical(filePaths, label) {
+  const copies = await Promise.all(filePaths.map((filePath) => readFile(filePath)));
+  assertCondition(
+    copies.slice(1).every((copy) => copies[0].compare(copy) === 0),
+    `${label} differs between the DMG, installed app, and ZIP`,
+  );
+}
+
+export async function verifyPackagedSpeechHelperCopies({
+  mountedApp,
+  installedApp,
+  zipApp,
+}) {
+  const appCopies = [mountedApp, installedApp, zipApp];
+  assertCondition(
+    appCopies.every(
+      (appPath) => typeof appPath === 'string' && path.isAbsolute(appPath),
+    ),
+    'speech helper app copy paths must be absolute',
+  );
+  const helperExecutables = appCopies.map((appPath) => (
+    path.join(appPath, SPEECH_HELPER_EXECUTABLE_RELATIVE_PATH)
+  ));
+  const helperInfoPlists = appCopies.map((appPath) => (
+    path.join(appPath, SPEECH_HELPER_INFO_RELATIVE_PATH)
+  ));
+  await Promise.all([
+    ...helperExecutables.map((filePath, index) => inspectExecutable(
+      filePath,
+      ['DMG', 'installed', 'ZIP'][index] + ' speech helper executable',
+    )),
+    ...helperInfoPlists.map((filePath, index) => inspectRegularFile(
+      filePath,
+      ['DMG', 'installed', 'ZIP'][index] + ' speech helper Info.plist',
+    )),
+  ]);
+  await Promise.all([
+    assertByteIdentical(helperExecutables, 'speech helper executable'),
+    assertByteIdentical(helperInfoPlists, 'speech helper Info.plist'),
+  ]);
 }
 
 async function reserveLoopbackPort() {
@@ -509,6 +569,7 @@ async function run() {
   const backgroundSocketPath = path.join(temporaryRoot, 'background.sock');
   const installedApp = path.join(applications, `${PRODUCT_NAME}.app`);
   const zipApp = path.join(zipCopy, `${PRODUCT_NAME}.app`);
+  const mountedApp = path.join(mountPoint, `${PRODUCT_NAME}.app`);
   let mounted = false;
   let foreground = null;
   let secondInstance = null;
@@ -547,7 +608,7 @@ async function run() {
     mounted = true;
     runSync(
       'ditto',
-      [path.join(mountPoint, `${PRODUCT_NAME}.app`), installedApp],
+      [mountedApp, installedApp],
       { errorMessage: 'isolated DMG app copy failed' },
     );
     runSync(
@@ -575,6 +636,7 @@ async function run() {
       inspectExecutable(appExecutable, 'packaged app executable'),
       inspectExecutable(packagedHost, 'packaged Host'),
       inspectExecutable(zipHost, 'ZIP packaged Host'),
+      verifyPackagedSpeechHelperCopies({ mountedApp, installedApp, zipApp }),
     ]);
     assertCondition(
       await sha256File(packagedHost) === await sha256File(zipHost)

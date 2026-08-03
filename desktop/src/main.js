@@ -10,7 +10,6 @@ const {
   safeStorage,
   session,
   shell,
-  systemPreferences,
 } = require('electron');
 const { AgentMeshCoreClient } = require('./auth/core-client');
 const { DesktopOAuthBroker } = require('./auth/oauth-loopback');
@@ -19,6 +18,7 @@ const { AcpHostClient } = require('./host/acp-client');
 const { AgentConversationController } = require('./conversation-controller');
 const { ConversationAttachmentStore } = require('./conversation-attachment-store');
 const { DictationController } = require('./dictation-controller');
+const { MacOSLocalDictationService } = require('./local-dictation-service');
 const { PromptHistoryStore } = require('./prompt-history-store');
 const { WorkspaceAuthorityStore } = require('./workspace-authority-store');
 const { AgentManagementController } = require('./agent-management-controller');
@@ -44,6 +44,7 @@ let conversationAttachments = null;
 let conversationWorkspaces = null;
 let conversationPromptHistory = null;
 let dictations = null;
+let localDictationService = null;
 const canaryRuntime = configureP5CanaryRuntime({ app });
 const loginItems = new LoginItemController({ app });
 const startupIntent = resolveStartupIntent({
@@ -115,7 +116,11 @@ async function boot() {
   const packages = new PackageController({ identity: controller, host });
   const providers = new ProviderController({ identity: controller, host });
   const agentManagement = new AgentManagementController({ identity: controller, host });
-  dictations = new DictationController({ identity: controller, host });
+  localDictationService = new MacOSLocalDictationService({ app });
+  dictations = new DictationController({
+    identity: controller,
+    host: localDictationService,
+  });
 
   registerIpc(
     controller,
@@ -133,14 +138,20 @@ async function boot() {
   });
   conversations.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('conversation:state', state);
+    const active = dictations?.getSnapshot?.();
+    if (
+      ['starting', 'listening', 'transcribing'].includes(active?.phase)
+      && active.agentId !== state?.agentId
+    ) {
+      cancelActiveLocalDictation();
+    }
   });
   dictations.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('dictation:state', state);
   });
   powerMonitor.on('resume', () => controller.revalidate('resume').catch(() => {}));
   const cancelDictationForSystemPause = () => {
-    if (!['starting', 'listening', 'transcribing'].includes(dictations?.getSnapshot()?.phase)) return;
-    dictations.cancel().catch(() => {});
+    cancelActiveLocalDictation();
   };
   powerMonitor.on('suspend', cancelDictationForSystemPause);
   powerMonitor.on('lock-screen', cancelDictationForSystemPause);
@@ -180,12 +191,15 @@ function createWindow() {
   created.removeMenu();
   created.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   created.webContents.on('will-navigate', (event) => event.preventDefault());
+  created.webContents.on('render-process-gone', () => cancelActiveLocalDictation());
+  created.webContents.on('unresponsive', () => cancelActiveLocalDictation());
   created.on('focus', () => {
     if (!controller?.isRevalidationDue()) return;
     controller.revalidate('focus').catch(() => {});
   });
   created.once('ready-to-show', () => created.show());
   created.on('closed', () => {
+    cancelActiveLocalDictation();
     if (window === created) window = null;
   });
   created.loadFile(path.join(__dirname, 'ui', 'index.html'));
@@ -379,16 +393,15 @@ function registerIpc(
     });
     ipcMain.handle('dictation:start', async (_event, request = {}) => {
       if (request?.disclosureAccepted !== true) {
-        throw new Error('请先确认录音会交给所选听写服务进行转写。');
+        throw new Error('请先确认使用 macOS 本机听写。');
       }
-      await ensureMicrophonePermission();
       const agentId = currentConversationAgentId();
       const state = await dictationController.start(agentId, {
         disclosureAccepted: request?.disclosureAccepted === true,
       });
       if (conversationController.getSnapshot()?.agentId !== agentId) {
         if (['starting', 'listening', 'transcribing'].includes(state?.phase)) {
-          await dictationController.cancel().catch(() => {});
+          await localDictationService?.cancelActiveDictation?.().catch(() => {});
         }
         throw new Error('Agent 已切换，本次听写已取消。');
       }
@@ -454,43 +467,31 @@ function openAllowedExternal(url) {
   return shell.openExternal(parsed.toString());
 }
 
-async function ensureMicrophonePermission() {
-  if (process.platform !== 'darwin' || !systemPreferences) return true;
-  const getStatus = systemPreferences.getMediaAccessStatus;
-  const ask = systemPreferences.askForMediaAccess;
-  if (typeof getStatus !== 'function' || typeof ask !== 'function') return true;
-  const status = getStatus.call(systemPreferences, 'microphone');
-  if (status === 'granted') return true;
-  if (status === 'denied' || status === 'restricted') {
-    const error = new Error('没有麦克风权限，请在系统设置中允许 AgentMesh360 使用麦克风。');
-    error.code = 'microphone_permission_denied';
-    throw error;
-  }
-  const granted = await ask.call(systemPreferences, 'microphone');
-  if (granted) return true;
-  const error = new Error('没有麦克风权限，请在系统设置中允许 AgentMesh360 使用麦克风。');
-  error.code = 'microphone_permission_denied';
-  throw error;
-}
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
-  if (['starting', 'listening', 'transcribing'].includes(dictations?.getSnapshot()?.phase)) {
-    dictations.cancel().catch(() => {});
-  }
+  cancelActiveLocalDictation();
   dictations?.dispose();
+  localDictationService?.dispose();
   conversations?.dispose();
   conversationAttachments?.dispose().catch(() => {});
   controller?.shutdown().catch(() => {});
 });
 
+function cancelActiveLocalDictation() {
+  try {
+    const pending = localDictationService?.cancelActiveDictation?.();
+    if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+  } catch {
+    // Lifecycle cleanup must not block window, power, or app teardown.
+  }
+}
+
 module.exports = {
   createWindow,
   openAllowedExternal,
-  ensureMicrophonePermission,
   registerIpc,
   SUBSCRIPTION_URL,
   REGISTRATION_URL,

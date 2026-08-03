@@ -1,7 +1,7 @@
 # Grok-first 输入系统 V2
 
-状态：V2.1–V2.6、运行态附件意图恢复修复、全量自动化门禁与唯一内部包刷新均已完成；
-真实安装麦克风 UAT 待 owner 执行
+状态：V2.1–V2.6 与 macOS 本机听写迁移已完成源码和自动化；唯一内部包待刷新，
+真实安装权限与断网听写 UAT 待 owner 执行
 更新：2026-08-03
 
 ## 1. 这次要解决的不是“多放几个按钮”
@@ -62,7 +62,7 @@ Grok Build 部分直接核对本仓库 fork 的源码。源码能力不等于 Ag
 | `@` 文件上下文 | 有工作区 Suggest 与文件读取 | V2.5 先做目录 containment 和受控附件转换 |
 | Prompt 历史 | 有工作区/会话历史与搜索 | V2.5 以历史按钮/上方向键按需出现 |
 | 大段粘贴 | Pager 会折叠为粘贴卡片 | V2.5 避免长文本撑满 Composer |
-| 语音 | `xai-grok-voice` 提供 STT | V2.6 只做听写；不宣称 Audio 内容块已可用 |
+| 语音 | `xai-grok-voice` 提供可选云端 STT | V2.6 默认使用 macOS 本机听写；云端 STT 不作为前置付费依赖 |
 | Audio 内容块 | ACP Schema 有类型，但当前 Grok Prompt Parser 不接受 | 不开放音频理解入口 |
 
 主要源码依据：
@@ -128,8 +128,32 @@ V2.2 审计发现：现有 Entry `version` 只能保护单条编辑/删除，不
 - 输入 `$`：显示当前已签名 Agent Package 声明的用户 Skill。
 - 输入 `@`：只搜索当前 Agent 明确授权的工作区；结果必须经过 canonical containment，
   不能允许绝对路径、`../../` 或符号链接越界。
-- 点击麦克风或快捷键：先转成可编辑文字，用户仍需确认发送。
+- 点击麦克风或快捷键：默认由 macOS 在本机转成可编辑文字，用户仍需确认发送。
 - 模型、工作模式和推理强度继续位于 Agent 齿轮设置，不回到主对话固定视觉层。
+
+### 5.5 本机听写责任边界
+
+听写不属于模型供应商，也不复用 Agent 的 DeepSeek、GLM Coding Plan、MiniMax Coding Plan
+或其他推理 Key。默认链路是：
+
+```text
+Renderer 按钮
+  → Electron Main 听写控制器
+  → Contents/Helpers 中的 AgentMesh360SpeechHelper.app
+  → macOS Speech + AVFoundation
+  → 可编辑草稿
+```
+
+Helper 是 Main 的直接子进程，不 daemonize、不经 shell；音频 buffer 不进入 Renderer、Host
+或 AgentMesh360，也不落盘。开始前必须同时确认当前语言可用且
+`supportsOnDeviceRecognition == true`，每次识别请求强制
+`requiresOnDeviceRecognition = true`。任一条件不满足就失败关闭，绝不自动切换 Apple 云端
+或模型 Provider。DeepSeek、GLM 与 MiniMax 等 BYOK 只负责 Agent 后续理解用户确认发送的
+文字。
+
+首次使用仍需 macOS 的麦克风与语音识别权限；本机语言模型未准备好时，产品只引导用户前往
+“系统设置 → 键盘 → 听写”启用当前语言。切到其他应用或短暂离开不取消；切换 Agent、退出
+账号、锁屏、休眠、关闭窗口或退出客户端会终止活动听写。
 
 ## 6. V2 当前实现合同
 
@@ -152,8 +176,9 @@ V2.1 先关闭最短、最重要的持续协作链路；V2.2–V2.6 继续按 au
     大小和 TOCTOU 校验后才转为私有附件；
 13. Prompt History 绑定 Host 私有 Main Session，公开层先给预览，显式选择才回填全文；
 14. 1,200 字或 20 行的大段粘贴变成可编辑卡片，最多四段、合计 16,000 字；
-15. 听写首击只披露，确认后才请求 macOS 麦克风；最长 60 秒，结果只写入可编辑草稿，
-    不调用发送；没有支持听写的 Provider 时给出模型供应商配置入口；
+15. 听写首击只披露，确认后才由嵌套 Helper 请求 macOS 麦克风与语音识别权限；最长 60 秒，
+    强制本机识别且结果只写入可编辑草稿，不调用发送；没有本机语言模型时引导系统设置，
+    不要求或读取任何模型 Provider Key；
 16. 1180×760、1280×768、1280×800 与 1440×900 下仍由 Transcript/浮层内部滚动，
     Composer 完整可见。
 
@@ -175,7 +200,11 @@ V2 全量至少覆盖：
 - `/`、`$`、`@`、历史均只插入/附加，不自动发送；危险 Slash 即使手工输入也无法绕过；
 - 工作目录绝对路径、Session、签名 Key 和 Provider secret 不进入 Renderer；
 - 打开历史后输入普通文字会立即关闭历史，Enter 不会误选旧消息；
-- 听写未经披露不请求麦克风，complete 只回填一次，旧账号/低 revision 不覆盖；
+- 听写未经披露不请求麦克风；本机能力为 false 时不请求权限、不回退网络；complete 只回填
+  一次，旧账号/低 revision 不覆盖；
+- DeepSeek、GLM Coding Plan、MiniMax Coding Plan 等 Agent Provider 不参与听写；Helper 环境
+  不携带 Provider Key 或 AgentMesh360 凭据；
+- 切屏或窗口失焦不取消；切换 Agent、账号、锁屏、休眠、关闭窗口与退出会释放 Helper；
 - 用户可见文案不出现 Core、Host、Bridge 等内部节点；Composer 精确使用
   `附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360`；
-- 13 寸窗口中运行态提示不把 Composer 推出视口。
+- 13 寸窗口中，包含本机听写披露浮层时也不把 Composer 推出视口。

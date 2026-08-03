@@ -18,13 +18,22 @@ test('dictation produces editable text only and never submits a conversation pro
 
   await assert.rejects(
     controller.start('job-agent'),
-    /请先确认录音会交给所选听写服务进行转写/,
+    /请先确认使用 macOS 本机听写/,
   );
   await controller.open('job-agent');
   const listening = await controller.start('job-agent', { disclosureAccepted: true });
 
   assert.equal(listening.phase, 'listening');
+  assert.equal(
+    DICTATION_DISCLOSURE,
+    '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。',
+  );
   assert.equal(listening.disclosure, DICTATION_DISCLOSURE);
+  assert.deepEqual(listening.service, {
+    serviceId: 'macos-on-device-speech',
+    displayName: 'macOS 本机听写',
+    processing: 'on_device',
+  });
   assert.deepEqual(host.calls.start[0], {
     agentId: 'job-agent',
     disclosureAccepted: true,
@@ -47,6 +56,10 @@ test('dictation produces editable text only and never submits a conversation pro
   assert.equal(host.calls.prompt.length, 0);
   assert.ok(phases.includes('starting'));
   assert.ok(phases.includes('transcribing'));
+  const closed = controller.close();
+  assert.equal(closed.phase, 'idle');
+  assert.equal(closed.agentId, null);
+  assert.deepEqual(host.calls.clear, ['job-agent']);
   controller.dispose();
 });
 
@@ -68,10 +81,11 @@ test('dictation is account and Agent scoped and resets on account switch', async
   assert.equal(controller.getSnapshot().phase, 'idle');
   assert.equal(controller.getSnapshot().agentId, null);
   assert.equal(controller.getSnapshot().transcript, '');
+  assert.equal(host.calls.cancelActive, 1);
   controller.dispose();
 });
 
-test('dictation public projection redacts unknown Host errors and bounds public data', () => {
+test('on-device dictation projection redacts unknown Host data and bounds public data', () => {
   const projected = projectSnapshot({
     ...snapshot({ revision: 7, phase: 'error' }),
     error: {
@@ -80,9 +94,11 @@ test('dictation public projection redacts unknown Host errors and bounds public 
     },
     interimText: '字'.repeat(20_050),
     service: {
-      providerProfileId: 'profile-xai',
-      displayName: 'xAI',
+      serviceId: 'macos-on-device-speech',
+      displayName: 'macOS 本机听写',
+      processing: 'on_device',
       apiKey: 'must-not-project',
+      modelPath: '/private/on-device/model',
     },
     limits: {
       maxDurationSeconds: 99_999,
@@ -94,15 +110,52 @@ test('dictation public projection redacts unknown Host errors and bounds public 
   assert.equal(projected.error.message, '听写没有完成，请稍后重试。');
   assert.equal(projected.interimText.length, 20_000);
   assert.deepEqual(projected.service, {
-    providerProfileId: 'profile-xai',
-    displayName: 'xAI',
+    serviceId: 'macos-on-device-speech',
+    displayName: 'macOS 本机听写',
+    processing: 'on_device',
   });
   assert.deepEqual(projected.limits, {
     maxDurationSeconds: 60,
     maxAudioBytes: 1_920_000,
   });
   const serialized = JSON.stringify(projected);
-  assert.doesNotMatch(serialized, /secret-provider-key|apiKey|authorization/i);
+  assert.doesNotMatch(serialized, /secret-provider-key|apiKey|authorization|modelPath|\/private\//i);
+});
+
+test('on-device model and permission failures use stable local-only guidance', () => {
+  const expectations = new Map([
+    [
+      'dictation_on_device_unavailable',
+      '这台 Mac 尚未准备好本机听写，请在“系统设置 → 键盘 → 听写”中启用并下载当前语言。',
+    ],
+    [
+      'dictation_language_unavailable',
+      '当前系统语言不支持听写，请在系统设置中选择可用的听写语言。',
+    ],
+    [
+      'microphone_permission_denied',
+      '没有麦克风权限，请在系统设置中允许 AgentMesh360 使用麦克风。',
+    ],
+    [
+      'speech_recognition_permission_denied',
+      '没有语音识别权限，请在系统设置中允许 AgentMesh360 使用语音识别。',
+    ],
+    [
+      'speech_recognition_restricted',
+      '这台 Mac 当前限制了语音识别，请检查系统隐私与家长控制设置。',
+    ],
+  ]);
+
+  for (const [code, message] of expectations) {
+    const projected = projectSnapshot(snapshot({
+      revision: 7,
+      phase: 'error',
+      dictationId: null,
+      service: null,
+      error: { code, message: 'untrusted helper detail' },
+    }), 'job-agent');
+    assert.deepEqual(projected.error, { code, message });
+  }
 });
 
 test('a second start is rejected without corrupting the in-flight dictation state', async () => {
@@ -201,7 +254,7 @@ test('an older direct response cannot overwrite a newer same-Agent notification'
   controller.dispose();
 });
 
-test('a same-revision provider failure replaces only the local optimistic start state', async () => {
+test('a same-revision on-device model failure replaces only the local optimistic start state', async () => {
   const identity = new FakeIdentity(readyState(41));
   const host = new FakeHost();
   host.startImpl = async () => snapshot({
@@ -209,7 +262,7 @@ test('a same-revision provider failure replaces only the local optimistic start 
     phase: 'error',
     dictationId: null,
     error: {
-      code: 'dictation_provider_required',
+      code: 'dictation_on_device_unavailable',
       message: 'untrusted raw detail',
     },
     service: null,
@@ -221,9 +274,28 @@ test('a same-revision provider failure replaces only the local optimistic start 
 
   assert.equal(result.phase, 'error');
   assert.deepEqual(result.error, {
-    code: 'dictation_provider_required',
-    message: '需要配置支持听写的模型供应商。',
+    code: 'dictation_on_device_unavailable',
+    message: '这台 Mac 尚未准备好本机听写，请在“系统设置 → 键盘 → 听写”中启用并下载当前语言。',
   });
+  controller.dispose();
+});
+
+test('clearDictation runs only after a terminal result is closed', async () => {
+  const identity = new FakeIdentity(readyState(41));
+  const host = new FakeHost();
+  const controller = new DictationController({ identity, host });
+  await controller.open('job-agent');
+  await controller.start('job-agent', { disclosureAccepted: true });
+
+  assert.throws(() => controller.close(), /请先停止或取消当前听写/u);
+  assert.deepEqual(host.calls.clear, []);
+  host.emit('notification', {
+    method: 'x.agentmesh360/dictation/changed',
+    params: snapshot({ revision: 4, phase: 'complete', transcript: '本机听写结果' }),
+  });
+  controller.close();
+
+  assert.deepEqual(host.calls.clear, ['job-agent']);
   controller.dispose();
 });
 
@@ -252,7 +324,15 @@ class FakeIdentity {
 class FakeHost extends EventEmitter {
   constructor() {
     super();
-    this.calls = { status: [], start: [], stop: [], cancel: [], prompt: [] };
+    this.calls = {
+      status: [],
+      start: [],
+      stop: [],
+      cancel: [],
+      cancelActive: 0,
+      clear: [],
+      prompt: [],
+    };
   }
 
   async getDictationStatus(agentId) {
@@ -275,6 +355,14 @@ class FakeHost extends EventEmitter {
   async cancelDictation(dictationId) {
     this.calls.cancel.push(dictationId);
     return snapshot({ revision: 4, phase: 'idle', dictationId: null });
+  }
+
+  async cancelActiveDictation() {
+    this.calls.cancelActive += 1;
+  }
+
+  clearDictation(agentId) {
+    this.calls.clear.push(agentId);
   }
 
   async promptSession(value) {
@@ -304,8 +392,9 @@ function snapshot(overrides = {}) {
     transcript: '',
     error: null,
     service: {
-      providerProfileId: 'profile-xai',
-      displayName: 'xAI',
+      serviceId: 'macos-on-device-speech',
+      displayName: 'macOS 本机听写',
+      processing: 'on_device',
     },
     limits: {
       maxDurationSeconds: 60,

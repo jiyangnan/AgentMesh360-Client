@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | 运行态附件意图恢复修复、全量回归和 clean pushed commit 的唯一内部包刷新均已完成；下一输入验收仅为 owner 的真实麦克风/xAI 听写 UAT。Audio 内容理解、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；听写默认迁移为强制 on-device 的 macOS 本机 Helper，与 DeepSeek/GLM/MiniMax 等 Agent Provider 解耦；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | macOS 本机听写源码、Helper 编译与无麦克风自动化已完成，唯一内部包待刷新；下一输入验收为 owner 准备本机语言模型后的真实安装权限与断网听写 UAT。Audio 内容理解、付费云 STT、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -8543,3 +8543,48 @@ owner 的真实麦克风/xAI 听写 UAT
 理解、云附件库、fallback、P7/P8、签名、公证或在线发布。下一步只执行 `TC-CONV-024`：
 owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首击披露 → 明确开始 → 完成只
 回填 → 手动发送”的真实麦克风 UAT；获得授权和真实证据前不把整个目标标记为最终通过。
+
+### 循环 159：macOS 本机听写默认迁移
+
+状态：源码、完整自动化、独立非 Kimi 审查和真实 Electron 布局已完成；唯一内部包待刷新，
+真实安装权限与断网听写 UAT 待 owner
+
+本轮先回看既定输入系统 V2 与产品成本边界，纠正了“听写必须额外购买 xAI/STT”的错误前提：
+
+1. 新增嵌套 `AgentMesh360SpeechHelper.app`，直接使用 macOS Speech 与 AVFoundation；开始前
+   校验当前默认语言受支持且 `supportsOnDeviceRecognition == true`，每次请求强制
+   `requiresOnDeviceRecognition = true`。音频不离开 Helper 内存、不落盘、不进入 Renderer、
+   Grok Host、AgentMesh360 或模型 Provider；
+2. DeepSeek、GLM Coding Plan、MiniMax Coding Plan 等 BYOK 只负责 Agent 推理。听写环境严格
+   排除 Key/Token，不读取 Vault、不发 Provider/Apple 云端请求；本机模型不可用就引导
+   “系统设置 → 键盘 → 听写”，不自动 fallback 到额外付费 STT；
+3. 首击仍只展示清楚披露，明确点击“开始听写”后 Helper 才请求麦克风和语音识别权限；结果
+   只填当前草稿，不自动发送。60 秒自动停止，20,000 字符与 192 KiB 双界限，Helper JSONL
+   逐行验证，畸形、越界、崩溃和非本机能力均失败关闭；
+4. 生命周期覆盖 Agent/账号切换、锁屏、休眠、Renderer 崩溃/无响应、窗口关闭与 App 退出；
+   普通切屏和失焦不打断。首次两次系统权限弹窗分别使用 5 分钟有限看门狗，不会被 12 秒
+   普通启动超时误杀，也不会无限保留采集进程；
+5. 内部构建将 arm64 Helper 与双用途说明写入外层/嵌套 Info.plist；DMG 挂载副本、安装副本、
+   ZIP 副本会逐字节验证 Helper executable/Info.plist、执行位、非 symlink、Mach-O 架构及只
+   链接系统动态库。
+
+验证证据：
+
+- Desktop 全量 Node 在允许本机 loopback 的环境中 `223 total / 218 passed / 0 failed /
+  5 skipped`；5 条仍是显式真实 Host 门禁；
+- Helper/Controller/transport 定向测试与真实 Swift 编译通过；构建/安装结构和产品旅程工具
+  `33/33`，产品旅程 `87` 条、`14` 个领域结构校验通过；Rust Shell `211 passed / 1 ignored`、
+  voice `32/32`，syntax、fmt 与 `git diff --check` 通过；
+- Conversation、紧凑布局、Agent 管理、Provider、Package 五组 Electron smoke 均退出 0。
+  四档视口 1180×760、1280×768、1280×800、1440×900 的 Composer bottom 分别为 742、
+  750、782、882px；页面/Main 不逃逸，Transcript 独立滚动，消息 14px、输入 15px；
+- 独立非 Kimi 审查先发现权限弹窗 12 秒误杀、Renderer 故障后继续采集和聚合 JSONL 误判，
+  三项修复并复核后无 P0/P1。V1 暂用 macOS 当前默认识别语言，界面语言与口述语言不一致是
+  记录在案的 P2，不在本轮扩展语言选择；
+- 外部副作用：真实麦克风请求 0、Provider Key/Vault 读取 0、Provider 请求 0、Apple 云服务
+  请求 0、消息发送 0、AgentMesh credits 0、费用 $0。本轮遵从用户要求没有调用 Kimi。
+
+计划复盘：本轮只替换既定 V2.6 听写实现和打包/生命周期门，没有延伸 Audio 内容理解、云
+附件库、Provider fallback、语言选择、P7/P8、签名、公证或在线发布。下一步仅执行 clean
+push、唯一未签名内部包构建与复验；新包完全通过后才删除 `7cec392` 旧包。随后由 owner 在
+安装环境完成 `TC-CONV-024` 的“本机语言准备 → 首击披露 → 双权限 → 只回填 → 断网复验”。

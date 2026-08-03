@@ -919,20 +919,26 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   客户端绝不能替我发送。
 - **优先级**：P0
 - **设计状态**：已实现
-- **前置条件**：当前 Agent 已绑定支持听写的 xAI BYOK Provider；macOS 麦克风可用。
-- **输入**：首次点击、拒绝披露、允许/拒绝系统权限、开始/停止/取消、无语音、Provider 缺失、
-  Host 退出、账号或 Agent 切换、旧 revision。
+- **前置条件**：当前 Agent 对话已打开；macOS 麦克风可用且“系统设置 → 键盘 → 听写”已为
+  当前语言准备本机模型。无需配置 xAI、DeepSeek、GLM、MiniMax 或其他模型 Provider。
+- **输入**：首次点击、拒绝披露、允许/拒绝麦克风与语音识别权限、开始/停止/取消、无语音、
+  本机模型缺失、语言不支持、Helper 崩溃/畸形/超长输出、账号或 Agent 切换、旧 revision。
 - **交互步骤**：点击麦克风；确认首击不录音；明确“开始听写”；说话；完成或取消。
-- **预期输出**：只有明确确认后才请求 macOS 麦克风；最长 60 秒；录音由所选听写服务处理；
-  完成结果只插入当前 Agent 的可编辑草稿，不调用 conversation send；取消不改变输入框。
-- **失败与恢复**：权限/设备/Provider 错误使用稳定中文和配置入口；旧账号 Promise、低 revision
-  或其他 Agent 结果不发布；切屏不取消，系统锁屏/休眠与退出会取消活动录音。
-- **验证层**：Rust + Node + Electron + 包结构；真实安装包麦克风链路由 owner UAT
+- **预期输出**：只有明确确认后才请求系统权限；最长 60 秒；Helper 必须先证明
+  `supportsOnDeviceRecognition == true`，并对每次请求强制 `requiresOnDeviceRecognition = true`；
+  音频不上传 AgentMesh360、不交给模型 Provider、不落盘。完成结果只插入当前 Agent 的可编辑
+  草稿，不调用 conversation send；取消不改变输入框。
+- **失败与恢复**：本机模型、语言、权限、设备、Helper 协议与崩溃使用稳定中文；任何能力
+  不满足均失败关闭，不自动切 Apple 云端或付费 STT。旧账号 Promise、低 revision 或其他 Agent
+  结果不发布；首次两次系统权限弹窗各使用 5 分钟有限看门狗，不会被普通 12 秒启动超时误杀；
+  切屏/失焦不取消，切 Agent、退出账号、锁屏、休眠、Renderer 崩溃/无响应、关闭窗口与退出
+  都会取消。多条合法 Helper JSONL 即使合并成大 chunk 也逐行处理，单条越界才失败关闭。
+- **验证层**：Swift Helper + Node + Electron + 包结构；真实安装权限归因与断网听写由 owner UAT
 - **本轮结果**：阻断
-- **阻断原因**：Rust/Node/Electron fixture、包内 Host、`Info.plist` 与权限文案已经通过；
-  本轮没有获得请求真实麦克风和调用 xAI 听写 Provider 的授权，因此不能把自动化结果冒充
-  真实安装通过。owner 需在唯一内部包中执行一次“首击披露 → 明确开始 → 完成只回填 →
-  手动发送”后再改为通过。
+- **待验收原因**：Helper 编译、强制本机能力门禁、Node/Electron fixture、嵌套包结构、双权限
+  文案和四档小屏布局已经通过；当前机器能力探针诚实返回 `onDevice: false`，且本轮未请求真实
+  麦克风，所以不能把 fixture 冒充真实安装通过。owner 需先在系统设置准备本机听写语言，随后
+  在唯一新包内执行“首击披露 → 明确开始 → 完成只回填 → 手动发送”，并在断网状态复验一次。
 
 ## TC-CONV-025：输入浮层并发、可访问性与 13 寸布局
 
@@ -1658,3 +1664,27 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - 外部副作用：真实麦克风请求 0、Provider Key/Vault 读取 0、Provider 请求 0、消息发送 0、
   AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。本轮按用户要求不调用
   Kimi。`TC-CONV-024` 真实安装麦克风/xAI 听写 UAT 仍为阻断，未获授权前不冒充通过。
+
+### 2026-08-03 macOS 本机听写迁移执行（打包前）
+
+- 产品边界从 xAI 云端 STT 迁移为 macOS 本机听写默认链路；DeepSeek、GLM Coding Plan、
+  MiniMax Coding Plan 与其他 BYOK 只负责 Agent 推理，听写不读取 Provider Key、不发网络请求、
+  不消耗 credits，也不在本机能力缺失时静默降级到 Apple 云端或付费 STT；
+- Swift 嵌套 Helper 强制 `supportsOnDeviceRecognition` 与
+  `requiresOnDeviceRecognition`，音频只在 Helper 内存中存在；公开结果只进入当前 Agent 草稿，
+  不自动发送。Helper 环境是严格 allowlist，不携带 Provider/AgentMesh360 凭据；
+- 首次麦克风与语音识别权限分别发出 `permission_pending`，每阶段使用 5 分钟有限看门狗；
+  Agent/账号切换、锁屏、休眠、Renderer 崩溃/无响应、窗口关闭和退出均终止 Helper，普通
+  切屏/失焦不打断；60 秒上限会自动停止并等待最终文本；
+- Desktop 全量 Node 在允许本机 loopback 的环境中 `223 total / 218 passed / 0 failed /
+  5 skipped`；Helper/Controller/transport 定向复核、Swift 真编译、Mach-O arm64 与系统动态库
+  检查均通过；内部构建/安装结构与产品旅程工具 `33/33`，旅程 `87` 条、`14` 个领域通过结构
+  校验；Rust Shell `211 passed / 1 ignored`、voice `32/32`，fmt 与 syntax/diff check 通过；
+- Conversation、Agent 管理、Provider、Package 与紧凑布局五组 Electron smoke 全部退出 0。
+  1180×760、1280×768、1280×800、1440×900 的 Composer bottom 分别为 742、750、782、
+  882px；消息 14px、输入 15px，听写披露与十个附件下仍完整可见；
+- 独立非 Kimi 代码审查发现并推动关闭权限超时、Renderer 故障采集和 JSONL 聚合三个边界，
+  修复后结论为无 P0/P1。剩余 P2 是 V1 使用 macOS 当前默认识别语言，语言选择暂不扩展；
+- 当前仍为打包前记录。真实麦克风请求 0、Provider/Vault 读取 0、外部请求 0、消息发送 0、
+  credits 0、费用 $0。`TC-CONV-024` 保持阻断，等待唯一新包生成后由 owner 完成真实权限归因
+  与断网听写；旧 `7cec392` 包在新包全部复验前继续保留。

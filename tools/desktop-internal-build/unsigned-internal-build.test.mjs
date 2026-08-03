@@ -29,6 +29,12 @@ import {
 } from './verify-unsigned-internal.mjs';
 
 const COMMIT = 'a'.repeat(40);
+const MAIN_MICROPHONE_DISCLOSURE =
+  'AgentMesh360 仅在你主动开启本机听写时使用麦克风，将语音转换为可编辑文字。';
+const HELPER_MICROPHONE_DISCLOSURE =
+  'AgentMesh360 仅在你主动开启听写时使用麦克风，将语音转换为可编辑文字。';
+const SPEECH_RECOGNITION_DISCLOSURE =
+  'AgentMesh360 仅在你主动开启听写时，使用 macOS 本机语音识别将语音转换为可编辑文字。';
 const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../..',
@@ -55,12 +61,101 @@ function builderManifest() {
     build: {
       appId: 'com.agentmesh360.client',
       productName: 'AgentMesh360',
+      extraFiles: [
+        {
+          from: '.native-build/AgentMesh360SpeechHelper.app',
+          to: 'Helpers/AgentMesh360SpeechHelper.app',
+        },
+      ],
       mac: {
         target: ['dmg', 'zip'],
+        extendInfo: {
+          NSMicrophoneUsageDescription: MAIN_MICROPHONE_DISCLOSURE,
+          NSSpeechRecognitionUsageDescription:
+            SPEECH_RECOGNITION_DISCLOSURE,
+        },
       },
     },
     devDependencies: {},
   };
+}
+
+function privacyInfoPlist({
+  microphoneDisclosure,
+  speechRecognitionDisclosure = SPEECH_RECOGNITION_DISCLOSURE,
+}) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>${microphoneDisclosure}</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>${speechRecognitionDisclosure}</string>
+</dict>
+</plist>
+`;
+}
+
+async function packagedHostFixture(root, {
+  packagedHostBody = 'same-host',
+  packagedHelperBody = 'same-helper',
+  packagedHelperInfo,
+  mainMicrophoneDisclosure = MAIN_MICROPHONE_DISCLOSURE,
+} = {}) {
+  const host = path.join(root, 'release-host');
+  const helperBundle = path.join(root, 'AgentMesh360SpeechHelper.app');
+  const output = path.join(root, 'output');
+  const app = path.join(output, 'mac-arm64/AgentMesh360.app');
+  const packagedHost = path.join(
+    app,
+    'Contents/Resources/bin/agentmesh360-host',
+  );
+  const sourceHelper = path.join(
+    helperBundle,
+    'Contents/MacOS/agentmesh360-speech-helper',
+  );
+  const sourceHelperInfo = path.join(helperBundle, 'Contents/Info.plist');
+  const packagedHelper = path.join(
+    app,
+    'Contents/Helpers/AgentMesh360SpeechHelper.app/Contents/MacOS/agentmesh360-speech-helper',
+  );
+  const packagedHelperInfoPath = path.join(
+    app,
+    'Contents/Helpers/AgentMesh360SpeechHelper.app/Contents/Info.plist',
+  );
+  const helperInfo = privacyInfoPlist({
+    microphoneDisclosure: HELPER_MICROPHONE_DISCLOSURE,
+  });
+
+  await Promise.all([
+    mkdir(path.dirname(packagedHost), { recursive: true }),
+    mkdir(path.dirname(sourceHelper), { recursive: true }),
+    mkdir(path.dirname(packagedHelper), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(host, 'same-host'),
+    writeFile(packagedHost, packagedHostBody),
+    writeFile(sourceHelper, 'same-helper'),
+    writeFile(packagedHelper, packagedHelperBody),
+    writeFile(sourceHelperInfo, helperInfo),
+    writeFile(packagedHelperInfoPath, packagedHelperInfo ?? helperInfo),
+    writeFile(
+      path.join(app, 'Contents/Info.plist'),
+      privacyInfoPlist({
+        microphoneDisclosure: mainMicrophoneDisclosure,
+      }),
+    ),
+    writeFile(path.join(output, 'AgentMesh360.dmg'), 'dmg'),
+    writeFile(path.join(output, 'AgentMesh360.zip'), 'zip'),
+  ]);
+  await Promise.all([
+    chmod(host, 0o755),
+    chmod(packagedHost, 0o755),
+    chmod(sourceHelper, 0o755),
+    chmod(packagedHelper, 0o755),
+  ]);
+  return { helperBundle, host, output };
 }
 
 async function fixture() {
@@ -219,6 +314,14 @@ test('refuses notarization, publishing, updater, and executable build hooks', ()
     (value) => { value.build.mac.identity = 'Developer ID Application'; },
     (value) => { value.build.mac.notarize = true; },
     (value) => { value.build.afterSign = './sign.js'; },
+    (value) => { value.build.extraFiles[0].to = 'Resources/helper'; },
+    (value) => {
+      value.build.mac.extendInfo.NSMicrophoneUsageDescription = 'changed';
+    },
+    (value) => {
+      value.build.mac.extendInfo.NSSpeechRecognitionUsageDescription =
+        'changed';
+    },
     (value) => { value.devDependencies['electron-updater'] = '1.0.0'; },
     (value) => { value.scripts['build:mac'] = 'electron-builder --mac'; },
   ];
@@ -266,19 +369,7 @@ test('verifies the packaged Host bytes and removes unpacked build output', async
     path.join(os.tmpdir(), 'am360-desktop-host-output-test-'),
   );
   try {
-    const host = path.join(root, 'release-host');
-    const output = path.join(root, 'output');
-    const packaged = path.join(
-      output,
-      'mac-arm64/AgentMesh360.app/Contents/Resources/bin',
-    );
-    await mkdir(packaged, { recursive: true });
-    await writeFile(host, 'same-host');
-    await writeFile(path.join(packaged, 'agentmesh360-host'), 'same-host');
-    await chmod(host, 0o755);
-    await chmod(path.join(packaged, 'agentmesh360-host'), 0o755);
-    await writeFile(path.join(output, 'AgentMesh360.dmg'), 'dmg');
-    await writeFile(path.join(output, 'AgentMesh360.zip'), 'zip');
+    const { helperBundle, host, output } = await packagedHostFixture(root);
     await writeFile(path.join(output, 'AgentMesh360.zip.blockmap'), 'blockmap');
     await writeFile(path.join(output, 'builder-debug.yml'), 'debug');
     await mkdir(path.join(output, '.icon-icns'));
@@ -286,6 +377,7 @@ test('verifies the packaged Host bytes and removes unpacked build output', async
     await verifyPackagedHostAndPrune({
       outputDirectory: output,
       hostBinary: host,
+      helperBundle,
       architecture: 'arm64',
       productName: 'AgentMesh360',
     });
@@ -307,28 +399,35 @@ test('verifies the packaged Host bytes and removes unpacked build output', async
   }
 });
 
-test('rejects a mismatched packaged Host or update metadata', async () => {
-  for (const mutation of ['host', 'update']) {
+test('rejects mismatched Host, helper, privacy metadata, or update metadata', async () => {
+  for (const mutation of [
+    'host',
+    'helper',
+    'helper-privacy',
+    'main-privacy',
+    'update',
+  ]) {
     const root = await mkdtemp(
       path.join(os.tmpdir(), 'am360-desktop-host-reject-test-'),
     );
     try {
-      const host = path.join(root, 'release-host');
-      const output = path.join(root, 'output');
-      const packaged = path.join(
-        output,
-        'mac-arm64/AgentMesh360.app/Contents/Resources/bin',
-      );
-      await mkdir(packaged, { recursive: true });
-      await writeFile(host, 'release-host');
-      await writeFile(
-        path.join(packaged, 'agentmesh360-host'),
-        mutation === 'host' ? 'different-host' : 'release-host',
-      );
-      await chmod(host, 0o755);
-      await chmod(path.join(packaged, 'agentmesh360-host'), 0o755);
-      await writeFile(path.join(output, 'AgentMesh360.dmg'), 'dmg');
-      await writeFile(path.join(output, 'AgentMesh360.zip'), 'zip');
+      const packagedHelperInfo = mutation === 'helper-privacy'
+        ? privacyInfoPlist({
+          microphoneDisclosure: 'tampered helper disclosure',
+        })
+        : undefined;
+      const { helperBundle, host, output } = await packagedHostFixture(root, {
+        packagedHostBody: mutation === 'host'
+          ? 'different-host'
+          : 'same-host',
+        packagedHelperBody: mutation === 'helper'
+          ? 'different-helper'
+          : 'same-helper',
+        packagedHelperInfo,
+        mainMicrophoneDisclosure: mutation === 'main-privacy'
+          ? 'tampered main disclosure'
+          : MAIN_MICROPHONE_DISCLOSURE,
+      });
       if (mutation === 'update') {
         await writeFile(path.join(output, 'latest-mac.yml'), 'unsafe-update');
       }
@@ -336,10 +435,17 @@ test('rejects a mismatched packaged Host or update metadata', async () => {
         verifyPackagedHostAndPrune({
           outputDirectory: output,
           hostBinary: host,
+          helperBundle,
           architecture: 'arm64',
           productName: 'AgentMesh360',
         }),
-        mutation === 'host' ? /does not match/u : /inventory is invalid/u,
+        {
+          host: /Host does not match/u,
+          helper: /helper does not match/u,
+          'helper-privacy': /privacy metadata changed/u,
+          'main-privacy': /NSMicrophoneUsageDescription changed/u,
+          update: /inventory is invalid/u,
+        }[mutation],
       );
     } finally {
       await rm(root, { recursive: true, force: true });

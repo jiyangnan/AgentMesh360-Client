@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter, once } = require('node:events');
+const { readFileSync } = require('node:fs');
+const path = require('node:path');
 const { PassThrough } = require('node:stream');
 const packageJson = require('../package.json');
 const { AcpHostClient } = require('../src/host/acp-client');
@@ -87,10 +89,30 @@ test('ACP dictation transport sends only Agent/operation authority and never a P
   await client.stop();
 });
 
-test('macOS package declares a microphone purpose string scoped to explicit dictation', () => {
+test('macOS package declares local dictation privacy metadata and the nested helper', () => {
   assert.equal(
     packageJson.build.mac.extendInfo.NSMicrophoneUsageDescription,
-    'AgentMesh360 仅在你主动开启听写时使用麦克风，将语音转换为可编辑文字。',
+    'AgentMesh360 仅在你主动开启本机听写时使用麦克风，将语音转换为可编辑文字。',
+  );
+  assert.equal(
+    packageJson.build.mac.extendInfo.NSSpeechRecognitionUsageDescription,
+    'AgentMesh360 仅在你主动开启听写时，使用 macOS 本机语音识别将语音转换为可编辑文字。',
+  );
+  assert.deepEqual(packageJson.build.extraFiles, [{
+    from: '.native-build/AgentMesh360SpeechHelper.app',
+    to: 'Helpers/AgentMesh360SpeechHelper.app',
+  }]);
+});
+
+test('Renderer failure and unresponsiveness immediately cancel local microphone capture', () => {
+  const mainSource = readFileSync(path.join(__dirname, '../src/main.js'), 'utf8');
+  assert.match(
+    mainSource,
+    /webContents\.on\('render-process-gone', \(\) => cancelActiveLocalDictation\(\)\)/u,
+  );
+  assert.match(
+    mainSource,
+    /webContents\.on\('unresponsive', \(\) => cancelActiveLocalDictation\(\)\)/u,
   );
 });
 

@@ -17,6 +17,27 @@ const visualSizes = requestedWindowWidth === null
   : [[requestedWindowWidth, requestedWindowHeight]];
 const screenshotPath = process.env.AGENTMESH360_SCREENSHOT || '';
 let conversationSnapshot = { phase: 'idle' };
+let dictationRevision = 0;
+const localDictationDisclosure = '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。';
+
+function idleDictationSnapshot() {
+  return {
+    revision: ++dictationRevision,
+    phase: 'idle',
+    dictationId: null,
+    agentId: 'job-agent',
+    interimText: '',
+    transcript: '',
+    error: null,
+    service: {
+      serviceId: 'macos-on-device-speech',
+      displayName: 'macOS 本机听写',
+      processing: 'on_device',
+    },
+    limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
+    disclosure: localDictationDisclosure,
+  };
+}
 
 const longAssistantMessage = [
   '你好！我是 **Job Agent**，你的持久化职业助手，运行在 AgentMesh360 平台上。',
@@ -52,6 +73,13 @@ const longAssistantMessage = [
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => conversationSnapshot);
+  ipcMain.handle('dictation:get-snapshot', () => idleDictationSnapshot());
+  ipcMain.handle('dictation:open', (event) => {
+    const snapshot = idleDictationSnapshot();
+    event.sender.send('dictation:state', snapshot);
+    return snapshot;
+  });
+  ipcMain.handle('dictation:close', () => idleDictationSnapshot());
   ipcMain.handle('conversation:open', (event, agentId) => {
     conversationSnapshot = {
       phase: 'ready',
@@ -288,6 +316,43 @@ app.whenReady().then(async () => {
     window.webContents.send('conversation:state', conversationSnapshot);
     await waitFor(() => window.webContents.executeJavaScript(
       "document.querySelector('.conversation-permission') === null",
+    ));
+
+    await window.webContents.executeJavaScript(
+      "document.querySelector('.composer-dictation-button').click()",
+    );
+    await waitFor(() => window.webContents.executeJavaScript(
+      `document.getElementById('composer-suggestions')?.innerText.includes(${JSON.stringify(localDictationDisclosure)})`,
+    ));
+    const dictationMetrics = await window.webContents.executeJavaScript(`(() => {
+      const suggestions = document.getElementById('composer-suggestions');
+      const dock = document.querySelector('.conversation-composer-dock');
+      const form = document.getElementById('conversation-form');
+      const textarea = form.elements.message;
+      const suggestionRect = suggestions.getBoundingClientRect();
+      const dockRect = dock.getBoundingClientRect();
+      const formRect = form.getBoundingClientRect();
+      const textareaRect = textarea.getBoundingClientRect();
+      return {
+        suggestionTop: suggestionRect.top,
+        suggestionBottom: suggestionRect.bottom,
+        dockTop: dockRect.top,
+        dockBottom: dockRect.bottom,
+        formBottom: formRect.bottom,
+        textareaBottom: textareaRect.bottom,
+        innerHeight: window.innerHeight,
+      };
+    })()`);
+    assert.equal(dictationMetrics.suggestionTop >= 0, true);
+    assert.equal(dictationMetrics.suggestionBottom <= dictationMetrics.dockBottom + 1, true);
+    assert.equal(dictationMetrics.dockBottom <= dictationMetrics.innerHeight + 1, true);
+    assert.equal(dictationMetrics.formBottom <= dictationMetrics.innerHeight + 1, true);
+    assert.equal(dictationMetrics.textareaBottom <= dictationMetrics.formBottom + 1, true);
+    await window.webContents.executeJavaScript(
+      "document.querySelector('.composer-suggestion-header > button').click()",
+    );
+    await waitFor(() => window.webContents.executeJavaScript(
+      "document.getElementById('composer-suggestions')?.hidden === true",
     ));
   }
 

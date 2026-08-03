@@ -4,27 +4,33 @@ const DICTATION_CHANGED_METHODS = new Set([
   'x.agentmesh360/dictation/changed',
   '_x.agentmesh360/dictation/changed',
 ]);
-const DICTATION_DISCLOSURE = '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。';
+const DICTATION_DISCLOSURE = '语音只在这台 Mac 上转换为文字，不会上传到 AgentMesh360；听写结果只会放入输入框，不会自动发送。';
 const ACTIVE_PHASES = new Set(['starting', 'listening', 'transcribing']);
 const PHASES = new Set(['idle', ...ACTIVE_PHASES, 'complete', 'error']);
 const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,198}[a-z0-9]$/u;
 const DICTATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/u;
 const MAX_TRANSCRIPT_CHARS = 20_000;
 const MAX_SERVICE_NAME_CHARS = 100;
-const MAX_PROVIDER_PROFILE_ID_CHARS = 200;
+const MAX_SERVICE_ID_CHARS = 200;
 const MAX_DURATION_SECONDS = 60;
 const MAX_AUDIO_BYTES = 1_920_000;
 
 const PUBLIC_ERRORS = new Map([
   ['invalid_dictation_request', '无法开始听写，请重新打开当前 Agent 后再试。'],
-  ['dictation_disclosure_required', '请先确认录音会交给所选听写服务进行转写。'],
+  ['dictation_disclosure_required', '请先确认使用 macOS 本机听写。'],
   ['dictation_busy', '已有一段听写正在进行，请先停止或取消。'],
-  ['dictation_provider_required', '需要配置支持听写的模型供应商。'],
+  ['dictation_provider_required', '当前版本的云端听写服务尚未启用。'],
   ['dictation_unavailable', '听写服务暂时不可用，请稍后重试。'],
+  ['dictation_helper_unavailable', '本机听写组件暂时不可用，请重启 AgentMesh360 后再试。'],
+  ['dictation_helper_protocol_error', '本机听写组件返回了无效结果，请重启 AgentMesh360 后再试。'],
+  ['dictation_language_unavailable', '当前系统语言不支持听写，请在系统设置中选择可用的听写语言。'],
+  ['dictation_on_device_unavailable', '这台 Mac 尚未准备好本机听写，请在“系统设置 → 键盘 → 听写”中启用并下载当前语言。'],
   ['dictation_not_found', '这段听写已经结束，请重新开始。'],
   ['dictation_no_speech', '没有识别到语音，请检查麦克风权限后重试。'],
   ['microphone_permission_denied', '没有麦克风权限，请在系统设置中允许 AgentMesh360 使用麦克风。'],
   ['microphone_unavailable', '没有找到可用麦克风，请连接麦克风后重试。'],
+  ['speech_recognition_permission_denied', '没有语音识别权限，请在系统设置中允许 AgentMesh360 使用语音识别。'],
+  ['speech_recognition_restricted', '这台 Mac 当前限制了语音识别，请检查系统隐私与家长控制设置。'],
   ['dictation_failed', '听写没有完成，请稍后重试。'],
 ]);
 
@@ -77,7 +83,7 @@ class DictationController {
       const response = await this.host.getDictationStatus(normalizedAgentId);
       if (!isCurrent()) return this.snapshot;
       if (!this.#applySnapshot(response, { expectedAgentId: normalizedAgentId })) {
-        throw new Error('Agent Host 返回了无效听写状态');
+        throw new Error('本机听写组件返回了无效状态');
       }
       return this.snapshot;
     });
@@ -87,7 +93,7 @@ class DictationController {
     this.#ensureNoOperation();
     const normalizedAgentId = this.#requireReadyAgent(agentId);
     if (disclosureAccepted !== true) {
-      throw new Error('请先确认录音会交给所选听写服务进行转写。');
+      throw new Error('请先确认使用 macOS 本机听写。');
     }
     if (this.agentId && this.agentId !== normalizedAgentId && ACTIVE_PHASES.has(this.snapshot.phase)) {
       throw new Error('已有一段听写正在进行，请先停止或取消。');
@@ -106,7 +112,7 @@ class DictationController {
       });
       if (!isCurrent()) return this.snapshot;
       if (!this.#applySnapshot(response, { expectedAgentId: normalizedAgentId })) {
-        throw new Error('Agent Host 返回了无效听写状态');
+        throw new Error('本机听写组件返回了无效状态');
       }
       return this.snapshot;
     });
@@ -118,7 +124,7 @@ class DictationController {
       const response = await this.host.stopDictation(dictationId);
       if (!isCurrent()) return this.snapshot;
       if (!this.#applySnapshot(response, { expectedAgentId: this.agentId })) {
-        throw new Error('Agent Host 返回了无效听写状态');
+        throw new Error('本机听写组件返回了无效状态');
       }
       return this.snapshot;
     });
@@ -130,7 +136,7 @@ class DictationController {
       const response = await this.host.cancelDictation(dictationId);
       if (!isCurrent()) return this.snapshot;
       if (!this.#applySnapshot(response, { expectedAgentId: this.agentId })) {
-        throw new Error('Agent Host 返回了无效听写状态');
+        throw new Error('本机听写组件返回了无效状态');
       }
       return this.snapshot;
     });
@@ -140,6 +146,7 @@ class DictationController {
     if (ACTIVE_PHASES.has(this.snapshot.phase)) {
       throw new Error('请先停止或取消当前听写。');
     }
+    if (this.agentId) this.host.clearDictation?.(this.agentId);
     this.lifecycleRevision += 1;
     this.operation = null;
     this.agentId = null;
@@ -150,6 +157,7 @@ class DictationController {
   }
 
   dispose() {
+    this.#cancelHostDictation();
     this.lifecycleRevision += 1;
     this.unsubscribeIdentity?.();
     this.host.off?.('notification', this.handleNotification);
@@ -262,12 +270,28 @@ class DictationController {
   }
 
   #reset() {
+    this.#cancelHostDictation();
     this.lifecycleRevision += 1;
     this.operation = null;
     this.agentId = null;
     this.hostRevision = -1;
     this.acceptEqualHostRevision = false;
     this.#publish(idleSnapshot(null, 0));
+  }
+
+  #cancelHostDictation() {
+    if (!ACTIVE_PHASES.has(this.snapshot.phase)) return;
+    try {
+      if (typeof this.host.cancelActiveDictation === 'function') {
+        Promise.resolve(this.host.cancelActiveDictation()).catch(() => {});
+        return;
+      }
+      if (this.snapshot.dictationId && typeof this.host.cancelDictation === 'function') {
+        Promise.resolve(this.host.cancelDictation(this.snapshot.dictationId)).catch(() => {});
+      }
+    } catch {
+      // Lifecycle cleanup is best-effort and must never block account teardown.
+    }
   }
 
   #selectAgent(agentId) {
@@ -337,10 +361,14 @@ function publicError(code) {
 
 function projectService(value) {
   if (!isPlainObject(value)) return null;
-  const providerProfileId = safeText(value.providerProfileId, MAX_PROVIDER_PROFILE_ID_CHARS);
+  const serviceId = safeText(
+    value.serviceId ?? value.providerProfileId,
+    MAX_SERVICE_ID_CHARS,
+  );
   const displayName = safeText(value.displayName, MAX_SERVICE_NAME_CHARS);
-  if (!providerProfileId || !displayName) return null;
-  return { providerProfileId, displayName };
+  const processing = value.processing === 'on_device' ? 'on_device' : 'provider';
+  if (!serviceId || !displayName) return null;
+  return { serviceId, displayName, processing };
 }
 
 function projectLimits(value) {
