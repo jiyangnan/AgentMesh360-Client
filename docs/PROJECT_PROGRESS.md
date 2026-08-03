@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；听写默认迁移为强制 on-device 的 macOS 本机 Helper，与 DeepSeek/GLM/MiniMax 等 Agent Provider 解耦；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | macOS 本机听写源码、Helper 编译与无麦克风自动化已完成，唯一内部包待刷新；下一输入验收为 owner 准备本机语言模型后的真实安装权限与断网听写 UAT。Audio 内容理解、付费云 STT、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；听写默认迁移为强制 on-device 的 macOS 本机 Helper，与 DeepSeek/GLM/MiniMax 等 Agent Provider 解耦；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | macOS 本机听写源码、Helper、自动化与唯一内部包已完成；下一输入验收为 owner 准备本机语言模型后的真实安装权限与断网听写 UAT。Audio 内容理解、付费云 STT、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -8546,7 +8546,7 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 
 ### 循环 159：macOS 本机听写默认迁移
 
-状态：源码、完整自动化、独立非 Kimi 审查和真实 Electron 布局已完成；唯一内部包待刷新，
+状态：源码、完整自动化、独立非 Kimi 审查、clean push、唯一内部包复验和单版本清理已完成；
 真实安装权限与断网听写 UAT 待 owner
 
 本轮先回看既定输入系统 V2 与产品成本边界，纠正了“听写必须额外购买 xAI/STT”的错误前提：
@@ -8584,7 +8584,28 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 - 外部副作用：真实麦克风请求 0、Provider Key/Vault 读取 0、Provider 请求 0、Apple 云服务
   请求 0、消息发送 0、AgentMesh credits 0、费用 $0。本轮遵从用户要求没有调用 Kimi。
 
+内部交付：
+
+1. 产品 commit `1d708492ef50e75647d56b2fe5ee8a570a530ad2` 已 clean push；未签名 arm64 回执
+   `desktop_internal_p6_1d708492ef50_arm64` 为 `passed`，包内 Host runtime
+   `1000.1.1785769012001`；
+2. DMG 为 `181612791` bytes，SHA-256
+   `ad1f246a6e0092a58c84a47d80c267ffe8c32cec5e198da635c0ded02f445121`；ZIP 为
+   `181413906` bytes，SHA-256
+   `b21fc20b12b3ce636e4558c85425b1f8328afe58f3146deb6723b9c679a27fef`；receipt、SHA、
+   `hdiutil verify`、ZIP CRC 和构建/Downloads 四文件 `cmp` 均通过；
+3. 独立挂载与解压确认 DMG/ZIP 应用内容一致；主程序和听写 Helper 均为 arm64，Helper
+   可执行、非 symlink，只链接 macOS 系统框架；双层 `Info.plist` 权限说明、包内本机听写披露
+   和准确附件隐私文案均存在，Provider 语音配置入口不存在；
+4. 无麦克风能力探测返回 `locale=zh-CN, onDevice=false`，说明当前机器尚未准备本机语言模型；
+   它没有触发权限或云端 fallback，也没有被记为真实听写通过。owner UAT 前需先在系统设置
+   启用并下载当前语言；
+5. 本机唯一交付目录为
+   `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-1d70849-arm64/`，构建证据只保留
+   `desktop/dist/internal/0.1.1-1d708492ef50-arm64/`；新包完全通过后才删除旧 `7cec392`，
+   临时挂载、解包目录、`.native-build` 与根 `target/` 均已清理。
+
 计划复盘：本轮只替换既定 V2.6 听写实现和打包/生命周期门，没有延伸 Audio 内容理解、云
-附件库、Provider fallback、语言选择、P7/P8、签名、公证或在线发布。下一步仅执行 clean
-push、唯一未签名内部包构建与复验；新包完全通过后才删除 `7cec392` 旧包。随后由 owner 在
-安装环境完成 `TC-CONV-024` 的“本机语言准备 → 首击披露 → 双权限 → 只回填 → 断网复验”。
+附件库、Provider fallback、语言选择、P7/P8、签名、公证或在线发布。源码、自动化、打包、
+复验、单包替换与文档已经闭环；下一步只由 owner 在安装环境完成 `TC-CONV-024` 的“本机
+语言准备 → 首击披露 → 双权限 → 只回填 → 断网复验”。

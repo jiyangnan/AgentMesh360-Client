@@ -1,6 +1,6 @@
 # Grok-first 输入系统 V2
 
-状态：V2.1–V2.6 与 macOS 本机听写迁移已完成源码和自动化；唯一内部包待刷新，
+状态：V2.1–V2.6 与 macOS 本机听写迁移、自动化和唯一内部包已完成；
 真实安装权限与断网听写 UAT 待 owner 执行
 更新：2026-08-03
 
@@ -208,3 +208,18 @@ V2 全量至少覆盖：
 - 用户可见文案不出现 Core、Host、Bridge 等内部节点；Composer 精确使用
   `附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360`；
 - 13 寸窗口中，包含本机听写披露浮层时也不把 Composer 推出视口。
+
+## 8. 2026-08-03 内部交付检查点
+
+- 产品 commit `1d708492ef50e75647d56b2fe5ee8a570a530ad2` 已 clean push，内部回执
+  `desktop_internal_p6_1d708492ef50_arm64` 为 `passed`；
+- DMG SHA-256 为
+  `ad1f246a6e0092a58c84a47d80c267ffe8c32cec5e198da635c0ded02f445121`，ZIP SHA-256 为
+  `b21fc20b12b3ce636e4558c85425b1f8328afe58f3146deb6723b9c679a27fef`；
+- DMG/ZIP 中的应用和听写 Helper 逐字节一致；主程序与 Helper 均为 arm64，Helper 可执行、
+  非 symlink，且只链接 macOS 系统框架。外层与嵌套 `Info.plist` 均包含麦克风和语音识别用途
+  说明；包内 `app.asar` 包含本机听写披露与准确附件隐私文案，不含 Provider 语音配置入口；
+- 构建、复验和能力探测没有请求麦克风、读取 Provider/Vault、发送消息、消耗 credits 或产生
+  费用。当前机器的无麦克风能力探测返回 `locale=zh-CN, onDevice=false`，因此真实 UAT 前需要
+  先在“系统设置 → 键盘 → 听写”准备当前语言；该结果不被伪装成断网听写已通过；
+- Downloads 与构建证据目录各只保留 `1d70849` 一份，旧内部包与临时挂载/解包目录已清理。

@@ -1688,3 +1688,27 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - 当前仍为打包前记录。真实麦克风请求 0、Provider/Vault 读取 0、外部请求 0、消息发送 0、
   credits 0、费用 $0。`TC-CONV-024` 保持阻断，等待唯一新包生成后由 owner 完成真实权限归因
   与断网听写；旧 `7cec392` 包在新包全部复验前继续保留。
+
+### 2026-08-03 macOS 本机听写唯一内部包交付执行
+
+- 产品 commit `1d708492ef50e75647d56b2fe5ee8a570a530ad2` 已 clean push；回执
+  `desktop_internal_p6_1d708492ef50_arm64` 为 `passed`；
+- DMG 181612791 bytes，SHA-256
+  `ad1f246a6e0092a58c84a47d80c267ffe8c32cec5e198da635c0ded02f445121`；ZIP
+  181413906 bytes，SHA-256
+  `b21fc20b12b3ce636e4558c85425b1f8328afe58f3146deb6723b9c679a27fef`；receipt、
+  `SHA256SUMS`、DMG checksum、ZIP CRC 和构建/Downloads 四文件逐字节比较全部通过；
+- 独立挂载/解压确认 DMG 与 ZIP 的应用内容一致；主程序与
+  `AgentMesh360SpeechHelper.app` 均为 arm64，Helper executable/Info.plist 逐字节一致、可执行、
+  非 symlink，并只链接 macOS 系统框架；外层和嵌套权限用途说明齐全；
+- 包内 `app.asar` 精确包含本机听写披露和
+  `附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360`，且不含 Provider
+  语音配置入口；
+- 无麦克风能力探测返回 `locale=zh-CN, onDevice=false`。预期结果是失败关闭并引导系统设置，
+  不请求权限、不 fallback；真实安装权限归因与离线识别仍由 `TC-CONV-024` 保持阻断；
+- 单包留存：Downloads 只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-1d70849-arm64/`，构建证据只保留
+  `desktop/dist/internal/0.1.1-1d708492ef50-arm64/`；旧 `7cec392` 和临时复验目录已删除，
+  `.native-build` 与根 `target/` 不存在；
+- 外部副作用：真实麦克风请求 0、Provider/Vault 读取 0、Provider 请求 0、消息发送 0、
+  AgentMesh credits 0、Apple 云服务请求 0、外部上传 0、费用 $0；本轮没有调用 Kimi。
