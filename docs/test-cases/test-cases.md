@@ -1632,3 +1632,29 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - 外部副作用：真实麦克风请求 0、Provider Key/Vault 读取 0、Provider 请求 0、消息发送 0、
   AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。完成目标仍需 owner 执行
   `TC-CONV-024` 的真实安装 UAT，未完成前不把整个输入系统 V2 标记为最终验收通过。
+
+### 2026-08-03 运行态附件意图恢复与唯一内部包刷新执行
+
+- 用例范围：87 条、14 个领域通过结构与执行记录校验；当前 83 条通过、4 条外部真实服务
+  阻断、0 条待执行、0 条失败。`TC-CONV-017` 新增真实按钮回归：Agent 正在工作时添加
+  附件自动切到“排队发送”，删除最后一个自动排队附件后恢复“调整当前任务”；
+- Controller 集成回归确认运行态附件按私有 Session/Prompt reservation 进入权威 Queue，
+  不调用 interject；确认入队后 reservation 落账，公开投影无 Prompt、Session 或附件字节；
+- Desktop 全量 Node：198 total / 193 passed / 0 failed / 5 个显式 real-Host gate skipped；
+  Conversation、紧凑布局、Agent 管理、Provider、Package 五组 Electron smoke 均退出 0；
+- 四档视口 1180×760、1280×768、1280×800、1440×900 的 Composer bottom 分别为
+  742、750、782、882px；页面/Main 无纵向逃逸，Transcript 独立滚动，十个附件与长内容
+  下输入框和发送按钮完整可见；产品旅程验证器 3/3，syntax、Rust fmt 和 diff check 通过；
+- 产品 commit `7cec39219d68ca937097601ab352e15ce3f5fa48` 已 clean push；唯一内部包 receipt
+  `desktop_internal_p6_7cec39219d68_arm64`。DMG 181565545 bytes，SHA-256
+  `0d336b64d2c95c077a26a5b49a2114aaa700ce9bb7694a69ed51f6ee7fbc0184`；ZIP
+  181369897 bytes，SHA-256
+  `f9ec24c7dc92fe5fcfd81ff65b2ccfeb1035b46e487f9710acc026da35de8f0d`；receipt、SHA、
+  DMG、ZIP CRC、四文件 `cmp`、arm64 Host、`app.asar` 和 `Info.plist` 复核全部通过；
+- 单包留存：Downloads 只保留
+  `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-7cec392-arm64/`，构建证据只保留
+  `desktop/dist/internal/0.1.1-7cec39219d68-arm64/`；旧包和临时缓存已删除，根 `target/`
+  不存在；
+- 外部副作用：真实麦克风请求 0、Provider Key/Vault 读取 0、Provider 请求 0、消息发送 0、
+  AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。本轮按用户要求不调用
+  Kimi。`TC-CONV-024` 真实安装麦克风/xAI 听写 UAT 仍为阻断，未获授权前不冒充通过。

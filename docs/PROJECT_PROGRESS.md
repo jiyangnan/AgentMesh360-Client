@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | 本轮运行态附件意图恢复已通过自动化，需从 clean pushed commit 刷新唯一内部包；之后下一输入验收仅为 owner 的真实麦克风/xAI 听写 UAT。Audio 内容理解、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | 运行态附件意图恢复修复、全量回归和 clean pushed commit 的唯一内部包刷新均已完成；下一输入验收仅为 owner 的真实麦克风/xAI 听写 UAT。Audio 内容理解、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -8488,3 +8488,58 @@ Queue Actor `34/34`、Pager Queue `289/289`。首次 Rust 冷构建只被沙箱�
 哈希不同的新包。下一步只执行 `TC-CONV-024` 真实安装 UAT；在 owner 明确允许麦克风和 xAI
 听写调用前，目标保持未最终验收，不扩展 Audio 内容块、云文件库、fallback、P7/P8、签名、
 公证或在线发布。
+
+### 循环 158：运行态附件意图恢复与唯一内部包刷新
+
+状态：产品修复、全量回归、clean push、未签名内部包复验和单版本清理均已完成；只剩
+owner 的真实麦克风/xAI 听写 UAT
+
+本轮继续按输入系统 V2 合同审计真实运行路径，关闭了一个会让 Composer 状态卡住的边界：
+
+1. Agent 正在工作时，添加附件会按安全合同自动从“调整当前任务”切换为“排队发送”；
+   原实现删除最后一个附件后仍可能停留在排队模式。现在 Renderer 记录自动切换前的意图，
+   最后一个自动排队附件被删除、选择器取消或添加失败时恢复原意图；用户手动选择意图后
+   不再擅自恢复；
+2. Controller 集成回归确认运行态附件绑定私有 `session + prompt` reservation，并走 Host
+   权威 Queue，不进入 interject；确认入队后 reservation 正确落账，公开快照不包含私有
+   Prompt、Session 或附件字节；
+3. 架构、测试用例和计划同步为同一合同：运行态附件可用，但只能排队；删除最后一个自动
+   排队附件恢复加入前意图。
+
+回归证据：
+
+- Desktop 全量 Node `198 total / 193 passed / 0 failed / 5 skipped`，5 条仍是显式真实
+  Host 门禁；Conversation、紧凑布局、Agent 管理、Provider、Package 五组 Electron smoke
+  全部退出 0；
+- 四档内容视口 1180×760、1280×768、1280×800、1440×900 的 Composer bottom 分别为
+  742、750、782、882px；页面/Main 无纵向逃逸，Transcript 独立滚动，十个附件、消息
+  14px、输入 15px 下 Composer 仍完整可见；
+- 结构化产品旅程 `87` 条、`14` 个领域通过验证，当前 `83` 通过、`4` 条外部真实服务阻断、
+  `0` 待执行、`0` 失败；验证器自身 `3/3`；`npm run check`、`cargo fmt --all -- --check`
+  与 `git diff --check` 通过；
+- 产品 commit `7cec39219d68ca937097601ab352e15ce3f5fa48` 已 clean push 到
+  `origin/main` 并由远端精确复核。本轮按用户要求不调用 Kimi，仅保留主 Agent 的完整
+  diff、自测、负向场景、真实 Electron 与包内容复核。
+
+内部交付：
+
+1. 未签名 arm64 回执 `desktop_internal_p6_7cec39219d68_arm64` 为 `passed`；Desktop
+   `0.1.1`，包内 Host runtime `1000.1.1785746091001`，Host 为 arm64；
+2. DMG 为 `181565545` bytes，SHA-256
+   `0d336b64d2c95c077a26a5b49a2114aaa700ce9bb7694a69ed51f6ee7fbc0184`；ZIP 为
+   `181369897` bytes，SHA-256
+   `f9ec24c7dc92fe5fcfd81ff65b2ccfeb1035b46e487f9710acc026da35de8f0d`；receipt verifier、
+   `SHA256SUMS`、`hdiutil verify`、ZIP CRC 和构建/Downloads 四文件 `cmp` 全部通过；
+3. 解包复核确认 `app.asar` 含本轮意图恢复逻辑与精确文案“附件仅在本机暂存，发送时交给
+   当前模型；不会上传到 AgentMesh360”；`Info.plist` 含主动听写的麦克风用途说明；
+4. 本机唯一交付目录为
+   `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-7cec392-arm64/`；
+   `desktop/dist/internal` 也只保留对应 `0.1.1-7cec39219d68-arm64`。旧 `e77703a` 两份包、
+   解包目录和构建临时目录已删除，仓库根 `target/` 不存在；
+5. 构建与自动化读取真实 Provider Key 0、Provider 请求 0、真实麦克风请求 0、消息发送 0、
+   AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。
+
+计划复盘：输入系统 V2 的产品代码、自动化和唯一内部包已闭环，本轮没有扩展 Audio 内容
+理解、云附件库、fallback、P7/P8、签名、公证或在线发布。下一步只执行 `TC-CONV-024`：
+owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首击披露 → 明确开始 → 完成只
+回填 → 手动发送”的真实麦克风 UAT；获得授权和真实证据前不把整个目标标记为最终通过。
