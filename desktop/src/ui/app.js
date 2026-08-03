@@ -27,6 +27,7 @@ let pendingConversationOpen = null;
 let conversationOpenTail = Promise.resolve();
 let conversationSendRevision = 0;
 let conversationSendPendingByAgent = new Map();
+let conversationInterjectionPending = new Set();
 let conversationStreamingAgents = new Set();
 let settingsTab = 'account';
 let providerUi = {
@@ -149,6 +150,7 @@ function render(state) {
     pendingConversationOpen = null;
     conversationSendRevision += 1;
     conversationSendPendingByAgent = new Map();
+    conversationInterjectionPending = new Set();
     conversationStreamingAgents = new Set();
     settingsTab = 'account';
     packageUi = {
@@ -200,6 +202,7 @@ function render(state) {
     pendingConversationOpen = null;
     conversationSendRevision += 1;
     conversationSendPendingByAgent = new Map();
+    conversationInterjectionPending = new Set();
     conversationStreamingAgents = new Set();
     packageUi.snapshot = null;
     packageUi.phase = 'idle';
@@ -255,7 +258,7 @@ function refreshReadyIdentityMetadata(state) {
   setText('[data-ready-credits]', formatNumber(credits.balance));
   setText(
     '[data-ready-checked-at]',
-    `订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}`,
+    `订阅状态已安全验证 · ${formatCheckedAt(state.checkedAt)}`,
   );
   if (backgroundUi.phase !== 'loading') refreshBackgroundSnapshot({ quiet: true });
 }
@@ -682,10 +685,12 @@ function conversationView() {
     : null;
   const modelBlocked = Boolean(bindingIssue);
   const draftAttachments = safeConversationDraftAttachments(conversationUi.draftAttachments);
+  const visibleDraftAttachments = sending ? [] : draftAttachments;
   const draftKey = conversationDraftKey();
   const attachmentError = draftKey ? conversationAttachmentErrors.get(draftKey) : null;
-  const composerDisabled = !ready || sending || modelBlocked;
-  const canSubmitAttachmentOnly = draftAttachments.length > 0;
+  const composerMode = sending ? 'interject' : 'prompt';
+  const composerDisabled = !(ready || (sending && conversationUi.agentId)) || modelBlocked;
+  const canSubmitAttachmentOnly = composerMode === 'prompt' && visibleDraftAttachments.length > 0;
   const gates = `${conversationUi.error ? `
     <div class="conversation-error" role="alert">
       <span>${escapeHtml(conversationUi.error)}</span>
@@ -728,10 +733,11 @@ function conversationView() {
           data-agent-id="${escapeHtml(String(conversationUi.agentId || agentManagementUi.agentId || ''))}"
           data-session-key="main"
           data-composer-enabled="${composerDisabled ? 'false' : 'true'}"
+          data-composer-mode="${composerMode}"
         >
-          ${draftAttachments.length ? `
+          ${visibleDraftAttachments.length ? `
             <div class="composer-attachment-strip" role="list" aria-label="待发送附件">
-              ${draftAttachments.map(conversationAttachmentChip).join('')}
+              ${visibleDraftAttachments.map(conversationAttachmentChip).join('')}
             </div>` : ''}
           <div class="composer-entry-row">
             <div class="composer-tool-wrap">
@@ -742,7 +748,7 @@ function conversationView() {
                 aria-label="添加图片、文件或链接"
                 aria-haspopup="menu"
                 aria-expanded="false"
-                ${composerDisabled ? 'disabled' : ''}
+                ${composerDisabled || sending ? 'disabled' : ''}
               >+</button>
               <div class="composer-tool-menu" id="composer-tool-menu" role="menu" hidden>
                 <button type="button" role="menuitem" id="composer-pick-files">
@@ -753,7 +759,11 @@ function conversationView() {
                 </button>
               </div>
             </div>
-            <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked ? '请先重新选择可用模型…' : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${composerDisabled ? 'disabled' : ''}></textarea>
+            <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked
+    ? '请先重新选择可用模型…'
+    : sending
+      ? '继续补充要求，Agent 会在当前任务中调整方向…'
+      : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${composerDisabled ? 'disabled' : ''}></textarea>
           </div>
           <div class="composer-link-entry" id="composer-link-entry" hidden>
             <input name="attachmentLink" type="url" maxlength="2048" inputmode="url" autocomplete="off" placeholder="https://example.com">
@@ -762,10 +772,12 @@ function conversationView() {
           </div>
           ${attachmentError ? `<div class="composer-attachment-error" role="alert">${escapeHtml(attachmentError)}</div>` : ''}
           <div class="composer-footer">
-            <span>${draftAttachments.some((attachment) => attachment.kind === 'image')
-    ? '图片会交给当前模型；能否理解取决于该模型的视觉能力'
-    : '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360 Core'}</span>
-            <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitAttachmentOnly ? 'disabled' : ''}>发送</button>
+            <span>${sending
+    ? 'Agent 正在工作；你可以继续补充要求，它会在当前任务中调整方向'
+    : draftAttachments.some((attachment) => attachment.kind === 'image')
+      ? '图片会交给当前模型；能否理解取决于该模型的视觉能力'
+      : '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360'}</span>
+            <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitAttachmentOnly ? 'disabled' : ''}>${sending ? '追加指令' : '发送'}</button>
           </div>
         </form>
       </div>
@@ -1360,11 +1372,17 @@ function wireConversation() {
   const attachmentIds = safeConversationDraftAttachments(conversationUi.draftAttachments)
     .map((attachment) => attachment.attachmentId);
   const composerEnabled = form?.dataset.composerEnabled === 'true';
+  const interjectMode = form?.dataset.composerMode === 'interject';
+  const promptAttachmentIds = interjectMode ? [] : attachmentIds;
+  const interjectionKey = form
+    ? conversationPendingKey(form.dataset.accountId, form.dataset.agentId)
+    : '';
   const updateSendState = () => {
     if (!sendButton) return;
     sendButton.disabled = !composerEnabled
       || conversationAttachmentMutationInFlight
-      || (!String(textarea?.value || '').trim() && attachmentIds.length === 0);
+      || (interjectMode && conversationInterjectionPending.has(interjectionKey))
+      || (!String(textarea?.value || '').trim() && promptAttachmentIds.length === 0);
   };
   const closeToolMenu = () => {
     if (!toolMenu || !addButton) return;
@@ -1383,7 +1401,7 @@ function wireConversation() {
     return true;
   };
   const runAttachmentMutation = async (operation, fallback) => {
-    if (!form || !composerEnabled || conversationAttachmentMutationInFlight) return;
+    if (!form || !composerEnabled || interjectMode || conversationAttachmentMutationInFlight) return;
     conversationAttachmentMutationInFlight = true;
     form.classList.add('attachment-busy');
     updateSendState();
@@ -1467,19 +1485,19 @@ function wireConversation() {
     });
   }
   const stageDroppedFiles = (files) => {
-    if (!files?.length) return;
+    if (interjectMode || !files?.length) return;
     runAttachmentMutation(
       () => bridge.stageConversationFiles(files),
       '没有成功添加文件',
     );
   };
   form?.addEventListener('dragenter', (event) => {
-    if (!event.dataTransfer?.types?.includes('Files')) return;
+    if (interjectMode || !event.dataTransfer?.types?.includes('Files')) return;
     event.preventDefault();
     form.classList.add('drag-active');
   });
   form?.addEventListener('dragover', (event) => {
-    if (!event.dataTransfer?.types?.includes('Files')) return;
+    if (interjectMode || !event.dataTransfer?.types?.includes('Files')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
     form.classList.add('drag-active');
@@ -1495,6 +1513,7 @@ function wireConversation() {
     stageDroppedFiles(files);
   });
   textarea?.addEventListener('paste', (event) => {
+    if (interjectMode) return;
     const files = Array.from(event.clipboardData?.files || []);
     if (!files.length) return;
     event.preventDefault();
@@ -1507,18 +1526,65 @@ function wireConversation() {
     else conversationDrafts.delete(formDraftKey);
     updateSendState();
   });
+  textarea?.addEventListener('keydown', (event) => {
+    if (
+      event.key !== 'Enter'
+      || event.shiftKey
+      || event.isComposing
+      || event.keyCode === 229
+    ) return;
+    event.preventDefault();
+    form?.requestSubmit();
+  });
   updateSendState();
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = textarea.value.trim();
     const agentId = form.dataset.agentId;
     if (
-      (!text && attachmentIds.length === 0)
+      (!text && promptAttachmentIds.length === 0)
       || !agentId
-      || conversationTurnIsRunning(agentId)
       || conversationAttachmentMutationInFlight
     ) return;
     const draftKey = formDraftKey;
+    if (interjectMode) {
+      if (!text || conversationInterjectionPending.has(interjectionKey)) return;
+      const pendingInterjections = conversationInterjectionPending;
+      pendingInterjections.add(interjectionKey);
+      textarea.value = '';
+      if (draftKey) conversationDrafts.delete(draftKey);
+      if (draftKey) conversationAttachmentErrors.delete(draftKey);
+      updateSendState();
+      try {
+        const state = await bridge.interjectConversationMessage(text);
+        trackConversationStreamingState(state);
+        if (
+          currentState.phase === 'ready'
+          && String(readyAccountId || '') === form.dataset.accountId
+          && agentManagementUi.agentId === agentId
+          && state?.agentId === agentId
+        ) {
+          conversationUi = state;
+        }
+      } catch (error) {
+        if (draftKey) conversationDrafts.set(draftKey, text);
+        if (
+          currentState.phase === 'ready'
+          && String(readyAccountId || '') === form.dataset.accountId
+          && agentManagementUi.agentId === agentId
+        ) {
+          conversationUi = {
+            ...conversationUi,
+            error: publicError(error, '没有成功追加这条要求'),
+          };
+        }
+      } finally {
+        pendingInterjections.delete(interjectionKey);
+      }
+      if (currentState.phase === 'ready') renderReady(currentState);
+      return;
+    }
+    if (conversationTurnIsRunning(agentId)) return;
     const mutation = {
       accountId: readyAccountId,
       agentId,
@@ -1534,7 +1600,10 @@ function wireConversation() {
     conversationUi = { ...conversationUi, error: null };
     if (currentState.phase === 'ready') renderReady(currentState);
     try {
-      const state = await bridge.sendConversationMessage({ text, attachmentIds });
+      const state = await bridge.sendConversationMessage({
+        text,
+        attachmentIds: promptAttachmentIds,
+      });
       const mutationIsCurrent = (
         conversationSendIsCurrent(mutation)
         && state?.agentId === mutation.agentId
@@ -2266,7 +2335,7 @@ function backgroundSettingsView() {
       </div>
     ` : ''}
     ${backgroundUi.phase === 'error' ? '<button class="secondary retry-background" type="button">重新读取运行状态</button>' : ''}
-    <div class="security-row">后台恢复仍需 Core 与 Host 双重订阅校验 · 不向 Rust Host 复制 Refresh Token</div>`;
+    <div class="security-row">后台恢复会重新验证订阅 · 登录凭据由系统安全存储保护</div>`;
 }
 
 function wireBackgroundSettings() {
@@ -2472,7 +2541,7 @@ function agentWorkspaceView(state) {
     state.activatingAgentId,
     overview.find((item) => item.agentId === agent.agentId),
   )).join('') : '<div class="empty-agents">当前没有可用的 Agent Package。</div>'}</div>
-    <div class="security-row" data-ready-checked-at>订阅状态已由 Core 与本地 Host 双重确认 · ${formatCheckedAt(state.checkedAt)}</div>`;
+    <div class="security-row" data-ready-checked-at>订阅状态已安全验证 · ${formatCheckedAt(state.checkedAt)}</div>`;
 }
 
 function agentDetailView(state) {

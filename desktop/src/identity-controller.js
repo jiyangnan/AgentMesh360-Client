@@ -305,7 +305,7 @@ class IdentityController {
         || hostBootstrap?.access?.canEnterClient !== true
         || hostBootstrap?.account?.id !== normalized.account.id
       ) {
-        throw new Error('Core 与 Agent Host 的订阅验证结果不一致');
+        throw new Error('订阅验证结果不一致');
       }
       const list = await this.host.listAgents();
       this.#publish({

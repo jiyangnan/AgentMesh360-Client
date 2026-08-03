@@ -1200,3 +1200,32 @@ Agent 级归属。A 在后台处理时，B/C 可正常打开和聊天，A 的迟
 Package Controller、签名、更新与回滚底层继续保留，未来动态 Agent 接入计划不变；本轮
 不开放在线商店、多会话、自动 fallback、价格/余额、P7/P8 或在线发布。验证继续要求
 fixture 0 Provider 请求、0 AgentMesh credits，并在 KimiCLI CLEAN 后才允许内部打包。
+
+## 70. 循环 148-149：多内容 Composer 与公开隐私语言
+
+Cycle 148 只把 Grok Build 已有的 ACP Text、Image、EmbeddedResource 和 ResourceLink
+接入当前固定 Main Session；Cycle 149 再把用户可见说明固定为“附件仅在本机暂存，
+发送时交给当前模型；不会上传到 AgentMesh360”。普通工作区不显示 Core、Host、Bridge
+等内部拓扑，但技术文档继续保留真实 authority 关系。
+
+这两轮没有开放音视频、云附件库、模型 fallback、生产 Trust、P7/P8 或在线分发。
+
+## 71. 循环 150：Grok-first 输入系统 V2.1
+
+复核 Codex 当前官方公开输入交互与 Grok Build 源码后，确认当前客户端的主要缺口不是
+附件类型数量，而是 Turn 运行期间 Composer 完全失去作用。V2.1 按最小高价值切片实现：
+
+1. Enter 发送、Shift+Enter 换行，输入法组合态不误发；
+2. Agent 工作时输入框继续可用，主按钮变为“追加指令”；
+3. 文字补充通过 Grok 原生 `x.ai/interject` 进入当前 Main Session，不取消原 Turn；
+4. Controller 只在 streaming 时接受插话；Host 广播作为唯一用户消息回显；失败恢复草稿；
+5. 运行态暂时禁用附件入口、拖放和图片粘贴，避免把文档/链接静默丢成文字插话；
+6. 继续满足 13 寸窗口固定 Composer、账户/Agent 草稿隔离和 Renderer 无 Session authority。
+
+计划复盘把后续顺序固定为：先按 `account + agent + session` 重构权威状态并实现 Prompt
+Queue/附件 reservation，再加入停止和 send-now；之后才开放经过 allowlist 的 `/`/`$`、
+受控 `@` 文件、历史/大段粘贴与听写。上游存在不等于产品已授权，尤其不能直接公开 yolo、
+永久批准、插件安装、Hook 信任或路径越界能力。
+
+本轮不改变 Provider、credits、订阅、Package、生产发布或 P7/P8；完整设计与测试合同见
+[`GROK_FIRST_INPUT_SYSTEM_V2.md`](GROK_FIRST_INPUT_SYSTEM_V2.md) 和 TC-CONV-017。

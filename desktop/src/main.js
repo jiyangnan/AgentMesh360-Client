@@ -266,6 +266,9 @@ function registerIpc(
   ipcMain.handle('conversation:send', (_event, request) => {
     return conversationController.send(request);
   });
+  ipcMain.handle('conversation:interject', (_event, text) => {
+    return conversationController.interject(text);
+  });
   ipcMain.handle('conversation:respond-permission', (_event, interactionId, optionId) => {
     return conversationController.respondToPermission(interactionId, optionId);
   });

@@ -1299,6 +1299,15 @@ button { -webkit-app-region: no-drag; }
   box-shadow: 0 0 0 3px rgba(146,119,255,.055), 0 10px 32px rgba(0,0,0,.12);
 }
 
+.agent-conversation-workspace .conversation-composer[data-composer-mode="interject"] {
+  border-color: rgba(103,221,176,.18);
+}
+
+.agent-conversation-workspace .conversation-composer[data-composer-mode="interject"]:focus-within {
+  border-color: rgba(103,221,176,.3);
+  box-shadow: 0 0 0 3px rgba(103,221,176,.05), 0 10px 32px rgba(0,0,0,.12);
+}
+
 .agent-conversation-workspace .conversation-composer textarea {
   flex: 1 1 auto;
   width: auto;

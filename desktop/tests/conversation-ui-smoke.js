@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const opens = [];
 const prompts = [];
+const interjections = [];
 const permissionResponses = [];
 const delayedConversationOpens = new Map();
 let delayedConversationSend = null;
@@ -155,6 +156,20 @@ app.whenReady().then(async () => {
     currentConversation = completedConversation;
     event.sender.send('conversation:state', completedConversation);
     return completedConversation;
+  });
+  ipcMain.handle('conversation:interject', (event, text) => {
+    interjections.push(text);
+    currentConversation = {
+      ...currentConversation,
+      phase: 'sending',
+      streaming: true,
+      messages: [
+        ...(currentConversation.messages || []),
+        { id: `interjection-${interjections.length}`, role: 'user', text },
+      ],
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
   });
   ipcMain.handle('conversation:respond-permission', (event, interactionId, optionId) => {
     permissionResponses.push({ interactionId, optionId });
@@ -307,7 +322,11 @@ app.whenReady().then(async () => {
   assert.equal(openedDom.composerAddWidth >= 40, true);
   assert.equal(openedDom.composerAddHeight >= 40, true);
   assert.equal(openedDom.composerMenuHidden, true);
-  assert.match(openedDom.composerPrivacyCopy, /不会上传到 AgentMesh360 Core/u);
+  assert.equal(
+    openedDom.composerPrivacyCopy,
+    '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360',
+  );
+  assert.equal(openedDom.composerPrivacyCopy.includes('Core'), false);
   assert.equal(openedDom.stateFont >= 12, true);
   assert.equal(openedDom.feedWidth <= 881, true);
   assert.equal(openedDom.feedWidth <= openedDom.transcriptWidth, true);
@@ -552,12 +571,59 @@ app.whenReady().then(async () => {
   assert.deepEqual(await window.webContents.executeJavaScript(`({
     state: document.querySelector('.conversation-state')?.innerText,
     sendDisabled: document.querySelector('#conversation-form button[type="submit"]')?.disabled,
+    textareaDisabled: document.querySelector('#conversation-form textarea')?.disabled,
+    addDisabled: document.getElementById('composer-add-button')?.disabled,
+    composerMode: document.getElementById('conversation-form')?.dataset.composerMode,
+    sendLabel: document.querySelector('#conversation-form button[type="submit"]')?.innerText,
+    helper: document.querySelector('.composer-footer span')?.innerText,
     lecturecastDisabled: document.querySelector('[data-switch-resident-agent="lecturecast-agent"]')?.disabled,
   })`), {
     state: 'Agent 正在处理',
     sendDisabled: true,
+    textareaDisabled: false,
+    addDisabled: true,
+    composerMode: 'interject',
+    sendLabel: '追加指令',
+    helper: 'Agent 正在工作；你可以继续补充要求，它会在当前任务中调整方向',
     lecturecastDisabled: false,
   });
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const textarea = document.querySelector('#conversation-form textarea');
+      textarea.value = '先核对公司名称';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }));
+    })()
+  `);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(interjections.length, 0);
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const textarea = document.querySelector('#conversation-form textarea');
+      textarea.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }));
+    })()
+  `);
+  await waitFor(() => interjections.length === 1);
+  assert.deepEqual(interjections, ['先核对公司名称']);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.body.innerText.includes('先核对公司名称')"
+      + " && document.querySelector('#conversation-form textarea')?.value === ''",
+  ));
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-switch-resident-agent=\"lecturecast-agent\"]').click()",
   );

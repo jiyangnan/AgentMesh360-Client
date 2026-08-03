@@ -102,6 +102,10 @@ contextBridge.exposeInMainWorld('agentmesh360', {
       ? request.attachmentIds.slice(0, 11).map((value) => String(value || '').slice(0, 65))
       : [],
   }),
+  interjectConversationMessage: (text) => ipcRenderer.invoke(
+    'conversation:interject',
+    String(text || '').slice(0, 16_001),
+  ),
   respondConversationPermission: (interactionId, optionId = null) => ipcRenderer.invoke(
     'conversation:respond-permission',
     String(interactionId || '').slice(0, 100),

@@ -73,6 +73,9 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
         },
       };
     }
+    if (request.method === '_x.ai/interject') {
+      return { result: { status: 'queued' } };
+    }
     return { result: null, error: 'unsupported' };
     });
     return child;
@@ -91,6 +94,11 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   const projectState = await client.getWorkspaceProjectState('job-agent');
   const background = await client.listAgentBackgroundActivities('job-agent');
   const sessionPlan = await client.getAgentSessionPlan('job-agent');
+  const interjection = await client.interjectSession({
+    sessionId: 'private-session-id',
+    text: '先修复测试，再继续。',
+    interjectionId: 'interjection-test-1',
+  });
 
   assert.equal(bootstrap.account.id, 7);
   assert.equal(list.agents[0].agentId, 'job-agent');
@@ -98,6 +106,7 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.equal(projectState.project.title, '产品岗位第 3 轮');
   assert.equal(background.activities[0].taskId, 'private-host-task');
   assert.equal(sessionPlan.entries[0].content, '核对岗位要求');
+  assert.equal(interjection.status, 'queued');
   assert.equal(received[0].method, 'initialize');
   assert.equal(received[0].params._meta.clientIdentifier, 'agentmesh360-desktop');
   assert.equal(received[0].params._meta.clientVersion, require('../package.json').version);
@@ -111,6 +120,12 @@ test('ACP client initializes the Host and unwraps AgentMesh360 extension respons
   assert.deepEqual(received[5].params, { agentId: 'job-agent' });
   assert.equal(received[6].method, '_x.agentmesh360/agents/session-plan/get');
   assert.deepEqual(received[6].params, { agentId: 'job-agent' });
+  assert.equal(received[7].method, '_x.ai/interject');
+  assert.deepEqual(received[7].params, {
+    sessionId: 'private-session-id',
+    text: '先修复测试，再继续。',
+    interjectionId: 'interjection-test-1',
+  });
   assert.equal(client.getRuntimeStatus().bridgeState, 'connected');
 
   let reconnectEvents = 0;

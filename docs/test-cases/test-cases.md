@@ -57,7 +57,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 登录与订阅 | Google/GitHub 登录、重新验证、退出、订阅入口 | 成功、取消、state 错配、过期、订阅阻断、后台复验 | Node；TC-AUTH-001～004、TC-ACCESS-001～004 |
 | 左侧导航与引导 | Agent、模型供应商、设置、Host 状态、三步引导 | 默认落点、切页、Host 三态、恢复引导 | Electron；TC-NAV-001～003、TC-GUIDE-001 |
 | Agent 列表 | 管理、激活、失效修复；不展示尚不可兑现的新增入口 | 已激活、未激活、模型失效、零 Agent、公开新增入口缺席 | Node + Electron；TC-AGENT-001～006 |
-| Agent 对话 | Agent/会话二级栏、多内容 Composer、发送、齿轮设置、权限确认、模型修复、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、失败保留、Agent 切换草稿、重启恢复、安全 Markdown、字号与布局、旧事件、无 fallback、快速切换 latest-intent | Node + Electron + Rust；TC-CONV-001～016 |
+| Agent 对话 | Agent/会话二级栏、多内容 Composer、发送、运行中追加指令、齿轮设置、权限确认、模型修复、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、Enter/Shift+Enter、失败保留、Agent 切换草稿、重启恢复、安全 Markdown、字号与布局、旧事件、无 fallback、快速切换 latest-intent | Node + Electron + Rust；TC-CONV-001～017 |
 | Agent 模型 | Provider/模型应用内下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、本 Agent Turn 锁定、异步响应归属 | Node + Electron + Rust；TC-MODEL-001～006 |
 | 行为 `agent.md` | 编辑、保存、恢复默认、冲突处理 | 草稿、8000/8001 字符、秘密拒绝、revision 冲突、Turn 锁定 | Node + Electron + Rust；TC-OVERLAY-001～005 |
 | 偏好 `user.md` | 编辑、保存、恢复默认、冲突处理 | 账户+Agent 隔离、草稿、秘密拒绝、账号切换清理 | Node + Electron + Rust；TC-OVERLAY-001～005 |
@@ -743,7 +743,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 ## TC-CONV-014：附件私有暂存、限制和账户/Agent 隔离
 
 - **用户故事**：作为用户，我希望附件只服务于我明确发送的这条消息，不能泄露给其他账号、
-  其他 Agent 或 AgentMesh360 Core，也不能因为超大文件拖垮客户端。
+  其他 Agent 或 AgentMesh360，也不能因为超大文件拖垮客户端。
 - **优先级**：P0
 - **设计状态**：已实现
 - **前置条件**：账号 A/B、Agent A/B；可控临时文件和恶意类型 fixture。
@@ -752,7 +752,8 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **交互步骤**：分别选择、暂存、列出、构建 Prompt、删除、注销并冷启动。
 - **预期输出**：目录/文件权限为 0700/0600；Renderer 只见随机 ID、种类、名称和大小；
   单文件 20 MiB、每条 10 个、合计 50 MiB；图片校验签名；只接受受支持文件和无凭据的
-  http(s)；跨账号/Agent ID 一律拒绝；冷启动清理异常遗留；Core 不接收附件内容。
+  http(s)；跨账号/Agent ID 一律拒绝；冷启动清理异常遗留；界面只说明不会发送给
+  AgentMesh360，不展示内部服务节点名。
 - **失败与恢复**：批次中途失败撤销该批新增内容，不删除此前已经存在的草稿；注销清理
   当前账号附件。
 - **验证层**：Node + Electron + 秘密/路径扫描
@@ -791,6 +792,28 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **失败与恢复**：删除暂存失败不把已经成功的 Provider Turn 伪装成发送失败；下次启动
   兜底清理残留。
 - **验证层**：Node + Electron
+- **本轮结果**：通过
+
+## TC-CONV-017：Agent 工作时继续补充要求
+
+- **用户故事**：作为正在等待持久 Agent 执行任务的用户，我希望随时补充条件或纠正方向，
+  不必等它完全结束后重新开一轮，也不能因为输入框被锁而打断工作。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：当前账号订阅有效；Agent 的 Main Session 已连接并正在执行一个 Turn。
+- **输入**：普通文字、空文字、16,001 字符、Host 拒绝；另覆盖 Enter、Shift+Enter 与中文
+  输入法组合态。
+- **交互步骤**：先发送一个延迟完成的任务；在“Agent 正在处理”期间继续输入；检查运行态
+  Composer；Shift+Enter 后确认未提交，再按 Enter 或点击“追加指令”；观察用户消息、原
+  Turn 状态和失败恢复。
+- **预期输出**：输入框保持可用，“＋”和运行态附件拖放/粘贴禁用，按钮文字为“追加指令”；
+  Footer 说明这会调整当前任务；合法文字通过 Grok `x.ai/interject` 进入当前私有 Main
+  Session，不取消原 Turn、不把 streaming 改成 false；Host 广播后只显示一次独立用户消息；
+  Enter 提交，Shift+Enter 和输入法组合态不提交。
+- **失败与恢复**：空闲 Session、无 authority、超长文字或 Host 未接受时失败关闭；Renderer
+  不取得 Session ID；失败恢复当前账号/Agent/主会话的原草稿，不能串到另一 Agent。附件和
+  链接不能在 V2.1 被静默丢弃为文字插话。
+- **验证层**：Node + Electron + 1280×800 紧凑布局
 - **本轮结果**：通过
 
 ## 8. BYOK Provider

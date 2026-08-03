@@ -174,6 +174,14 @@ class AcpHostClient extends EventEmitter {
     }, this.sessionPromptTimeoutMs);
   }
 
+  async interjectSession({ sessionId, text, interjectionId }) {
+    return this.#extension('x.ai/interject', {
+      sessionId,
+      text: String(text || ''),
+      interjectionId: String(interjectionId || ''),
+    });
+  }
+
   async getAgentPackageCatalog() {
     return this.#extension('x.agentmesh360/agent-packages/catalog', {});
   }

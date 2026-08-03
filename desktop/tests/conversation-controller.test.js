@@ -5,6 +5,14 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { AgentConversationController } = require('../src/conversation-controller');
 
+async function waitFor(predicate, attempts = 50) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Timed out waiting for conversation state');
+}
+
 test('conversation open resolves the Host-owned Main Session and only publishes safe text history', async () => {
   const fixture = makeFixture();
   const states = [];
@@ -100,6 +108,79 @@ test('conversation prompt uses private authority, streams bounded text, and igno
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test('running conversation accepts a bounded Grok interjection and projects its Host echo once', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let releasePrompt;
+  fixture.host.promptImpl = async ({ sessionId, text }) => {
+    fixture.host.emitSession(sessionId, 'user_message_chunk', text);
+    await new Promise((resolve) => { releasePrompt = resolve; });
+    fixture.host.emitSession(sessionId, 'agent_message_chunk', '已经调整执行方向。');
+    return { stopReason: 'end_turn' };
+  };
+  fixture.host.interjectImpl = async ({ sessionId, text, interjectionId }) => {
+    assert.equal(sessionId, 'private-session-id');
+    assert.equal(text, '先检查测试，再继续原任务。');
+    assert.match(interjectionId, /^[0-9a-f-]{36}$/u);
+    const notification = {
+      jsonrpc: '2.0',
+      method: 'x.ai/session/interjection',
+      params: { sessionId, text, interjectionId },
+    };
+    fixture.host.emit('notification', notification);
+    fixture.host.emit('notification', notification);
+    return { status: 'queued' };
+  };
+
+  const runningPrompt = fixture.controller.send('先完成这个任务');
+  await waitFor(() => (
+    fixture.controller.getSnapshot().streaming === true
+    && typeof releasePrompt === 'function'
+  ));
+  const interjected = await fixture.controller.interject('先检查测试，再继续原任务。');
+
+  assert.equal(interjected.streaming, true);
+  assert.equal(fixture.host.interjectCalls.length, 1);
+  assert.equal(fixture.host.interjectCalls[0].sessionId, 'private-session-id');
+  assert.equal(fixture.host.interjectCalls[0].text, '先检查测试，再继续原任务。');
+  assert.match(fixture.host.interjectCalls[0].interjectionId, /^[0-9a-f-]{36}$/u);
+  assert.deepEqual(interjected.messages.map(({ role, text }) => ({ role, text })), [
+    { role: 'user', text: '先完成这个任务' },
+    { role: 'user', text: '先检查测试，再继续原任务。' },
+  ]);
+
+  releasePrompt();
+  const completed = await runningPrompt;
+  assert.equal(completed.streaming, false);
+  assert.equal(completed.messages.at(-1).text, '已经调整执行方向。');
+});
+
+test('conversation interjection fails closed when no turn is running or the Host rejects it', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+
+  await assert.rejects(
+    fixture.controller.interject('不应在空闲状态插话'),
+    /没有正在执行/u,
+  );
+  assert.equal(fixture.host.interjectCalls.length, 0);
+
+  let releasePrompt;
+  fixture.host.promptImpl = () => new Promise((resolve) => { releasePrompt = resolve; });
+  fixture.host.interjectImpl = async () => ({ status: 'ignored' });
+  const runningPrompt = fixture.controller.send('开始任务');
+  await waitFor(() => (
+    fixture.controller.getSnapshot().streaming === true
+    && typeof releasePrompt === 'function'
+  ));
+  await assert.rejects(
+    fixture.controller.interject('这次 Host 没接受'),
+    /没有接受/u,
+  );
+  releasePrompt({ stopReason: 'end_turn' });
+  await runningPrompt;
 });
 
 test('conversation authority is cleared when identity access or the Leader attachment changes', async () => {
@@ -1560,6 +1641,7 @@ function makeFixture({ attachmentStore = null } = {}) {
   const host = Object.assign(new EventEmitter(), {
     loadCalls: [],
     promptCalls: [],
+    interjectCalls: [],
     artifactCalls: [],
     projectStateCalls: [],
     backgroundActivityCalls: [],
@@ -1567,6 +1649,7 @@ function makeFixture({ attachmentStore = null } = {}) {
     permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
+    interjectImpl: async () => ({ status: 'queued' }),
     artifactImpl: async () => ({
       schemaVersion: 1,
       revision: 0,
@@ -1616,6 +1699,10 @@ function makeFixture({ attachmentStore = null } = {}) {
     async promptSession(request) {
       this.promptCalls.push(request);
       return this.promptImpl(request);
+    },
+    async interjectSession(request) {
+      this.interjectCalls.push(request);
+      return this.interjectImpl(request);
     },
     async listWorkspaceArtifacts(agentId) {
       this.artifactCalls.push(agentId);

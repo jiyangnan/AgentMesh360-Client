@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
 
 const AGENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,98}[a-z0-9]$/;
 const MAX_PROMPT_CHARS = 16_000;
@@ -96,6 +97,10 @@ const SESSION_UPDATE_METHODS = new Set([
   'x.ai/session/update',
   '_x.ai/session/update',
 ]);
+const SESSION_INTERJECTION_METHODS = new Set([
+  'x.ai/session/interjection',
+  '_x.ai/session/interjection',
+]);
 const SAFE_STOP_REASONS = new Set([
   'end_turn',
   'max_tokens',
@@ -115,6 +120,8 @@ class AgentConversationController {
     this.accountId = null;
     this.messages = [];
     this.messageCounter = 0;
+    this.seenInterjectionIds = new Set();
+    this.runningSessionIds = new Set();
     this.transcriptTruncated = false;
     this.activities = [];
     this.activityByToolCallId = new Map();
@@ -201,11 +208,17 @@ class AgentConversationController {
         text,
         attachmentIds,
       });
-      const response = await this.host.promptSession({
-        sessionId: authority.sessionId,
-        text,
-        prompt: prepared.prompt,
-      });
+      let response;
+      this.runningSessionIds.add(authority.sessionId);
+      try {
+        response = await this.host.promptSession({
+          sessionId: authority.sessionId,
+          text,
+          prompt: prepared.prompt,
+        });
+      } finally {
+        this.runningSessionIds.delete(authority.sessionId);
+      }
       if (this.authority !== authority) return this.snapshot;
       await this.attachmentStore.consume({
         accountId: authority.accountId,
@@ -259,6 +272,30 @@ class AgentConversationController {
         ),
         stopReason: null,
       });
+    }
+    return this.snapshot;
+  }
+
+  async interject(value) {
+    const text = validatePrompt(value);
+    const authority = this.authority;
+    if (!authority) {
+      const message = this.snapshot.phase === 'error'
+        ? '请重新打开 Agent 对话'
+        : '尚未打开 Agent 对话';
+      throw new Error(message);
+    }
+    this.#requireReadyAccount(authority.accountId);
+    if (!this.runningSessionIds.has(authority.sessionId)) {
+      throw new Error('Agent 当前没有正在执行的任务');
+    }
+    const response = await this.host.interjectSession({
+      sessionId: authority.sessionId,
+      text,
+      interjectionId: randomUUID(),
+    });
+    if (response?.status !== 'queued') {
+      throw new Error('Agent 没有接受这条补充要求');
     }
     return this.snapshot;
   }
@@ -360,6 +397,7 @@ class AgentConversationController {
     this.#clearArtifacts();
     this.#clearProjectState();
     this.authority = null;
+    this.runningSessionIds.clear();
   }
 
   async #open(agentId) {
@@ -375,6 +413,7 @@ class AgentConversationController {
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;
+    this.seenInterjectionIds.clear();
     this.transcriptTruncated = false;
     this.#publish({
       phase: 'loading',
@@ -597,6 +636,32 @@ class AgentConversationController {
     ) {
       return;
     }
+    if (SESSION_INTERJECTION_METHODS.has(message?.method)) {
+      const interjectionId = typeof message?.params?.interjectionId === 'string'
+        && message.params.interjectionId.length <= 100
+        ? message.params.interjectionId
+        : null;
+      if (interjectionId && this.seenInterjectionIds.has(interjectionId)) return;
+      const text = typeof message?.params?.text === 'string'
+        ? message.params.text.trim().slice(0, MAX_PROMPT_CHARS)
+        : '';
+      if (!text) return;
+      if (interjectionId) {
+        this.seenInterjectionIds.add(interjectionId);
+        while (this.seenInterjectionIds.size > MAX_PUBLIC_MESSAGES) {
+          this.seenInterjectionIds.delete(this.seenInterjectionIds.values().next().value);
+        }
+      }
+      this.#appendMessage('user', text, true);
+      this.#publish({
+        ...this.#conversationBase(authority),
+        phase: this.snapshot.streaming ? 'sending' : this.snapshot.phase,
+        streaming: this.snapshot.streaming === true,
+        error: null,
+        stopReason: null,
+      });
+      return;
+    }
     const update = message.params.update;
     if (isHarnessBackgroundMethod(message?.method, update?.sessionUpdate)) {
       const changed = update.sessionUpdate === 'task_backgrounded'
@@ -747,9 +812,9 @@ class AgentConversationController {
     return true;
   }
 
-  #appendMessage(role, text) {
+  #appendMessage(role, text, forceNew = false) {
     const previous = this.messages.at(-1);
-    if (previous?.role === role) {
+    if (!forceNew && previous?.role === role) {
       previous.text = `${previous.text}${text}`.slice(-MAX_PUBLIC_TRANSCRIPT_CHARS);
     } else {
       this.messageCounter += 1;
@@ -1075,6 +1140,8 @@ class AgentConversationController {
     this.authority = null;
     this.messages = [];
     this.messageCounter = 0;
+    this.seenInterjectionIds.clear();
+    this.runningSessionIds.clear();
     this.transcriptTruncated = false;
     this.#clearActivities();
     this.#clearBackgroundTasks();

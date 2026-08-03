@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-08-02
+最近更新：2026-08-03
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 多内容对话，支持文字、图片、文件、网页链接、拖放与截图粘贴，并保留恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP、11/11 隔离安装/生命周期矩阵及其留存证据已通过；种子下载无授权预检固定为 blocked，真实 quarantine 单应用“仍要打开”、音视频/云附件库、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 多内容对话，支持文字、图片、文件、网页链接、拖放与截图粘贴；Agent 工作时可用 Grok 原生插话继续补充文字要求；并保留恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 下一输入切片是权威 Prompt Queue、按 Session 状态与附件 reservation；通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP、11/11 隔离安装/生命周期矩阵及其留存证据已通过；种子下载无授权预检固定为 blocked，真实 quarantine 单应用“仍要打开”、音视频/云附件库、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
@@ -8182,3 +8182,61 @@ Package、Main Session、权限审批或生产发布 authority，也没有增加
 5. 构建和自动化读取真实 Provider Key 0、Provider 请求 0、消息发送 0、AgentMesh credits
    0、Apple 服务请求 0、外部上传 0、费用 $0。因为用户要求从本地取得并自行安装，本轮不
    覆盖 `/Applications/AgentMesh360.app`，不把包完整性验证冒充真实安装验收。
+
+### 循环 149：用户可见隐私文案去内部节点化
+
+状态：源码与定向回归已完成；与循环 150 合并进入唯一内部包验收
+
+owner 在 Composer UAT 中指出“不会上传到 AgentMesh360 Core”虽然试图说明隐私边界，却
+把内部核心服务节点直接暴露给普通用户。用户只需要知道附件会由自己选择的模型服务商处理，
+不会发送给 AgentMesh360，不需要理解 Core、Host 或 Bridge 拓扑。
+
+本轮实现：
+
+1. 把 Composer 文案改为“附件仅在本机暂存，发送时交给当前模型；不会上传到
+   AgentMesh360”；同步清除 Agent 首页和后台设置里用户可见的 Core 订阅术语；
+2. 保留技术文档中的真实内部架构，但在设计规范中明确普通工作区不得展示内部节点名；
+3. 更新 Electron 回归和用户旅程，确认 Composer 精确文案不含 `Core`；
+4. Electron 对话回归固定验证精确文案且不含 `Core`；身份、后台设置中的公开订阅错误也
+   使用用户语言，不改变底层双重校验。
+
+边界复盘：本轮只调整公开文案和防回归合同，不改变附件流向、订阅双重校验、BYOK Provider、
+Host authority、Agent Package 或发布能力；不会因为隐藏内部名而弱化实际安全校验。
+
+### 循环 150：Grok-first 输入系统 V2.1
+
+状态：源码、产品设计、全量回归已完成；内部包验收进行中
+
+owner 要求对照 Codex.app 的输入交互与 Grok Build 原生能力，补足当前客户端“输入能力
+过少”的问题。当前官方资料与 fork 源码核对结论是：Codex 采用附件、`/`、Skill、命令
+面板和听写等渐进披露；Grok Build 还原生具备 Prompt Queue、中途插话、停止、send-now、
+`@` 文件、Prompt 历史、大段粘贴与语音转文字。AgentMesh360 V1 只接通了多内容 Prompt，
+最先需要修复的是 Agent 工作时 Composer 被完全锁死。
+
+本轮实现：
+
+1. `AcpHostClient` 增加窄 `x.ai/interject` 方法；Main Controller 只在当前私有 Main
+   Session streaming 时接受有界文字，并只投影 Host 的 `x.ai/session/interjection` 广播；
+2. Agent 工作时 Composer 继续可编辑，按钮改为“追加指令”，清楚说明会调整当前任务且
+   不取消原 Turn；运行态附件入口、拖放和图片粘贴暂时禁用，避免语义混淆；
+3. Enter 发送、Shift+Enter 换行，输入法组合态不误发；插话失败恢复当前 Agent 草稿；
+4. 新增 ACP、Controller 和 Electron 回归，覆盖私有 Session 路由、独立用户消息、原 Turn
+   保持 streaming、空闲/Host 拒绝失败关闭、运行态控件、键盘提交和其他 Agent 仍可切换；
+5. 新增 [`GROK_FIRST_INPUT_SYSTEM_V2.md`](architecture/GROK_FIRST_INPUT_SYSTEM_V2.md)，
+   把后续能力按依赖拆为 Queue/Session 状态与附件 reservation、停止/send-now、安全
+   `/`/`$`、受控 `@`、历史/大段粘贴和听写，避免直接照搬危险开发者命令。
+
+当前证据：ACP + Conversation Controller Node 63/63 passed；Desktop 全量 Node 152 passed、
+0 failed、5 个需要真实 Host 的测试按设计 skipped；产品旅程 79/79 executed；Conversation、
+13 寸紧凑布局、Agent 管理、Provider、Package Electron 回归全部通过；`npm run check`、
+`cargo fmt --all -- --check`、`git diff --check` 与本轮 diff 秘密/本地路径扫描通过。紧凑布局
+在 1280×768 内部视口确认 Transcript 独立滚动，Composer、输入框和发送按钮完整可见；
+本轮自动测试未读取真实 Provider Key，Provider 请求、消息发送、AgentMesh credits、Apple
+服务请求和外部上传均为 0。用户明确要求本轮不使用 Kimi，因此由主 Agent 完成源码、负向
+场景和执行证据复核，不把它冒充独立交叉审查。唯一内部包完整性仍作为本循环最后一道门，
+未完成前不宣称最终交付。
+
+计划复盘：V2.1 只接通 Grok 已有的文字插话，不改变 Provider、credits、订阅、Package、
+生产发布、P7/P8 或真正多会话。下一开发切片必须先把 Main 的单一 Controller 状态改为按
+`account + agent + session` 管理，并给排队附件增加 Prompt reservation；未完成这两个
+前置条件，不在 Renderer 伪造队列，也不直接开放自由 `@` 路径或上游全部 Slash 命令。
