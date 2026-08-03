@@ -808,8 +808,8 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   Turn 状态和失败恢复。
 - **预期输出**：输入框和“＋”保持可用；默认“调整当前任务”通过 Grok
   `x.ai/interject`，不取消原 Turn；包含附件时自动进入“排队等待”；用户也可明确选择
-  “排队等待”或“立即执行”；Host 广播后只显示一次独立用户消息；Enter 提交，Shift+Enter
-  和输入法组合态不提交。
+  “排队等待”或“立即执行”；删除最后一个自动触发排队的附件后恢复加入前的发送意图；
+  Host 广播后只显示一次独立用户消息；Enter 提交，Shift+Enter 和输入法组合态不提交。
 - **失败与恢复**：空闲 Session、无 authority、超长文字或 Host 未接受时失败关闭；Renderer
   不取得 Session ID；失败恢复当前账号/Agent/主会话的原草稿，不能串到另一 Agent；附件
   与其 Prompt reservation 同步保留，不能被另一条消息复用。

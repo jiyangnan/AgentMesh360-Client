@@ -1497,6 +1497,49 @@ app.whenReady().then(async () => {
     composerVisible: true,
     addDisabled: false,
   });
+
+  const promptsBeforeRunningAttachment = prompts.length;
+  const interjectionsBeforeRunningAttachment = interjections.length;
+  await window.webContents.executeJavaScript(`(() => {
+    document.getElementById('composer-add-button').click();
+    document.getElementById('composer-pick-files').click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('conversation-form')?.dataset.composerMode === 'queue'"
+      + " && document.querySelectorAll('.composer-attachment-chip').length === 1",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    mode: document.getElementById('conversation-form')?.dataset.composerMode,
+    label: document.querySelector('.composer-send')?.innerText,
+    helper: document.querySelector('.composer-footer span')?.innerText,
+    sendDisabled: document.querySelector('.composer-send')?.disabled,
+  })`), {
+    mode: 'queue',
+    label: '排队发送',
+    helper: '这条消息会进入待处理队列；附件会跟随这条消息保留',
+    sendDisabled: false,
+  });
+  assert.equal(prompts.length, promptsBeforeRunningAttachment);
+  assert.equal(interjections.length, interjectionsBeforeRunningAttachment);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.composer-attachment-chip [data-remove-attachment]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.composer-attachment-chip') === null"
+      + " && document.getElementById('conversation-form')?.dataset.composerMode === 'adjust'",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    mode: document.getElementById('conversation-form')?.dataset.composerMode,
+    label: document.querySelector('.composer-send')?.innerText,
+    helper: document.querySelector('.composer-footer span')?.innerText,
+  })`), {
+    mode: 'adjust',
+    label: '追加指令',
+    helper: '这条要求会调整当前任务，不会创建新的排队任务',
+  });
+  assert.equal(prompts.length, promptsBeforeRunningAttachment);
+  assert.equal(interjections.length, interjectionsBeforeRunningAttachment);
+
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-toggle-queue]').click()",
   );

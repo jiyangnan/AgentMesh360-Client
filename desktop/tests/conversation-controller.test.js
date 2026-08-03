@@ -1671,6 +1671,96 @@ test('conversation accepts three prompts without waiting for the running Turn an
   }
 });
 
+test('running conversation reserves attachment prompts for the authoritative queue instead of interjecting them', async () => {
+  const attachmentId = 'attachment-33333333-3333-4333-8333-333333333333';
+  const record = {
+    attachmentId,
+    kind: 'file',
+    name: 'queued-brief.pdf',
+    mimeType: 'application/pdf',
+    sizeBytes: 8_192,
+  };
+  let reservation = null;
+  const reserveCalls = [];
+  const acceptedCalls = [];
+  const attachmentStore = {
+    list: () => reservation ? [] : [{ ...record }],
+    listReservations: () => reservation ? [{
+      promptId: reservation.promptId,
+      status: reservation.status,
+    }] : [],
+    async reservePrompt(request) {
+      reserveCalls.push(request);
+      reservation = { promptId: request.promptId, status: 'submitting' };
+      return {
+        prompt: [
+          { type: 'text', text: request.text },
+          {
+            type: 'resource',
+            resource: {
+              uri: 'file:///agentmesh360-attachment/queued-brief.pdf',
+              mimeType: 'application/pdf',
+              blob: 'JVBERg==',
+            },
+          },
+        ],
+        attachmentIds: [...request.attachmentIds],
+        promptId: request.promptId,
+      };
+    },
+    async markReservationAccepted(request) {
+      acceptedCalls.push(request);
+      if (reservation?.promptId === request.promptId) reservation.status = 'accepted';
+    },
+    async markReservationUnknown() {},
+    async releaseReservation() {},
+    async consumeReservation() {},
+    async clearAccount() {},
+  };
+  const fixture = makeFixture({ attachmentStore });
+  fixture.host.promptImpl = () => new Promise(() => {});
+  await fixture.controller.open('job-agent');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 1,
+    entries: [],
+    runningPromptId: 'private-running-prompt',
+  });
+
+  const queuedSend = fixture.controller.send({
+    text: '当前任务完成后分析附件',
+    attachmentIds: [attachmentId],
+  });
+  await waitFor(() => fixture.host.promptCalls.length === 1);
+  const promptId = fixture.host.promptCalls[0].promptId;
+  assert.deepEqual(reserveCalls, [{
+    accountId: 7,
+    agentId: 'job-agent',
+    sessionId: 'private-session-id',
+    promptId,
+    text: '当前任务完成后分析附件',
+    attachmentIds: [attachmentId],
+  }]);
+  assert.equal(fixture.host.promptCalls[0].sendNow, false);
+  assert.deepEqual(fixture.host.interjectCalls, []);
+
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 2,
+    entries: [queueEntry(promptId, '当前任务完成后分析附件', 0)],
+    runningPromptId: 'private-running-prompt',
+  });
+  const snapshot = await queuedSend;
+  await waitFor(() => acceptedCalls.some((call) => call.promptId === promptId));
+
+  assert.equal(snapshot.streaming, true);
+  assert.equal(snapshot.queue.running, true);
+  assert.equal(snapshot.queue.entries.length, 1);
+  assert.equal(snapshot.queue.entries[0].text, '当前任务完成后分析附件');
+  assert.deepEqual(snapshot.draftAttachments, []);
+  assert.equal(JSON.stringify(snapshot).includes(promptId), false);
+  assert.equal(JSON.stringify(snapshot).includes('private-session-id'), false);
+  assert.equal(JSON.stringify(snapshot).includes('JVBERg'), false);
+});
+
 test('conversation ignores stale and duplicate queue revisions and keeps foreign entries read-only', async () => {
   const fixture = makeFixture();
   await fixture.controller.open('job-agent');

@@ -46,6 +46,7 @@ let conversationDrafts = new Map();
 let conversationAttachmentErrors = new Map();
 let conversationAttachmentMutationInFlight = false;
 let conversationComposerIntents = new Map();
+let conversationAttachmentAutoQueuePrevious = new Map();
 let conversationQueueExpanded = new Set();
 let conversationQueueEditing = new Map();
 let conversationQueueMutationInFlight = false;
@@ -149,6 +150,7 @@ function render(state) {
     conversationAttachmentErrors = new Map();
     conversationAttachmentMutationInFlight = false;
     conversationComposerIntents = new Map();
+    conversationAttachmentAutoQueuePrevious = new Map();
     conversationQueueExpanded = new Set();
     conversationQueueEditing = new Map();
     conversationQueueMutationInFlight = false;
@@ -211,6 +213,7 @@ function render(state) {
     conversationAttachmentErrors = new Map();
     conversationAttachmentMutationInFlight = false;
     conversationComposerIntents = new Map();
+    conversationAttachmentAutoQueuePrevious = new Map();
     conversationQueueExpanded = new Set();
     conversationQueueEditing = new Map();
     conversationQueueMutationInFlight = false;
@@ -2317,6 +2320,7 @@ function wireConversation() {
           relativePath: item.relativePath,
         }),
         '没有成功添加这个工作文件',
+        { queueOnRunning: true },
       );
       return;
     }
@@ -2462,19 +2466,48 @@ function wireConversation() {
     if (formDraftKey) conversationAttachmentErrors.delete(formDraftKey);
     return true;
   };
-  const runAttachmentMutation = async (operation, fallback) => {
+  const restoreIntentBeforeAutomaticQueue = () => {
+    if (!formDraftKey || !conversationAttachmentAutoQueuePrevious.has(formDraftKey)) return;
+    const previousIntent = conversationAttachmentAutoQueuePrevious.get(formDraftKey);
+    if (previousIntent) conversationComposerIntents.set(formDraftKey, previousIntent);
+    else conversationComposerIntents.delete(formDraftKey);
+    conversationAttachmentAutoQueuePrevious.delete(formDraftKey);
+  };
+  const runAttachmentMutation = async (operation, fallback, { queueOnRunning = false } = {}) => {
     if (!form || !composerEnabled || conversationAttachmentMutationInFlight) return;
-    if (conversationTurnIsRunning(form.dataset.agentId) && formDraftKey) {
+    const automaticQueue = Boolean(
+      queueOnRunning
+      && conversationTurnIsRunning(form.dataset.agentId)
+      && formDraftKey,
+    );
+    if (automaticQueue) {
+      if (!conversationAttachmentAutoQueuePrevious.has(formDraftKey)) {
+        conversationAttachmentAutoQueuePrevious.set(
+          formDraftKey,
+          conversationComposerIntents.get(formDraftKey) || null,
+        );
+      }
       conversationComposerIntents.set(formDraftKey, 'queue');
     }
     conversationAttachmentMutationInFlight = true;
     form.classList.add('attachment-busy');
     updateSendState();
+    let nextState = null;
+    let succeeded = false;
     try {
-      applyAttachmentState(await operation());
+      nextState = await operation();
+      succeeded = applyAttachmentState(nextState);
     } catch (error) {
       showAttachmentError(error, fallback);
     } finally {
+      const remainingAttachments = safeConversationDraftAttachments(nextState?.draftAttachments).length;
+      if (
+        formDraftKey
+        && conversationAttachmentAutoQueuePrevious.has(formDraftKey)
+        && ((!succeeded && automaticQueue) || (succeeded && remainingAttachments === 0))
+      ) {
+        restoreIntentBeforeAutomaticQueue();
+      }
       conversationAttachmentMutationInFlight = false;
       if (currentState.phase === 'ready') renderReady(currentState);
     }
@@ -2573,6 +2606,7 @@ function wireConversation() {
         conversationAttachmentErrors.set(formDraftKey, '包含附件的消息需要选择“排队等待”或“立即执行”');
       } else {
         conversationComposerIntents.set(formDraftKey, nextIntent);
+        conversationAttachmentAutoQueuePrevious.delete(formDraftKey);
         conversationAttachmentErrors.delete(formDraftKey);
       }
       closeIntentMenu();
@@ -2614,6 +2648,7 @@ function wireConversation() {
     runAttachmentMutation(
       () => bridge.pickConversationAttachments(),
       '没有成功添加文件',
+      { queueOnRunning: true },
     );
   });
   form?.querySelector('#composer-add-link')?.addEventListener('click', () => {
@@ -2662,6 +2697,7 @@ function wireConversation() {
     runAttachmentMutation(
       () => bridge.stageConversationLink(url),
       '没有成功添加链接',
+      { queueOnRunning: true },
     );
   });
   for (const button of form?.querySelectorAll('[data-remove-attachment]') || []) {
@@ -2706,6 +2742,7 @@ function wireConversation() {
     runAttachmentMutation(
       () => bridge.stageConversationFiles(files),
       '没有成功添加文件',
+      { queueOnRunning: true },
     );
   };
   form?.addEventListener('dragenter', (event) => {
@@ -2866,6 +2903,7 @@ function wireConversation() {
       || conversationAttachmentMutationInFlight
     ) return;
     const draftKey = formDraftKey;
+    if (draftKey) conversationAttachmentAutoQueuePrevious.delete(draftKey);
     if (interjectMode) {
       if (!text || conversationInterjectionPending.has(interjectionKey)) return;
       const pendingInterjections = conversationInterjectionPending;

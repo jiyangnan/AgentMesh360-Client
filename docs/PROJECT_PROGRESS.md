@@ -37,7 +37,7 @@ Provider 分阶段计划以
 
 | 领域 | 当前事实 | 下一验收点 |
 | --- | --- | --- |
-| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；G0/G1/G2 已覆盖 UI detach、Leader 崩溃恢复与隐藏登录启动源码；所有当前账号 Host Catalog Agent 已复用固定 Main Session 多内容对话，支持文字、图片、文件、网页链接、拖放与截图粘贴；Agent 工作时可用 Grok 原生插话继续补充文字要求；并保留恢复通路、标准 ACP 单次权限审批、安全只读工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 安全投影 | 下一输入切片是权威 Prompt Queue、按 Session 状态与附件 reservation；通用工作区、Gemini F0b 与 Package P0-P5 已按原顺序完成；P6 首份 clean pushed arm64 内部 DMG/ZIP、11/11 隔离安装/生命周期矩阵及其留存证据已通过；种子下载无授权预检固定为 blocked，真实 quarantine 单应用“仍要打开”、音视频/云附件库、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
+| 持久产品 Agent | Registry、Main Session、Workspace、历史可见性已按账户隔离；所有当前账号 Host Catalog Agent 复用固定 Main Session。输入系统 V2 已支持文字/图片/文件/链接、拖放/粘贴、运行中调整/排队/立即执行/停止、权威 Queue、Prompt 级附件 reservation、安全 `/`、已签名 `$` Skill、受控 `@` 工作文件、私有历史、粘贴卡和明确披露的听写；并保留恢复通路、标准 ACP 单次权限审批、安全工具活动、Workspace Artifact、Project State、Harness 后台活动与 Session Plan 投影 | 本轮运行态附件意图恢复已通过自动化，需从 clean pushed commit 刷新唯一内部包；之后下一输入验收仅为 owner 的真实麦克风/xAI 听写 UAT。Audio 内容理解、云附件库、自由 Shell、真正多会话、Apple 签名/公证、生产 Desktop Candidate 和 P7/P8 继续关闭 |
 | 订阅硬门禁 | Core、Host 与桌面身份外壳已经接通；Google/GitHub 桌面 OAuth 已发布生产；owner Google 账号在隔离客户端完成 Core/Host 双 active，并在新进程从系统加密 Refresh Token 恢复 | 保持共享产品 20/20 live regression；后续 canary 复用已验收准入，不再回退邮箱密码假设 |
 | Provider Control Plane | 切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 又通过真实 Gemini Profile/Assignment、最小推理、Agent 主 Turn Route、失败关闭与重启恢复；P5 临时 Profile/Assignment/Binding/Keychain 已完整销毁 | 后续 Provider 必须逐个复用同一契约门，不批量虚报兼容 |
 | Provider Sampling | 无 Grok 登录的产品主 Prompt、已审计 Session 辅助消费者、subagent 与显式 Probe 均复用实际 Provider 路由 | 保持真实链路回归，建立可复用的 Provider 兼容契约套件 |
