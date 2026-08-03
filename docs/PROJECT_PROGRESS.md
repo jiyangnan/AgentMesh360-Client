@@ -8398,3 +8398,65 @@ allowlist 和已签名 Package Skill 投影，再接 `/`、`$` 按需浮层；�
 credits 或费用。计划复盘确认 V2.2–V2.6 已按原顺序完成，下一步只进入全量 Node/Rust/
 Electron/旅程门禁、最终 diff 自审与唯一内部包；不顺手扩展音频理解、云文件库、fallback、
 P7/P8、签名、公证或在线发布。
+
+### 循环 156：Grok-first 输入系统 V2 最终门禁与唯一内部包
+
+状态：源码、全量门禁、远端提交、未签名内部包复验和单版本清理均已完成；只剩 owner 在
+真实安装环境执行麦克风与日常输入 UAT
+
+本轮先回看 V2 计划，再按“权威状态 → 输入能力 → 安全边界 → 真实页面 → 内部包”的顺序
+完成收口，没有把 Codex 或 Grok 的开发者控制面照搬给普通用户：
+
+1. Composer 最终提供图片/文档/链接、受控工作文件夹、历史消息、大段粘贴卡、明确披露的
+   语音听写、安全 `/` 命令、已签名 Agent Package `$` Skill，以及运行中的调整、排队、
+   立即执行和停止；所有选择先进入可编辑草稿，不自动发送；
+2. Main 继续按 account + Agent + private Main Session 持有 Queue、附件 reservation、工作区
+   authority、Prompt History 和听写 lifecycle；Renderer 不接触真实 Session、cwd、绝对路径、
+   Key、签名证据或音频字节；手工输入危险 Slash 也会被 Renderer 与 Main 双重拒绝；
+3. 听写确认后、Host 返回前新增“正在请求麦克风”状态，避免用户点击后短暂无反馈；静态
+   检查同时纳入工作区授权、Prompt History 与 Dictation 新模块；
+4. Composer 隐私文案精确为“附件仅在本机暂存，发送时交给当前模型；不会上传到
+   AgentMesh360”；实际打包 `app.asar` 复核同一句存在，且公开 UI 不含 Core、Host Bridge
+   或 Host Vault；
+5. 对照官方 Codex 输入的渐进披露方式和 fork 中 Grok 的 Queue、interject、cancel、历史、
+   文件与 voice 管线后，产品层只封装与持久 Agent 心智相符的能力；自由 Shell、yolo、永久
+   批准、插件/Hook、Audio 内容块、云文件库和真正多会话继续保持关闭。
+
+最终门禁证据：
+
+- Desktop 全量 Node 在允许本机 loopback 的隔离环境中 `192 passed / 0 failed / 5 skipped`；
+  5 条只需要真实 Host 的门禁按设计跳过。沙箱内首次运行的 5 个 OAuth 失败只因无法绑定
+  loopback，移到本机隔离环境后全部通过；
+- 结构化产品旅程 `87` 条、`14` 个领域全部记录执行结果，验证器自身 `3/3`；`npm run check`、
+  `cargo fmt --all -- --check`、`git diff --check` 和公开路径/敏感信息扫描通过；
+- Rust Prompt Queue `6/6`、Shell input-capability `2/2`、dictation `5/5`、Prompt Queue Actor
+  `34/34`、Pager Queue 相关回归 `289/289`；
+- Conversation、13 寸紧凑布局、Agent 管理、Provider、Package 五组 Electron smoke 全部
+  通过。1280×768 下页面和 Main 高度都是 768px，Transcript 独立滚动，Composer bottom
+  750px，消息字号 14px、输入字号 15px，十个附件下输入框和发送按钮仍完整可见；
+- 源码 commit `e77703a6dbad1afae6c0501e3559731bf2c8ced3` 已 clean push 到
+  `origin/main` 并由远端精确复核。
+
+内部交付：
+
+1. 未签名 arm64 回执 `desktop_internal_p6_e77703a6dbad_arm64` 为 `passed`；Desktop
+   `0.1.1`，包内 Host runtime 为 `grok 1000.1.1785739232001 (e77703a)`；Host 是 arm64，
+   麦克风用途说明已进入 `Info.plist`；
+2. DMG 为 `181973523` bytes，SHA-256
+   `b828453282957b5bbad77f1cf04784f345302a0e0987f09009cffa5a5f614432`；ZIP 为
+   `181787781` bytes，SHA-256
+   `ab7962c2515de3cc00b2b9fc02cb3fd44cfda9f5a43427e0103e81bf10d8be93`；回执复验、
+   `SHA256SUMS`、`hdiutil verify`、ZIP CRC 和构建/Downloads 四文件逐字节比较均通过；
+3. 本机交付目录为
+   `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-e77703a-arm64/`。新包全部通过后才删除
+   `0bcec73`；现在 Downloads 与 `desktop/dist/internal` 各只保留 `e77703a` 一份；
+4. 冷构建使用本机 arm64 `rg` 的离线入口；仓库 `target/`、构建临时目录和独立解包复验目录
+   均已清理，可用磁盘约 47 GiB；
+5. 构建与自动化读取真实 Provider Key 0、Provider 请求 0、真实麦克风请求 0、消息发送 0、
+   AgentMesh credits 0、Apple 服务请求 0、外部上传 0、费用 $0。Developer ID、notarization、
+   自动更新与公开发布继续关闭。
+
+计划复盘：V2.2–V2.6 已严格按依赖完成，产品输入能力不再停留在单一文本框，但也没有越过
+原定安全与发布边界。下一步不是继续堆功能，而是由 owner 安装唯一新包，使用自己的 xAI
+语音 Provider 做一次“首击披露 → 明确开始 → 完成只回填 → 手动发送”的真实麦克风 UAT，
+并顺手验证图片、文档、链接、`/`、`$`、`@`、历史、粘贴卡与运行中 Queue 的日常体验。
