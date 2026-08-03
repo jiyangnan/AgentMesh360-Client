@@ -11,6 +11,8 @@ mod agent_packages;
 mod background_activities;
 mod credential_lease;
 mod credential_vault;
+mod dictation;
+mod input_capabilities;
 mod model_assignments;
 mod model_policy;
 mod model_routing;
@@ -62,6 +64,7 @@ pub const AGENT_BACKGROUND_ACTIVITIES_LIST_METHOD: &str =
     "x.agentmesh360/agents/background-activities/list";
 pub const AGENT_PROJECT_STATE_GET_METHOD: &str = "x.agentmesh360/agents/project-state/get";
 pub const AGENT_SESSION_PLAN_GET_METHOD: &str = "x.agentmesh360/agents/session-plan/get";
+pub const AGENT_INPUT_CAPABILITIES_GET_METHOD: &str = input_capabilities::GET_METHOD;
 pub const AGENT_PACKAGES_CATALOG_METHOD: &str = "x.agentmesh360/agent-packages/catalog";
 pub const AGENT_PACKAGES_STATUS_METHOD: &str = "x.agentmesh360/agent-packages/status";
 pub use package_management::{
@@ -84,6 +87,7 @@ pub(crate) struct AgentMesh360Runtime {
     access: access::ClientAccess,
     state_home: PathBuf,
     credential_vault: credential_vault::RuntimeCredentialVault,
+    dictation: dictation::DictationService,
     pinned_sessions: RefCell<HashSet<acp::SessionId>>,
     applied_overlay_revisions: RefCell<HashMap<String, (u64, u64)>>,
     restore_started: Cell<bool>,
@@ -133,6 +137,7 @@ impl AgentMesh360Runtime {
             access,
             state_home,
             credential_vault,
+            dictation: dictation::DictationService::default(),
             pinned_sessions: RefCell::default(),
             applied_overlay_revisions: RefCell::default(),
             restore_started: Cell::default(),
@@ -571,6 +576,13 @@ pub(crate) async fn handle(
             .await
             .and_then(|response| serde_json::to_value(response).map_err(Into::into))
         }
+        AGENT_INPUT_CAPABILITIES_GET_METHOD => {
+            let request: input_capabilities::InputCapabilitiesRequest =
+                crate::extensions::parse_params(args)?;
+            let owner_account_id = current_account_id(agent)?;
+            input_capabilities::get(agent, owner_account_id, &request)
+                .and_then(|response| serde_json::to_value(response).map_err(Into::into))
+        }
         method if package_management::handles(method) => {
             return package_management::handle(
                 &agent.agentmesh360.package_delivery,
@@ -611,6 +623,9 @@ pub(crate) async fn handle(
                 },
             )
             .await;
+        }
+        method if dictation::handles(method) => {
+            return dictation::handle(agent, args).await;
         }
         method if method.starts_with("x.agentmesh360/providers/") => {
             let owner_account_id = agent
@@ -674,8 +689,9 @@ fn spawn_package_registry_refresh(agent: &MvpAgent) {
 }
 
 fn suspend_product_agents(agent: &MvpAgent, force_notify: bool) {
+    let dictation_changed = agent.agentmesh360.dictation.cancel_all();
     let residency_changed = agent.agentmesh360.suspend_residency();
-    if !force_notify && !residency_changed {
+    if !force_notify && !residency_changed && !dictation_changed {
         return;
     }
     let removed = agent
@@ -3373,6 +3389,150 @@ mod tests {
 
                 assert_eq!(core.await.expect("Core sequence task").len(), 2);
                 gateway_task.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
+    async fn input_capabilities_are_active_agent_scoped_and_path_redacted() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let state_home = tempfile::tempdir().expect("state home");
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (agent, _gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "input-capability-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap input capability access");
+                let _ = core.await.expect("Core request task");
+
+                let inactive = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_INPUT_CAPABILITIES_GET_METHOD,
+                        serde_json::json!({
+                            "agentId": "job-agent",
+                            "sessionId": "not-an-active-session"
+                        }),
+                    ),
+                )
+                .await
+                .map(ext_envelope)
+                .expect("inactive Agent returns a redacted extension error");
+                assert_eq!(inactive["result"], serde_json::Value::Null);
+                assert_eq!(
+                    inactive["error"],
+                    "Agent input capabilities require its active main session"
+                );
+
+                let job = agent
+                    .agentmesh360
+                    .registry()
+                    .prepare_activation(41, "job-agent")
+                    .expect("prepare Job Agent activation");
+                let job_session = job.main_session_id.expect("Job Main Session");
+                let job_capabilities = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_INPUT_CAPABILITIES_GET_METHOD,
+                        serde_json::json!({
+                            "agentId": "job-agent",
+                            "sessionId": job_session.clone()
+                        }),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("Job input capabilities");
+                assert_eq!(job_capabilities["schemaVersion"], 1);
+                assert_eq!(job_capabilities["agentId"], "job-agent");
+                assert!(job_capabilities["revision"].as_u64().is_some());
+                assert_eq!(
+                    job_capabilities["commands"]
+                        .as_array()
+                        .expect("commands")
+                        .iter()
+                        .map(|command| command["trigger"].as_str().expect("trigger"))
+                        .collect::<Vec<_>>(),
+                    ["/compact", "/context", "/session-info"]
+                );
+                assert_eq!(
+                    job_capabilities["skills"]
+                        .as_array()
+                        .expect("skills")
+                        .iter()
+                        .map(|skill| skill["id"].as_str().expect("skill id"))
+                        .collect::<Vec<_>>(),
+                    ["career-profile", "job-search"]
+                );
+                let serialized =
+                    serde_json::to_string(&job_capabilities).expect("serialize input capabilities");
+                for forbidden in [
+                    "always-approve",
+                    "yolo",
+                    "plugin",
+                    "hooks",
+                    "workspaceDir",
+                    "sessionId",
+                    state_home.path().to_string_lossy().as_ref(),
+                ] {
+                    assert!(!serialized.contains(forbidden), "found {forbidden}");
+                }
+
+                let malicious = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_INPUT_CAPABILITIES_GET_METHOD,
+                        serde_json::json!({
+                            "agentId": "job-agent",
+                            "sessionId": job_session,
+                            "cwd": "/attacker/controlled",
+                            "command": "/yolo"
+                        }),
+                    ),
+                )
+                .await
+                .expect_err("unknown authority and command fields fail closed");
+                assert_eq!(malicious.code, acp::Error::invalid_params().code);
+
+                let deploy = agent
+                    .agentmesh360
+                    .registry()
+                    .prepare_activation(41, "deploy-agent")
+                    .expect("prepare Deploy Agent activation");
+                let deploy_capabilities = handle(
+                    &agent,
+                    &ext_request(
+                        AGENT_INPUT_CAPABILITIES_GET_METHOD,
+                        serde_json::json!({
+                            "agentId": "deploy-agent",
+                            "sessionId": deploy.main_session_id
+                        }),
+                    ),
+                )
+                .await
+                .map(ext_result)
+                .expect("Deploy input capabilities");
+                assert_eq!(deploy_capabilities["agentId"], "deploy-agent");
+                assert_eq!(
+                    deploy_capabilities["skills"]
+                        .as_array()
+                        .expect("Deploy skills")
+                        .iter()
+                        .map(|skill| skill["id"].as_str().expect("Deploy skill id"))
+                        .collect::<Vec<_>>(),
+                    ["release-preflight", "deployment-verification"]
+                );
+                assert_ne!(
+                    job_capabilities["revision"],
+                    deploy_capabilities["revision"]
+                );
             })
             .await;
     }

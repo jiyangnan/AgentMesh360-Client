@@ -276,6 +276,11 @@ struct GoalContinuationPlan {
 pub(crate) struct State {
     pub(crate) running_task: Option<AgentTask>,
     pub(crate) pending_inputs: VecDeque<InputItem>,
+    /// Last emitted authoritative prompt-queue snapshot revision.
+    ///
+    /// Guarded by the same mutex as `pending_inputs` and `running_task`, so the
+    /// revision and the snapshot it labels are advanced atomically.
+    pub(crate) queue_revision: u64,
     pub(crate) pending_notifications: Vec<PendingNotification>,
     /// When true, notifications are buffered but not drained until genuine
     /// user re-engagement. Set by interactive Ctrl+C, cleared by a user prompt.

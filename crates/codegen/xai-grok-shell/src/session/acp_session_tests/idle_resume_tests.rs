@@ -88,6 +88,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
             let state = TokioMutex::new(State {
                 running_task: None,
                 pending_inputs: VecDeque::new(),
+                queue_revision: 0,
                 pending_notifications: Vec::new(),
                 notifications_suppressed: false,
                 rewindable: false,

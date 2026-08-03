@@ -1588,6 +1588,7 @@ fn cancel_hands_queue_to_agent_without_reordering() {
     // with q1 running (dropped from the pending list).
     app.apply_queue_changed(QueueChanged {
         session_id: sid.clone(),
+        queue_revision: 0,
         entries: vec![
             QueueEntryWire {
                 id: "q2".into(),
@@ -1645,6 +1646,7 @@ fn rekeyed_broadcast_reconciles_optimistic_echo_by_text() {
     // The shell accepted the message under its own id.
     app.apply_queue_changed(QueueChanged {
         session_id: sid.clone(),
+        queue_revision: 0,
         entries: vec![QueueEntryWire {
             id: "shell-id".into(),
             version: 0,
@@ -1673,6 +1675,7 @@ fn rekeyed_broadcast_reconciles_optimistic_echo_by_text() {
     app.push_optimistic_prompt_echo(&sid, "pager-id-2", "second message", "prompt");
     app.apply_queue_changed(QueueChanged {
         session_id: sid.clone(),
+        queue_revision: 0,
         entries: vec![QueueEntryWire {
             id: "shell-id-2".into(),
             version: 0,
@@ -1686,6 +1689,7 @@ fn rekeyed_broadcast_reconciles_optimistic_echo_by_text() {
     });
     app.apply_queue_changed(QueueChanged {
         session_id: sid.clone(),
+        queue_revision: 0,
         entries: vec![],
         running_prompt_id: Some("shell-id-2".into()),
     });
@@ -1699,6 +1703,7 @@ fn rekeyed_broadcast_reconciles_optimistic_echo_by_text() {
     // via the prior snapshot's kind+text, not leave it pinned forever.
     app.apply_queue_changed(QueueChanged {
         session_id: sid.clone(),
+        queue_revision: 0,
         entries: vec![QueueEntryWire {
             id: "shell-id-3".into(),
             version: 0,
@@ -1713,6 +1718,7 @@ fn rekeyed_broadcast_reconciles_optimistic_echo_by_text() {
     app.push_optimistic_prompt_echo(&sid, "pager-id-3", "third message", "prompt");
     app.apply_queue_changed(QueueChanged {
         session_id: sid.clone(),
+        queue_revision: 0,
         entries: vec![],
         running_prompt_id: Some("shell-id-3".into()),
     });

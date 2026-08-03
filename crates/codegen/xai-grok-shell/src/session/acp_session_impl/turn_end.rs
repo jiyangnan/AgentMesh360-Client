@@ -232,7 +232,7 @@ impl SessionActor {
             state.running_task = None;
         }
         if broadcast_queue {
-            self.broadcast_queue_changed(&state);
+            self.broadcast_queue_changed(&mut state);
         }
         // Note: Auto-compact is now handled inline during process_conversation_turn,
         // so we no longer need to queue it here after turn completion.

@@ -50,6 +50,23 @@ fn ids(wire: &[crate::session::prompt_queue::QueueEntryWire]) -> Vec<String> {
     wire.iter().map(|e| e.id.clone()).collect()
 }
 
+fn drain_queue_broadcasts(
+    gateway_rx: &mut tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
+) -> Vec<crate::session::prompt_queue::QueueChanged> {
+    let mut broadcasts = Vec::new();
+    while let Ok(msg) = gateway_rx.try_recv() {
+        if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg
+            && args.request.method.as_ref() == crate::session::prompt_queue::QUEUE_CHANGED_METHOD
+        {
+            broadcasts.push(
+                serde_json::from_str(args.request.params.get())
+                    .expect("queue/changed payload must match the canonical wire type"),
+            );
+        }
+    }
+    broadcasts
+}
+
 /// A queued user bash item (`!cmd`), mirroring `queue_input`'s derivation.
 fn bash_item(id: &str, owner: &str, command: &str) -> InputItem {
     let mut item = user_item(id, owner);
@@ -68,6 +85,55 @@ fn bash_item(id: &str, owner: &str, command: &str) -> InputItem {
     item
 }
 
+/// A client-generated prompt id is echoed in the first authoritative snapshot
+/// before the long-lived `session/prompt` RPC completes. Together with the
+/// snapshot revision, `(sessionId, promptId, queueRevision)` is an unambiguous
+/// enqueue acknowledgement without changing ACP request completion semantics.
+#[tokio::test]
+async fn queue_changed_acknowledges_prompt_before_prompt_rpc_completes() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (actor, mut gateway_rx) = build_actor().await;
+            let (respond_to, mut prompt_rx) = oneshot::channel();
+            let cancel = actor
+                .queue_input(
+                    vec![acp::ContentBlock::Text(acp::TextContent::new("hello"))],
+                    "client-prompt-42".to_string(),
+                    PromptMode::Agent,
+                    None,
+                    None,
+                    Some("agentmesh360-desktop".to_string()),
+                    None,
+                    false,
+                    None,
+                    false,
+                    None,
+                    respond_to,
+                    None,
+                    None,
+                )
+                .await;
+            assert!(!cancel);
+            assert!(matches!(
+                prompt_rx.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ));
+
+            let broadcasts = drain_queue_broadcasts(&mut gateway_rx);
+            assert_eq!(broadcasts.len(), 1);
+            let ack = &broadcasts[0];
+            assert_eq!(ack.session_id, "test-actor");
+            assert_eq!(ack.queue_revision, 1);
+            assert_eq!(ids(&ack.entries), vec!["client-prompt-42"]);
+            assert_eq!(
+                ack.entries[0].owner.as_deref(),
+                Some("agentmesh360-desktop")
+            );
+        })
+        .await;
+}
+
 /// Two prompts arrive (serialized by the actor mailbox → FIFO); the agent
 /// drains the front; an edit against the already-drained item is a benign
 /// no-op that re-broadcasts the current queue; a stale-version edit is also
@@ -83,9 +149,9 @@ async fn two_enqueues_drain_fifo_and_stale_edit_is_noop() {
             {
                 let mut state = actor.state.lock().await;
                 state.pending_inputs.push_back(user_item("p1", "A"));
-                actor.broadcast_queue_changed(&state);
+                actor.broadcast_queue_changed(&mut state);
                 state.pending_inputs.push_back(user_item("p2", "B"));
-                actor.broadcast_queue_changed(&state);
+                actor.broadcast_queue_changed(&mut state);
                 assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["p1", "p2"]);
             }
 
@@ -94,7 +160,7 @@ async fn two_enqueues_drain_fifo_and_stale_edit_is_noop() {
                 let mut state = actor.state.lock().await;
                 let drained = state.pending_inputs.pop_front().unwrap();
                 assert_eq!(drained.prompt_id, "p1");
-                actor.broadcast_queue_changed(&state);
+                actor.broadcast_queue_changed(&mut state);
                 assert_eq!(ids(&actor.build_queue_wire(&state)), vec!["p2"]);
             }
 
@@ -119,17 +185,25 @@ async fn two_enqueues_drain_fifo_and_stale_edit_is_noop() {
                 assert!(actor.build_queue_wire(&state).is_empty());
             }
 
-            // The final broadcast must reflect the empty queue.
-            let mut last: Option<crate::session::prompt_queue::QueueChanged> = None;
-            while let Ok(msg) = gateway_rx.try_recv() {
-                if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = msg
-                    && args.request.method.as_ref()
-                        == crate::session::prompt_queue::QUEUE_CHANGED_METHOD
-                {
-                    last = serde_json::from_str(args.request.params.get()).ok();
-                }
-            }
-            let last = last.expect("at least one queue/changed broadcast");
+            // Every enqueue, drain and authoritative reconciliation rebroadcast
+            // advances the session revision, even when a stale/missing remove
+            // leaves the entries unchanged.
+            let broadcasts = drain_queue_broadcasts(&mut gateway_rx);
+            assert_eq!(
+                broadcasts
+                    .iter()
+                    .map(|changed| changed.queue_revision)
+                    .collect::<Vec<_>>(),
+                vec![1, 2, 3, 4, 5, 6]
+            );
+            assert!(
+                broadcasts
+                    .iter()
+                    .all(|changed| changed.session_id == "test-actor")
+            );
+            let last = broadcasts
+                .last()
+                .expect("at least one queue/changed broadcast");
             assert!(
                 last.entries.is_empty(),
                 "final broadcast must show empty queue"
@@ -205,7 +279,7 @@ async fn edit_queued_prompt_replaces_text_and_bumps_version() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            let (actor, _rx) = build_actor().await;
+            let (actor, mut gateway_rx) = build_actor().await;
             {
                 let mut state = actor.state.lock().await;
                 state.pending_inputs.push_back(user_item("p1", "alice"));
@@ -245,6 +319,92 @@ async fn edit_queued_prompt_replaces_text_and_bumps_version() {
             assert_eq!(wire[0].version, 1);
             assert_eq!(wire[0].owner.as_deref(), Some("alice"));
             assert_eq!(wire[0].last_editor.as_deref(), Some("bob"));
+            let broadcasts = drain_queue_broadcasts(&mut gateway_rx);
+            assert_eq!(broadcasts.len(), 1);
+            assert_eq!(broadcasts[0].queue_revision, 1);
+            assert_eq!(broadcasts[0].entries[0].text, "edited");
+            assert_eq!(broadcasts[0].entries[0].version, 1);
+        })
+        .await;
+}
+
+/// Reordering and an idempotent reconciliation rebroadcast both advance the
+/// authoritative snapshot revision. The latter is what lets a client request
+/// a fresh snapshot without inventing a second queue-read protocol.
+#[tokio::test]
+async fn reorder_and_rebroadcast_advance_queue_revision() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (actor, mut gateway_rx) = build_actor().await;
+            {
+                let mut state = actor.state.lock().await;
+                state.pending_inputs.push_back(user_item("p1", "A"));
+                state.pending_inputs.push_back(user_item("p2", "A"));
+                state.pending_inputs.push_back(user_item("p3", "A"));
+            }
+
+            actor
+                .handle_reorder_queue(&["p3".into(), "p1".into()])
+                .await;
+            // Same authoritative order: still a new reconciliation snapshot.
+            actor
+                .handle_reorder_queue(&["p3".into(), "p1".into()])
+                .await;
+
+            let broadcasts = drain_queue_broadcasts(&mut gateway_rx);
+            assert_eq!(
+                broadcasts
+                    .iter()
+                    .map(|changed| changed.queue_revision)
+                    .collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            for changed in broadcasts {
+                assert_eq!(ids(&changed.entries), vec!["p3", "p1", "p2"]);
+            }
+        })
+        .await;
+}
+
+/// The running-slot handoff is part of the same versioned queue snapshot: a
+/// client cannot combine the entries from one frame with `runningPromptId`
+/// from another when it applies revisions atomically.
+#[tokio::test]
+async fn running_prompt_transitions_advance_queue_revision() {
+    let local = tokio::task::LocalSet::new();
+    local
+        .run_until(async {
+            let (actor, mut gateway_rx) = build_actor().await;
+            {
+                let mut state = actor.state.lock().await;
+                state.pending_inputs.push_back(user_item("p1", "A"));
+                state.pending_inputs.push_back(user_item("p2", "A"));
+                actor.broadcast_queue_changed(&mut state);
+
+                state.running_task = Some(running_task_stub("p1"));
+                actor.broadcast_queue_changed(&mut state);
+
+                state.running_task = None;
+                let completed = state.pending_inputs.pop_front().expect("p1 queued");
+                assert_eq!(completed.prompt_id, "p1");
+                actor.broadcast_queue_changed(&mut state);
+            }
+
+            let broadcasts = drain_queue_broadcasts(&mut gateway_rx);
+            assert_eq!(
+                broadcasts
+                    .iter()
+                    .map(|changed| changed.queue_revision)
+                    .collect::<Vec<_>>(),
+                vec![1, 2, 3]
+            );
+            assert_eq!(ids(&broadcasts[0].entries), vec!["p1", "p2"]);
+            assert!(broadcasts[0].running_prompt_id.is_none());
+            assert_eq!(ids(&broadcasts[1].entries), vec!["p2"]);
+            assert_eq!(broadcasts[1].running_prompt_id.as_deref(), Some("p1"));
+            assert_eq!(ids(&broadcasts[2].entries), vec!["p2"]);
+            assert!(broadcasts[2].running_prompt_id.is_none());
         })
         .await;
 }

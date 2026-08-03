@@ -68,6 +68,16 @@ pub(super) fn handle_queue_changed(notif: &acp::ExtNotification, app: &mut AppVi
 
     let running_prompt_id = changed.running_prompt_id.clone();
     let session_id = changed.session_id.clone();
+    let queue_revision = changed.queue_revision;
+    if !app.accept_queue_revision(&session_id, queue_revision) {
+        tracing::debug!(
+            target: "qtrace",
+            session = %session_id,
+            queue_revision,
+            "discarding stale x.ai/queue/changed broadcast",
+        );
+        return true;
+    }
 
     // Capture the running prompt's text + kind from the currently-known queue
     // (an optimistic echo, or a prior authoritative entry) BEFORE the broadcast
@@ -109,6 +119,7 @@ pub(super) fn handle_queue_changed(notif: &acp::ExtNotification, app: &mut AppVi
         pid = std::process::id(),
         event = "queue_changed_recv",
         session = %session_id,
+        queue_revision,
         running_prompt_id = running_prompt_id.as_deref().unwrap_or(""),
         local_current_prompt_id = %local_current_prompt_id,
         entry_count = changed.entries.len(),

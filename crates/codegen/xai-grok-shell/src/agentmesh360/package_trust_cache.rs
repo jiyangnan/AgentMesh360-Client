@@ -249,6 +249,42 @@ impl PackageTrustCacheStore {
         })
     }
 
+    /// Revalidates that an already-installed Package is still represented by
+    /// the current signed Registry and that the exact key which signed its
+    /// artifact remains active for that publisher.
+    ///
+    /// A removed, retired, or revoked key is absent from
+    /// `TrustedPublisherStore`, so the caller must hide user-facing capabilities
+    /// rather than relying on a historical install receipt.
+    pub(crate) fn verifies_installed_signature(
+        &self,
+        package_id: &str,
+        agent_id: &str,
+        version: &str,
+        publisher: &str,
+        signature_key_id: &str,
+        access: &ClientAccess,
+    ) -> Result<bool> {
+        let Some(verified) = self.load_verified(access)? else {
+            return Ok(false);
+        };
+        let Some(record) = verified
+            .registry
+            .packages
+            .iter()
+            .find(|record| record.package_id == package_id)
+        else {
+            return Ok(false);
+        };
+        let Ok(key) = verified.trusted_publishers.get(signature_key_id) else {
+            return Ok(false);
+        };
+        Ok(record.agent_id == agent_id
+            && record.version == version
+            && record.publisher == publisher
+            && key.publisher == publisher)
+    }
+
     fn load_verified(&self, access: &ClientAccess) -> Result<Option<VerifiedPackageTrustCache>> {
         let connection = state::open(&self.state_home)?;
         let Some(cached) = read_cached_row(&connection)? else {
@@ -534,6 +570,55 @@ mod tests {
             })
             .expect("cache row count");
         assert_eq!(rows, 1);
+
+        assert!(
+            restarted
+                .verifies_installed_signature(
+                    "job-agent",
+                    "job-agent",
+                    "1.2.0",
+                    "agentmesh360",
+                    "agentmesh360-release-test",
+                    &current_access,
+                )
+                .expect("active Package signature")
+        );
+        assert!(
+            !restarted
+                .verifies_installed_signature(
+                    "job-agent",
+                    "job-agent",
+                    "1.2.0",
+                    "agentmesh360",
+                    "agentmesh360-release-revoked",
+                    &current_access,
+                )
+                .expect("revoked Package signature fails closed")
+        );
+        assert!(
+            !restarted
+                .verifies_installed_signature(
+                    "job-agent",
+                    "other-agent",
+                    "1.2.0",
+                    "agentmesh360",
+                    "agentmesh360-release-test",
+                    &current_access,
+                )
+                .expect("cross-Agent Package signature fails closed")
+        );
+        assert!(
+            !restarted
+                .verifies_installed_signature(
+                    "job-agent",
+                    "job-agent",
+                    "1.1.9",
+                    "agentmesh360",
+                    "agentmesh360-release-test",
+                    &current_access,
+                )
+                .expect("non-current Package version fails closed")
+        );
     }
 
     #[test]

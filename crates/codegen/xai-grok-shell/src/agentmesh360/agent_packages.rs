@@ -13,6 +13,10 @@ use super::model_policy::AgentModelPolicy;
 const SUPPORTED_MANIFEST_SCHEMA_VERSION: u32 = 1;
 const BUILTIN_CATALOG_REVISION: u64 = 1;
 const MAX_SAFE_JSON_INTEGER: u64 = (1_u64 << 53) - 1;
+const MAX_USER_SKILLS: usize = 32;
+const MAX_USER_SKILL_DISPLAY_CHARS: usize = 80;
+const MAX_USER_SKILL_DESCRIPTION_CHARS: usize = 300;
+const MAX_USER_SKILL_PROMPT_CHARS: usize = 2_000;
 pub(super) const MAX_PACKAGE_IDENTIFIER_BYTES: usize = 128;
 pub(super) const MAX_PACKAGE_PATH_BYTES: usize = 512;
 const BUILTIN_PACKAGE_DOCUMENTS: [&str; 3] = [
@@ -121,6 +125,23 @@ pub(crate) struct SkillProjection {
     pub canonical_workflow: String,
     #[serde(default)]
     pub adapters: Vec<SkillAdapter>,
+    /// Product-facing prompt macros shown behind the `$` Composer trigger.
+    ///
+    /// These are deliberately text semantics, not filesystem-backed Grok Skill
+    /// paths. The signed Package declares the exact model-facing prompt and the
+    /// Desktop never needs access to `SKILL.md` locations.
+    #[serde(default)]
+    pub user_facing: Vec<UserFacingSkill>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct UserFacingSkill {
+    pub id: String,
+    pub display_name: String,
+    pub description: String,
+    pub prompt_token: String,
+    pub prompt_text: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -306,6 +327,51 @@ fn validate_manifest(manifest: &AgentPackageManifest) -> Result<()> {
         }
         validate_relative_package_path("skills.adapters.path", &adapter.path)?;
     }
+    if manifest.skills.user_facing.len() > MAX_USER_SKILLS {
+        bail!("Agent Package has too many user-facing Skills");
+    }
+    let mut skill_ids = HashSet::new();
+    let mut prompt_tokens = HashSet::new();
+    for skill in &manifest.skills.user_facing {
+        validate_identifier("skills.userFacing.id", &skill.id, false)?;
+        validate_user_skill_text(
+            "skills.userFacing.displayName",
+            &skill.display_name,
+            MAX_USER_SKILL_DISPLAY_CHARS,
+        )?;
+        validate_user_skill_text(
+            "skills.userFacing.description",
+            &skill.description,
+            MAX_USER_SKILL_DESCRIPTION_CHARS,
+        )?;
+        validate_user_skill_text(
+            "skills.userFacing.promptText",
+            &skill.prompt_text,
+            MAX_USER_SKILL_PROMPT_CHARS,
+        )?;
+        if skill.prompt_token != format!("${}", skill.id) {
+            bail!("Agent Package user-facing Skill promptToken must equal '$' plus its id");
+        }
+        if !skill_ids.insert(skill.id.as_str())
+            || !prompt_tokens.insert(skill.prompt_token.as_str())
+        {
+            bail!("Agent Package user-facing Skills must have unique ids and prompt tokens");
+        }
+    }
+    Ok(())
+}
+
+fn validate_user_skill_text(field: &str, value: &str, max_chars: usize) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.is_empty()
+        || trimmed != value
+        || value.chars().count() > max_chars
+        || value
+            .chars()
+            .any(|character| character.is_control() && character != '\n' && character != '\t')
+    {
+        bail!("Agent Package {field} is invalid");
+    }
     Ok(())
 }
 
@@ -422,13 +488,14 @@ mod tests {
                 .map(|package| (
                     package.agent.agent_id.as_str(),
                     package.version.as_str(),
-                    package.skills.adapters.len()
+                    package.skills.adapters.len(),
+                    package.skills.user_facing.len(),
                 ))
                 .collect::<Vec<_>>(),
             vec![
-                ("job-agent", "0.4.7", 2),
-                ("lecturecast-agent", "0.4.0", 3),
-                ("deploy-agent", "0.1.1", 0),
+                ("job-agent", "0.4.7", 2, 2),
+                ("lecturecast-agent", "0.4.0", 3, 2),
+                ("deploy-agent", "0.1.1", 0, 2),
             ]
         );
     }
@@ -508,6 +575,33 @@ mod tests {
     #[test]
     fn duplicate_package_or_agent_identity_fails_closed() {
         assert!(AgentPackageCatalog::from_documents(&[JOB_DOCUMENT, JOB_DOCUMENT]).is_err());
+    }
+
+    #[test]
+    fn user_facing_skill_schema_rejects_duplicates_tokens_and_malicious_fields() {
+        let duplicate = JOB_DOCUMENT.replacen("id = \"job-search\"", "id = \"career-profile\"", 1);
+        assert!(AgentPackageCatalog::parse_document(&duplicate).is_err());
+
+        let wrong_token = JOB_DOCUMENT.replacen(
+            "promptToken = \"$career-profile\"",
+            "promptToken = \"/always-approve on\"",
+            1,
+        );
+        assert!(AgentPackageCatalog::parse_document(&wrong_token).is_err());
+
+        let unknown = JOB_DOCUMENT.replacen(
+            "promptText = \"请帮我建立或更新求职档案。",
+            "privatePath = \"/private/skills/SKILL.md\"\npromptText = \"请帮我建立或更新求职档案。",
+            1,
+        );
+        assert!(AgentPackageCatalog::parse_document(&unknown).is_err());
+
+        let control = JOB_DOCUMENT.replacen(
+            "displayName = \"建立求职档案\"",
+            "displayName = \"建立\\u0000求职档案\"",
+            1,
+        );
+        assert!(AgentPackageCatalog::parse_document(&control).is_err());
     }
 
     #[test]

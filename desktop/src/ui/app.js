@@ -45,6 +45,16 @@ let providerDraft = null;
 let conversationDrafts = new Map();
 let conversationAttachmentErrors = new Map();
 let conversationAttachmentMutationInFlight = false;
+let conversationComposerIntents = new Map();
+let conversationQueueExpanded = new Set();
+let conversationQueueEditing = new Map();
+let conversationQueueMutationInFlight = false;
+let conversationPasteCards = new Map();
+let conversationPasteExpanded = new Set();
+let conversationInputCapabilities = new Map();
+let conversationDictationUi = emptyConversationDictationSnapshot();
+let conversationDictationApplied = new Set();
+let activeConversationDictationSink = null;
 let packageUi = {
   phase: 'idle',
   snapshot: null,
@@ -97,6 +107,14 @@ bridge.onConversationState((state) => {
     renderReady(currentState);
   }
 });
+if (typeof bridge.onDictationState === 'function') {
+  bridge.onDictationState((state) => {
+    const projected = safeConversationDictationSnapshot(state);
+    if (!projected) return;
+    conversationDictationUi = projected;
+    activeConversationDictationSink?.(projected);
+  });
+}
 bridge.getState().then(render).catch(() => render({
   phase: 'unavailable',
   message: '桌面身份服务没有响应',
@@ -130,6 +148,16 @@ function render(state) {
     conversationDrafts = new Map();
     conversationAttachmentErrors = new Map();
     conversationAttachmentMutationInFlight = false;
+    conversationComposerIntents = new Map();
+    conversationQueueExpanded = new Set();
+    conversationQueueEditing = new Map();
+    conversationQueueMutationInFlight = false;
+    conversationPasteCards = new Map();
+    conversationPasteExpanded = new Set();
+    conversationInputCapabilities = new Map();
+    conversationDictationUi = emptyConversationDictationSnapshot();
+    conversationDictationApplied = new Set();
+    activeConversationDictationSink = null;
     agentCustomizationDrafts = new Map();
     agentManagementUi = {
       phase: 'idle',
@@ -182,6 +210,16 @@ function render(state) {
     conversationDrafts = new Map();
     conversationAttachmentErrors = new Map();
     conversationAttachmentMutationInFlight = false;
+    conversationComposerIntents = new Map();
+    conversationQueueExpanded = new Set();
+    conversationQueueEditing = new Map();
+    conversationQueueMutationInFlight = false;
+    conversationPasteCards = new Map();
+    conversationPasteExpanded = new Set();
+    conversationInputCapabilities = new Map();
+    conversationDictationUi = emptyConversationDictationSnapshot();
+    conversationDictationApplied = new Set();
+    activeConversationDictationSink = null;
     agentCustomizationDrafts = new Map();
     agentManagementUi = {
       phase: 'idle',
@@ -412,6 +450,7 @@ function renderUnavailable(state) {
 }
 
 function renderReady(state) {
+  activeConversationDictationSink = null;
   captureRendererDrafts();
   window.AgentMeshSelect?.destroyAll();
   const account = state.account || {};
@@ -685,12 +724,25 @@ function conversationView() {
     : null;
   const modelBlocked = Boolean(bindingIssue);
   const draftAttachments = safeConversationDraftAttachments(conversationUi.draftAttachments);
-  const visibleDraftAttachments = sending ? [] : draftAttachments;
   const draftKey = conversationDraftKey();
+  const queue = safeConversationQueue(conversationUi.queue);
+  const requestedIntent = draftKey ? conversationComposerIntents.get(draftKey) : null;
+  const composerIntent = sending
+    ? (draftAttachments.length > 0 ? 'queue' : (requestedIntent || 'adjust'))
+    : 'send';
+  const visibleDraftAttachments = draftAttachments;
+  const pasteCards = draftKey ? (conversationPasteCards.get(draftKey) || []) : [];
   const attachmentError = draftKey ? conversationAttachmentErrors.get(draftKey) : null;
-  const composerMode = sending ? 'interject' : 'prompt';
   const composerDisabled = !(ready || (sending && conversationUi.agentId)) || modelBlocked;
-  const canSubmitAttachmentOnly = composerMode === 'prompt' && visibleDraftAttachments.length > 0;
+  const canSubmitWithoutTextarea = pasteCards.length > 0
+    || (composerIntent !== 'adjust' && visibleDraftAttachments.length > 0);
+  const submitLabel = composerIntent === 'adjust'
+    ? '追加指令'
+    : composerIntent === 'queue'
+      ? '排队发送'
+      : composerIntent === 'now'
+        ? '立即执行'
+        : '发送';
   const gates = `${conversationUi.error ? `
     <div class="conversation-error" role="alert">
       <span>${escapeHtml(conversationUi.error)}</span>
@@ -726,6 +778,7 @@ function conversationView() {
         </div>
       </div>
       <div class="conversation-composer-dock">
+        ${conversationQueueView(queue, draftKey)}
         <form
           class="conversation-composer"
           id="conversation-form"
@@ -733,8 +786,9 @@ function conversationView() {
           data-agent-id="${escapeHtml(String(conversationUi.agentId || agentManagementUi.agentId || ''))}"
           data-session-key="main"
           data-composer-enabled="${composerDisabled ? 'false' : 'true'}"
-          data-composer-mode="${composerMode}"
+          data-composer-mode="${escapeHtml(composerIntent)}"
         >
+          ${pasteCards.length ? conversationPasteCardsView(pasteCards) : ''}
           ${visibleDraftAttachments.length ? `
             <div class="composer-attachment-strip" role="list" aria-label="待发送附件">
               ${visibleDraftAttachments.map(conversationAttachmentChip).join('')}
@@ -748,7 +802,7 @@ function conversationView() {
                 aria-label="添加图片、文件或链接"
                 aria-haspopup="menu"
                 aria-expanded="false"
-                ${composerDisabled || sending ? 'disabled' : ''}
+                ${composerDisabled ? 'disabled' : ''}
               >+</button>
               <div class="composer-tool-menu" id="composer-tool-menu" role="menu" hidden>
                 <button type="button" role="menuitem" id="composer-pick-files">
@@ -757,14 +811,26 @@ function conversationView() {
                 <button type="button" role="menuitem" id="composer-add-link">
                   <i aria-hidden="true">↗</i><span><strong>网页链接</strong><small>把网址作为上下文交给 Agent</small></span>
                 </button>
+                <button type="button" role="menuitem" id="composer-authorize-workspace">
+                  <i aria-hidden="true">@</i><span><strong>授权工作文件夹</strong><small>允许当前 Agent 引用你选择的文件</small></span>
+                </button>
+                <button type="button" role="menuitem" id="composer-prompt-history">
+                  <i aria-hidden="true">↺</i><span><strong>历史消息</strong><small>找回这个 Agent 主会话中的输入</small></span>
+                </button>
               </div>
             </div>
             <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked
     ? '请先重新选择可用模型…'
-    : sending
+    : composerIntent === 'adjust'
       ? '继续补充要求，Agent 会在当前任务中调整方向…'
+      : composerIntent === 'queue'
+        ? '写下下一项任务，当前工作完成后会按顺序执行…'
+        : composerIntent === 'now'
+          ? '这条消息会立即执行，并打断当前任务…'
       : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${composerDisabled ? 'disabled' : ''}></textarea>
+            <button class="composer-dictation-button" type="button" aria-label="语音听写" title="语音听写" ${composerDisabled ? 'disabled' : ''}>◉</button>
           </div>
+          <div class="composer-suggestions" id="composer-suggestions" role="listbox" hidden></div>
           <div class="composer-link-entry" id="composer-link-entry" hidden>
             <input name="attachmentLink" type="url" maxlength="2048" inputmode="url" autocomplete="off" placeholder="https://example.com">
             <button class="ghost" type="button" id="composer-cancel-link">取消</button>
@@ -772,12 +838,28 @@ function conversationView() {
           </div>
           ${attachmentError ? `<div class="composer-attachment-error" role="alert">${escapeHtml(attachmentError)}</div>` : ''}
           <div class="composer-footer">
-            <span>${sending
-    ? 'Agent 正在工作；你可以继续补充要求，它会在当前任务中调整方向'
+            <span>${composerIntent === 'adjust'
+    ? '这条要求会调整当前任务，不会创建新的排队任务'
+    : composerIntent === 'queue'
+      ? '这条消息会进入待处理队列；附件会跟随这条消息保留'
+      : composerIntent === 'now'
+        ? '这条消息会立即执行并打断当前任务，请确认优先级'
     : draftAttachments.some((attachment) => attachment.kind === 'image')
       ? '图片会交给当前模型；能否理解取决于该模型的视觉能力'
       : '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360'}</span>
-            <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitAttachmentOnly ? 'disabled' : ''}>${sending ? '追加指令' : '发送'}</button>
+            <div class="composer-actions">
+              ${sending ? '<button class="ghost composer-stop" type="button">停止当前任务</button>' : ''}
+              <div class="composer-submit-wrap">
+                <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitWithoutTextarea ? 'disabled' : ''}>${submitLabel}</button>
+                ${sending ? `
+                  <button class="secondary composer-intent-toggle" type="button" aria-label="选择发送方式" aria-haspopup="menu" aria-expanded="false">⌄</button>
+                  <div class="composer-intent-menu" role="menu" hidden>
+                    <button type="button" role="menuitemradio" aria-checked="${composerIntent === 'adjust'}" data-composer-intent="adjust"><strong>调整当前任务</strong><small>把要求加入正在执行的工作</small></button>
+                    <button type="button" role="menuitemradio" aria-checked="${composerIntent === 'queue'}" data-composer-intent="queue"><strong>排队等待</strong><small>当前任务结束后按顺序执行</small></button>
+                    <button type="button" role="menuitemradio" aria-checked="${composerIntent === 'now'}" data-composer-intent="now"><strong>立即执行</strong><small>打断当前任务并优先处理</small></button>
+                  </div>` : ''}
+              </div>
+            </div>
           </div>
         </form>
       </div>
@@ -817,6 +899,339 @@ function safeConversationDraftAttachments(value) {
       sizeBytes: attachment.sizeBytes,
     }];
   });
+}
+
+function safeConversationQueue(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const seen = new Set();
+  const entries = Array.isArray(source.entries)
+    ? source.entries.slice(0, 50).flatMap((entry) => {
+      const queueId = typeof entry?.queueId === 'string' ? entry.queueId : '';
+      const text = typeof entry?.text === 'string' ? entry.text : '';
+      if (
+        !/^queue-\d+$/.test(queueId)
+        || seen.has(queueId)
+        || !Number.isSafeInteger(entry?.version)
+        || entry.version < 0
+        || !Number.isSafeInteger(entry?.position)
+        || entry.position < 0
+        || text.length > 4_000
+        || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u.test(text)
+      ) return [];
+      seen.add(queueId);
+      return [{
+        queueId,
+        text,
+        version: entry.version,
+        position: entry.position,
+        editable: entry.editable === true,
+      }];
+    }).sort((left, right) => left.position - right.position)
+    : [];
+  return {
+    revision: Number.isSafeInteger(source.revision) && source.revision >= 0 ? source.revision : 0,
+    synced: source.synced === true,
+    running: source.running === true,
+    confirmingCount: Number.isSafeInteger(source.confirmingCount)
+      ? Math.max(0, Math.min(50, source.confirmingCount))
+      : 0,
+    entries,
+    mutation: source.mutation && typeof source.mutation === 'object'
+      ? {
+        kind: String(source.mutation.kind || '').slice(0, 30),
+        pending: source.mutation.pending === true,
+        message: String(source.mutation.message || '').slice(0, 240),
+      }
+      : null,
+  };
+}
+
+function conversationQueueView(queue, draftKey) {
+  if (!queue.entries.length && queue.confirmingCount < 1) return '';
+  const expanded = Boolean(draftKey && conversationQueueExpanded.has(draftKey));
+  const editingQueueId = draftKey ? conversationQueueEditing.get(draftKey) : null;
+  const visibleEntries = expanded ? queue.entries : queue.entries.slice(0, 3);
+  const total = queue.entries.length + queue.confirmingCount;
+  return `
+    <section class="conversation-queue ${expanded ? 'expanded' : ''}" aria-label="待处理消息">
+      <button class="conversation-queue-summary" type="button" data-toggle-queue aria-expanded="${expanded}">
+        <span><i aria-hidden="true"></i><strong>待处理 ${total} 条</strong>${queue.confirmingCount ? `<small>${queue.confirmingCount} 条正在确认</small>` : '<small>按顺序执行</small>'}</span>
+        <b>${expanded ? '收起' : '管理'}</b>
+      </button>
+      <div class="conversation-queue-list" role="list">
+        ${visibleEntries.map((entry, index) => `
+          <article class="conversation-queue-item" role="listitem" data-queue-id="${escapeHtml(entry.queueId)}">
+            <span class="queue-position">${index + 1}</span>
+            ${editingQueueId === entry.queueId
+    ? `<input class="queue-edit-input" type="text" maxlength="16000" value="${escapeHtml(entry.text)}" aria-label="编辑待处理消息">`
+    : `<p title="${escapeHtml(entry.text)}">${escapeHtml(entry.text || '仅附件消息')}</p>`}
+            ${editingQueueId === entry.queueId ? `
+              <div class="queue-item-actions editing">
+                <button type="button" data-queue-save="${escapeHtml(entry.queueId)}">保存</button>
+                <button type="button" data-queue-cancel-edit="${escapeHtml(entry.queueId)}">取消</button>
+              </div>` : expanded && entry.editable ? `
+              <div class="queue-item-actions">
+                <button type="button" data-queue-up="${escapeHtml(entry.queueId)}" ${index === 0 ? 'disabled' : ''} aria-label="上移">↑</button>
+                <button type="button" data-queue-down="${escapeHtml(entry.queueId)}" ${index === queue.entries.length - 1 ? 'disabled' : ''} aria-label="下移">↓</button>
+                <button type="button" data-queue-edit="${escapeHtml(entry.queueId)}">编辑</button>
+                <button type="button" data-queue-now="${escapeHtml(entry.queueId)}">立即执行</button>
+                <button type="button" data-queue-remove="${escapeHtml(entry.queueId)}">删除</button>
+              </div>` : ''}
+          </article>`).join('')}
+        ${!expanded && queue.entries.length > 3 ? `<div class="conversation-queue-more">另有 ${queue.entries.length - 3} 条，点击“管理”查看</div>` : ''}
+        ${queue.confirmingCount ? `<div class="conversation-queue-confirming"><i></i>正在确认 ${queue.confirmingCount} 条消息是否已进入队列…</div>` : ''}
+      </div>
+      ${expanded ? `
+        <footer>
+          <span>${queue.synced ? `已同步 · 版本 ${queue.revision}` : '正在同步权威顺序…'}</span>
+          <button class="ghost" type="button" data-queue-clear ${queue.entries.some((entry) => entry.editable) ? '' : 'disabled'}>清空本客户端待处理项</button>
+        </footer>` : ''}
+      ${queue.mutation ? `<div class="conversation-queue-mutation ${queue.mutation.pending ? 'pending' : 'failed'}">${escapeHtml(queue.mutation.pending ? '正在确认队列变化…' : queue.mutation.message || '队列已变化，请重试。')}</div>` : ''}
+    </section>`;
+}
+
+function conversationPasteCardsView(cards) {
+  return `
+    <div class="composer-paste-strip" role="list" aria-label="大段粘贴内容">
+      ${cards.map((card, index) => {
+    const expanded = conversationPasteExpanded.has(card.id);
+    const lineCount = String(card.text || '').split(/\r?\n/u).length;
+    return `
+        <article class="composer-paste-card ${expanded ? 'expanded' : ''}" role="listitem" data-paste-card="${escapeHtml(card.id)}">
+          <header>
+            <i aria-hidden="true">粘</i>
+            <span><strong>粘贴内容 ${index + 1}</strong><small>${card.text.length.toLocaleString()} 字 · ${lineCount} 行</small></span>
+            <button type="button" data-toggle-paste="${escapeHtml(card.id)}">${expanded ? '收起' : '查看'}</button>
+            <button type="button" data-remove-paste="${escapeHtml(card.id)}" aria-label="删除粘贴内容">×</button>
+          </header>
+          ${expanded ? `<textarea class="paste-card-editor" maxlength="16000" rows="5" data-edit-paste="${escapeHtml(card.id)}">${escapeHtml(card.text)}</textarea>` : ''}
+        </article>`;
+  }).join('')}
+    </div>`;
+}
+
+function composerTriggerAtCursor(textarea) {
+  const value = String(textarea?.value || '');
+  const cursor = Number.isSafeInteger(textarea?.selectionStart)
+    ? textarea.selectionStart
+    : value.length;
+  const before = value.slice(0, cursor);
+  const match = before.match(/(^|\s)([/@$])([^\s/@$]*)$/u);
+  if (!match) return null;
+  const token = `${match[2]}${match[3]}`;
+  return {
+    kind: match[2] === '/' ? 'command' : match[2] === '$' ? 'skill' : 'file',
+    prefix: match[2],
+    query: match[3].toLocaleLowerCase(),
+    start: cursor - token.length,
+    end: cursor,
+  };
+}
+
+function unsafeComposerSlashCommand(text) {
+  const firstToken = String(text || '').trim().match(/^(\/[^\s]*)/u)?.[1] || '';
+  if (!firstToken) return null;
+  if (['/compact', '/context', '/session-info'].includes(firstToken)) return null;
+  return '此命令未获客户端允许。请从“/”菜单选择可用命令。';
+}
+
+function safeConversationInputCapabilities(value, expectedAgentId) {
+  if (
+    !value
+    || typeof value !== 'object'
+    || value.schemaVersion !== 1
+    || value.agentId !== expectedAgentId
+    || !Number.isSafeInteger(value.revision)
+    || value.revision < 0
+  ) return null;
+  const project = (items, kind) => {
+    if (!Array.isArray(items)) return [];
+    const triggerPattern = kind === 'command'
+      ? /^\/[a-z0-9][a-z0-9-]{0,48}$/
+      : /^\$[a-z0-9][a-z0-9-]{0,48}$/;
+    const seen = new Set();
+    return items.slice(0, 50).flatMap((item) => {
+      const id = String(item?.id || '');
+      const trigger = String(item?.trigger || '');
+      const displayName = String(item?.displayName || '').trim();
+      const description = String(item?.description || '').trim();
+      const promptText = kind === 'skill' ? String(item?.promptText || '') : trigger;
+      if (
+        !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)
+        || seen.has(id)
+        || !triggerPattern.test(trigger)
+        || !displayName
+        || displayName.length > 80
+        || description.length > 240
+        || promptText.length > 4_000
+        || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u.test(`${displayName}${description}${promptText}`)
+      ) return [];
+      seen.add(id);
+      return [{
+        kind,
+        id,
+        trigger,
+        displayName,
+        description,
+        insertText: kind === 'command'
+          ? `${trigger}${item.argumentHint ? ' ' : ''}`
+          : promptText,
+      }];
+    });
+  };
+  return {
+    revision: value.revision,
+    commands: project(value.commands, 'command'),
+    skills: project(value.skills, 'skill'),
+  };
+}
+
+function safeConversationWorkspaceProjection(value, expectedAgentId) {
+  if (
+    !value
+    || typeof value !== 'object'
+    || value.schemaVersion !== 1
+    || value.agentId !== expectedAgentId
+  ) return { workspaces: [], files: [] };
+  const workspacePattern = /^workspace-[0-9a-f-]{36}$/u;
+  const workspaces = Array.isArray(value.workspaces)
+    ? value.workspaces.slice(0, 16).flatMap((workspace) => {
+      const workspaceId = String(workspace?.workspaceId || '');
+      const displayName = String(workspace?.displayName || '').trim();
+      if (
+        !workspacePattern.test(workspaceId)
+        || !displayName
+        || displayName.length > 180
+        || /[\u0000-\u001F\u007F-\u009F]/u.test(displayName)
+      ) return [];
+      return [{ workspaceId, displayName }];
+    })
+    : [];
+  const workspaceIds = new Set(workspaces.map((workspace) => workspace.workspaceId));
+  const files = Array.isArray(value.files)
+    ? value.files.slice(0, 50).flatMap((file) => {
+      const workspaceId = String(file?.workspaceId || '');
+      const relativePath = String(file?.relativePath || '');
+      const displayPath = String(file?.displayPath || relativePath);
+      const workspaceName = String(file?.workspaceName || '').trim();
+      if (
+        !workspaceIds.has(workspaceId)
+        || !relativePath
+        || relativePath.length > 1_024
+        || relativePath.startsWith('/')
+        || relativePath.split('/').some((segment) => segment === '..' || segment === '.')
+        || /[\u0000-\u001F\u007F-\u009F]/u.test(`${relativePath}${displayPath}${workspaceName}`)
+        || !Number.isSafeInteger(file?.sizeBytes)
+        || file.sizeBytes < 1
+        || file.sizeBytes > 20 * 1024 * 1024
+      ) return [];
+      return [{
+        workspaceId,
+        relativePath,
+        displayPath: displayPath.slice(0, 1_024),
+        workspaceName: workspaceName.slice(0, 180),
+        name: String(file?.name || relativePath.split('/').pop() || '文件').slice(0, 180),
+        sizeBytes: file.sizeBytes,
+      }];
+    })
+    : [];
+  return { workspaces, files };
+}
+
+function safeConversationHistoryProjection(value, expectedAgentId) {
+  if (
+    !value
+    || typeof value !== 'object'
+    || value.schemaVersion !== 1
+    || value.agentId !== expectedAgentId
+    || !Array.isArray(value.history)
+  ) return [];
+  const seen = new Set();
+  return value.history.slice(0, 20).flatMap((entry) => {
+    const historyId = String(entry?.historyId || '');
+    const preview = String(entry?.preview || '').trim();
+    if (
+      !/^history-[0-9a-f]{32}$/u.test(historyId)
+      || seen.has(historyId)
+      || !preview
+      || Array.from(preview).length > 160
+      || /[\u0000-\u001F\u007F-\u009F]/u.test(preview)
+    ) return [];
+    seen.add(historyId);
+    return [{ historyId, preview }];
+  });
+}
+
+function safeConversationDictationSnapshot(value) {
+  const phases = new Set(['idle', 'starting', 'listening', 'transcribing', 'complete', 'error']);
+  const phase = phases.has(value?.phase) ? value.phase : null;
+  const revision = Number.isSafeInteger(value?.revision) && value.revision >= 0
+    ? value.revision
+    : null;
+  const agentId = value?.agentId == null ? null : String(value.agentId);
+  if (
+    !phase
+    || revision === null
+    || (agentId !== null && !/^[a-z0-9][a-z0-9-]{1,198}[a-z0-9]$/u.test(agentId))
+  ) return null;
+  if (phase !== 'idle' && !agentId) return null;
+  const dictationId = value?.dictationId == null ? null : String(value.dictationId);
+  if (
+    ['starting', 'listening', 'transcribing'].includes(phase)
+    && !/^[A-Za-z0-9_-]{1,200}$/u.test(dictationId || '')
+  ) return null;
+  const safeText = (text, maxCodePoints) => {
+    if (typeof text !== 'string') return '';
+    const projected = Array.from(text).slice(0, maxCodePoints).join('');
+    return /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u.test(projected)
+      ? ''
+      : projected;
+  };
+  const errorCode = typeof value?.error?.code === 'string'
+    ? value.error.code.slice(0, 80)
+    : '';
+  const errorMessage = safeText(value?.error?.message, 240);
+  const displayName = safeText(value?.service?.displayName, 100);
+  return {
+    revision,
+    phase,
+    dictationId,
+    agentId,
+    interimText: safeText(value?.interimText, 20_000),
+    transcript: safeText(value?.transcript, 20_000),
+    error: phase === 'error'
+      ? {
+        code: errorCode || 'dictation_failed',
+        message: errorMessage || '听写没有完成，请稍后重试。',
+      }
+      : null,
+    service: displayName ? { displayName } : null,
+    limits: {
+      maxDurationSeconds: Number.isSafeInteger(value?.limits?.maxDurationSeconds)
+        ? Math.min(Math.max(value.limits.maxDurationSeconds, 1), 60)
+        : 60,
+      maxAudioBytes: Number.isSafeInteger(value?.limits?.maxAudioBytes)
+        ? Math.min(Math.max(value.limits.maxAudioBytes, 1), 1_920_000)
+        : 1_920_000,
+    },
+    disclosure: safeText(value?.disclosure, 200)
+      || '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+  };
+}
+
+function emptyConversationDictationSnapshot() {
+  return {
+    revision: 0,
+    phase: 'idle',
+    agentId: null,
+    dictationId: null,
+    interimText: '',
+    transcript: '',
+    error: null,
+    service: null,
+    limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
+    disclosure: '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+  };
 }
 
 function conversationAttachmentChip(attachment) {
@@ -1367,27 +1782,674 @@ function wireConversation() {
   const sendButton = form?.querySelector('.composer-send');
   const addButton = form?.querySelector('#composer-add-button');
   const toolMenu = form?.querySelector('#composer-tool-menu');
+  const intentToggle = form?.querySelector('.composer-intent-toggle');
+  const intentMenu = form?.querySelector('.composer-intent-menu');
   const linkEntry = form?.querySelector('#composer-link-entry');
   const linkInput = form?.elements.attachmentLink;
+  const suggestionBox = form?.querySelector('#composer-suggestions');
+  const dictationButton = form?.querySelector('.composer-dictation-button');
   const attachmentIds = safeConversationDraftAttachments(conversationUi.draftAttachments)
     .map((attachment) => attachment.attachmentId);
+  const queue = safeConversationQueue(conversationUi.queue);
   const composerEnabled = form?.dataset.composerEnabled === 'true';
-  const interjectMode = form?.dataset.composerMode === 'interject';
+  const composerIntent = String(form?.dataset.composerMode || 'send');
+  const interjectMode = composerIntent === 'adjust';
+  const sendNowMode = composerIntent === 'now';
   const promptAttachmentIds = interjectMode ? [] : attachmentIds;
+  const pasteCards = formDraftKey ? (conversationPasteCards.get(formDraftKey) || []) : [];
   const interjectionKey = form
     ? conversationPendingKey(form.dataset.accountId, form.dataset.agentId)
     : '';
+  let suggestionRequestRevision = 0;
+  let suggestionDebounce = null;
+  let handleDictationPanelClose = null;
+  let suggestionState = {
+    mode: null,
+    title: '',
+    hint: '',
+    items: [],
+    selected: 0,
+    token: null,
+    loading: false,
+    error: null,
+    statusText: '',
+  };
+  const composerRequestIsCurrent = (revision) => (
+    revision === suggestionRequestRevision
+    && form?.isConnected === true
+    && currentState.phase === 'ready'
+    && String(readyAccountId || '') === form.dataset.accountId
+    && agentManagementUi.agentId === form.dataset.agentId
+    && conversationUi.agentId === form.dataset.agentId
+  );
+  const rememberTextarea = () => {
+    if (!formDraftKey || !textarea) return;
+    if (textarea.value) conversationDrafts.set(formDraftKey, textarea.value);
+    else conversationDrafts.delete(formDraftKey);
+    updateSendState();
+  };
+  const closeSuggestions = () => {
+    suggestionRequestRevision += 1;
+    if (suggestionDebounce) clearTimeout(suggestionDebounce);
+    suggestionDebounce = null;
+    suggestionState = {
+      mode: null,
+      title: '',
+      hint: '',
+      items: [],
+      selected: 0,
+      token: null,
+      loading: false,
+      error: null,
+      statusText: '',
+    };
+    if (suggestionBox) {
+      suggestionBox.hidden = true;
+      suggestionBox.innerHTML = '';
+    }
+    textarea?.removeAttribute('aria-activedescendant');
+    textarea?.setAttribute('aria-expanded', 'false');
+  };
+  const renderSuggestions = () => {
+    if (!suggestionBox || !suggestionState.mode) return;
+    const items = suggestionState.items;
+    const body = suggestionState.loading
+      ? `<div class="composer-suggestion-status"><i></i><span>${escapeHtml(suggestionState.statusText || '正在读取可用内容…')}</span></div>`
+      : suggestionState.error
+        ? `<div class="composer-suggestion-status error"><span>${escapeHtml(suggestionState.error)}</span></div>`
+        : items.length
+          ? items.map((item, index) => `
+            <button
+              type="button"
+              role="option"
+              id="composer-suggestion-${index}"
+              class="composer-suggestion-item ${index === suggestionState.selected ? 'selected' : ''}"
+              aria-selected="${index === suggestionState.selected}"
+              data-composer-suggestion="${index}"
+            >
+              <i aria-hidden="true">${escapeHtml(item.glyph || '·')}</i>
+              <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.detail || '')}</small></span>
+              ${item.actionLabel ? `<b>${escapeHtml(item.actionLabel)}</b>` : ''}
+            </button>`).join('')
+          : '<div class="composer-suggestion-status"><span>没有找到匹配内容</span></div>';
+    suggestionBox.innerHTML = `
+      <header class="composer-suggestion-header">
+        <span><strong>${escapeHtml(suggestionState.title)}</strong><small>${escapeHtml(suggestionState.hint)}</small></span>
+        <button type="button" data-close-composer-suggestions aria-label="关闭">×</button>
+      </header>
+      <div class="composer-suggestion-list">${body}</div>`;
+    suggestionBox.hidden = false;
+    textarea?.setAttribute('aria-expanded', 'true');
+    if (items.length) {
+      textarea?.setAttribute('aria-activedescendant', `composer-suggestion-${suggestionState.selected}`);
+    } else {
+      textarea?.removeAttribute('aria-activedescendant');
+    }
+    suggestionBox.querySelector('[data-close-composer-suggestions]')?.addEventListener('click', () => {
+      if (suggestionState.mode === 'dictation' && handleDictationPanelClose) {
+        handleDictationPanelClose();
+        return;
+      }
+      closeSuggestions();
+      textarea?.focus();
+    });
+    for (const button of suggestionBox.querySelectorAll('[data-composer-suggestion]')) {
+      button.addEventListener('pointerdown', (event) => event.preventDefault());
+      button.addEventListener('click', () => {
+        selectSuggestion(Number(button.dataset.composerSuggestion));
+      });
+    }
+  };
+  const setSuggestionState = (next) => {
+    suggestionState = {
+      ...suggestionState,
+      ...next,
+      selected: Math.min(
+        Math.max(0, Number(next.selected ?? suggestionState.selected) || 0),
+        Math.max(0, (next.items ?? suggestionState.items).length - 1),
+      ),
+    };
+    renderSuggestions();
+  };
+  const replaceComposerToken = (text, token = suggestionState.token) => {
+    if (!textarea) return false;
+    const value = String(textarea.value || '');
+    const start = token ? token.start : textarea.selectionStart;
+    const end = token ? token.end : textarea.selectionEnd;
+    const next = `${value.slice(0, start)}${text}${value.slice(end)}`;
+    const pasteLength = (conversationPasteCards.get(formDraftKey) || [])
+      .reduce((sum, card) => sum + Array.from(String(card.text || '')).length, 0);
+    if (Array.from(next).length + pasteLength > 16_000) {
+      if (formDraftKey) conversationAttachmentErrors.set(formDraftKey, '当前输入与粘贴内容合计不能超过 16000 字');
+      closeSuggestions();
+      if (currentState.phase === 'ready') renderReady(currentState);
+      return false;
+    }
+    textarea.value = next;
+    const cursor = start + text.length;
+    textarea.setSelectionRange(cursor, cursor);
+    rememberTextarea();
+    return true;
+  };
+  const openWorkspaceManager = async () => {
+    const revision = ++suggestionRequestRevision;
+    setSuggestionState({
+      mode: 'workspaces',
+      title: '当前 Agent 的工作文件夹',
+      hint: '只显示文件夹名称，不会暴露本机完整路径',
+      token: null,
+      items: [],
+      loading: true,
+      error: null,
+    });
+    try {
+      const value = await bridge.getConversationWorkspaces();
+      if (!composerRequestIsCurrent(revision)) return;
+      const projection = safeConversationWorkspaceProjection({ ...value, files: [] }, form.dataset.agentId);
+      setSuggestionState({
+        loading: false,
+        items: [
+          ...projection.workspaces.map((workspace) => ({
+            glyph: '@',
+            title: workspace.displayName,
+            detail: '已允许当前 Agent 引用此文件夹中的受支持文件',
+            actionLabel: '取消授权',
+            action: 'revoke_workspace',
+            workspaceId: workspace.workspaceId,
+          })),
+          {
+            glyph: '+',
+            title: '授权另一个工作文件夹',
+            detail: '由 macOS 文件夹选择器确认，授权只属于当前 Agent',
+            actionLabel: '选择',
+            action: 'authorize_workspace',
+          },
+        ],
+      });
+    } catch (error) {
+      if (revision === suggestionRequestRevision) {
+        setSuggestionState({ loading: false, error: publicError(error, '暂时无法读取工作文件夹') });
+      }
+    }
+  };
+  const openPromptHistory = async (query = '') => {
+    const revision = ++suggestionRequestRevision;
+    setSuggestionState({
+      mode: 'history',
+      title: '历史消息',
+      hint: '选择后只会放回输入框，不会自动发送',
+      token: null,
+      items: [],
+      loading: true,
+      error: null,
+    });
+    try {
+      const value = await bridge.searchConversationPromptHistory(query);
+      if (!composerRequestIsCurrent(revision)) return;
+      const history = safeConversationHistoryProjection(value, form.dataset.agentId);
+      setSuggestionState({
+        loading: false,
+        items: history.map((entry) => ({
+          glyph: '↺',
+          title: entry.preview,
+          detail: '插入到输入框，仍需你确认发送',
+          action: 'history',
+          historyId: entry.historyId,
+        })),
+      });
+    } catch (error) {
+      if (revision === suggestionRequestRevision) {
+        setSuggestionState({ loading: false, error: publicError(error, '暂时无法读取历史消息') });
+      }
+    }
+  };
+  const loadTriggeredSuggestions = async (token) => {
+    const revision = ++suggestionRequestRevision;
+    const meta = token.kind === 'command'
+      ? ['命令', '选择后会插入输入框，不会自动执行']
+      : token.kind === 'skill'
+        ? ['当前 Agent 的 Skill', '选择后会插入可编辑要求，不会自动发送']
+        : ['工作文件', '只搜索你明确授权给当前 Agent 的文件夹'];
+    setSuggestionState({
+      mode: token.kind,
+      title: meta[0],
+      hint: meta[1],
+      token,
+      items: [],
+      loading: true,
+      error: null,
+    });
+    try {
+      if (token.kind === 'command' || token.kind === 'skill') {
+        let capabilities = conversationInputCapabilities.get(formDraftKey);
+        if (!capabilities) {
+          capabilities = safeConversationInputCapabilities(
+            await bridge.getConversationInputCapabilities(),
+            form.dataset.agentId,
+          );
+          if (!capabilities) throw new Error('输入能力清单无效');
+        }
+        if (!composerRequestIsCurrent(revision)) return;
+        const cached = conversationInputCapabilities.get(formDraftKey);
+        if (!cached || capabilities.revision >= cached.revision) {
+          conversationInputCapabilities.set(formDraftKey, capabilities);
+        } else {
+          capabilities = cached;
+        }
+        const source = token.kind === 'command' ? capabilities.commands : capabilities.skills;
+        const query = token.query.normalize('NFKC').toLocaleLowerCase('zh-CN');
+        const items = source.filter((item) => (
+          !query
+          || `${item.trigger} ${item.displayName} ${item.description}`
+            .normalize('NFKC')
+            .toLocaleLowerCase('zh-CN')
+            .includes(query)
+        )).map((item) => ({
+          glyph: token.kind === 'command' ? '/' : '$',
+          title: `${item.trigger} · ${item.displayName}`,
+          detail: item.description,
+          action: 'insert',
+          insertText: item.insertText,
+        }));
+        setSuggestionState({ loading: false, items });
+        return;
+      }
+      const value = await bridge.searchConversationWorkspaceFiles({ query: token.query });
+      if (!composerRequestIsCurrent(revision)) return;
+      const projection = safeConversationWorkspaceProjection(value, form.dataset.agentId);
+      const items = projection.workspaces.length
+        ? projection.files.map((file) => ({
+          glyph: '文',
+          title: file.name,
+          detail: `${file.workspaceName || '工作文件夹'} · ${file.displayPath}`,
+          action: 'file',
+          workspaceId: file.workspaceId,
+          relativePath: file.relativePath,
+        }))
+        : [{
+          glyph: '+',
+          title: '先授权一个工作文件夹',
+          detail: '授权后，@ 只会搜索该文件夹中的受支持文件',
+          actionLabel: '选择',
+          action: 'authorize_workspace',
+        }];
+      setSuggestionState({ loading: false, items });
+    } catch (error) {
+      if (revision === suggestionRequestRevision) {
+        setSuggestionState({ loading: false, error: publicError(error, '暂时无法读取输入建议') });
+      }
+    }
+  };
+  const refreshTriggeredSuggestions = () => {
+    if (!textarea || !composerEnabled) return;
+    const token = composerTriggerAtCursor(textarea);
+    if (!token) {
+      if (['command', 'skill', 'file', 'history', 'workspaces'].includes(suggestionState.mode)) {
+        closeSuggestions();
+      }
+      return;
+    }
+    if (suggestionDebounce) clearTimeout(suggestionDebounce);
+    const delay = token.kind === 'file' ? 180 : 0;
+    suggestionDebounce = setTimeout(() => {
+      suggestionDebounce = null;
+      loadTriggeredSuggestions(token);
+    }, delay);
+  };
+  let dictationDisclosureVisible = false;
+  let dictationOperationInFlight = false;
+  const dictationBelongsToComposer = (state) => (
+    state?.agentId === form?.dataset.agentId
+  );
+  const setDictationButtonState = (state) => {
+    if (!dictationButton) return;
+    const active = dictationBelongsToComposer(state)
+      && ['starting', 'listening', 'transcribing'].includes(state.phase);
+    dictationButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    dictationButton.setAttribute('aria-label', active ? '管理语音听写' : '语音听写');
+    dictationButton.title = active ? '管理语音听写' : '语音听写';
+  };
+  const showDictationDisclosure = (state = conversationDictationUi) => {
+    dictationDisclosureVisible = true;
+    setSuggestionState({
+      mode: 'dictation',
+      title: '语音听写',
+      hint: state?.disclosure || '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+      token: null,
+      items: [{
+        glyph: '◉',
+        title: '开始听写',
+        detail: `最长 ${state?.limits?.maxDurationSeconds || 60} 秒；识别结果只会放入输入框`,
+        actionLabel: '开始',
+        action: 'start_dictation',
+      }],
+      loading: false,
+      error: null,
+      statusText: '',
+      selected: 0,
+    });
+  };
+  const showDictationError = (state) => {
+    dictationDisclosureVisible = false;
+    const providerRequired = state?.error?.code === 'dictation_provider_required';
+    setSuggestionState({
+      mode: 'dictation',
+      title: '听写没有完成',
+      hint: state?.error?.message || '听写服务暂时不可用，请稍后重试。',
+      token: null,
+      items: [{
+        glyph: providerRequired ? '设' : '↻',
+        title: providerRequired ? '配置支持听写的模型供应商' : '重新开始听写',
+        detail: providerRequired
+          ? '前往模型供应商页面检查支持听写的配置'
+          : '重新确认说明后，再次请求麦克风',
+        actionLabel: providerRequired ? '去配置' : '重试',
+        action: providerRequired ? 'configure_dictation_provider' : 'show_dictation_disclosure',
+      }],
+      loading: false,
+      error: null,
+      statusText: '',
+      selected: 0,
+    });
+  };
+  const insertDictationTranscript = (state) => {
+    const transcriptText = String(state?.transcript || '').trim();
+    if (!textarea || !transcriptText) return false;
+    const key = `${form?.dataset.accountId || ''}:${form?.dataset.agentId || ''}:${state.revision}`;
+    if (conversationDictationApplied.has(key)) return true;
+    const value = String(textarea.value || '');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const leading = before && !/\s$/u.test(before) ? ' ' : '';
+    const trailing = after && !/^\s/u.test(after) ? ' ' : '';
+    const insertion = `${leading}${transcriptText}${trailing}`;
+    const next = `${before}${insertion}${after}`;
+    const pasteLength = (conversationPasteCards.get(formDraftKey) || [])
+      .reduce((sum, card) => sum + Array.from(String(card.text || '')).length, 0);
+    if (Array.from(next).length + pasteLength > 16_000) {
+      setSuggestionState({
+        mode: 'dictation',
+        title: '输入框空间不足',
+        hint: '先缩短当前输入或移除一段粘贴内容，再插入这次听写结果。',
+        token: null,
+        items: [{
+          glyph: '文',
+          title: '再次插入听写结果',
+          detail: '只会回填输入框，不会自动发送',
+          actionLabel: '重试',
+          action: 'insert_dictation_transcript',
+        }],
+        loading: false,
+        error: null,
+        statusText: '',
+      });
+      return false;
+    }
+    textarea.value = next;
+    const cursor = start + insertion.length;
+    textarea.setSelectionRange(cursor, cursor);
+    rememberTextarea();
+    conversationDictationApplied.add(key);
+    closeSuggestions();
+    textarea.focus();
+    bridge.closeConversationDictation?.().catch(() => {});
+    return true;
+  };
+  const showDictationState = (state) => {
+    const projected = safeConversationDictationSnapshot(state);
+    if (!projected || !dictationBelongsToComposer(projected)) {
+      setDictationButtonState(projected);
+      return;
+    }
+    conversationDictationUi = projected;
+    setDictationButtonState(projected);
+    if (projected.phase === 'complete') {
+      insertDictationTranscript(projected);
+      return;
+    }
+    if (projected.phase === 'error') {
+      showDictationError(projected);
+      return;
+    }
+    if (projected.phase === 'starting' || projected.phase === 'transcribing') {
+      dictationDisclosureVisible = false;
+      setSuggestionState({
+        mode: 'dictation',
+        title: projected.phase === 'starting' ? '正在准备听写' : '正在生成文字',
+        hint: projected.service?.displayName
+          ? `由 ${projected.service.displayName} 转写；结果不会自动发送`
+          : '听写结果只会放入当前输入框',
+        token: null,
+        items: [],
+        loading: true,
+        error: null,
+        statusText: projected.phase === 'starting' ? '正在请求麦克风…' : '正在把语音转换为文字…',
+      });
+      return;
+    }
+    if (projected.phase === 'listening') {
+      dictationDisclosureVisible = false;
+      setSuggestionState({
+        mode: 'dictation',
+        title: '正在听写',
+        hint: projected.interimText || `最长 ${projected.limits.maxDurationSeconds} 秒；完成后仍需你确认发送`,
+        token: null,
+        items: [
+          {
+            glyph: '✓',
+            title: '完成听写',
+            detail: '停止录音并把识别结果放入输入框',
+            actionLabel: '完成',
+            action: 'stop_dictation',
+          },
+          {
+            glyph: '×',
+            title: '取消本次听写',
+            detail: '丢弃本次录音，不改变输入框',
+            actionLabel: '取消',
+            action: 'cancel_dictation',
+          },
+        ],
+        loading: false,
+        error: null,
+        statusText: '',
+        selected: 0,
+      });
+      return;
+    }
+    if (projected.phase === 'idle') {
+      if (dictationDisclosureVisible) showDictationDisclosure(projected);
+      else if (suggestionState.mode === 'dictation') closeSuggestions();
+    }
+  };
+  const runDictationOperation = async (operation, fallback) => {
+    if (dictationOperationInFlight) return;
+    dictationOperationInFlight = true;
+    if (dictationButton) dictationButton.disabled = true;
+    try {
+      const state = await operation();
+      const projected = safeConversationDictationSnapshot(state);
+      if (projected) showDictationState(projected);
+    } catch (error) {
+      if (conversationDictationUi.phase !== 'error') {
+        showDictationError({
+          error: { code: 'dictation_failed', message: publicError(error, fallback) },
+        });
+      }
+    } finally {
+      dictationOperationInFlight = false;
+      if (dictationButton) dictationButton.disabled = !composerEnabled;
+    }
+  };
+  handleDictationPanelClose = () => {
+    if (dictationOperationInFlight) return;
+    if (
+      dictationBelongsToComposer(conversationDictationUi)
+      && ['starting', 'listening', 'transcribing'].includes(conversationDictationUi.phase)
+    ) {
+      runDictationOperation(
+        () => bridge.cancelConversationDictation(),
+        '没有成功取消听写',
+      );
+      return;
+    }
+    dictationDisclosureVisible = false;
+    closeSuggestions();
+    textarea?.focus();
+  };
+  const selectSuggestion = async (index) => {
+    const item = suggestionState.items[index];
+    if (!item) return;
+    if (item.action === 'insert') {
+      if (replaceComposerToken(item.insertText)) closeSuggestions();
+      textarea?.focus();
+      return;
+    }
+    if (item.action === 'file') {
+      const token = suggestionState.token;
+      if (token) replaceComposerToken('', token);
+      closeSuggestions();
+      await runAttachmentMutation(
+        () => bridge.stageConversationWorkspaceFile({
+          workspaceId: item.workspaceId,
+          relativePath: item.relativePath,
+        }),
+        '没有成功添加这个工作文件',
+      );
+      return;
+    }
+    if (item.action === 'history') {
+      const revision = ++suggestionRequestRevision;
+      try {
+        const selected = await bridge.selectConversationPromptHistory(item.historyId);
+        if (!composerRequestIsCurrent(revision) || typeof selected?.text !== 'string') return;
+        const text = selected.text;
+        if (Array.from(text).length > 16_000 || /[\u0000-\u001F\u007F-\u009F]/u.test(text)) {
+          throw new Error('历史消息内容无效');
+        }
+        if (replaceComposerToken(text, null)) closeSuggestions();
+        textarea?.focus();
+      } catch (error) {
+        if (revision === suggestionRequestRevision) {
+          setSuggestionState({ error: publicError(error, '没有成功取回历史消息'), loading: false });
+        }
+      }
+      return;
+    }
+    if (item.action === 'show_dictation_disclosure') {
+      showDictationDisclosure(conversationDictationUi);
+      return;
+    }
+    if (item.action === 'start_dictation') {
+      dictationDisclosureVisible = false;
+      setSuggestionState({
+        mode: 'dictation',
+        title: '正在准备听写',
+        hint: '听写结果只会放入当前输入框，不会自动发送',
+        token: null,
+        items: [],
+        loading: true,
+        error: null,
+        statusText: '正在请求麦克风…',
+      });
+      await runDictationOperation(
+        () => bridge.startConversationDictation(true),
+        '没有成功开始听写',
+      );
+      return;
+    }
+    if (item.action === 'stop_dictation') {
+      await runDictationOperation(
+        () => bridge.stopConversationDictation(),
+        '没有成功完成听写',
+      );
+      return;
+    }
+    if (item.action === 'cancel_dictation') {
+      await runDictationOperation(
+        () => bridge.cancelConversationDictation(),
+        '没有成功取消听写',
+      );
+      return;
+    }
+    if (item.action === 'insert_dictation_transcript') {
+      insertDictationTranscript(conversationDictationUi);
+      return;
+    }
+    if (item.action === 'configure_dictation_provider') {
+      dictationDisclosureVisible = false;
+      closeSuggestions();
+      workspaceView = 'providers';
+      renderReady(currentState);
+      if (providerUi.phase === 'idle') refreshProviderSnapshot();
+      return;
+    }
+    if (item.action === 'authorize_workspace') {
+      const revision = ++suggestionRequestRevision;
+      setSuggestionState({ loading: true, items: [], error: null });
+      try {
+        await bridge.authorizeConversationWorkspace();
+        if (!composerRequestIsCurrent(revision)) return;
+        await openWorkspaceManager();
+      } catch (error) {
+        if (revision === suggestionRequestRevision) {
+          setSuggestionState({ loading: false, error: publicError(error, '没有成功授权工作文件夹') });
+        }
+      }
+      return;
+    }
+    if (item.action === 'revoke_workspace') {
+      const revision = ++suggestionRequestRevision;
+      setSuggestionState({ loading: true, items: [], error: null });
+      try {
+        await bridge.revokeConversationWorkspace(item.workspaceId);
+        if (!composerRequestIsCurrent(revision)) return;
+        await openWorkspaceManager();
+      } catch (error) {
+        if (revision === suggestionRequestRevision) {
+          setSuggestionState({ loading: false, error: publicError(error, '没有成功取消文件夹授权') });
+        }
+      }
+    }
+  };
   const updateSendState = () => {
     if (!sendButton) return;
     sendButton.disabled = !composerEnabled
       || conversationAttachmentMutationInFlight
       || (interjectMode && conversationInterjectionPending.has(interjectionKey))
-      || (!String(textarea?.value || '').trim() && promptAttachmentIds.length === 0);
+      || (!String(textarea?.value || '').trim()
+        && promptAttachmentIds.length === 0
+        && pasteCards.length === 0);
+  };
+  const applyConversationState = (state) => {
+    if (!state || state.agentId !== form?.dataset.agentId) return false;
+    conversationUi = state;
+    trackConversationStreamingState(state);
+    return true;
+  };
+  const runQueueMutation = async (operation, fallback) => {
+    if (!form || conversationQueueMutationInFlight) return;
+    conversationQueueMutationInFlight = true;
+    try {
+      applyConversationState(await operation());
+    } catch (error) {
+      conversationUi = { ...conversationUi, error: publicError(error, fallback) };
+    } finally {
+      conversationQueueMutationInFlight = false;
+      if (currentState.phase === 'ready') renderReady(currentState);
+    }
   };
   const closeToolMenu = () => {
     if (!toolMenu || !addButton) return;
     toolMenu.hidden = true;
     addButton.setAttribute('aria-expanded', 'false');
+  };
+  const closeIntentMenu = () => {
+    if (!intentMenu || !intentToggle) return;
+    intentMenu.hidden = true;
+    intentToggle.setAttribute('aria-expanded', 'false');
   };
   const showAttachmentError = (error, fallback) => {
     if (formDraftKey) {
@@ -1401,7 +2463,10 @@ function wireConversation() {
     return true;
   };
   const runAttachmentMutation = async (operation, fallback) => {
-    if (!form || !composerEnabled || interjectMode || conversationAttachmentMutationInFlight) return;
+    if (!form || !composerEnabled || conversationAttachmentMutationInFlight) return;
+    if (conversationTurnIsRunning(form.dataset.agentId) && formDraftKey) {
+      conversationComposerIntents.set(formDraftKey, 'queue');
+    }
     conversationAttachmentMutationInFlight = true;
     form.classList.add('attachment-busy');
     updateSendState();
@@ -1414,6 +2479,72 @@ function wireConversation() {
       if (currentState.phase === 'ready') renderReady(currentState);
     }
   };
+  document.querySelector('[data-toggle-queue]')?.addEventListener('click', () => {
+    if (!formDraftKey) return;
+    if (conversationQueueExpanded.has(formDraftKey)) conversationQueueExpanded.delete(formDraftKey);
+    else conversationQueueExpanded.add(formDraftKey);
+    if (currentState.phase === 'ready') renderReady(currentState);
+  });
+  for (const button of document.querySelectorAll('[data-queue-up], [data-queue-down]')) {
+    button.addEventListener('click', () => {
+      const queueId = button.dataset.queueUp || button.dataset.queueDown;
+      const index = queue.entries.findIndex((entry) => entry.queueId === queueId);
+      const direction = button.dataset.queueUp ? -1 : 1;
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= queue.entries.length) return;
+      const orderedIds = queue.entries.map((entry) => entry.queueId);
+      [orderedIds[index], orderedIds[target]] = [orderedIds[target], orderedIds[index]];
+      runQueueMutation(
+        () => bridge.reorderQueuedConversationMessages(orderedIds),
+        '没有成功调整待处理顺序',
+      );
+    });
+  }
+  for (const button of document.querySelectorAll('[data-queue-remove]')) {
+    button.addEventListener('click', () => runQueueMutation(
+      () => bridge.removeQueuedConversationMessage(button.dataset.queueRemove),
+      '没有成功删除待处理消息',
+    ));
+  }
+  for (const button of document.querySelectorAll('[data-queue-now]')) {
+    button.addEventListener('click', () => runQueueMutation(
+      () => bridge.sendQueuedConversationMessageNow(button.dataset.queueNow),
+      '没有成功立即执行这条消息',
+    ));
+  }
+  document.querySelector('[data-queue-clear]')?.addEventListener('click', () => runQueueMutation(
+    () => bridge.clearQueuedConversationMessages(),
+    '没有成功清空待处理消息',
+  ));
+  for (const button of document.querySelectorAll('[data-queue-edit]')) {
+    button.addEventListener('click', () => {
+      if (!formDraftKey) return;
+      conversationQueueEditing.set(formDraftKey, button.dataset.queueEdit);
+      if (currentState.phase === 'ready') renderReady(currentState);
+      setTimeout(() => document.querySelector('.queue-edit-input')?.focus(), 0);
+    });
+  }
+  for (const button of document.querySelectorAll('[data-queue-cancel-edit]')) {
+    button.addEventListener('click', () => {
+      if (formDraftKey) conversationQueueEditing.delete(formDraftKey);
+      if (currentState.phase === 'ready') renderReady(currentState);
+    });
+  }
+  for (const button of document.querySelectorAll('[data-queue-save]')) {
+    button.addEventListener('click', () => {
+      const text = String(button.closest('.conversation-queue-item')?.querySelector('.queue-edit-input')?.value || '').trim();
+      if (!text) {
+        conversationUi = { ...conversationUi, error: '待处理消息不能为空' };
+        if (currentState.phase === 'ready') renderReady(currentState);
+        return;
+      }
+      if (formDraftKey) conversationQueueEditing.delete(formDraftKey);
+      runQueueMutation(
+        () => bridge.editQueuedConversationMessage(button.dataset.queueSave, text),
+        '没有成功编辑待处理消息',
+      );
+    });
+  }
   addButton?.addEventListener('click', () => {
     const willOpen = toolMenu?.hidden === true;
     if (!toolMenu) return;
@@ -1427,14 +2558,47 @@ function wireConversation() {
       }, 0);
     }
   });
+  intentToggle?.addEventListener('click', () => {
+    const willOpen = intentMenu?.hidden === true;
+    if (!intentMenu) return;
+    intentMenu.hidden = !willOpen;
+    intentToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) closeToolMenu();
+  });
+  for (const button of form?.querySelectorAll('[data-composer-intent]') || []) {
+    button.addEventListener('click', () => {
+      const nextIntent = button.dataset.composerIntent;
+      if (!formDraftKey || !['adjust', 'queue', 'now'].includes(nextIntent)) return;
+      if (nextIntent === 'adjust' && attachmentIds.length) {
+        conversationAttachmentErrors.set(formDraftKey, '包含附件的消息需要选择“排队等待”或“立即执行”');
+      } else {
+        conversationComposerIntents.set(formDraftKey, nextIntent);
+        conversationAttachmentErrors.delete(formDraftKey);
+      }
+      closeIntentMenu();
+      if (currentState.phase === 'ready') renderReady(currentState);
+    });
+  }
+  form?.querySelector('.composer-stop')?.addEventListener('click', () => {
+    runQueueMutation(
+      () => bridge.cancelCurrentConversationTask(),
+      '没有成功停止当前任务',
+    );
+  });
   form?.addEventListener('focusout', () => {
     setTimeout(() => {
-      if (form && !form.contains(document.activeElement)) closeToolMenu();
+      if (form && !form.contains(document.activeElement)) {
+        closeToolMenu();
+        closeIntentMenu();
+        closeSuggestions();
+      }
     }, 0);
   });
   form?.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       closeToolMenu();
+      closeIntentMenu();
+      closeSuggestions();
       if (linkEntry && !linkEntry.hidden) {
         linkEntry.hidden = true;
         textarea?.focus();
@@ -1457,6 +2621,30 @@ function wireConversation() {
     if (!linkEntry) return;
     linkEntry.hidden = false;
     linkInput?.focus();
+  });
+  form?.querySelector('#composer-authorize-workspace')?.addEventListener('click', () => {
+    closeToolMenu();
+    openWorkspaceManager();
+  });
+  form?.querySelector('#composer-prompt-history')?.addEventListener('click', () => {
+    closeToolMenu();
+    openPromptHistory();
+  });
+  dictationButton?.addEventListener('click', () => {
+    closeToolMenu();
+    closeIntentMenu();
+    if (
+      dictationBelongsToComposer(conversationDictationUi)
+      && ['starting', 'listening', 'transcribing', 'complete', 'error'].includes(conversationDictationUi.phase)
+    ) {
+      showDictationState(conversationDictationUi);
+      return;
+    }
+    showDictationDisclosure(conversationDictationUi);
+    runDictationOperation(
+      () => bridge.openConversationDictation(),
+      '暂时无法打开语音听写',
+    );
   });
   form?.querySelector('#composer-cancel-link')?.addEventListener('click', () => {
     if (!linkEntry) return;
@@ -1484,20 +2672,49 @@ function wireConversation() {
       );
     });
   }
+  for (const button of form?.querySelectorAll('[data-toggle-paste]') || []) {
+    button.addEventListener('click', () => {
+      const id = button.dataset.togglePaste;
+      if (conversationPasteExpanded.has(id)) conversationPasteExpanded.delete(id);
+      else conversationPasteExpanded.add(id);
+      if (currentState.phase === 'ready') renderReady(currentState);
+    });
+  }
+  for (const button of form?.querySelectorAll('[data-remove-paste]') || []) {
+    button.addEventListener('click', () => {
+      if (!formDraftKey) return;
+      const id = button.dataset.removePaste;
+      const next = (conversationPasteCards.get(formDraftKey) || [])
+        .filter((card) => card.id !== id);
+      if (next.length) conversationPasteCards.set(formDraftKey, next);
+      else conversationPasteCards.delete(formDraftKey);
+      conversationPasteExpanded.delete(id);
+      if (currentState.phase === 'ready') renderReady(currentState);
+    });
+  }
+  for (const editor of form?.querySelectorAll('[data-edit-paste]') || []) {
+    editor.addEventListener('input', () => {
+      if (!formDraftKey) return;
+      const cards = conversationPasteCards.get(formDraftKey) || [];
+      const card = cards.find((candidate) => candidate.id === editor.dataset.editPaste);
+      if (card) card.text = String(editor.value || '').slice(0, 16_000);
+      updateSendState();
+    });
+  }
   const stageDroppedFiles = (files) => {
-    if (interjectMode || !files?.length) return;
+    if (!files?.length) return;
     runAttachmentMutation(
       () => bridge.stageConversationFiles(files),
       '没有成功添加文件',
     );
   };
   form?.addEventListener('dragenter', (event) => {
-    if (interjectMode || !event.dataTransfer?.types?.includes('Files')) return;
+    if (!event.dataTransfer?.types?.includes('Files')) return;
     event.preventDefault();
     form.classList.add('drag-active');
   });
   form?.addEventListener('dragover', (event) => {
-    if (interjectMode || !event.dataTransfer?.types?.includes('Files')) return;
+    if (!event.dataTransfer?.types?.includes('Files')) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
     form.classList.add('drag-active');
@@ -1513,20 +2730,84 @@ function wireConversation() {
     stageDroppedFiles(files);
   });
   textarea?.addEventListener('paste', (event) => {
-    if (interjectMode) return;
     const files = Array.from(event.clipboardData?.files || []);
-    if (!files.length) return;
+    if (files.length) {
+      event.preventDefault();
+      stageDroppedFiles(files);
+      return;
+    }
+    const pastedText = String(event.clipboardData?.getData('text/plain') || '');
+    const pastedLines = pastedText.split(/\r?\n/u).length;
+    if (Array.from(pastedText).length < 1_200 && pastedLines < 20) return;
     event.preventDefault();
-    stageDroppedFiles(files);
+    if (!formDraftKey) return;
+    const existingCards = conversationPasteCards.get(formDraftKey) || [];
+    const totalCodePoints = existingCards.reduce(
+      (sum, card) => sum + Array.from(card.text).length,
+      Array.from(String(textarea?.value || '')).length,
+    );
+    if (existingCards.length >= 4 || totalCodePoints + Array.from(pastedText).length > 16_000) {
+      conversationAttachmentErrors.set(formDraftKey, '单条消息最多保留 4 段粘贴内容，合计不能超过 16000 字');
+      if (currentState.phase === 'ready') renderReady(currentState);
+      return;
+    }
+    const card = {
+      id: `paste-${crypto.randomUUID()}`,
+      text: pastedText,
+    };
+    conversationPasteCards.set(formDraftKey, [...existingCards, card]);
+    conversationAttachmentErrors.delete(formDraftKey);
+    if (currentState.phase === 'ready') renderReady(currentState);
   });
   form?.elements.message?.addEventListener('input', (event) => {
     if (!formDraftKey) return;
     const value = String(event.currentTarget.value || '');
     if (value) conversationDrafts.set(formDraftKey, value);
     else conversationDrafts.delete(formDraftKey);
+    if (
+      conversationAttachmentErrors.get(formDraftKey)
+      === '此命令未获客户端允许。请从“/”菜单选择可用命令。'
+      && !unsafeComposerSlashCommand(value)
+    ) {
+      conversationAttachmentErrors.delete(formDraftKey);
+      form.querySelector('.composer-attachment-error')?.remove();
+    }
     updateSendState();
+    refreshTriggeredSuggestions();
   });
   textarea?.addEventListener('keydown', (event) => {
+    if (!suggestionBox?.hidden && suggestionState.items.length) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        const next = (
+          suggestionState.selected
+          + direction
+          + suggestionState.items.length
+        ) % suggestionState.items.length;
+        setSuggestionState({ selected: next });
+        suggestionBox.querySelector(`#composer-suggestion-${next}`)?.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+        selectSuggestion(suggestionState.selected);
+        return;
+      }
+    }
+    if (
+      event.key === 'ArrowUp'
+      && !event.metaKey
+      && !event.ctrlKey
+      && !event.altKey
+      && textarea.value === ''
+      && textarea.selectionStart === 0
+      && suggestionBox?.hidden !== false
+    ) {
+      event.preventDefault();
+      openPromptHistory();
+      return;
+    }
     if (
       event.key !== 'Enter'
       || event.shiftKey
@@ -1536,11 +2817,49 @@ function wireConversation() {
     event.preventDefault();
     form?.requestSubmit();
   });
+  textarea?.addEventListener('click', refreshTriggeredSuggestions);
+  textarea?.setAttribute('aria-autocomplete', 'list');
+  textarea?.setAttribute('aria-controls', 'composer-suggestions');
+  textarea?.setAttribute('aria-expanded', 'false');
+  if (
+    typeof bridge.openConversationDictation !== 'function'
+    || typeof bridge.startConversationDictation !== 'function'
+    || typeof bridge.stopConversationDictation !== 'function'
+    || typeof bridge.cancelConversationDictation !== 'function'
+  ) {
+    if (dictationButton) {
+      dictationButton.disabled = true;
+      dictationButton.title = '当前版本暂不支持语音听写';
+    }
+  } else {
+    activeConversationDictationSink = (state) => {
+      if (!form?.isConnected || state?.agentId !== form.dataset.agentId) return;
+      showDictationState(state);
+    };
+    if (dictationBelongsToComposer(conversationDictationUi)) {
+      showDictationState(conversationDictationUi);
+    } else {
+      setDictationButtonState(conversationDictationUi);
+    }
+  }
   updateSendState();
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const text = textarea.value.trim();
+    const submittedPasteCards = formDraftKey
+      ? (conversationPasteCards.get(formDraftKey) || []).map((card) => ({ ...card }))
+      : [];
+    const typedText = String(textarea.value || '').trim();
+    const text = [
+      ...submittedPasteCards.map((card) => String(card.text || '').trim()),
+      typedText,
+    ].filter(Boolean).join('\n\n');
     const agentId = form.dataset.agentId;
+    const commandError = unsafeComposerSlashCommand(text);
+    if (commandError) {
+      if (formDraftKey) conversationAttachmentErrors.set(formDraftKey, commandError);
+      if (currentState.phase === 'ready') renderReady(currentState);
+      return;
+    }
     if (
       (!text && promptAttachmentIds.length === 0)
       || !agentId
@@ -1553,6 +2872,7 @@ function wireConversation() {
       pendingInterjections.add(interjectionKey);
       textarea.value = '';
       if (draftKey) conversationDrafts.delete(draftKey);
+      if (draftKey) conversationPasteCards.delete(draftKey);
       if (draftKey) conversationAttachmentErrors.delete(draftKey);
       updateSendState();
       try {
@@ -1567,7 +2887,10 @@ function wireConversation() {
           conversationUi = state;
         }
       } catch (error) {
-        if (draftKey) conversationDrafts.set(draftKey, text);
+        if (draftKey && typedText) conversationDrafts.set(draftKey, typedText);
+        if (draftKey && submittedPasteCards.length) {
+          conversationPasteCards.set(draftKey, submittedPasteCards);
+        }
         if (
           currentState.phase === 'ready'
           && String(readyAccountId || '') === form.dataset.accountId
@@ -1584,14 +2907,16 @@ function wireConversation() {
       if (currentState.phase === 'ready') renderReady(currentState);
       return;
     }
-    if (conversationTurnIsRunning(agentId)) return;
+    if (pendingConversationSend(agentId)) return;
     const mutation = {
       accountId: readyAccountId,
       agentId,
       revision: ++conversationSendRevision,
+      intent: sendNowMode ? 'now' : (conversationTurnIsRunning(agentId) ? 'queue' : 'send'),
     };
     textarea.value = '';
     if (draftKey) conversationDrafts.delete(draftKey);
+    if (draftKey) conversationPasteCards.delete(draftKey);
     if (draftKey) conversationAttachmentErrors.delete(draftKey);
     conversationSendPendingByAgent.set(
       conversationPendingKey(mutation.accountId, mutation.agentId),
@@ -1600,10 +2925,15 @@ function wireConversation() {
     conversationUi = { ...conversationUi, error: null };
     if (currentState.phase === 'ready') renderReady(currentState);
     try {
-      const state = await bridge.sendConversationMessage({
+      const state = await (sendNowMode
+        ? bridge.sendConversationMessageNow({
+          text,
+          attachmentIds: promptAttachmentIds,
+        })
+        : bridge.sendConversationMessage({
         text,
         attachmentIds: promptAttachmentIds,
-      });
+        }));
       const mutationIsCurrent = (
         conversationSendIsCurrent(mutation)
         && state?.agentId === mutation.agentId
@@ -1615,7 +2945,18 @@ function wireConversation() {
         return;
       }
       conversationUi = state;
-      if (state?.error && draftKey && text) conversationDrafts.set(draftKey, text);
+      if (draftKey) {
+        if (state?.streaming === true) conversationComposerIntents.set(draftKey, 'adjust');
+        else conversationComposerIntents.delete(draftKey);
+      }
+      if (
+        state?.error
+        && Number(state?.queue?.confirmingCount || 0) < 1
+        && draftKey
+      ) {
+        if (typedText) conversationDrafts.set(draftKey, typedText);
+        if (submittedPasteCards.length) conversationPasteCards.set(draftKey, submittedPasteCards);
+      }
     } catch (error) {
       const mutationIsCurrent = conversationSendIsCurrent(mutation);
       clearConversationSend(mutation);
@@ -1627,7 +2968,10 @@ function wireConversation() {
       // it before restoring the failed message so captureRendererDrafts() cannot
       // overwrite the restored draft with that transient empty value.
       document.getElementById('conversation-form')?.remove();
-      if (draftKey) conversationDrafts.set(draftKey, text);
+      if (draftKey && typedText) conversationDrafts.set(draftKey, typedText);
+      if (draftKey && submittedPasteCards.length) {
+        conversationPasteCards.set(draftKey, submittedPasteCards);
+      }
       conversationUi = {
         ...conversationUi,
         error: publicError(error, '消息发送失败'),

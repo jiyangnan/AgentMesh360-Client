@@ -48,6 +48,20 @@ streaming = "preferred"
 [skills]
 canonicalWorkflow = "skills/shared/director-workflow.md"
 
+[[skills.userFacing]]
+id = "lecture-plan"
+displayName = "制定课程制作计划"
+description = "把教学目标和材料整理成可检查的 LectureCast 制作计划。"
+promptToken = "$lecture-plan"
+promptText = "请根据我的教学目标和现有材料制定 LectureCast 制作计划。列出受众、学习目标、内容结构、所需素材、制作步骤、检查点和仍需我确认的决策。"
+
+[[skills.userFacing]]
+id = "source-readiness"
+displayName = "检查素材准备度"
+description = "检查课程素材是否足以进入制作，并指出缺口。"
+promptToken = "$source-readiness"
+promptText = "请检查当前 LectureCast 项目的素材准备度。区分已有且可验证的来源、需要补充或授权的内容、格式问题和进入制作前必须关闭的风险。"
+
 [[skills.adapters]]
 host = "codex"
 path = "skills/codex/SKILL.md"

@@ -14,6 +14,12 @@ const {
 const { version: DESKTOP_VERSION } = require('../../package.json');
 
 const PERSISTENT_START_ATTEMPTS = 2;
+const DEFAULT_CLIENT_IDENTIFIER = 'agentmesh360-desktop';
+const MAX_SESSION_ID_CHARS = 512;
+const MAX_PROMPT_ID_CHARS = 200;
+const MAX_CLIENT_IDENTIFIER_CHARS = 128;
+const MAX_QUEUE_TEXT_CHARS = 20_000;
+const MAX_QUEUE_ENTRIES = 256;
 
 const INITIALIZE_PARAMS = Object.freeze({
   protocolVersion: 1,
@@ -154,6 +160,37 @@ class AcpHostClient extends EventEmitter {
     return this.#extension('x.agentmesh360/agents/session-plan/get', { agentId });
   }
 
+  async getDictationStatus(agentId) {
+    return this.#extension('x.agentmesh360/dictation/status', {
+      agentId: validateDictationAgentId(agentId),
+    });
+  }
+
+  async startDictation({ agentId, disclosureAccepted } = {}) {
+    if (disclosureAccepted !== true) {
+      throw new HostRequestError(
+        'dictation_disclosure_required',
+        '请先确认录音会交给所选听写服务进行转写',
+      );
+    }
+    return this.#extension('x.agentmesh360/dictation/start', {
+      agentId: validateDictationAgentId(agentId),
+      disclosureAccepted: true,
+    });
+  }
+
+  async stopDictation(dictationId) {
+    return this.#extension('x.agentmesh360/dictation/stop', {
+      dictationId: validateDictationId(dictationId),
+    });
+  }
+
+  async cancelDictation(dictationId) {
+    return this.#extension('x.agentmesh360/dictation/cancel', {
+      dictationId: validateDictationId(dictationId),
+    });
+  }
+
   async loadSession({ sessionId, cwd }) {
     await this.start();
     return this.#request('session/load', {
@@ -163,15 +200,135 @@ class AcpHostClient extends EventEmitter {
     }, this.sessionLoadTimeoutMs);
   }
 
-  async promptSession({ sessionId, prompt, text }) {
+  async promptSession({
+    sessionId,
+    prompt,
+    text,
+    promptId,
+    sendNow = false,
+    clientIdentifier = DEFAULT_CLIENT_IDENTIFIER,
+  }) {
+    const normalizedSessionId = validateIdentifier(
+      sessionId,
+      MAX_SESSION_ID_CHARS,
+      'invalid_session_id',
+      '会话 ID 无效',
+    );
+    const normalizedPromptId = promptId === undefined
+      ? undefined
+      : validateIdentifier(
+        promptId,
+        MAX_PROMPT_ID_CHARS,
+        'invalid_prompt_metadata',
+        'Prompt ID 无效',
+      );
+    if (typeof sendNow !== 'boolean') {
+      throw new HostRequestError('invalid_prompt_metadata', '立即执行参数无效');
+    }
+    const normalizedClientIdentifier = validateIdentifier(
+      clientIdentifier,
+      MAX_CLIENT_IDENTIFIER_CHARS,
+      'invalid_prompt_metadata',
+      '客户端标识无效',
+    );
     await this.start();
     const content = prompt === undefined
       ? [{ type: 'text', text: String(text || '') }]
       : validatePromptBlocks(prompt);
+    const meta = {
+      clientIdentifier: normalizedClientIdentifier,
+      sendNow,
+    };
+    if (normalizedPromptId !== undefined) meta.promptId = normalizedPromptId;
     return this.#request('session/prompt', {
-      sessionId,
+      sessionId: normalizedSessionId,
       prompt: content,
+      _meta: meta,
     }, this.sessionPromptTimeoutMs);
+  }
+
+  async syncQueueSession(sessionId) {
+    return this.#queueNotification('x.ai/queue/reorder', {
+      sessionId: validateSessionId(sessionId),
+      orderedIds: [],
+      clientIdentifier: DEFAULT_CLIENT_IDENTIFIER,
+    });
+  }
+
+  async removeQueuedPrompt({
+    sessionId,
+    id,
+    expectedVersion,
+    clientIdentifier = DEFAULT_CLIENT_IDENTIFIER,
+  }) {
+    return this.#queueNotification('x.ai/queue/remove', {
+      sessionId: validateSessionId(sessionId),
+      id: validateQueuePromptId(id),
+      expectedVersion: validateExpectedVersion(expectedVersion),
+      clientIdentifier: validateClientIdentifier(clientIdentifier),
+    });
+  }
+
+  async editQueuedPrompt({
+    sessionId,
+    id,
+    newText,
+    clientIdentifier = DEFAULT_CLIENT_IDENTIFIER,
+  }) {
+    return this.#queueNotification('x.ai/queue/edit', {
+      sessionId: validateSessionId(sessionId),
+      id: validateQueuePromptId(id),
+      newText: validateQueueText(newText),
+      clientIdentifier: validateClientIdentifier(clientIdentifier),
+    });
+  }
+
+  async reorderQueuedPrompts({
+    sessionId,
+    orderedIds,
+    clientIdentifier = DEFAULT_CLIENT_IDENTIFIER,
+  }) {
+    return this.#queueNotification('x.ai/queue/reorder', {
+      sessionId: validateSessionId(sessionId),
+      orderedIds: validateOrderedQueueIds(orderedIds),
+      clientIdentifier: validateClientIdentifier(clientIdentifier),
+    });
+  }
+
+  async clearQueuedPrompts({
+    sessionId,
+    clientIdentifier = DEFAULT_CLIENT_IDENTIFIER,
+  }) {
+    return this.#queueNotification('x.ai/queue/clear', {
+      sessionId: validateSessionId(sessionId),
+      clientIdentifier: validateClientIdentifier(clientIdentifier),
+    });
+  }
+
+  async sendQueuedPromptNow({
+    sessionId,
+    id,
+    expectedVersion,
+    newText,
+    clientIdentifier = DEFAULT_CLIENT_IDENTIFIER,
+  }) {
+    const params = {
+      sessionId: validateSessionId(sessionId),
+      id: validateQueuePromptId(id),
+      expectedVersion: validateExpectedVersion(expectedVersion),
+      clientIdentifier: validateClientIdentifier(clientIdentifier),
+    };
+    if (newText !== undefined) params.newText = validateQueueText(newText);
+    return this.#queueNotification('x.ai/queue/interject', params);
+  }
+
+  async cancelSession(sessionId) {
+    const normalizedSessionId = validateSessionId(sessionId);
+    await this.start();
+    this.#notification('session/cancel', {
+      sessionId: normalizedSessionId,
+      _meta: { cancelTrigger: 'user' },
+    });
   }
 
   async interjectSession({ sessionId, text, interjectionId }) {
@@ -179,6 +336,25 @@ class AcpHostClient extends EventEmitter {
       sessionId,
       text: String(text || ''),
       interjectionId: String(interjectionId || ''),
+    });
+  }
+
+  async getAgentInputCapabilities({ agentId, sessionId }) {
+    return this.#extension('x.agentmesh360/agents/input-capabilities/get', {
+      agentId: validateIdentifier(
+        agentId,
+        100,
+        'invalid_agent_id',
+        'Agent ID 无效',
+      ),
+      sessionId: validateSessionId(sessionId),
+    });
+  }
+
+  async getPromptHistory({ cwd, sessionId }) {
+    return this.#extension('x.ai/prompt_history', {
+      cwd: validatePrivateCwd(cwd),
+      filter_session_id: validateSessionId(sessionId),
     });
   }
 
@@ -597,6 +773,26 @@ class AcpHostClient extends EventEmitter {
     return envelope.result;
   }
 
+  async #queueNotification(method, params) {
+    const accessRefresh = this.accessRefreshPromise;
+    if (accessRefresh) await accessRefresh;
+    await this.start();
+    // ACP extension notifications use the same leading-underscore wire
+    // convention as extension requests, but deliberately carry no request id.
+    this.#notification(`_${method}`, params);
+  }
+
+  #notification(method, params) {
+    if (!this.child?.stdin?.writable) {
+      throw new HostRequestError('host_unavailable', 'Agent Host 尚未运行');
+    }
+    try {
+      this.#write({ jsonrpc: '2.0', method, params });
+    } catch {
+      throw new HostRequestError('host_unavailable', '无法连接 Agent Host');
+    }
+  }
+
   #request(method, params, timeoutMs = this.requestTimeoutMs) {
     if (!this.child?.stdin?.writable) {
       return Promise.reject(new HostRequestError('host_unavailable', 'Agent Host 尚未运行'));
@@ -669,6 +865,107 @@ function hostExtensionErrorCode(error) {
   return typeof error?.code === 'string' && error.code
     ? error.code
     : 'host_extension_failed';
+}
+
+function validateSessionId(value) {
+  return validateIdentifier(
+    value,
+    MAX_SESSION_ID_CHARS,
+    'invalid_session_id',
+    '会话 ID 无效',
+  );
+}
+
+function validateQueuePromptId(value) {
+  return validateIdentifier(
+    value,
+    MAX_PROMPT_ID_CHARS,
+    'invalid_queue_operation',
+    '队列消息 ID 无效',
+  );
+}
+
+function validateDictationAgentId(value) {
+  return validateIdentifier(
+    value,
+    200,
+    'invalid_dictation_request',
+    'Agent ID 无效',
+  );
+}
+
+function validateDictationId(value) {
+  return validateIdentifier(
+    value,
+    200,
+    'invalid_dictation_request',
+    '听写 ID 无效',
+  );
+}
+
+function validateClientIdentifier(value) {
+  return validateIdentifier(
+    value,
+    MAX_CLIENT_IDENTIFIER_CHARS,
+    'invalid_queue_operation',
+    '客户端标识无效',
+  );
+}
+
+function validateIdentifier(value, maxChars, code, message) {
+  if (
+    typeof value !== 'string'
+    || value.length < 1
+    || value.length > maxChars
+    || value.trim() !== value
+    || /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    throw new HostRequestError(code, message);
+  }
+  return value;
+}
+
+function validatePrivateCwd(value) {
+  if (
+    typeof value !== 'string'
+    || value.length < 1
+    || value.length > 4_096
+    || !path.isAbsolute(value)
+    || /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    throw new HostRequestError('invalid_prompt_history', 'Prompt History 工作区无效');
+  }
+  return value;
+}
+
+function validateExpectedVersion(value) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new HostRequestError('invalid_queue_operation', '队列版本无效');
+  }
+  return value;
+}
+
+function validateQueueText(value) {
+  if (
+    typeof value !== 'string'
+    || value.length < 1
+    || value.length > MAX_QUEUE_TEXT_CHARS
+    || !value.trim()
+  ) {
+    throw new HostRequestError('invalid_queue_operation', '队列消息文本无效');
+  }
+  return value;
+}
+
+function validateOrderedQueueIds(value) {
+  if (!Array.isArray(value) || value.length > MAX_QUEUE_ENTRIES) {
+    throw new HostRequestError('invalid_queue_operation', '队列顺序无效');
+  }
+  const orderedIds = value.map(validateQueuePromptId);
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    throw new HostRequestError('invalid_queue_operation', '队列顺序包含重复消息');
+  }
+  return orderedIds;
 }
 
 function validatePromptBlocks(value) {

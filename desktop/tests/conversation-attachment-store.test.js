@@ -39,7 +39,7 @@ test('stages local files privately and builds exact ACP content blocks without p
   await fs.writeFile(textPath, '# Resume\nAgent systems');
 
   const staged = await store.stagePaths({ ...SCOPE, paths: [imagePath, textPath] });
-  const link = store.stageLink({ ...SCOPE, url: 'https://example.com/jobs#private-fragment' });
+  const link = await store.stageLink({ ...SCOPE, url: 'https://example.com/jobs#private-fragment' });
   const publicSnapshot = store.list(SCOPE);
 
   assert.equal(staged.length, 2);
@@ -71,7 +71,7 @@ test('stages local files privately and builds exact ACP content blocks without p
 
   await store.consume({ ...SCOPE, attachmentIds: prepared.attachmentIds });
   assert.deepEqual(store.list(SCOPE), []);
-  assert.deepEqual(await fs.readdir(rootDir), []);
+  assert.deepEqual(await fs.readdir(rootDir), ['manifest-v1.json']);
 });
 
 test('supports attachment-only prompts, deduplicates content, and isolates account and Agent scope', async (t) => {
@@ -114,12 +114,12 @@ test('supports attachment-only prompts, deduplicates content, and isolates accou
 
 test('rejects unsafe links, fake images, unsupported binary files, size overflow, and an eleventh item', async (t) => {
   const { store } = await fixture(t);
-  assert.throws(
-    () => store.stageLink({ ...SCOPE, url: 'file:///tmp/private.txt' }),
+  await assert.rejects(
+    store.stageLink({ ...SCOPE, url: 'file:///tmp/private.txt' }),
     /只支持/u,
   );
-  assert.throws(
-    () => store.stageLink({ ...SCOPE, url: 'https://user:pass@example.com/' }),
+  await assert.rejects(
+    store.stageLink({ ...SCOPE, url: 'https://user:pass@example.com/' }),
     /账号密码/u,
   );
   await assert.rejects(
@@ -183,12 +183,117 @@ test('rejects unsafe links, fake images, unsupported binary files, size overflow
     /50 MB/u,
   );
   for (let index = 0; index < 10; index += 1) {
-    store.stageLink({ ...SCOPE, url: `https://example.com/${index}` });
+    await store.stageLink({ ...SCOPE, url: `https://example.com/${index}` });
   }
-  assert.throws(
-    () => store.stageLink({ ...SCOPE, url: 'https://example.com/eleven' }),
+  await assert.rejects(
+    store.stageLink({ ...SCOPE, url: 'https://example.com/eleven' }),
     /最多添加 10/u,
   );
+});
+
+test('reserves attachments per Session and Prompt, blocks reuse, and supports release or consume', async (t) => {
+  const { rootDir, store } = await fixture(t);
+  const [attachment] = await store.stageBytes({
+    ...SCOPE,
+    items: [{ name: 'queued.md', mimeType: 'text/markdown', bytes: Buffer.from('# queued') }],
+  });
+  const reservation = await store.reservePrompt({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-queue-1',
+    text: '稍后处理',
+    attachmentIds: [attachment.attachmentId],
+  });
+
+  assert.deepEqual(reservation.prompt.map((block) => block.type), ['text', 'resource']);
+  assert.deepEqual(store.list(SCOPE), []);
+  assert.equal(store.listReservations({ ...SCOPE, sessionId: 'private-main-session' })[0].status, 'submitting');
+  await assert.rejects(
+    store.discard({ ...SCOPE, attachmentId: attachment.attachmentId }),
+    /待处理消息/u,
+  );
+  await assert.rejects(
+    store.reservePrompt({
+      ...SCOPE,
+      sessionId: 'private-main-session',
+      promptId: 'prompt-queue-2',
+      text: '重复使用',
+      attachmentIds: [attachment.attachmentId],
+    }),
+    /另一条待处理消息/u,
+  );
+
+  assert.equal(await store.markReservationUnknown({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-queue-1',
+  }), 1);
+  assert.equal(store.listReservations(SCOPE)[0].status, 'unknown');
+  await store.releaseReservation({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-queue-1',
+  });
+  assert.equal(store.list(SCOPE).length, 1);
+
+  await store.reservePrompt({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-queue-3',
+    text: '确认处理',
+    attachmentIds: [attachment.attachmentId],
+  });
+  await store.markReservationAccepted({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-queue-3',
+  });
+  await store.consumeReservation({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-queue-3',
+  });
+  assert.deepEqual(store.listReservations(SCOPE), []);
+  assert.deepEqual(await fs.readdir(rootDir), ['manifest-v1.json']);
+});
+
+test('restores draft and reserved attachments from a private manifest and purges orphans', async (t) => {
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'agentmesh-attachment-restore-'));
+  const rootDir = path.join(parent, 'drafts');
+  const first = new ConversationAttachmentStore({ rootDir });
+  t.after(async () => {
+    await first.dispose().catch(() => {});
+    await fs.rm(parent, { recursive: true, force: true });
+  });
+  await first.initialize();
+  const [draft, reserved] = await first.stageBytes({
+    ...SCOPE,
+    items: [
+      { name: 'draft.txt', mimeType: 'text/plain', bytes: Buffer.from('draft') },
+      { name: 'reserved.txt', mimeType: 'text/plain', bytes: Buffer.from('reserved') },
+    ],
+  });
+  await first.reservePrompt({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-restart',
+    text: '重启后继续',
+    attachmentIds: [reserved.attachmentId],
+  });
+  await fs.writeFile(path.join(rootDir, 'orphan.bin'), 'orphan');
+  await first.dispose();
+
+  const restored = new ConversationAttachmentStore({ rootDir });
+  await restored.initialize();
+  t.after(() => restored.dispose().catch(() => {}));
+  assert.deepEqual(restored.list(SCOPE).map((item) => item.attachmentId), [draft.attachmentId]);
+  assert.equal(restored.listReservations(SCOPE)[0].promptId, 'prompt-restart');
+  assert.equal((await fs.readdir(rootDir)).includes('orphan.bin'), false);
+  await restored.consumeReservation({
+    ...SCOPE,
+    sessionId: 'private-main-session',
+    promptId: 'prompt-restart',
+  });
 });
 
 test('initialization purges stale drafts and clearAccount leaves other accounts intact', async (t) => {
@@ -202,7 +307,7 @@ test('initialization purges stale drafts and clearAccount leaves other accounts 
     await fs.rm(parent, { recursive: true, force: true });
   });
   await store.initialize();
-  assert.deepEqual(await fs.readdir(rootDir), []);
+  assert.deepEqual(await fs.readdir(rootDir), ['manifest-v1.json']);
 
   await store.stageBytes({
     ...SCOPE,

@@ -6,8 +6,16 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const opens = [];
 const prompts = [];
+const immediatePrompts = [];
 const interjections = [];
+const queueMutations = [];
+const cancellations = [];
 const permissionResponses = [];
+const stagedWorkspaceFiles = [];
+const selectedHistory = [];
+const dictationStarts = [];
+const workspaceId = 'workspace-12345678-1234-1234-1234-123456789abc';
+const historyId = 'history-1234567890abcdef1234567890abcdef';
 const delayedConversationOpens = new Map();
 let delayedConversationSend = null;
 let conversationSendFailure = false;
@@ -27,6 +35,139 @@ let managementBindingIssue = null;
 app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => currentConversation);
+  ipcMain.handle('conversation:get-input-capabilities', () => ({
+    schemaVersion: 1,
+    revision: 7,
+    agentId: currentConversation.agentId,
+    commands: [
+      {
+        id: 'compact',
+        trigger: '/compact',
+        displayName: '压缩当前对话',
+        description: '压缩较早的对话内容，同时保留当前任务需要的上下文。',
+        argumentHint: '可选：说明必须保留的内容',
+      },
+      {
+        id: 'context',
+        trigger: '/context',
+        displayName: '查看上下文用量',
+        description: '查看当前会话的上下文窗口与用量信息。',
+      },
+    ],
+    skills: [{
+      id: 'career-profile',
+      trigger: '$career-profile',
+      displayName: '建立求职档案',
+      description: '梳理背景、技能与求职目标。',
+      promptText: '请帮我建立求职档案，并先询问缺少的信息。',
+    }],
+  }));
+  ipcMain.handle('conversation:get-workspaces', () => ({
+    schemaVersion: 1,
+    agentId: currentConversation.agentId,
+    workspaces: [{ workspaceId, displayName: '求职材料' }],
+  }));
+  ipcMain.handle('conversation:authorize-workspace', () => ({
+    schemaVersion: 1,
+    agentId: currentConversation.agentId,
+    workspaces: [{ workspaceId, displayName: '求职材料' }],
+  }));
+  ipcMain.handle('conversation:revoke-workspace', () => ({
+    schemaVersion: 1,
+    agentId: currentConversation.agentId,
+    workspaces: [],
+  }));
+  ipcMain.handle('conversation:search-workspace-files', (_event, request = {}) => ({
+    schemaVersion: 1,
+    agentId: currentConversation.agentId,
+    workspaces: [{ workspaceId, displayName: '求职材料' }],
+    files: String(request.query || '').includes('岗位') || !request.query
+      ? [{
+        workspaceId,
+        workspaceName: '求职材料',
+        relativePath: '申请/岗位说明.pdf',
+        displayPath: '申请/岗位说明.pdf',
+        name: '岗位说明.pdf',
+        sizeBytes: 24_801,
+      }]
+      : [],
+  }));
+  ipcMain.handle('conversation:stage-workspace-file', (event, request) => {
+    stagedWorkspaceFiles.push(request);
+    const attachment = fixtureAttachment('file', '岗位说明.pdf', 'application/pdf', 24_801);
+    currentConversation = {
+      ...currentConversation,
+      draftAttachments: [...(currentConversation.draftAttachments || []), attachment],
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  ipcMain.handle('conversation:search-prompt-history', () => ({
+    schemaVersion: 1,
+    agentId: currentConversation.agentId,
+    history: [{ historyId, preview: '继续上次的岗位匹配分析' }],
+  }));
+  ipcMain.handle('conversation:select-prompt-history', (_event, selectedId) => {
+    selectedHistory.push(selectedId);
+    return { historyId: selectedId, text: '继续上次的岗位匹配分析，并列出下一步。' };
+  });
+  let dictationRevision = 0;
+  const dictationState = (phase, overrides = {}) => ({
+    revision: ++dictationRevision,
+    phase,
+    dictationId: ['starting', 'listening', 'transcribing'].includes(phase)
+      ? 'dictation-fixture-1'
+      : null,
+    agentId: currentConversation.agentId,
+    interimText: '',
+    transcript: '',
+    error: null,
+    service: { providerProfileId: 'pp_test', displayName: 'Test Voice' },
+    limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
+    disclosure: '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+    ...overrides,
+  });
+  let currentDictation = {
+    revision: 0,
+    phase: 'idle',
+    dictationId: null,
+    agentId: null,
+    interimText: '',
+    transcript: '',
+    error: null,
+    service: null,
+    limits: { maxDurationSeconds: 60, maxAudioBytes: 1_920_000 },
+    disclosure: '录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。',
+  };
+  ipcMain.handle('dictation:get-snapshot', () => currentDictation);
+  ipcMain.handle('dictation:open', (event) => {
+    currentDictation = dictationState('idle');
+    event.sender.send('dictation:state', currentDictation);
+    return currentDictation;
+  });
+  ipcMain.handle('dictation:start', async (event, request) => {
+    assert.equal(request.disclosureAccepted, true);
+    dictationStarts.push(currentConversation.agentId);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    currentDictation = dictationState('listening', { interimText: '这是一段' });
+    event.sender.send('dictation:state', currentDictation);
+    return currentDictation;
+  });
+  ipcMain.handle('dictation:stop', (event) => {
+    currentDictation = dictationState('complete', { transcript: '这是一段听写结果' });
+    event.sender.send('dictation:state', currentDictation);
+    return currentDictation;
+  });
+  ipcMain.handle('dictation:cancel', (event) => {
+    currentDictation = dictationState('idle');
+    event.sender.send('dictation:state', currentDictation);
+    return currentDictation;
+  });
+  ipcMain.handle('dictation:close', (event) => {
+    currentDictation = dictationState('idle');
+    event.sender.send('dictation:state', currentDictation);
+    return currentDictation;
+  });
   ipcMain.handle('agent:get-model-overview', () => ({
     agents: readyState().agents.map((agent) => ({
       agentId: agent.agentId,
@@ -157,6 +298,20 @@ app.whenReady().then(async () => {
     event.sender.send('conversation:state', completedConversation);
     return completedConversation;
   });
+  ipcMain.handle('conversation:send-now', (event, request) => {
+    immediatePrompts.push(request);
+    currentConversation = {
+      ...currentConversation,
+      phase: 'sending',
+      streaming: true,
+      queue: {
+        ...(currentConversation.queue || {}),
+        confirmingCount: 1,
+      },
+    };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
   ipcMain.handle('conversation:interject', (event, text) => {
     interjections.push(text);
     currentConversation = {
@@ -168,6 +323,25 @@ app.whenReady().then(async () => {
         { id: `interjection-${interjections.length}`, role: 'user', text },
       ],
     };
+    event.sender.send('conversation:state', currentConversation);
+    return currentConversation;
+  });
+  for (const [channel, kind] of [
+    ['conversation:queue-remove', 'remove'],
+    ['conversation:queue-edit', 'edit'],
+    ['conversation:queue-reorder', 'reorder'],
+    ['conversation:queue-clear', 'clear'],
+    ['conversation:queue-send-now', 'send-now'],
+  ]) {
+    ipcMain.handle(channel, (event, ...args) => {
+      queueMutations.push({ kind, args });
+      event.sender.send('conversation:state', currentConversation);
+      return currentConversation;
+    });
+  }
+  ipcMain.handle('conversation:cancel-current', (event) => {
+    cancellations.push(currentConversation.agentId);
+    currentConversation = { ...currentConversation, cancelling: true };
     event.sender.send('conversation:state', currentConversation);
     return currentConversation;
   });
@@ -338,6 +512,177 @@ app.whenReady().then(async () => {
   assert.equal(openedDom.codeText, '安全代码');
   assert.equal(openedDom.unsafeElements, 0);
   assert.equal(openedDom.unsafeExecuted, false);
+
+  const promptsBeforeInputTools = prompts.length;
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '/';
+    input.setSelectionRange(1, 1);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "Array.from(document.querySelectorAll('[data-composer-suggestion]')).some((node) => node.innerText.includes('/compact'))",
+  ));
+  const commandMenu = await window.webContents.executeJavaScript(`({
+    visible: document.getElementById('composer-suggestions')?.hidden === false,
+    positioned: getComputedStyle(document.getElementById('composer-suggestions')).position,
+    hasNativeSelect: document.querySelector('#conversation-form select') !== null,
+    text: document.getElementById('composer-suggestions')?.innerText,
+  })`);
+  assert.equal(commandMenu.visible, true);
+  assert.equal(commandMenu.positioned, 'absolute');
+  assert.equal(commandMenu.hasNativeSelect, false);
+  assert.equal(commandMenu.text.includes('/compact'), true);
+  assert.equal(commandMenu.text.includes('/yolo'), false);
+  await window.webContents.executeJavaScript(`(() => {
+    Array.from(document.querySelectorAll('[data-composer-suggestion]'))
+      .find((node) => node.innerText.includes('/compact'))?.click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value === '/compact '",
+  ));
+  assert.equal(prompts.length, promptsBeforeInputTools);
+
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '/yolo';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.body.innerText.includes('此命令未获客户端允许')",
+  ));
+  assert.equal(prompts.length, promptsBeforeInputTools);
+
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '$care';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "Array.from(document.querySelectorAll('[data-composer-suggestion]')).some((node) => node.innerText.includes('建立求职档案'))",
+  ));
+  await window.webContents.executeJavaScript(`(() => {
+    Array.from(document.querySelectorAll('[data-composer-suggestion]'))
+      .find((node) => node.innerText.includes('建立求职档案'))?.click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value.includes('请帮我建立求职档案')",
+  ));
+  assert.equal(prompts.length, promptsBeforeInputTools);
+
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '@岗位';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "Array.from(document.querySelectorAll('[data-composer-suggestion]')).some((node) => node.innerText.includes('岗位说明.pdf'))",
+  ));
+  const fileSuggestions = await window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.innerText",
+  );
+  assert.equal(fileSuggestions.includes('/Users/'), false);
+  assert.equal(fileSuggestions.includes(workspaceId), false);
+  await window.webContents.executeJavaScript(`(() => {
+    Array.from(document.querySelectorAll('[data-composer-suggestion]'))
+      .find((node) => node.innerText.includes('岗位说明.pdf'))?.click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.composer-attachment-chip strong')?.textContent === '岗位说明.pdf'",
+  ));
+  assert.deepEqual(stagedWorkspaceFiles, [{ workspaceId, relativePath: '申请/岗位说明.pdf' }]);
+  assert.equal(prompts.length, promptsBeforeInputTools);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.composer-attachment-chip [data-remove-attachment]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.composer-attachment-chip') === null",
+  ));
+
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('composer-add-button').click();
+    document.getElementById('composer-prompt-history').click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "Array.from(document.querySelectorAll('[data-composer-suggestion]')).some((node) => node.innerText.includes('继续上次的岗位匹配分析'))",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-composer-suggestion]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value.includes('列出下一步')",
+  ));
+  assert.deepEqual(selectedHistory, [historyId]);
+  assert.equal(prompts.length, promptsBeforeInputTools);
+
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.composer-dictation-button').click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.innerText.includes('录音会发送给你选择的听写服务')",
+  ));
+  assert.equal(dictationStarts.length, 0);
+  assert.equal(prompts.length, promptsBeforeInputTools);
+  await window.webContents.executeJavaScript(`(() => {
+    Array.from(document.querySelectorAll('[data-composer-suggestion]'))
+      .find((node) => node.innerText.includes('开始听写'))?.click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.innerText.includes('正在请求麦克风')",
+  ));
+  await waitFor(() => dictationStarts.length === 1);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.innerText.includes('完成听写')",
+  ));
+  await window.webContents.executeJavaScript(`(() => {
+    Array.from(document.querySelectorAll('[data-composer-suggestion]'))
+      .find((node) => node.innerText.includes('完成听写'))?.click();
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form [name=\"message\"]')?.value.includes('这是一段听写结果')",
+  ));
+  assert.deepEqual(dictationStarts, ['job-agent']);
+  assert.equal(prompts.length, promptsBeforeInputTools);
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.focus();
+    input.setSelectionRange(0, 0);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+  })()`);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.innerText.includes('历史消息')",
+  ));
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.value = '这是一个新的问题';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.getElementById('composer-suggestions')?.hidden",
+  ), true);
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('#conversation-form [name="message"]');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  })()`);
+  await waitFor(() => prompts.length === promptsBeforeInputTools + 1);
+  assert.equal(prompts.at(-1).text, '这是一个新的问题');
+  prompts.length = promptsBeforeInputTools;
 
   const delayedLecturecastOpen = delayNextConversationOpen('lecturecast-agent');
   const raceOpenStart = opens.length;
@@ -581,10 +926,10 @@ app.whenReady().then(async () => {
     state: 'Agent 正在处理',
     sendDisabled: true,
     textareaDisabled: false,
-    addDisabled: true,
-    composerMode: 'interject',
+    addDisabled: false,
+    composerMode: 'adjust',
     sendLabel: '追加指令',
-    helper: 'Agent 正在工作；你可以继续补充要求，它会在当前任务中调整方向',
+    helper: '这条要求会调整当前任务，不会创建新的排队任务',
     lecturecastDisabled: false,
   });
   await window.webContents.executeJavaScript(`
@@ -1032,6 +1377,145 @@ app.whenReady().then(async () => {
     "document.body.innerText.includes('private unavailable plan')",
   ), false);
 
+  currentConversation = conversationState('job-agent', [
+    { id: 'paste-message-1', role: 'assistant', text: '可以粘贴长材料。' },
+  ]);
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form[data-agent-id=\"job-agent\"]') !== null",
+  ));
+  const promptsBeforeLargePaste = prompts.length;
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const textarea = document.querySelector('#conversation-form textarea');
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: {
+          files: [],
+          getData: (kind) => kind === 'text/plain' ? '岗位材料一行\\n'.repeat(220) : '',
+        },
+      });
+      textarea.dispatchEvent(event);
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.composer-paste-card') !== null",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    cardCount: document.querySelectorAll('.composer-paste-card').length,
+    textareaValue: document.querySelector('#conversation-form textarea')?.value,
+    sendDisabled: document.querySelector('.composer-send')?.disabled,
+    showsFullPaste: document.querySelector('.composer-paste-card')?.innerText.includes('岗位材料一行'),
+  })`), {
+    cardCount: 1,
+    textareaValue: '',
+    sendDisabled: false,
+    showsFullPaste: false,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('#conversation-form').requestSubmit()",
+  );
+  await waitFor(() => prompts.length === promptsBeforeLargePaste + 1);
+  assert.equal(prompts.at(-1).text.startsWith('岗位材料一行\n岗位材料一行'), true);
+  assert.equal(prompts.at(-1).text.includes('AgentMesh360 Core'), false);
+
+  currentConversation = {
+    ...conversationState('job-agent', [
+      { id: 'queue-message-1', role: 'assistant', text: '当前任务仍在执行。' },
+    ]),
+    phase: 'sending',
+    streaming: true,
+    queue: {
+      revision: 7,
+      synced: true,
+      running: true,
+      confirmingCount: 0,
+      entries: [
+        { queueId: 'queue-1', version: 1, position: 0, text: '核对第一家公司', editable: true },
+        { queueId: 'queue-2', version: 1, position: 1, text: '更新第二份简历', editable: true },
+        { queueId: 'queue-3', version: 1, position: 2, text: '准备第三轮面试', editable: true },
+        { queueId: 'queue-4', version: 1, position: 3, text: '来自其他客户端', editable: false },
+      ],
+    },
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-queue-summary')?.innerText.includes('待处理 4 条')",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    compactHeight: document.querySelector('.conversation-queue')?.getBoundingClientRect().height,
+    visibleItems: document.querySelectorAll('.conversation-queue-item').length,
+    composerVisible: document.querySelector('#conversation-form')?.getBoundingClientRect().bottom <= window.innerHeight,
+    addDisabled: document.getElementById('composer-add-button')?.disabled,
+  })`), {
+    compactHeight: 40,
+    visibleItems: 3,
+    composerVisible: true,
+    addDisabled: false,
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-toggle-queue]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.conversation-queue.expanded') !== null"
+      + " && document.querySelectorAll('.conversation-queue-item').length === 4",
+  ));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-queue-down=\"queue-1\"]').click()",
+  );
+  await waitFor(() => queueMutations.some((entry) => entry.kind === 'reorder'));
+  assert.deepEqual(
+    queueMutations.find((entry) => entry.kind === 'reorder')?.args[0],
+    ['queue-2', 'queue-1', 'queue-3', 'queue-4'],
+  );
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-queue-edit=\"queue-1\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.queue-edit-input') !== null",
+  ));
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const input = document.querySelector('.queue-edit-input');
+      input.value = '核对第一家公司和岗位';
+      document.querySelector('[data-queue-save="queue-1"]').click();
+    })()
+  `);
+  await waitFor(() => queueMutations.some((entry) => entry.kind === 'edit'));
+  assert.deepEqual(
+    queueMutations.find((entry) => entry.kind === 'edit')?.args,
+    ['queue-1', '核对第一家公司和岗位'],
+  );
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-queue-now=\"queue-2\"]').click()",
+  );
+  await waitFor(() => queueMutations.some((entry) => entry.kind === 'send-now'));
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.composer-stop').click()",
+  );
+  await waitFor(() => cancellations.length === 1);
+  assert.deepEqual(cancellations, ['job-agent']);
+
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.composer-intent-toggle').click();"
+      + " document.querySelector('[data-composer-intent=\"now\"]').click();",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.getElementById('conversation-form')?.dataset.composerMode === 'now'",
+  ));
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('conversation-form');
+      form.elements.message.value = '立即处理这条高优先级要求';
+      form.requestSubmit();
+    })()
+  `);
+  await waitFor(() => immediatePrompts.length === 1);
+  assert.deepEqual(immediatePrompts, [{
+    text: '立即处理这条高优先级要求',
+    attachmentIds: [],
+  }]);
+
   currentConversation = {
     ...currentConversation,
     phase: 'error',
@@ -1160,6 +1644,13 @@ function conversationState(agentId, messages) {
     streaming: false,
     transcriptTruncated: false,
     draftAttachments: [],
+    queue: {
+      revision: 1,
+      synced: true,
+      running: false,
+      entries: [],
+      confirmingCount: 0,
+    },
     error: null,
     stopReason: 'end_turn',
   };

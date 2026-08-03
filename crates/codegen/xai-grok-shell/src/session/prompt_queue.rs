@@ -17,6 +17,7 @@ mod tests {
     fn queue_changed_serializes_camel_case_with_session_id() {
         let payload = QueueChanged {
             session_id: "sess-1".to_string(),
+            queue_revision: 1,
             entries: vec![QueueEntryWire {
                 id: "p1".to_string(),
                 version: 0,
@@ -30,6 +31,7 @@ mod tests {
         };
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["sessionId"], "sess-1");
+        assert_eq!(json["queueRevision"], 1);
         assert_eq!(json["entries"][0]["id"], "p1");
         assert_eq!(json["entries"][0]["position"], 0);
         assert!(json["entries"][0].get("lastEditor").is_none());
@@ -42,6 +44,7 @@ mod tests {
     fn queue_changed_round_trips_running_prompt_id() {
         let payload = QueueChanged {
             session_id: "sess-1".to_string(),
+            queue_revision: 2,
             entries: Vec::new(),
             running_prompt_id: Some("prompt-running".to_string()),
         };

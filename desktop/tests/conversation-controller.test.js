@@ -183,7 +183,7 @@ test('conversation interjection fails closed when no turn is running or the Host
   await runningPrompt;
 });
 
-test('conversation authority is cleared when identity access or the Leader attachment changes', async () => {
+test('conversation clears authority on identity loss but preserves and reconciles the Session on reconnect', async () => {
   const fixture = makeFixture();
   fixture.host.artifactImpl = async () => ({
     schemaVersion: 1,
@@ -224,13 +224,26 @@ test('conversation authority is cleared when identity access or the Leader attac
   const reconnectSnapshot = fixture.controller.getSnapshot();
   assert.equal(reconnectSnapshot.phase, 'error');
   assert.equal(reconnectSnapshot.agentId, 'job-agent');
-  assert.deepEqual(reconnectSnapshot.activities, []);
-  assert.deepEqual(reconnectSnapshot.artifacts, []);
+  assert.deepEqual(reconnectSnapshot.activities, [{
+    activityId: 'activity-1',
+    toolKind: 'fetch',
+    status: 'pending',
+  }]);
+  assert.deepEqual(reconnectSnapshot.artifacts, [{
+    artifactId: 'saved-report',
+    title: '已保存报告',
+    kind: 'document',
+    sizeBytes: 1024,
+  }]);
   assert.equal(JSON.stringify(reconnectSnapshot).includes('private-session-id'), false);
-  await assert.rejects(
-    fixture.controller.send('still fails'),
-    /重新打开/,
-  );
+  await waitFor(() => fixture.controller.getSnapshot().phase === 'ready');
+  const recovered = await fixture.controller.send('恢复后继续');
+  assert.equal(recovered.phase, 'ready');
+  assert.deepEqual(fixture.host.loadCalls.map(({ sessionId }) => sessionId), [
+    'private-session-id',
+    'private-session-id',
+    'private-session-id',
+  ]);
 });
 
 test('conversation errors are redacted and invalid Renderer input never reaches the Host', async () => {
@@ -271,7 +284,7 @@ test('conversation rejects a different concurrent open instead of returning the 
   assert.equal(fixture.activationCalls, 1);
 });
 
-test('conversation revokes authority after a prompt timeout and ignores late chunks', async () => {
+test('conversation marks a timed-out prompt unknown, keeps Session state, and blocks duplicate resend', async () => {
   const fixture = makeFixture();
   fixture.host.artifactImpl = async () => ({
     schemaVersion: 1,
@@ -301,11 +314,27 @@ test('conversation revokes authority after a prompt timeout and ignores late chu
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.equal(snapshot.phase, 'error');
-  assert.match(snapshot.error, /响应超时/);
-  assert.deepEqual(snapshot.activities, []);
-  assert.deepEqual(snapshot.artifacts, []);
-  assert.equal(JSON.stringify(fixture.controller.getSnapshot()).includes('迟到的内容'), false);
-  await assert.rejects(fixture.controller.send('不能交错重发'), /重新打开/);
+  assert.match(snapshot.error, /无法确认.*不会自动重发/u);
+  assert.equal(snapshot.queue.confirmingCount, 1);
+  assert.deepEqual(snapshot.activities, [{
+    activityId: 'activity-1',
+    toolKind: 'execute',
+    status: 'in_progress',
+  }]);
+  assert.deepEqual(snapshot.artifacts, [{
+    artifactId: 'saved-report',
+    title: '已保存报告',
+    kind: 'document',
+    sizeBytes: 1024,
+  }]);
+  assert.equal(
+    fixture.controller.getSnapshot().messages.some(({ text }) => text.includes('迟到的内容')),
+    true,
+  );
+  await assert.rejects(
+    fixture.controller.send('不能交错重发'),
+    /提交状态仍在对账/u,
+  );
 });
 
 test('conversation restores terminal activities from Host replay without exposing tool payloads', async () => {
@@ -400,10 +429,10 @@ test('conversation loads and refreshes a bounded Host-owned artifact projection'
     'absolutePath',
     '/private/account-7',
     'schemaVersion',
-    'revision',
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+  assert.equal(sent.queue.revision, 0);
 });
 
 test('conversation loads and refreshes a bounded Workspace project read model', async () => {
@@ -455,10 +484,10 @@ test('conversation loads and refreshes a bounded Workspace project read model', 
     'sourcePath',
     '/private/account-7',
     'schemaVersion',
-    'revision',
   ]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+  assert.equal(sent.queue.revision, 0);
 });
 
 test('conversation fails closed on malformed project state without closing chat', async () => {
@@ -865,7 +894,7 @@ test('conversation cancels permission when authority changes and rejects stale R
   );
 });
 
-test('conversation cancels the old permission before opening another Agent', async () => {
+test('conversation preserves each Agent permission and activity without polluting the active Agent', async () => {
   const fixture = makeFixture();
   fixture.host.artifactImpl = async (agentId) => ({
     schemaVersion: 1,
@@ -893,10 +922,8 @@ test('conversation cancels the old permission before opening another Agent', asy
 
   const deploySnapshot = await fixture.controller.open('deploy-agent');
 
-  assert.deepEqual(fixture.host.permissionResponses, [{
-    requestId: 'job-switch-request',
-    optionId: null,
-  }]);
+  assert.deepEqual(fixture.host.permissionResponses, []);
+  assert.equal(deploySnapshot.interaction, undefined);
   assert.deepEqual(deploySnapshot.activities, []);
   assert.deepEqual(deploySnapshot.artifacts, []);
   fixture.host.emitSession('private-session-id', 'tool_call', null, {
@@ -917,6 +944,31 @@ test('conversation cancels the old permission before opening another Agent', asy
   assert.equal(
     fixture.host.permissionResponses.some(({ requestId }) => requestId === 'deploy-request'),
     false,
+  );
+
+  const returnedJob = await fixture.controller.open('job-agent');
+  assert.equal(returnedJob.interaction.title, 'Job operation');
+  assert.deepEqual(returnedJob.activities, [
+    {
+      activityId: 'activity-1',
+      toolKind: 'search',
+      status: 'in_progress',
+    },
+    {
+      activityId: 'activity-2',
+      toolKind: 'read',
+      status: 'completed',
+    },
+  ]);
+  assert.deepEqual(returnedJob.artifacts, [{
+    artifactId: 'job-report',
+    title: 'Job Report',
+    kind: 'document',
+    sizeBytes: 10,
+  }]);
+  assert.equal(
+    fixture.host.loadCalls.filter(({ sessionId }) => sessionId === 'private-session-id').length,
+    1,
   );
 });
 
@@ -966,7 +1018,7 @@ test('conversation keeps the first permission and cancels a concurrent second re
   });
 });
 
-test('conversation cancels a pending permission and revokes authority on Host exit', async () => {
+test('conversation cancels a pending permission but preserves recoverable Session state on Host exit', async () => {
   const fixture = makeFixture();
   fixture.host.artifactImpl = async () => ({
     schemaVersion: 1,
@@ -991,10 +1043,19 @@ test('conversation cancels a pending permission and revokes authority on Host ex
 
   const snapshot = fixture.controller.getSnapshot();
   assert.equal(snapshot.phase, 'error');
-  assert.match(snapshot.error, /Host 已断开/);
+  assert.match(snapshot.error, /后台连接暂时中断.*不会自动重发/u);
   assert.equal(snapshot.interaction, undefined);
-  assert.deepEqual(snapshot.activities, []);
-  assert.deepEqual(snapshot.artifacts, []);
+  assert.deepEqual(snapshot.activities, [{
+    activityId: 'activity-1',
+    toolKind: 'edit',
+    status: 'in_progress',
+  }]);
+  assert.deepEqual(snapshot.artifacts, [{
+    artifactId: 'exit-report',
+    title: 'Exit Report',
+    kind: 'document',
+    sizeBytes: 10,
+  }]);
   assert.equal(JSON.stringify(snapshot).includes('private host details'), false);
   assert.deepEqual(fixture.host.permissionResponses, [{
     requestId: 'exit-request',
@@ -1254,7 +1315,7 @@ test('conversation fails a malformed Host background snapshot closed without clo
   assert.equal(JSON.stringify(snapshot).includes('private-invalid'), false);
 });
 
-test('conversation bounds background tasks, freezes terminal state, and clears them with authority', async () => {
+test('conversation bounds background tasks, freezes terminal state, and retains them during reconnect', async () => {
   const fixture = makeFixture();
   await fixture.controller.open('job-agent');
 
@@ -1332,7 +1393,9 @@ test('conversation bounds background tasks, freezes terminal state, and clears t
   assert.equal(JSON.stringify(snapshot).includes('private-bounded'), false);
 
   fixture.host.emit('reconnected');
-  assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, []);
+  assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, snapshot.backgroundTasks);
+  await waitFor(() => fixture.controller.getSnapshot().phase === 'ready');
+  assert.deepEqual(fixture.controller.getSnapshot().backgroundTasks, snapshot.backgroundTasks);
 });
 
 test('conversation reads the Host-owned canonical Session plan without exposing Todo authority', async () => {
@@ -1501,7 +1564,358 @@ test('conversation bounds and validates Session plan snapshots without closing t
 
   fixture.host.emit('reconnected');
   assert.deepEqual(fixture.controller.getSnapshot().planEntries, []);
-  assert.equal(fixture.controller.getSnapshot().planStatus, 'ready');
+  await waitFor(() => fixture.controller.getSnapshot().phase === 'ready');
+  assert.equal(fixture.controller.getSnapshot().planStatus, 'unavailable');
+});
+
+test('conversation accepts three prompts without waiting for the running Turn and projects an authoritative queue', async () => {
+  const fixture = makeFixture();
+  fixture.host.promptImpl = () => new Promise(() => {});
+  await fixture.controller.open('job-agent');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 0,
+    entries: [],
+    runningPromptId: null,
+  });
+
+  const firstSend = fixture.controller.send('第一条正在执行');
+  await waitFor(() => fixture.host.promptCalls.length === 1);
+  const firstPromptId = fixture.host.promptCalls[0].promptId;
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 1,
+    entries: [],
+    runningPromptId: firstPromptId,
+  });
+  await firstSend;
+
+  const secondSend = fixture.controller.send('第二条进入队列');
+  await waitFor(() => fixture.host.promptCalls.length === 2);
+  const secondPromptId = fixture.host.promptCalls[1].promptId;
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 2,
+    entries: [queueEntry(secondPromptId, '第二条进入队列', 0)],
+    runningPromptId: firstPromptId,
+  });
+  await secondSend;
+
+  const thirdSend = fixture.controller.send('第三条也进入队列');
+  await waitFor(() => fixture.host.promptCalls.length === 3);
+  const thirdPromptId = fixture.host.promptCalls[2].promptId;
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 3,
+    entries: [
+      queueEntry(secondPromptId, '第二条进入队列', 0),
+      queueEntry(thirdPromptId, '第三条也进入队列', 1),
+    ],
+    runningPromptId: firstPromptId,
+  });
+  const snapshot = await thirdSend;
+
+  assert.deepEqual(
+    fixture.host.promptCalls.map(({ text, sendNow, clientIdentifier }) => ({
+      text,
+      sendNow,
+      clientIdentifier,
+    })),
+    [
+      {
+        text: '第一条正在执行',
+        sendNow: false,
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+      {
+        text: '第二条进入队列',
+        sendNow: false,
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+      {
+        text: '第三条也进入队列',
+        sendNow: false,
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+    ],
+  );
+  assert.equal(new Set(fixture.host.promptCalls.map(({ promptId }) => promptId)).size, 3);
+  assert.deepEqual(snapshot.queue, {
+    revision: 3,
+    synced: true,
+    running: true,
+    entries: [
+      {
+        queueId: 'queue-2',
+        version: 1,
+        kind: 'prompt',
+        text: '第二条进入队列',
+        position: 0,
+        editable: true,
+      },
+      {
+        queueId: 'queue-3',
+        version: 1,
+        kind: 'prompt',
+        text: '第三条也进入队列',
+        position: 1,
+        editable: true,
+      },
+    ],
+    confirmingCount: 0,
+  });
+  const serialized = JSON.stringify(snapshot);
+  for (const privateValue of [
+    firstPromptId,
+    secondPromptId,
+    thirdPromptId,
+    'private-session-id',
+  ]) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
+});
+
+test('conversation ignores stale and duplicate queue revisions and keeps foreign entries read-only', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 8,
+    entries: [queueEntry('private-foreign-prompt', '外部客户端任务', 0, {
+      version: 4,
+      owner: 'another-client',
+    })],
+    runningPromptId: null,
+  });
+  const authoritative = fixture.controller.getSnapshot();
+  const publicQueueId = authoritative.queue.entries[0].queueId;
+
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 7,
+    entries: [queueEntry('private-stale-prompt', '乱序私密内容', 0)],
+    runningPromptId: 'private-stale-running',
+  });
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 8,
+    entries: [queueEntry('private-duplicate-prompt', '重复版本私密内容', 0)],
+    runningPromptId: null,
+  });
+
+  assert.deepEqual(fixture.controller.getSnapshot(), authoritative);
+  await assert.rejects(
+    fixture.controller.removeQueuedPrompt(publicQueueId),
+    /只能管理由本客户端提交/u,
+  );
+  assert.deepEqual(fixture.host.removeQueueCalls, []);
+  const serialized = JSON.stringify(fixture.controller.getSnapshot());
+  for (const privateValue of [
+    'private-foreign-prompt',
+    'private-stale-prompt',
+    'private-stale-running',
+    'private-duplicate-prompt',
+    '乱序私密内容',
+    '重复版本私密内容',
+  ]) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
+});
+
+test('background Agent notifications stay off the active projection and remain available when switching back', async () => {
+  const fixture = makeFixture();
+  const published = [];
+  let selectedAgentId = 'job-agent';
+  let conversationUi = null;
+  fixture.controller.subscribe((snapshot) => {
+    published.push(snapshot);
+    if (!snapshot.agentId || snapshot.agentId === selectedAgentId) conversationUi = snapshot;
+  });
+  await fixture.controller.open('job-agent');
+  fixture.host.emitSession('private-session-id', 'agent_message_chunk', '离开前的 Job 内容');
+  selectedAgentId = 'deploy-agent';
+  await fixture.controller.open('deploy-agent');
+  const deployBeforeBackgroundUpdate = fixture.controller.getSnapshot();
+
+  fixture.host.emitSession('private-session-id', 'agent_message_chunk', '后台完成的 Job 内容');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 1,
+    entries: [queueEntry('private-job-queued', '后台 Job 待处理任务', 0)],
+    runningPromptId: null,
+  });
+
+  assert.deepEqual(fixture.controller.getSnapshot(), deployBeforeBackgroundUpdate);
+  assert.equal(published.at(-1).agentId, 'job-agent');
+  assert.deepEqual(conversationUi, deployBeforeBackgroundUpdate);
+  assert.equal(
+    JSON.stringify(fixture.controller.getSnapshot()).includes('后台完成的 Job 内容'),
+    false,
+  );
+
+  selectedAgentId = 'job-agent';
+  const returnedJob = await fixture.controller.open('job-agent');
+  assert.deepEqual(returnedJob.messages.map(({ text }) => text), [
+    '离开前的 Job 内容后台完成的 Job 内容',
+  ]);
+  assert.equal(returnedJob.queue.revision, 1);
+  assert.equal(returnedJob.queue.entries[0].text, '后台 Job 待处理任务');
+  assert.equal(
+    fixture.host.loadCalls.filter(({ sessionId }) => sessionId === 'private-session-id').length,
+    1,
+  );
+  assert.equal(JSON.stringify(returnedJob).includes('private-job-queued'), false);
+});
+
+test('queue mutations translate public queue IDs and remain pending until a newer authoritative revision', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 10,
+    entries: [
+      queueEntry('private-a', 'A', 0, { version: 2 }),
+      queueEntry('private-b', 'B', 1, { version: 3 }),
+      queueEntry('private-c', 'C', 2, { version: 4 }),
+    ],
+    runningPromptId: null,
+  });
+  let queueIds = Object.fromEntries(
+    fixture.controller.getSnapshot().queue.entries.map(({ queueId, text }) => [text, queueId]),
+  );
+
+  const removing = await fixture.controller.removeQueuedPrompt(queueIds.B);
+  assert.deepEqual(removing.queue.mutation, { kind: 'remove', pending: true });
+  assert.deepEqual(fixture.host.removeQueueCalls, [{
+    sessionId: 'private-session-id',
+    id: 'private-b',
+    expectedVersion: 3,
+  }]);
+  assert.equal(removing.queue.entries.some(({ text }) => text === 'B'), true);
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 11,
+    entries: [
+      queueEntry('private-a', 'A', 0, { version: 2 }),
+      queueEntry('private-c', 'C', 1, { version: 4 }),
+    ],
+    runningPromptId: null,
+  });
+  assert.equal(fixture.controller.getSnapshot().queue.mutation, undefined);
+
+  queueIds = Object.fromEntries(
+    fixture.controller.getSnapshot().queue.entries.map(({ queueId, text }) => [text, queueId]),
+  );
+  const editing = await fixture.controller.editQueuedPrompt(queueIds.A, 'A2');
+  assert.deepEqual(editing.queue.mutation, { kind: 'edit', pending: true });
+  assert.deepEqual(fixture.host.editQueueCalls, [{
+    sessionId: 'private-session-id',
+    id: 'private-a',
+    newText: 'A2',
+  }]);
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 12,
+    entries: [
+      queueEntry('private-a', 'A2', 0, { version: 3 }),
+      queueEntry('private-c', 'C', 1, { version: 4 }),
+    ],
+    runningPromptId: null,
+  });
+  assert.equal(fixture.controller.getSnapshot().queue.mutation, undefined);
+
+  queueIds = Object.fromEntries(
+    fixture.controller.getSnapshot().queue.entries.map(({ queueId, text }) => [text, queueId]),
+  );
+  const reordering = await fixture.controller.reorderQueuedPrompts([queueIds.C, queueIds.A2]);
+  assert.deepEqual(reordering.queue.mutation, { kind: 'reorder', pending: true });
+  assert.deepEqual(fixture.host.reorderQueueCalls, [{
+    sessionId: 'private-session-id',
+    orderedIds: ['private-c', 'private-a'],
+  }]);
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 13,
+    entries: [
+      queueEntry('private-c', 'C', 0, { version: 4 }),
+      queueEntry('private-a', 'A2', 1, { version: 3 }),
+    ],
+    runningPromptId: null,
+  });
+  assert.equal(fixture.controller.getSnapshot().queue.mutation, undefined);
+
+  queueIds = Object.fromEntries(
+    fixture.controller.getSnapshot().queue.entries.map(({ queueId, text }) => [text, queueId]),
+  );
+  const sendingNow = await fixture.controller.sendQueuedPromptNow(queueIds.C);
+  assert.deepEqual(sendingNow.queue.mutation, { kind: 'send_now', pending: true });
+  assert.deepEqual(fixture.host.sendNowQueueCalls, [{
+    sessionId: 'private-session-id',
+    id: 'private-c',
+    expectedVersion: 4,
+  }]);
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 14,
+    entries: [queueEntry('private-a', 'A2', 0, { version: 3 })],
+    runningPromptId: 'private-c',
+  });
+  assert.equal(fixture.controller.getSnapshot().queue.mutation, undefined);
+  assert.equal(fixture.controller.getSnapshot().queue.running, true);
+
+  const clearing = await fixture.controller.clearQueuedPrompts();
+  assert.deepEqual(clearing.queue.mutation, { kind: 'clear', pending: true });
+  assert.deepEqual(fixture.host.clearQueueCalls, [{ sessionId: 'private-session-id' }]);
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 15,
+    entries: [],
+    runningPromptId: 'private-c',
+  });
+  const finalSnapshot = fixture.controller.getSnapshot();
+  assert.equal(finalSnapshot.queue.mutation, undefined);
+  assert.deepEqual(finalSnapshot.queue.entries, []);
+  assert.equal(finalSnapshot.queue.revision, 15);
+  const serialized = JSON.stringify(finalSnapshot);
+  for (const privateValue of ['private-a', 'private-b', 'private-c', 'private-session-id']) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
+});
+
+test('unknown prompt submission reconciles from the authoritative queue after reconnect without auto-resend', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 50,
+    entries: [],
+    runningPromptId: null,
+  });
+  assert.equal(fixture.controller.getSnapshot().queue.revision, 50);
+  fixture.host.promptImpl = async () => {
+    throw Object.assign(new Error('transport state unknown'), { code: 'host_timeout' });
+  };
+
+  const uncertain = await fixture.controller.send('只提交一次');
+  const unknownPromptId = fixture.host.promptCalls[0].promptId;
+  assert.equal(uncertain.phase, 'error');
+  assert.equal(uncertain.queue.confirmingCount, 1);
+  assert.equal(fixture.host.promptCalls.length, 1);
+  await assert.rejects(
+    fixture.controller.send('不允许在对账前重发'),
+    /提交状态仍在对账/u,
+  );
+
+  fixture.host.syncQueueImpl = async (sessionId) => {
+    fixture.host.emitQueue(sessionId, {
+      queueRevision: 1,
+      entries: [],
+      runningPromptId: null,
+    });
+  };
+  fixture.host.emit('reconnected');
+  await waitFor(() => (
+    fixture.controller.getSnapshot().phase === 'ready'
+    && fixture.controller.getSnapshot().queue.synced === true
+    && fixture.controller.getSnapshot().queue.confirmingCount === 0
+  ));
+
+  assert.equal(fixture.host.promptCalls.length, 1);
+  assert.deepEqual(fixture.host.syncQueueCalls, [
+    'private-session-id',
+    'private-session-id',
+  ]);
+  assert.equal(JSON.stringify(fixture.controller.getSnapshot()).includes(unknownPromptId), false);
+  fixture.host.promptImpl = async () => ({ stopReason: 'end_turn' });
+  const next = await fixture.controller.send('对账完成后可继续');
+  assert.equal(next.phase, 'ready');
+  assert.equal(fixture.host.promptCalls.length, 2);
+  assert.equal(fixture.host.promptCalls.filter(({ text }) => text === '只提交一次').length, 1);
 });
 
 test('conversation sends structured attachment prompts, supports attachment-only turns, and consumes drafts on success', async () => {
@@ -1608,6 +2022,85 @@ test('conversation keeps staged attachments and a retryable snapshot when struct
   assert.equal(JSON.stringify(failed).includes('JVBERg'), false);
 });
 
+test('conversation keeps @ workspace and Prompt History authority in Main while returning only safe projections', async () => {
+  const workspaceCalls = [];
+  const historyCalls = [];
+  let staged = false;
+  const attachmentStore = {
+    list: () => (staged ? [{
+      attachmentId: 'attachment-12345678-1234-4123-8123-123456789abc',
+      kind: 'file',
+      name: '岗位需求.md',
+      mimeType: 'text/markdown',
+      sizeBytes: 128,
+    }] : []),
+    clearAccount: async () => {},
+  };
+  const workspaceAuthorityStore = {
+    list: () => [{ workspaceId: 'workspace-12345678-1234-4123-8123-123456789abc', displayName: '求职材料' }],
+    async authorizeRoot(request) { workspaceCalls.push(['authorize', request]); },
+    async revoke(request) { workspaceCalls.push(['revoke', request]); },
+    async searchFiles(request) {
+      workspaceCalls.push(['search', request]);
+      return [{
+        workspaceId: request.workspaceId,
+        relativePath: '岗位需求.md',
+        displayPath: '岗位需求.md',
+        name: '岗位需求.md',
+        mimeType: 'text/markdown',
+        sizeBytes: 128,
+      }];
+    },
+    async stageAttachment(request) {
+      workspaceCalls.push(['stage', request]);
+      staged = true;
+    },
+  };
+  const promptHistoryStore = {
+    binding: null,
+    bindSession(request) { this.binding = request; historyCalls.push(['bind', request]); },
+    async search(request) {
+      historyCalls.push(['search', request]);
+      return [{ historyId: 'history-1234567890abcdef1234567890abcdef', preview: '继续分析岗位' }];
+    },
+    select(request) {
+      historyCalls.push(['select', request]);
+      return { text: '继续分析岗位' };
+    },
+    clearAccount() {},
+  };
+  const fixture = makeFixture({ attachmentStore, workspaceAuthorityStore, promptHistoryStore });
+  await fixture.controller.open('job-agent');
+
+  const workspaces = fixture.controller.getAuthorizedWorkspaces();
+  assert.equal(workspaces.agentId, 'job-agent');
+  assert.equal(JSON.stringify(workspaces).includes('/private/'), false);
+  const files = await fixture.controller.searchWorkspaceFiles({ query: '岗位' });
+  assert.equal(files.files[0].workspaceName, '求职材料');
+  assert.equal(JSON.stringify(files).includes('/private/'), false);
+  const stagedSnapshot = await fixture.controller.stageWorkspaceFile({
+    workspaceId: workspaces.workspaces[0].workspaceId,
+    relativePath: '岗位需求.md',
+  });
+  assert.equal(stagedSnapshot.draftAttachments[0].name, '岗位需求.md');
+
+  const history = await fixture.controller.searchPromptHistory('岗位');
+  const selected = fixture.controller.selectPromptHistory(history.history[0].historyId);
+  assert.deepEqual(selected, { text: '继续分析岗位' });
+  assert.deepEqual(promptHistoryStore.binding, {
+    accountId: 7,
+    agentId: 'job-agent',
+    sessionKey: 'main',
+    privateCwd: '/private/account-7/job-agent',
+    privateSessionId: 'private-session-id',
+  });
+  const publicSerialized = JSON.stringify({ workspaces, files, history, selected, stagedSnapshot });
+  assert.equal(publicSerialized.includes('private-session-id'), false);
+  assert.equal(publicSerialized.includes('/private/account-7'), false);
+  assert.ok(workspaceCalls.some(([kind]) => kind === 'search'));
+  assert.ok(historyCalls.some(([kind]) => kind === 'search'));
+});
+
 function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   return {
     requestId,
@@ -1624,7 +2117,28 @@ function permissionRequest(requestId, title, sessionId = 'private-session-id') {
   };
 }
 
-function makeFixture({ attachmentStore = null } = {}) {
+function queueEntry(id, text, position, {
+  version = 1,
+  owner = 'agentmesh360-desktop',
+  lastEditor = owner,
+  kind = 'prompt',
+} = {}) {
+  return {
+    id,
+    version,
+    owner,
+    lastEditor,
+    kind,
+    text,
+    position,
+  };
+}
+
+function makeFixture({
+  attachmentStore = null,
+  workspaceAuthorityStore = null,
+  promptHistoryStore = null,
+} = {}) {
   const identity = Object.assign(new EventEmitter(), {
     state: readyIdentity(),
     getState() { return this.state; },
@@ -1646,6 +2160,13 @@ function makeFixture({ attachmentStore = null } = {}) {
     projectStateCalls: [],
     backgroundActivityCalls: [],
     sessionPlanCalls: [],
+    syncQueueCalls: [],
+    removeQueueCalls: [],
+    editQueueCalls: [],
+    reorderQueueCalls: [],
+    clearQueueCalls: [],
+    sendNowQueueCalls: [],
+    cancelCalls: [],
     permissionResponses: [],
     loadImpl: async () => ({}),
     promptImpl: async () => ({ stopReason: 'end_turn' }),
@@ -1662,6 +2183,7 @@ function makeFixture({ attachmentStore = null } = {}) {
     }),
     backgroundActivityImpl: async () => ({ activities: [] }),
     sessionPlanImpl: async () => ({ entries: [] }),
+    syncQueueImpl: async () => {},
     async listAgents() {
       return {
         agents: [
@@ -1720,6 +2242,28 @@ function makeFixture({ attachmentStore = null } = {}) {
       this.sessionPlanCalls.push(agentId);
       return this.sessionPlanImpl(agentId);
     },
+    async syncQueueSession(sessionId) {
+      this.syncQueueCalls.push(sessionId);
+      return this.syncQueueImpl(sessionId);
+    },
+    async removeQueuedPrompt(request) {
+      this.removeQueueCalls.push(request);
+    },
+    async editQueuedPrompt(request) {
+      this.editQueueCalls.push(request);
+    },
+    async reorderQueuedPrompts(request) {
+      this.reorderQueueCalls.push(request);
+    },
+    async clearQueuedPrompts(request) {
+      this.clearQueueCalls.push(request);
+    },
+    async sendQueuedPromptNow(request) {
+      this.sendNowQueueCalls.push(request);
+    },
+    async cancelSession(sessionId) {
+      this.cancelCalls.push(sessionId);
+    },
     respondPermission(requestId, optionId) {
       this.permissionResponses.push({ requestId, optionId });
       this.emit('permission-resolved', { requestId });
@@ -1743,6 +2287,19 @@ function makeFixture({ attachmentStore = null } = {}) {
         },
       });
     },
+    emitQueue(sessionId, { queueRevision, entries, runningPromptId }, meta = {}) {
+      this.emit('notification', {
+        jsonrpc: '2.0',
+        method: 'x.ai/queue/changed',
+        params: {
+          sessionId,
+          queueRevision,
+          entries,
+          runningPromptId,
+          _meta: { rawPrivateMetadata: 'do-not-project', ...meta },
+        },
+      });
+    },
   });
   let activationCalls = 0;
   const fixture = {
@@ -1758,6 +2315,8 @@ function makeFixture({ attachmentStore = null } = {}) {
       return identity.getState();
     },
     attachmentStore,
+    workspaceAuthorityStore,
+    promptHistoryStore,
   });
   return fixture;
 }

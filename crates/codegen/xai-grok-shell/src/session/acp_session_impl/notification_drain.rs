@@ -238,7 +238,7 @@ impl SessionActor {
         ));
         // The front prompt is now the in-flight turn; re-broadcast so the
         // shared queue drops it from the pending list.
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
     }
 
     /// Drain pending notifications into a single batched turn, if idle and not suppressed.

@@ -47,6 +47,14 @@ pub struct QueueEntryWire {
 pub struct QueueChanged {
     /// The session this queue belongs to; drives per-session fan-out routing.
     pub session_id: String,
+    /// Monotonic revision of the authoritative queue snapshot for this live session.
+    ///
+    /// Every server broadcast increments this value, including reconciliation
+    /// rebroadcasts whose entries are otherwise unchanged. Clients can therefore
+    /// discard an out-of-order snapshot whenever its revision is not newer than
+    /// the last one they applied.
+    #[serde(default)]
+    pub queue_revision: u64,
     #[serde(default)]
     pub entries: Vec<QueueEntryWire>,
     /// The prompt the actor is currently draining, `None` when no turn runs. The correlation
@@ -63,6 +71,7 @@ mod tests {
     fn queue_changed_full_round_trip() {
         let original = QueueChanged {
             session_id: "sess-42".into(),
+            queue_revision: 7,
             entries: vec![
                 QueueEntryWire {
                     id: "p1".into(),
@@ -87,6 +96,7 @@ mod tests {
         };
         let json = serde_json::to_value(&original).unwrap();
         assert_eq!(json["sessionId"], "sess-42");
+        assert_eq!(json["queueRevision"], 7);
         assert_eq!(json["entries"][0]["lastEditor"], "bob");
         assert_eq!(json["runningPromptId"], "p0");
         assert!(json["entries"][1].get("owner").is_none());
@@ -100,6 +110,7 @@ mod tests {
     fn queue_changed_golden_wire_json() {
         let payload = QueueChanged {
             session_id: "s1".into(),
+            queue_revision: 9,
             entries: vec![QueueEntryWire {
                 id: "p1".into(),
                 version: 2,
@@ -113,6 +124,7 @@ mod tests {
         };
         let expected = serde_json::json!({
             "sessionId": "s1",
+            "queueRevision": 9,
             "entries": [{
                 "id": "p1",
                 "version": 2,
@@ -141,6 +153,7 @@ mod tests {
             "entries": [{"id": "p1"}]
         });
         let parsed: QueueChanged = serde_json::from_value(sparse).unwrap();
+        assert_eq!(parsed.queue_revision, 0);
         assert_eq!(parsed.entries[0].version, 0);
         assert_eq!(parsed.entries[0].kind, "");
         assert_eq!(parsed.entries[0].text, "");
@@ -165,6 +178,7 @@ mod tests {
     fn queue_changed_derives_default() {
         let d = QueueChanged::default();
         assert_eq!(d.session_id, "");
+        assert_eq!(d.queue_revision, 0);
         assert!(d.entries.is_empty());
         assert!(d.running_prompt_id.is_none());
     }

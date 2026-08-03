@@ -13781,6 +13781,7 @@ dependencies = [
  "xai-grok-test-support",
  "xai-grok-tools",
  "xai-grok-version",
+ "xai-grok-voice",
  "xai-grok-workspace",
  "xai-hooks-plugins-types",
  "xai-hunk-tracker",

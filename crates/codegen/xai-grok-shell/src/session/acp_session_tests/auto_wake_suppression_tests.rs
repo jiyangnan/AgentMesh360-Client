@@ -110,6 +110,7 @@ fn pending_notification_cap_keeps_newest_entries() {
     let mut state = State {
         running_task: None,
         pending_inputs: std::collections::VecDeque::new(),
+        queue_revision: 0,
         pending_notifications: Vec::new(),
         notifications_suppressed: true,
         rewindable: false,

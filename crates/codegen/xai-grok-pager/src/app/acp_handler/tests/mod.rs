@@ -387,6 +387,31 @@ pub(super) fn queue_changed_ext(session_id: &str, ids: &[&str]) -> acp::ExtNotif
         std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
     )
 }
+pub(super) fn queue_changed_at_revision(
+    session_id: &str,
+    queue_revision: u64,
+    ids: &[&str],
+) -> acp::ExtNotification {
+    let entries: Vec<serde_json::Value> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| {
+            serde_json::json!(
+                { "id" : id, "version" : 0, "owner" : "A", "kind" : "prompt", "text" :
+                format!("text {id}"), "position" : i, }
+            )
+        })
+        .collect();
+    let params = serde_json::json!({
+        "sessionId": session_id,
+        "queueRevision": queue_revision,
+        "entries": entries,
+    });
+    acp::ExtNotification::new(
+        "x.ai/queue/changed",
+        std::sync::Arc::from(serde_json::value::to_raw_value(&params).unwrap()),
+    )
+}
 /// Build a `x.ai/queue/changed` notification carrying `runningPromptId`.
 pub(super) fn queue_changed_running(
     session_id: &str,

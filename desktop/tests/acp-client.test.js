@@ -839,6 +839,9 @@ test('ACP session methods keep Main Session authority private and forward stream
   const response = await client.promptSession({
     sessionId: 'private-main-session',
     text: 'hello',
+    promptId: 'prompt-main-1',
+    sendNow: true,
+    clientIdentifier: 'agentmesh360-desktop-test',
   });
 
   assert.equal(response.stopReason, 'end_turn');
@@ -860,6 +863,11 @@ test('ACP session methods keep Main Session authority private and forward stream
       params: {
         sessionId: 'private-main-session',
         prompt: [{ type: 'text', text: 'hello' }],
+        _meta: {
+          clientIdentifier: 'agentmesh360-desktop-test',
+          sendNow: true,
+          promptId: 'prompt-main-1',
+        },
       },
     },
   ]);
@@ -908,7 +916,14 @@ test('ACP prompt forwards validated image, embedded file, and link blocks withou
     jsonrpc: '2.0',
     id: 2,
     method: 'session/prompt',
-    params: { sessionId: 'private-main-session', prompt },
+    params: {
+      sessionId: 'private-main-session',
+      prompt,
+      _meta: {
+        clientIdentifier: 'agentmesh360-desktop',
+        sendNow: false,
+      },
+    },
   });
   await assert.rejects(
     client.promptSession({
@@ -918,6 +933,187 @@ test('ACP prompt forwards validated image, embedded file, and link blocks withou
     /暂不支持/u,
   );
   await client.stop();
+});
+
+test('ACP queue transport emits exact fire-and-forget notification frames', async () => {
+  const received = [];
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl: () => fakeChild((message) => {
+      received.push(message);
+      if (message.method === 'initialize') {
+        return { protocolVersion: 1, agentCapabilities: {} };
+      }
+      return undefined;
+    }),
+    requestTimeoutMs: 500,
+  });
+
+  await client.syncQueueSession('private-main-session');
+  await client.removeQueuedPrompt({
+    sessionId: 'private-main-session',
+    id: 'prompt-queued-1',
+    expectedVersion: 2,
+    ignoredPrivateField: 'must-not-cross-the-boundary',
+  });
+  await client.editQueuedPrompt({
+    sessionId: 'private-main-session',
+    id: 'prompt-queued-2',
+    newText: '修改后的排队消息',
+    clientIdentifier: 'agentmesh360-desktop-window-2',
+  });
+  await client.reorderQueuedPrompts({
+    sessionId: 'private-main-session',
+    orderedIds: ['prompt-queued-2', 'prompt-queued-1'],
+  });
+  await client.clearQueuedPrompts({ sessionId: 'private-main-session' });
+  await client.sendQueuedPromptNow({
+    sessionId: 'private-main-session',
+    id: 'prompt-queued-2',
+    expectedVersion: 3,
+    newText: '立即执行修改后的消息',
+  });
+  await client.cancelSession('private-main-session');
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(received.slice(1), [
+    {
+      jsonrpc: '2.0',
+      method: '_x.ai/queue/reorder',
+      params: {
+        sessionId: 'private-main-session',
+        orderedIds: [],
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      method: '_x.ai/queue/remove',
+      params: {
+        sessionId: 'private-main-session',
+        id: 'prompt-queued-1',
+        expectedVersion: 2,
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      method: '_x.ai/queue/edit',
+      params: {
+        sessionId: 'private-main-session',
+        id: 'prompt-queued-2',
+        newText: '修改后的排队消息',
+        clientIdentifier: 'agentmesh360-desktop-window-2',
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      method: '_x.ai/queue/reorder',
+      params: {
+        sessionId: 'private-main-session',
+        orderedIds: ['prompt-queued-2', 'prompt-queued-1'],
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      method: '_x.ai/queue/clear',
+      params: {
+        sessionId: 'private-main-session',
+        clientIdentifier: 'agentmesh360-desktop',
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      method: '_x.ai/queue/interject',
+      params: {
+        sessionId: 'private-main-session',
+        id: 'prompt-queued-2',
+        expectedVersion: 3,
+        clientIdentifier: 'agentmesh360-desktop',
+        newText: '立即执行修改后的消息',
+      },
+    },
+    {
+      jsonrpc: '2.0',
+      method: 'session/cancel',
+      params: {
+        sessionId: 'private-main-session',
+        _meta: { cancelTrigger: 'user' },
+      },
+    },
+  ]);
+  assert.ok(received.slice(1).every((message) => !Object.hasOwn(message, 'id')));
+  assert.equal(JSON.stringify(received).includes('must-not-cross-the-boundary'), false);
+  await client.stop();
+});
+
+test('ACP prompt and queue transport reject invalid metadata before writing a frame', async () => {
+  const received = [];
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl: () => fakeChild((message) => {
+      received.push(message);
+      if (message.method === 'initialize') {
+        return { protocolVersion: 1, agentCapabilities: {} };
+      }
+      return undefined;
+    }),
+    requestTimeoutMs: 500,
+  });
+
+  await assert.rejects(
+    client.promptSession({ sessionId: 'session', text: 'hello', promptId: '' }),
+    (error) => error.code === 'invalid_prompt_metadata',
+  );
+  await assert.rejects(
+    client.promptSession({ sessionId: 'session', text: 'hello', sendNow: 'yes' }),
+    (error) => error.code === 'invalid_prompt_metadata',
+  );
+  await assert.rejects(
+    client.promptSession({ sessionId: 'session', text: 'hello', clientIdentifier: 'x'.repeat(129) }),
+    (error) => error.code === 'invalid_prompt_metadata',
+  );
+  await assert.rejects(
+    client.removeQueuedPrompt({ sessionId: '', id: 'p1', expectedVersion: 0 }),
+    (error) => error.code === 'invalid_session_id',
+  );
+  await assert.rejects(
+    client.removeQueuedPrompt({ sessionId: 'session', id: 'p1', expectedVersion: -1 }),
+    (error) => error.code === 'invalid_queue_operation',
+  );
+  await assert.rejects(
+    client.editQueuedPrompt({ sessionId: 'session', id: 'p1', newText: ' '.repeat(2) }),
+    (error) => error.code === 'invalid_queue_operation',
+  );
+  await assert.rejects(
+    client.reorderQueuedPrompts({ sessionId: 'session', orderedIds: ['p1', 'p1'] }),
+    (error) => error.code === 'invalid_queue_operation',
+  );
+  await assert.rejects(
+    client.reorderQueuedPrompts({
+      sessionId: 'session',
+      orderedIds: Array.from({ length: 257 }, (_, index) => `p-${index}`),
+    }),
+    (error) => error.code === 'invalid_queue_operation',
+  );
+  await assert.rejects(
+    client.sendQueuedPromptNow({
+      sessionId: 'session',
+      id: 'p1',
+      expectedVersion: 0,
+      clientIdentifier: '\ninvalid',
+    }),
+    (error) => error.code === 'invalid_queue_operation',
+  );
+  await assert.rejects(
+    client.cancelSession(' '),
+    (error) => error.code === 'invalid_session_id',
+  );
+
+  assert.deepEqual(received, []);
 });
 
 test('ACP client handles standard permission reverse requests without exposing arbitrary responses', async () => {
@@ -1167,6 +1363,95 @@ test('ACP client rejects malformed and duplicate permission requests', async () 
     },
   );
   await fixture.client.stop();
+});
+
+test('ACP input capability query sends only Main-owned agent and Session authority', async () => {
+  const received = [];
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.agentmesh360/agents/input-capabilities/get') {
+      return {
+        result: {
+          schemaVersion: 1,
+          revision: 9,
+          agentId: 'job-agent',
+          commands: [],
+          skills: [],
+        },
+      };
+    }
+    return { result: null };
+  });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+
+  const result = await client.getAgentInputCapabilities({
+    agentId: 'job-agent',
+    sessionId: 'private-main-session',
+  });
+
+  assert.equal(result.revision, 9);
+  assert.deepEqual(received[1], {
+    jsonrpc: '2.0',
+    id: 2,
+    method: '_x.agentmesh360/agents/input-capabilities/get',
+    params: {
+      agentId: 'job-agent',
+      sessionId: 'private-main-session',
+    },
+  });
+  await assert.rejects(
+    client.getAgentInputCapabilities({
+      agentId: 'job-agent\u0000attacker',
+      sessionId: 'private-main-session',
+    }),
+    /Agent ID/u,
+  );
+  await client.stop();
+});
+
+test('ACP Prompt History query keeps cwd and private Session authority on the extension wire', async () => {
+  const received = [];
+  const spawnImpl = () => fakeChild((request) => {
+    received.push(request);
+    if (request.method === 'initialize') return { capabilities: {} };
+    if (request.method === '_x.ai/prompt_history') {
+      return { result: { prompts: ['继续上次的岗位分析'] } };
+    }
+    return { result: null };
+  });
+  const client = new AcpHostClient({
+    command: '/fake/host',
+    env: embeddedHostEnv,
+    spawnImpl,
+    requestTimeoutMs: 500,
+  });
+
+  const result = await client.getPromptHistory({
+    cwd: '/private/agent-workspaces/job-agent',
+    sessionId: 'private-main-session',
+  });
+
+  assert.deepEqual(result, { prompts: ['继续上次的岗位分析'] });
+  assert.deepEqual(received[1], {
+    jsonrpc: '2.0',
+    id: 2,
+    method: '_x.ai/prompt_history',
+    params: {
+      cwd: '/private/agent-workspaces/job-agent',
+      filter_session_id: 'private-main-session',
+    },
+  });
+  await assert.rejects(
+    client.getPromptHistory({ cwd: 'relative/path', sessionId: 'private-main-session' }),
+    /Prompt History/u,
+  );
+  await client.stop();
 });
 
 function permissionLifecycleFixture() {

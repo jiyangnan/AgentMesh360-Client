@@ -36,6 +36,47 @@
         assert!(app.shared_prompt_queue("sess-1").is_none());
     }
 
+    /// Delivery can reorder fire-and-forget notifications. Once a versioned
+    /// frame has been applied, older, duplicate, and legacy-shaped frames must
+    /// not roll back either the AppView queue or its per-agent mirror.
+    #[test]
+    fn queue_changed_discards_out_of_order_snapshots() {
+        let mut app = make_app_with_agent("sess-1");
+
+        assert!(handle_ext_notification(
+            &queue_changed_at_revision("sess-1", 2, &["new"]),
+            &mut app,
+        ));
+        assert_eq!(
+            app.shared_prompt_queue("sess-1")
+                .expect("revision 2 applied")[0]
+                .id,
+            "new"
+        );
+
+        for stale in [
+            queue_changed_at_revision("sess-1", 1, &["old"]),
+            queue_changed_at_revision("sess-1", 2, &[]),
+            queue_changed_ext("sess-1", &["legacy"]),
+        ] {
+            assert!(handle_ext_notification(&stale, &mut app));
+            assert_eq!(
+                app.shared_prompt_queue("sess-1")
+                    .expect("stale snapshot ignored")[0]
+                    .id,
+                "new"
+            );
+            assert_eq!(app.agents[&AgentId(0)].shared_queue[0].id, "new");
+        }
+
+        assert!(handle_ext_notification(
+            &queue_changed_at_revision("sess-1", 3, &[]),
+            &mut app,
+        ));
+        assert!(app.shared_prompt_queue("sess-1").is_none());
+        assert!(app.agents[&AgentId(0)].shared_queue.is_empty());
+    }
+
     /// When a server-origin row being edited disappears from a later
     /// broadcast (drained / removed by another client), the queue handler
     /// exits `EditingQueued` so the composer isn't stranded.
@@ -326,6 +367,7 @@
         // shell emits it pins the wire shape the handler consumes, not cross-crate compat.
         let shell_payload = xai_grok_shell::session::prompt_queue::QueueChanged {
             session_id: "sess-1".to_string(),
+            queue_revision: 1,
             entries: Vec::new(),
             running_prompt_id: Some("prompt-running".to_string()),
         };
@@ -1422,6 +1464,7 @@
         // Shell and pager share the xai-prompt-queue type; pin kind through a serde cycle.
         let shell = xai_grok_shell::session::prompt_queue::QueueChanged {
             session_id: "sess-1".to_string(),
+            queue_revision: 1,
             entries: vec![xai_grok_shell::session::prompt_queue::QueueEntryWire {
                 id: "b1".to_string(),
                 version: 0,

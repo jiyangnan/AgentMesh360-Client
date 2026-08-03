@@ -269,7 +269,7 @@ impl SessionActor {
         }
         // Broadcast the new authoritative queue to all subscribers
         // (fire-and-forget, never persisted).
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
         cancel_running_turn
     }
 
@@ -349,9 +349,14 @@ impl SessionActor {
     /// Broadcast the current authoritative prompt queue to all subscribers
     /// Fire-and-forget via the gateway, carrying `sessionId`
     /// so session routing fans it to every attached client. Never persisted.
-    pub(super) fn broadcast_queue_changed(&self, state: &State) {
+    pub(super) fn broadcast_queue_changed(&self, state: &mut State) {
+        state.queue_revision = state
+            .queue_revision
+            .checked_add(1)
+            .expect("prompt queue revision exhausted");
         let payload = crate::session::prompt_queue::QueueChanged {
             session_id: self.session_info.id.0.to_string(),
+            queue_revision: state.queue_revision,
             entries: self.build_queue_wire(state),
             // Correlation signal: the prompt the actor is currently
             // draining, so subscribers can adopt `current_prompt_id`. `None`
@@ -363,6 +368,7 @@ impl SessionActor {
             target: "qtrace",
             pid = std::process::id(),
             event = "server_broadcast_queue",
+            queue_revision = payload.queue_revision,
             running_prompt_id = payload.running_prompt_id.as_deref().unwrap_or(""),
             entry_count = payload.entries.len(),
             entries = ?payload.entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
@@ -454,7 +460,7 @@ impl SessionActor {
             );
         }
         // Always re-broadcast the authoritative queue so the client reconciles.
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
     }
 
     /// Atomically interject a queued (not-yet-running) prompt into the running
@@ -570,7 +576,7 @@ impl SessionActor {
             );
         }
         // Always re-broadcast the authoritative queue so the client reconciles.
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
         cancel_running_turn
     }
 
@@ -611,7 +617,7 @@ impl SessionActor {
         rebuilt.extend(queued);
         state.pending_inputs = rebuilt;
 
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
     }
 
     /// Clear queued prompts. When `owner` is `Some`, only that
@@ -643,7 +649,7 @@ impl SessionActor {
             }
         }
         state.pending_inputs = kept;
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
     }
 
     /// Replace the text of a queued (not-yet-running) prompt in place
@@ -697,7 +703,7 @@ impl SessionActor {
             return;
         };
         Self::apply_queued_prompt_edit(item, new_text, editor);
-        self.broadcast_queue_changed(&state);
+        self.broadcast_queue_changed(&mut state);
     }
 
     /// Replace a queued item's prompt body with `new_text` and bump its LWW

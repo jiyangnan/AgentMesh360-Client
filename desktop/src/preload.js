@@ -57,6 +57,37 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     },
   ),
   getConversationSnapshot: () => ipcRenderer.invoke('conversation:get-snapshot'),
+  getConversationInputCapabilities: () => ipcRenderer.invoke(
+    'conversation:get-input-capabilities',
+  ),
+  getConversationWorkspaces: () => ipcRenderer.invoke('conversation:get-workspaces'),
+  authorizeConversationWorkspace: () => ipcRenderer.invoke('conversation:authorize-workspace'),
+  revokeConversationWorkspace: (workspaceId) => ipcRenderer.invoke(
+    'conversation:revoke-workspace',
+    String(workspaceId || '').slice(0, 64),
+  ),
+  searchConversationWorkspaceFiles: ({ query = '', workspaceId = null } = {}) => ipcRenderer.invoke(
+    'conversation:search-workspace-files',
+    {
+      query: String(query || '').slice(0, 201),
+      workspaceId: workspaceId === null ? null : String(workspaceId || '').slice(0, 64),
+    },
+  ),
+  stageConversationWorkspaceFile: ({ workspaceId, relativePath } = {}) => ipcRenderer.invoke(
+    'conversation:stage-workspace-file',
+    {
+      workspaceId: String(workspaceId || '').slice(0, 64),
+      relativePath: String(relativePath || '').slice(0, 1_025),
+    },
+  ),
+  searchConversationPromptHistory: (query = '') => ipcRenderer.invoke(
+    'conversation:search-prompt-history',
+    String(query || '').slice(0, 201),
+  ),
+  selectConversationPromptHistory: (historyId) => ipcRenderer.invoke(
+    'conversation:select-prompt-history',
+    String(historyId || '').slice(0, 64),
+  ),
   openAgentConversation: (agentId) => ipcRenderer.invoke(
     'conversation:open',
     String(agentId || '').slice(0, 100),
@@ -102,16 +133,52 @@ contextBridge.exposeInMainWorld('agentmesh360', {
       ? request.attachmentIds.slice(0, 11).map((value) => String(value || '').slice(0, 65))
       : [],
   }),
+  sendConversationMessageNow: (request) => ipcRenderer.invoke('conversation:send-now', {
+    text: String(request?.text || '').slice(0, 16_001),
+    attachmentIds: Array.isArray(request?.attachmentIds)
+      ? request.attachmentIds.slice(0, 11).map((value) => String(value || '').slice(0, 65))
+      : [],
+  }),
   interjectConversationMessage: (text) => ipcRenderer.invoke(
     'conversation:interject',
     String(text || '').slice(0, 16_001),
   ),
+  removeQueuedConversationMessage: (queueId) => ipcRenderer.invoke(
+    'conversation:queue-remove',
+    String(queueId || '').slice(0, 32),
+  ),
+  editQueuedConversationMessage: (queueId, text) => ipcRenderer.invoke(
+    'conversation:queue-edit',
+    String(queueId || '').slice(0, 32),
+    String(text || '').slice(0, 16_001),
+  ),
+  reorderQueuedConversationMessages: (queueIds) => ipcRenderer.invoke(
+    'conversation:queue-reorder',
+    Array.isArray(queueIds)
+      ? queueIds.slice(0, 51).map((value) => String(value || '').slice(0, 32))
+      : [],
+  ),
+  clearQueuedConversationMessages: () => ipcRenderer.invoke('conversation:queue-clear'),
+  sendQueuedConversationMessageNow: (queueId) => ipcRenderer.invoke(
+    'conversation:queue-send-now',
+    String(queueId || '').slice(0, 32),
+  ),
+  cancelCurrentConversationTask: () => ipcRenderer.invoke('conversation:cancel-current'),
   respondConversationPermission: (interactionId, optionId = null) => ipcRenderer.invoke(
     'conversation:respond-permission',
     String(interactionId || '').slice(0, 100),
     optionId === null ? null : String(optionId || '').slice(0, 100),
   ),
   closeAgentConversation: () => ipcRenderer.invoke('conversation:close'),
+  getDictationSnapshot: () => ipcRenderer.invoke('dictation:get-snapshot'),
+  openConversationDictation: () => ipcRenderer.invoke('dictation:open'),
+  startConversationDictation: (disclosureAccepted = false) => ipcRenderer.invoke(
+    'dictation:start',
+    { disclosureAccepted: disclosureAccepted === true },
+  ),
+  stopConversationDictation: () => ipcRenderer.invoke('dictation:stop'),
+  cancelConversationDictation: () => ipcRenderer.invoke('dictation:cancel'),
+  closeConversationDictation: () => ipcRenderer.invoke('dictation:close'),
   getProviderSnapshot: () => ipcRenderer.invoke('provider:get-snapshot'),
   createProviderProfile: ({ profile, apiKey }) => ipcRenderer.invoke('provider:create-profile', {
     profile,
@@ -192,5 +259,10 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on('conversation:state', handler);
     return () => ipcRenderer.removeListener('conversation:state', handler);
+  },
+  onDictationState: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on('dictation:state', handler);
+    return () => ipcRenderer.removeListener('dictation:state', handler);
   },
 });

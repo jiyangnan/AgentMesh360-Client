@@ -65,6 +65,7 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
     let state = TokioMutex::new(State {
         running_task: None,
         pending_inputs: VecDeque::new(),
+        queue_revision: 0,
         pending_notifications: Vec::new(),
         notifications_suppressed: false,
         rewindable: false,

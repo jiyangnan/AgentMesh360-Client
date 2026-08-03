@@ -46,6 +46,20 @@ streaming = "preferred"
 [skills]
 canonicalWorkflow = "docs/agent-onboarding.md"
 
+[[skills.userFacing]]
+id = "career-profile"
+displayName = "建立求职档案"
+description = "梳理职业背景、技能、目标岗位与求职约束。"
+promptToken = "$career-profile"
+promptText = "请帮我建立或更新求职档案。先区分我已经确认的事实、仍需补充的信息和你的推断，再逐步询问关键背景、技能、目标岗位与约束。"
+
+[[skills.userFacing]]
+id = "job-search"
+displayName = "规划职位搜索"
+description = "根据目标、证据和约束制定可执行的职位搜索方案。"
+promptToken = "$job-search"
+promptText = "请基于我的求职档案规划本轮职位搜索。明确筛选条件、证据缺口、优先渠道、候选机会和下一步动作；未经我确认不要投递或对外发送信息。"
+
 [[skills.adapters]]
 host = "claude-code"
 path = "skills/claude-code/SKILL.md"

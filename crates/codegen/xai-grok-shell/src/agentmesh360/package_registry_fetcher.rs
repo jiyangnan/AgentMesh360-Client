@@ -148,6 +148,27 @@ impl PackageRegistryFetcher {
         }
     }
 
+    pub(crate) fn verifies_installed_signature(
+        &self,
+        package_id: &str,
+        agent_id: &str,
+        version: &str,
+        publisher: &str,
+        signature_key_id: &str,
+        access: &ClientAccess,
+    ) -> bool {
+        self.cache
+            .verifies_installed_signature(
+                package_id,
+                agent_id,
+                version,
+                publisher,
+                signature_key_id,
+                access,
+            )
+            .unwrap_or(false)
+    }
+
     pub(crate) async fn refresh(&self, access: &ClientAccess) -> PackageRegistryFetchStatus {
         let checked_at = match access.trusted_server_now() {
             Ok(now) => now,

@@ -245,6 +245,7 @@ fn test_app() -> AppView {
         dashboard_local_sessions: Vec::new(),
         dashboard_sessions_loading: false,
         shared_prompt_queues: std::collections::HashMap::new(),
+        shared_prompt_queue_revisions: std::collections::HashMap::new(),
         optimistic_prompt_echoes: std::collections::HashMap::new(),
         pending_running_adoptions: std::collections::HashMap::new(),
         session_picker_grouped: false,

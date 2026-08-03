@@ -1,6 +1,6 @@
 # Grok-first 输入系统 V2
 
-状态：V2.1 已完成源码、回归与内部打包；V2.2 以后按本文顺序推进
+状态：V2.1 已内部打包；V2.2–V2.6 源码与定向回归完成，唯一新内部包待最终全量门禁
 更新：2026-08-03
 
 ## 1. 这次要解决的不是“多放几个按钮”
@@ -54,7 +54,7 @@ Grok Build 部分直接核对本仓库 fork 的源码。源码能力不等于 Ag
 | --- | --- | --- |
 | 文本、图片、嵌入文件、链接 | ACP 已支持；V1 已接入 | 保留当前 Composer 与私有暂存合同 |
 | 工作中补充要求 | `x.ai/interject` 已支持文字与图片 | V2.1 先开放文字“追加指令” |
-| Prompt Queue | 有权威版本、顺序、编辑、删除、重排、立即执行和通知 | V2.2 在 Session 状态重构和附件预留后开放 |
+| Prompt Queue | 有顺序、单条版本、编辑、删除、重排、立即执行和通知；当前 fork 缺队列级 Revision | V2.2 先补 `queueRevision`，再在 Session 状态重构和附件预留后开放 |
 | 停止当前任务 | 标准 ACP `session/cancel` | V2.3 作为运行态次要行动开放 |
 | 打断并立即执行 | Queue `sendNow` | V2.3 与“追加要求”“排队发送”明确分开 |
 | `/` 命令和动态 Skill | 有命令列表与模糊补全 | V2.4 只开放产品 allowlist 与已签名 Package 声明项 |
@@ -108,10 +108,16 @@ Session 确实处于 streaming 时接受，避免空闲时被 Grok 自动转成�
 队列不能只做 Renderer 本地数组。实现前必须同时完成：
 
 1. Main Controller 按 `account + agent + session` 保存状态；
-2. 消费 `x.ai/queue/changed` 权威版本；
+2. 先给 `x.ai/queue/changed` 补充队列级单调 `queueRevision`，再消费权威全量快照；
 3. Prompt 级附件 reservation，排队后不能被另一个草稿删除或复用；
 4. 发送 IPC 不再把“等待整个 Turn 完成”误当作“服务器接受排队”的确认；
 5. Agent A 在后台执行时，切到 B 后 A 的队列和结果仍能正确对账。
+
+V2.2 审计发现：现有 Entry `version` 只能保护单条编辑/删除，不能判断删除、清空、重排或
+重连后的两份全量快照谁更新；因此 Renderer 不得在协议修复前自行推断队列新旧。附件也从
+本阶段起绑定具体 Session 与 Prompt；被预留的附件不能删除或用于另一条消息。客户端重启
+只恢复经过 `0600` 私有清单校验的草稿/预留记录，并清理孤儿文件；不确定是否入队时不自动
+重发，避免重复执行。
 
 ### 5.4 命令、Skill、文件与语音
 
@@ -123,9 +129,9 @@ Session 确实处于 streaming 时接受，避免空闲时被 Grok 自动转成�
 - 点击麦克风或快捷键：先转成可编辑文字，用户仍需确认发送。
 - 模型、工作模式和推理强度继续位于 Agent 齿轮设置，不回到主对话固定视觉层。
 
-## 6. V2.1 本轮实现合同
+## 6. V2 当前实现合同
 
-本轮只关闭最短、最重要的持续协作链路：
+V2.1 先关闭最短、最重要的持续协作链路；V2.2–V2.6 继续按 authority 依赖完成：
 
 1. 用户指定的准确隐私文案；
 2. Enter 发送、Shift+Enter 换行，输入法组合态不误发；
@@ -134,23 +140,39 @@ Session 确实处于 streaming 时接受，避免空闲时被 Grok 自动转成�
 5. Host 广播作为唯一用户消息回显，不做乐观重复消息；
 6. 插话只属于当前私有 Main Session，Renderer 不取得 Session ID；
 7. 插话失败恢复草稿；运行态附件入口明确禁用；
-8. 1280×800 与 1440×900 下仍由 Transcript 独立滚动，Composer 完整可见。
+8. Main 以 account + Agent + Session 保存权威 Queue、活动、附件 reservation 与异步提交；
+9. 调整当前、排队、立即执行、停止使用不同 Host 原语，不由 Renderer 猜测；
+10. `/` 只开放 `/compact`、`/context`、`/session-info`，Renderer 菜单和 Main 发送入口
+    双重阻止 yolo、永久批准、插件、Hook、Shell 等未知命令；
+11. `$` 只来自当前通过签名与信任校验的 Agent Package user-facing Skill；
+12. `@` 只搜索当前 Agent 明确授权的目录，经过 realpath containment、root identity、类型、
+    大小和 TOCTOU 校验后才转为私有附件；
+13. Prompt History 绑定 Host 私有 Main Session，公开层先给预览，显式选择才回填全文；
+14. 1,200 字或 20 行的大段粘贴变成可编辑卡片，最多四段、合计 16,000 字；
+15. 听写首击只披露，确认后才请求 macOS 麦克风；最长 60 秒，结果只写入可编辑草稿，
+    不调用发送；没有支持听写的 Provider 时给出模型供应商配置入口；
+16. 1180×760、1280×768、1280×800 与 1440×900 下仍由 Transcript/浮层内部滚动，
+    Composer 完整可见。
 
-本轮不实现完整队列、停止、send-now、`/`、`$`、`@`、历史、大段粘贴卡片、语音、
-图片插话或音频理解，也不改变 Provider、credits、订阅和 Package 发布边界。
+V2 仍不开放图片中途 interject、自由 Shell、Audio 内容理解、云附件库、真正多会话、模型
+fallback、Provider 价格余额、在线商店、P7/P8、签名公证或公开发布；也不改变 credits、订阅
+和 Agent Package 发布 authority。
 
 ## 7. 验收场景
 
-V2.1 至少覆盖：
+V2 全量至少覆盖：
 
 - 空闲时 Enter 发送，Shift+Enter 不发送，中文输入法组合态不误发；
-- Turn 运行时输入框可编辑、“＋”禁用、按钮为“追加指令”；
+- Turn 运行时输入框和“＋”可用，附件自动进入排队语义；
 - 插话进入当前私有 Session，Host 广播后只显示一次独立用户消息；
 - 插话不把 `streaming` 改成 false，不取消原 Turn；
 - 空闲、无 authority、超长输入、Host 拒绝均失败关闭；
 - 插话失败恢复当前 Agent 草稿，切到其他 Agent 不串线；
-- 用户可见文案不出现 Core、Host、Bridge 等内部节点；
+- Queue 乱序、重连、跨 Agent 后台运行、附件 reservation 和 unknown 提交不自动重发；
+- `/`、`$`、`@`、历史均只插入/附加，不自动发送；危险 Slash 即使手工输入也无法绕过；
+- 工作目录绝对路径、Session、签名 Key 和 Provider secret 不进入 Renderer；
+- 打开历史后输入普通文字会立即关闭历史，Enter 不会误选旧消息；
+- 听写未经披露不请求麦克风，complete 只回填一次，旧账号/低 revision 不覆盖；
+- 用户可见文案不出现 Core、Host、Bridge 等内部节点；Composer 精确使用
+  `附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360`；
 - 13 寸窗口中运行态提示不把 Composer 推出视口。
-
-V2.2 起必须另补：两条以上队列、乱序通知、版本冲突、重连、跨 Agent 后台状态、排队
-附件删除/失败/取消/重启，以及 `@` 路径越界和危险 Slash 命令不可见等负向测试。

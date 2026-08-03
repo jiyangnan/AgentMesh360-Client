@@ -736,6 +736,9 @@ pub struct AppView {
     /// by other clients). Empty in non-leader mode.
     pub shared_prompt_queues:
         std::collections::HashMap<String, Vec<crate::app::prompt_queue::QueueEntryWire>>,
+    /// Last applied versioned queue snapshot for each session. Revision `0`
+    /// denotes an older, unversioned shell and is intentionally not recorded.
+    pub shared_prompt_queue_revisions: std::collections::HashMap<String, u64>,
     /// Optimistic echo rows for prompts the pager sent server-authoritatively
     /// (plain prompt typed while a turn is running) but for which the
     /// confirming `x.ai/queue/changed` broadcast has not yet arrived. Keyed by
@@ -1401,6 +1404,7 @@ impl AppView {
             dashboard_local_sessions: Vec::new(),
             dashboard_sessions_loading: false,
             shared_prompt_queues: std::collections::HashMap::new(),
+            shared_prompt_queue_revisions: std::collections::HashMap::new(),
             optimistic_prompt_echoes: std::collections::HashMap::new(),
             pending_running_adoptions: std::collections::HashMap::new(),
             session_picker_grouped: false,
@@ -1814,6 +1818,7 @@ impl AppView {
     ) -> Vec<(String, String)> {
         let crate::app::prompt_queue::QueueChanged {
             session_id,
+            queue_revision: _,
             mut entries,
             running_prompt_id,
         } = changed;
@@ -1865,6 +1870,28 @@ impl AppView {
             self.shared_prompt_queues.insert(session_id, entries);
         }
         rekeyed_echo_ids
+    }
+    /// Accept only newer versioned queue snapshots for a session.
+    ///
+    /// Revision `0` is the backward-compatible parse default for older shells.
+    /// It is accepted until this client has observed a versioned snapshot for
+    /// the session, then rejected so a delayed legacy-shaped frame cannot roll
+    /// back versioned state.
+    pub(crate) fn accept_queue_revision(&mut self, session_id: &str, revision: u64) -> bool {
+        if revision == 0 {
+            return !self.shared_prompt_queue_revisions.contains_key(session_id);
+        }
+        let last = self
+            .shared_prompt_queue_revisions
+            .get(session_id)
+            .copied()
+            .unwrap_or_default();
+        if revision <= last {
+            return false;
+        }
+        self.shared_prompt_queue_revisions
+            .insert(session_id.to_string(), revision);
+        true
     }
     /// Push an optimistic echo row for a server-authoritative prompt the pager
     /// just sent (a plain prompt or agent-bound kind typed while a turn is
@@ -5396,6 +5423,7 @@ pub(crate) mod tests {
             dashboard_local_sessions: Vec::new(),
             dashboard_sessions_loading: false,
             shared_prompt_queues: std::collections::HashMap::new(),
+            shared_prompt_queue_revisions: std::collections::HashMap::new(),
             optimistic_prompt_echoes: std::collections::HashMap::new(),
             pending_running_adoptions: std::collections::HashMap::new(),
             session_picker_grouped: false,

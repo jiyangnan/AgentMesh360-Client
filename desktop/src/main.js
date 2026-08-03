@@ -10,6 +10,7 @@ const {
   safeStorage,
   session,
   shell,
+  systemPreferences,
 } = require('electron');
 const { AgentMeshCoreClient } = require('./auth/core-client');
 const { DesktopOAuthBroker } = require('./auth/oauth-loopback');
@@ -17,6 +18,9 @@ const { SecureTokenStore } = require('./auth/secure-token-store');
 const { AcpHostClient } = require('./host/acp-client');
 const { AgentConversationController } = require('./conversation-controller');
 const { ConversationAttachmentStore } = require('./conversation-attachment-store');
+const { DictationController } = require('./dictation-controller');
+const { PromptHistoryStore } = require('./prompt-history-store');
+const { WorkspaceAuthorityStore } = require('./workspace-authority-store');
 const { AgentManagementController } = require('./agent-management-controller');
 const { IdentityController } = require('./identity-controller');
 const { PackageController } = require('./package-controller');
@@ -37,6 +41,9 @@ let window = null;
 let controller = null;
 let conversations = null;
 let conversationAttachments = null;
+let conversationWorkspaces = null;
+let conversationPromptHistory = null;
+let dictations = null;
 const canaryRuntime = configureP5CanaryRuntime({ app });
 const loginItems = new LoginItemController({ app });
 const startupIntent = resolveStartupIntent({
@@ -81,6 +88,17 @@ async function boot() {
     rootDir: path.join(app.getPath('userData'), 'conversation-drafts'),
   });
   await conversationAttachments.initialize();
+  conversationWorkspaces = new WorkspaceAuthorityStore({
+    rootDir: path.join(app.getPath('userData'), 'conversation-workspaces'),
+    attachmentStore: conversationAttachments,
+  });
+  await conversationWorkspaces.initialize();
+  conversationPromptHistory = new PromptHistoryStore({
+    requestHistory: ({ params }) => host.getPromptHistory({
+      cwd: params.cwd,
+      sessionId: params.filter_session_id,
+    }),
+  });
   controller = new IdentityController({ core, tokenStore, host, oauth });
   conversations = new AgentConversationController({
     identity: controller,
@@ -91,10 +109,13 @@ async function boot() {
       agentId,
     }),
     attachmentStore: conversationAttachments,
+    workspaceAuthorityStore: conversationWorkspaces,
+    promptHistoryStore: conversationPromptHistory,
   });
   const packages = new PackageController({ identity: controller, host });
   const providers = new ProviderController({ identity: controller, host });
   const agentManagement = new AgentManagementController({ identity: controller, host });
+  dictations = new DictationController({ identity: controller, host });
 
   registerIpc(
     controller,
@@ -104,6 +125,7 @@ async function boot() {
     agentManagement,
     loginItems,
     host,
+    dictations,
   );
   windows.onReady();
   controller.subscribe((state) => {
@@ -112,7 +134,16 @@ async function boot() {
   conversations.subscribe((state) => {
     if (!window?.isDestroyed()) window.webContents.send('conversation:state', state);
   });
+  dictations.subscribe((state) => {
+    if (!window?.isDestroyed()) window.webContents.send('dictation:state', state);
+  });
   powerMonitor.on('resume', () => controller.revalidate('resume').catch(() => {}));
+  const cancelDictationForSystemPause = () => {
+    if (!['starting', 'listening', 'transcribing'].includes(dictations?.getSnapshot()?.phase)) return;
+    dictations.cancel().catch(() => {});
+  };
+  powerMonitor.on('suspend', cancelDictationForSystemPause);
+  powerMonitor.on('lock-screen', cancelDictationForSystemPause);
   const initialState = await controller.start();
   if (
     startupIntent.background
@@ -169,6 +200,7 @@ function registerIpc(
   agentManagement,
   loginItemController,
   host,
+  dictationController = null,
 ) {
   ipcMain.handle('identity:get-state', () => identity.getState());
   ipcMain.handle('identity:login', (_event, credentials) => {
@@ -218,6 +250,45 @@ function registerIpc(
     return agentManagement.clearCustomization(request);
   });
   ipcMain.handle('conversation:get-snapshot', () => conversationController.getSnapshot());
+  ipcMain.handle('conversation:get-input-capabilities', () => {
+    return conversationController.getInputCapabilities();
+  });
+  ipcMain.handle('conversation:get-workspaces', () => {
+    return conversationController.getAuthorizedWorkspaces();
+  });
+  ipcMain.handle('conversation:authorize-workspace', async () => {
+    const expectedAgentId = conversationController.getSnapshot().agentId;
+    const options = {
+      title: '授权当前 Agent 引用工作文件',
+      buttonLabel: '授权此文件夹',
+      properties: ['openDirectory'],
+    };
+    const result = window && !window.isDestroyed()
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length !== 1) {
+      return conversationController.getAuthorizedWorkspaces();
+    }
+    if (conversationController.getSnapshot().agentId !== expectedAgentId) {
+      throw new Error('Agent 已切换，请在当前对话中重新授权工作文件夹');
+    }
+    return conversationController.authorizeWorkspaceRoot(result.filePaths[0]);
+  });
+  ipcMain.handle('conversation:revoke-workspace', (_event, workspaceId) => {
+    return conversationController.revokeWorkspace(workspaceId);
+  });
+  ipcMain.handle('conversation:search-workspace-files', (_event, request) => {
+    return conversationController.searchWorkspaceFiles(request);
+  });
+  ipcMain.handle('conversation:stage-workspace-file', (_event, request) => {
+    return conversationController.stageWorkspaceFile(request);
+  });
+  ipcMain.handle('conversation:search-prompt-history', (_event, query) => {
+    return conversationController.searchPromptHistory(query);
+  });
+  ipcMain.handle('conversation:select-prompt-history', (_event, historyId) => {
+    return conversationController.selectPromptHistory(historyId);
+  });
   ipcMain.handle('conversation:open', (_event, agentId) => {
     return conversationController.open(agentId);
   });
@@ -266,13 +337,67 @@ function registerIpc(
   ipcMain.handle('conversation:send', (_event, request) => {
     return conversationController.send(request);
   });
+  ipcMain.handle('conversation:send-now', (_event, request) => {
+    return conversationController.sendNow(request);
+  });
   ipcMain.handle('conversation:interject', (_event, text) => {
     return conversationController.interject(text);
+  });
+  ipcMain.handle('conversation:queue-remove', (_event, queueId) => {
+    return conversationController.removeQueuedPrompt(queueId);
+  });
+  ipcMain.handle('conversation:queue-edit', (_event, queueId, text) => {
+    return conversationController.editQueuedPrompt(queueId, text);
+  });
+  ipcMain.handle('conversation:queue-reorder', (_event, queueIds) => {
+    return conversationController.reorderQueuedPrompts(queueIds);
+  });
+  ipcMain.handle('conversation:queue-clear', () => {
+    return conversationController.clearQueuedPrompts();
+  });
+  ipcMain.handle('conversation:queue-send-now', (_event, queueId) => {
+    return conversationController.sendQueuedPromptNow(queueId);
+  });
+  ipcMain.handle('conversation:cancel-current', () => {
+    return conversationController.cancelCurrentTask();
   });
   ipcMain.handle('conversation:respond-permission', (_event, interactionId, optionId) => {
     return conversationController.respondToPermission(interactionId, optionId);
   });
   ipcMain.handle('conversation:close', () => conversationController.close());
+  if (dictationController) {
+    const currentConversationAgentId = () => {
+      const agentId = conversationController.getSnapshot()?.agentId;
+      if (typeof agentId !== 'string' || !agentId) {
+        throw new Error('请先打开一个 Agent 对话，再使用语音听写。');
+      }
+      return agentId;
+    };
+    ipcMain.handle('dictation:get-snapshot', () => dictationController.getSnapshot());
+    ipcMain.handle('dictation:open', () => {
+      return dictationController.open(currentConversationAgentId());
+    });
+    ipcMain.handle('dictation:start', async (_event, request = {}) => {
+      if (request?.disclosureAccepted !== true) {
+        throw new Error('请先确认录音会交给所选听写服务进行转写。');
+      }
+      await ensureMicrophonePermission();
+      const agentId = currentConversationAgentId();
+      const state = await dictationController.start(agentId, {
+        disclosureAccepted: request?.disclosureAccepted === true,
+      });
+      if (conversationController.getSnapshot()?.agentId !== agentId) {
+        if (['starting', 'listening', 'transcribing'].includes(state?.phase)) {
+          await dictationController.cancel().catch(() => {});
+        }
+        throw new Error('Agent 已切换，本次听写已取消。');
+      }
+      return state;
+    });
+    ipcMain.handle('dictation:stop', () => dictationController.stop());
+    ipcMain.handle('dictation:cancel', () => dictationController.cancel());
+    ipcMain.handle('dictation:close', () => dictationController.close());
+  }
   ipcMain.handle('provider:get-snapshot', () => providers.getSnapshot());
   ipcMain.handle('provider:create-profile', (_event, { profile, apiKey } = {}) => {
     return providers.createProfile(profile, apiKey);
@@ -329,11 +454,34 @@ function openAllowedExternal(url) {
   return shell.openExternal(parsed.toString());
 }
 
+async function ensureMicrophonePermission() {
+  if (process.platform !== 'darwin' || !systemPreferences) return true;
+  const getStatus = systemPreferences.getMediaAccessStatus;
+  const ask = systemPreferences.askForMediaAccess;
+  if (typeof getStatus !== 'function' || typeof ask !== 'function') return true;
+  const status = getStatus.call(systemPreferences, 'microphone');
+  if (status === 'granted') return true;
+  if (status === 'denied' || status === 'restricted') {
+    const error = new Error('没有麦克风权限，请在系统设置中允许 AgentMesh360 使用麦克风。');
+    error.code = 'microphone_permission_denied';
+    throw error;
+  }
+  const granted = await ask.call(systemPreferences, 'microphone');
+  if (granted) return true;
+  const error = new Error('没有麦克风权限，请在系统设置中允许 AgentMesh360 使用麦克风。');
+  error.code = 'microphone_permission_denied';
+  throw error;
+}
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
+  if (['starting', 'listening', 'transcribing'].includes(dictations?.getSnapshot()?.phase)) {
+    dictations.cancel().catch(() => {});
+  }
+  dictations?.dispose();
   conversations?.dispose();
   conversationAttachments?.dispose().catch(() => {});
   controller?.shutdown().catch(() => {});
@@ -342,6 +490,7 @@ app.on('before-quit', () => {
 module.exports = {
   createWindow,
   openAllowedExternal,
+  ensureMicrophonePermission,
   registerIpc,
   SUBSCRIPTION_URL,
   REGISTRATION_URL,

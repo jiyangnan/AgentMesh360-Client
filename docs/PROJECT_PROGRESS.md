@@ -8260,3 +8260,141 @@ owner 要求对照 Codex.app 的输入交互与 Grok Build 原生能力，补足
 生产发布、P7/P8 或真正多会话。下一开发切片必须先把 Main 的单一 Controller 状态改为按
 `account + agent + session` 管理，并给排队附件增加 Prompt reservation；未完成这两个
 前置条件，不在 Renderer 伪造队列，也不直接开放自由 `@` 路径或上游全部 Slash 命令。
+
+### 循环 151：Grok-first 输入系统 V2.2 权威队列基础
+
+状态：实施中；附件 reservation 模块已完成定向回归
+
+本轮开始前重新核对了 V2 设计与当前源码，没有把需求缩成 Queue UI。只读审计确认：Main
+仍只有一份当前会话状态，后台 Agent 通知会被丢弃；`session/prompt` 又等待整轮结束；Grok
+Queue 只有 Entry version，没有可判断乱序全量快照的新旧 `queueRevision`。因此当前执行
+顺序保持为：先修 Harness Queue 协议和 Desktop 传输，再建立 Main 多 Session 权威状态，
+最后开放队列交互，不在 Renderer 维护伪权威数组。
+
+已完成模块：
+
+1. `ConversationAttachmentStore` 新增绑定 account + Agent + Session + Prompt 的 reservation；
+   被预留的附件不再出现在草稿列表，不能删除或被另一条消息重复使用；
+2. 明确区分 submitting、accepted、unknown；确定的入队前失败可释放回草稿，不确定结果
+   保持隔离且不自动重发，确认后可安全消费本地字节；
+3. 附件清单与内容继续只保存在 `0700` 本机目录，清单和文件使用 `0600`，清单采用原子
+   替换；冷启动恢复校验通过的草稿/预留并清理孤儿，损坏或缺失清单则失败关闭并清场；
+4. 定向测试覆盖跨 Session/Prompt 防复用、预留后禁止删除、release、accepted/consume、
+   重启恢复、孤儿清理、账号隔离和旧安全边界，当前 6/6 passed。
+
+计划复盘与下一步：本模块仍属于 V2.2 既定前置条件，没有开放新视觉功能，也没有触碰
+Provider、订阅、credits、生产发布或危险命令。下一步按计划完成 `queueRevision`、无 ID
+Queue Notification 和标准 Cancel，然后重构 Main 多 Session 状态与异步提交；完成这些
+权威层之前不开始 Queue Strip，也不提前进入 V2.4–V2.6。
+
+### 循环 152：Grok-first 输入系统 V2.2–V2.3 权威队列与运行态控制
+
+状态：源码与定向回归已完成；V2.4–V2.6 继续实施中，尚未打包
+
+本轮按循环 151 的依赖顺序完成权威层后才开放 UI，没有在 Renderer 维护本地伪队列：
+
+1. Grok Queue 的每份权威广播新增 SessionActor 生命周期内单调递增的 `queueRevision`；
+   入队、删除、编辑、重排、清空、send-now、运行槽切换和同态对账广播都递增。Pager 与
+   Desktop 均忽略旧版、重复与 legacy 回退快照；Host transport 换代时 Desktop 明确重置
+   revision generation，再接收新 SessionActor 的首份快照；
+2. Desktop ACP 增加客户端生成 Prompt ID、无 request id 的受控 Queue Notification、标准
+   `session/cancel`，并严格校验 remove/edit/reorder/clear/send-now 的参数；Queue 首次出现
+   Prompt ID 即为入队确认，`session/prompt` 继续负责最终 Turn 完成，两者不再混为一次等待；
+3. Conversation Controller 改为按 account + Agent + Session 保存消息、活动、权限、Queue、
+   附件 reservation 与提交状态。Agent A 在后台运行时可切换 B，A 的通知继续对账，当前
+   对话投影不会被覆盖；连接结果不确定时保留 unknown、阻止重复提交，权威 Queue 恢复后
+   才解除；
+4. Composer 增加渐进披露的四种意图：默认“调整当前任务”，也可选择“排队等待”“立即执行”
+   和“停止当前任务”。运行时附件可继续添加，但会自动进入排队语义；只有 Queue 非空或
+   正在确认时才显示 40px 紧凑条，展开后支持编辑、删除、重排、立即执行和清空；
+5. Main/Preload 只接收公开 `queue-N`，真实 Prompt ID、Session ID、cwd 和附件路径留在 Main；
+   Queue mutation 只在更高 revision 的权威快照中确认，不把按钮点击当成最终成功。
+
+定向证据：Rust Queue 协议 6/6、Shell Prompt Queue 38/38、Pager Queue 10/10 passed；ACP 与
+Conversation Controller Node 70/70 passed；Conversation Electron smoke 覆盖四条 Queue 的
+40px 折叠、展开、重排、编辑、send-now、停止和 Composer 立即执行；1280×768 紧凑布局在
+10 个附件与长内容下仍保持页面高度 768px、Composer bottom 750px、Transcript 独立滚动；
+`npm run check`、`cargo fmt --all -- --check` 与 `git diff --check` 通过。本轮 Rust 验证生成的
+约 37GB 仓库 `target/` 已清理，当前不存在。用户明确要求本轮不用 Kimi，因此只保留本机
+源码、协议、负向测试和 Electron 实际布局证据，不声称独立交叉审查。
+
+计划复盘：V2.2–V2.3 没有改变 Provider、订阅、credits、Package 签名或生产发布边界；运行
+态附件也仍只发送给当前 BYOK 模型。下一模块严格进入 V2.4：先在 Main/Host 做安全命令
+allowlist 和已签名 Package Skill 投影，再接 `/`、`$` 按需浮层；之后才做受控 `@`、历史、
+大段粘贴与听写。完整 V2 尚未完成，因此本轮不生成中间测试包。
+
+### 循环 153：Grok-first 输入系统 V2.4 安全命令与 Agent Skill
+
+状态：源码、Host/Controller 定向测试与 Electron 主链回归已完成；不生成中间包
+
+本轮先复核 V2 计划，按依赖只开放命令和 Skill，没有把 Grok 开发者控制面原样暴露给普通
+用户：
+
+1. Host 新增窄 `x.agentmesh360/agents/input-capabilities/get`，公开响应只含 schema、revision、
+   当前 Agent、三条产品命令和可信 Package 的 user-facing Skill；私有 Session、cwd、Package
+   路径、签名 Key 与 Trust 证据不进入 Renderer；
+2. `/` 只开放 `/compact`、`/context`、`/session-info`；`$` 只来自当前 active、签名有效且
+   Trust 未撤销的 Agent Package；未知、重复、错 Agent 或混入危险命令时整份失败关闭；
+3. Composer 使用与产品一致的浮层，支持筛选、方向键、Enter 插入和 Escape；选择只回填
+   可编辑内容，不自动发送；
+4. 修复“菜单安全但手工输入可绕过”的缺口：Renderer 与 Main 的 send、send-now、interject、
+   Queue edit 共用 Slash 首 token 门禁，`/yolo`、永久批准、插件、Hook 与 `//shell` 均不能
+   进入 Host；
+5. 修复异步 capability 缓存竞态：只有当前 account + Agent + Session 的新鲜响应可写缓存，
+   低 revision 不能覆盖较新清单。
+
+当前证据：Rust input-capability 10+3+1 passed；Desktop input-capability 与 Slash 负向测试通过；
+包含 ACP、Controller、附件、工作区、历史和听写的定向 Node 当前 107/107 passed；Electron
+对话 smoke 已实际点击 `/` 与 `$`，验证无原生 select、无危险项、选择不发送、手工 `/yolo`
+不产生 Prompt。计划复盘确认没有开放自由 Shell、yolo、永久批准、插件/Hook 信任，也没有
+改变 Provider、credits、订阅或 Package 发布门。下一模块按原计划进入 V2.5 受控文件、历史
+和粘贴，不提前扩展音频理解。
+
+### 循环 154：Grok-first 输入系统 V2.5 工作文件、历史与大段粘贴
+
+状态：源码、负向安全测试与 Electron 主链回归已完成；不生成中间包
+
+1. 新增 Main-owned `WorkspaceAuthorityStore`：由 macOS 目录选择器建立 account + Agent 授权，
+   公开层只见随机 workspace ID、文件夹名和相对路径；每次搜索/打开均复核 realpath containment、
+   root inode/device、符号链接、绝对/父路径、类型、20 MiB 上限、TOCTOU 与撤销 generation；
+2. `@` 搜索有 180ms debounce，选择后通过附件 Store 暂存成当前 Agent 的文件 Chip，不自动
+   发送；撤销后在途搜索和文件转换均失败关闭并清理新草稿；
+3. Prompt History 直接绑定 Agent 私有 Main Session，而不是错误依赖用户另行授权的 `@`
+   文件夹；公开清单只给安全预览，显式选择才回填全文，历史不跨账号/Agent；
+4. 修复历史浮层抢输入的 P0：空框上方向键打开历史后，只要用户开始输入普通消息，历史立即
+   关闭，Enter 发送新消息而不是误选旧项；迟到选择还必须通过当前 DOM、账号、Agent、Session
+   revision 检查；
+5. 1,200 字或 20 行的大段粘贴折叠为可编辑卡片，最多四段，与普通文字合计 16,000 字；
+   卡片不会扩大固定 Composer 或伪装成文件。
+
+当前证据：Workspace authority 8/8、Prompt History 7/7、附件/Controller/ACP 定向组合全部
+通过；Electron 实际完成授权文件搜索投影、`@岗位` 选择、Chip、无绝对路径、历史预览/全文
+回填、不自动发送以及“打开历史后输入新问题”的回归。1280×768 放满十个附件与长内容时
+页面和 Main 高度均为 768px、Composer bottom 750px、输入 15px、Transcript 独立滚动。
+计划复盘确认没有建立云文件库、自由路径读取或真正多会话；下一模块只做既定 V2.6 STT
+听写，不宣称模型已经支持 Audio 内容块。
+
+### 循环 155：Grok-first 输入系统 V2.6 明确披露的语音听写
+
+状态：Host、Controller、macOS 权限接线、UI 与自动化回归已完成；真实安装包麦克风 UAT
+须在最终唯一新包生成后由 owner 执行
+
+1. Rust Host 基于 fork 已有 `xai-grok-voice` 接通 xAI BYOK STT，凭据只从 Vault 获取；
+   Desktop 公开状态只有 idle/starting/listening/transcribing/complete/error、显示名、60 秒/音频
+   大小上限和稳定中文错误，不投影 Key 或音频字节；
+2. 麦克风首击只显示“录音会发送给你选择的听写服务进行转写；听写结果不会自动发送。”，
+   用户明确点击“开始听写”后 Main 才请求 macOS 麦克风权限并启动 Host；切屏/失焦不取消，
+   系统锁屏、休眠和退出会取消活动录音；
+3. listening 可完成或取消；complete 只把文字合并进当前 Agent 可编辑草稿，使用 revision
+   防重复，绝不调用 conversation send；Provider 缺失时给出“去配置模型供应商”入口；
+4. 修复账号切换/close/dispose 后旧 Promise 回写和低 revision direct response 覆盖新通知的
+   竞态；当前 account + Agent + Host lifecycle revision 是唯一可发布条件；
+5. Composer 用户可见隐私文案精确为“附件仅在本机暂存，发送时交给当前模型；不会上传到
+   AgentMesh360”，不暴露 Core、Host 或 Bridge。
+
+当前证据：听写 Controller 7/7、ACP/Info.plist 2/2；V2 定向 Node 合计 107/107；Electron
+真实 fixture 点击证明首击请求数 0、明确确认后才 start、完成结果只进入输入框且 Prompt 数
+不变；13 寸紧凑布局通过。自动化未读取真实 Provider Key、未请求麦克风/Provider、未产生
+credits 或费用。计划复盘确认 V2.2–V2.6 已按原顺序完成，下一步只进入全量 Node/Rust/
+Electron/旅程门禁、最终 diff 自审与唯一内部包；不顺手扩展音频理解、云文件库、fallback、
+P7/P8、签名、公证或在线发布。

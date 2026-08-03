@@ -48,3 +48,17 @@ streaming = "preferred"
 [skills]
 canonicalWorkflow = "AGENTS.md"
 adapters = []
+
+[[skills.userFacing]]
+id = "release-preflight"
+displayName = "执行发布前检查"
+description = "在发布前核对代码、构建、测试、配置与回滚条件。"
+promptToken = "$release-preflight"
+promptText = "请对当前项目执行发布前检查。先识别真实仓库和目标环境，再核对工作区、构建、测试、配置、凭据边界、部署门槛、验证方式与回滚条件；不要在未经授权时发布。"
+
+[[skills.userFacing]]
+id = "deployment-verification"
+displayName = "验证部署结果"
+description = "用实际证据检查部署传播、运行状态和关键用户路径。"
+promptToken = "$deployment-verification"
+promptText = "请验证当前部署结果。使用真实构建、目标环境、版本传播、健康信号和关键用户路径证据区分已经确认、仍在传播和验证失败的部分，并给出下一步。"
