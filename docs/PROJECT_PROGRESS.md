@@ -8205,7 +8205,7 @@ Host authority、Agent Package 或发布能力；不会因为隐藏内部名而�
 
 ### 循环 150：Grok-first 输入系统 V2.1
 
-状态：源码、产品设计、全量回归已完成；内部包验收进行中
+状态：源码、产品设计、全量回归与唯一内部包验收已完成
 
 owner 要求对照 Codex.app 的输入交互与 Grok Build 原生能力，补足当前客户端“输入能力
 过少”的问题。当前官方资料与 fork 源码核对结论是：Codex 采用附件、`/`、Skill、命令
@@ -8233,8 +8233,28 @@ owner 要求对照 Codex.app 的输入交互与 Grok Build 原生能力，补足
 在 1280×768 内部视口确认 Transcript 独立滚动，Composer、输入框和发送按钮完整可见；
 本轮自动测试未读取真实 Provider Key，Provider 请求、消息发送、AgentMesh credits、Apple
 服务请求和外部上传均为 0。用户明确要求本轮不使用 Kimi，因此由主 Agent 完成源码、负向
-场景和执行证据复核，不把它冒充独立交叉审查。唯一内部包完整性仍作为本循环最后一道门，
-未完成前不宣称最终交付。
+场景和执行证据复核，不把它冒充独立交叉审查。
+
+内部交付：
+
+1. 功能源码 commit `0bcec73625e21200b29fad44b073fe68400c601d` 已 clean push 至
+   `origin/main`；
+2. 未签名 arm64 内部构建回执为 `desktop_internal_p6_0bcec73625e2_arm64`，Desktop
+   `0.1.1`，打包 Host runtime `1000.1.1785725846001 (0bcec73)`；Developer ID、
+   notarization、自动更新、外部上传和 Apple 凭据全部关闭；
+3. DMG 为 181439371 bytes，SHA-256
+   `18643966d2765005881212dee89c466c4031e48258d73068cc06cb1a2512da47`；ZIP 为
+   181249734 bytes，SHA-256
+   `152a0499cf48907b003014009cfd62c83355f2db695b568a9ac256018358d532`；`SHA256SUMS`、
+   `hdiutil verify`、ZIP CRC、回执复验与构建/Downloads 四个文件逐字节比较全部通过；
+4. Grok 构建第一次因默认下载 ripgrep 被受限网络拒绝，未产生新包；随后使用本机 arm64
+   `/opt/homebrew/bin/rg` 的官方离线入口重新冷编译并通过。新包全部验收后才删除 `0ba1a28`
+   旧包；现在 `desktop/dist/internal` 和 Downloads 各只保留 `0bcec73` 一份，下载目录为
+   `~/Downloads/AgentMesh360-Internal-Test-2026-08-03-0bcec73-arm64/`；仓库根 `target/` 与
+   临时内部构建目录均不存在；
+5. 构建与验证没有读取真实 Provider Key；Provider 请求、消息发送、AgentMesh credits、
+   Apple 服务请求、外部上传和费用均为 0。本轮不覆盖 `/Applications/AgentMesh360.app`，
+   不把包完整性验证冒充 owner 的真实安装/UAT。
 
 计划复盘：V2.1 只接通 Grok 已有的文字插话，不改变 Provider、credits、订阅、Package、
 生产发布、P7/P8 或真正多会话。下一开发切片必须先把 Main 的单一 Controller 状态改为按
