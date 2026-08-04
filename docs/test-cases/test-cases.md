@@ -426,7 +426,8 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   `definition_revision_tracks_every_product_agent_definition` 用 LectureCast 证明版本、最终定义和
   Overlay 变化对所有 Agent 生效且稳定定义不会反复重建。真实模型语义与真实 Job 服务仍是
   安装包 UAT，不冒充本轮自动化证据。禁止用真实 Key 或真实 Provider 请求替代上述自动化。
-- **验证层**：Rust + fake Provider；Electron/安装包人工验收仅核对用户可见首轮行为
+- **验证层**：Rust + fake Provider；Desktop Node；包内真实 Host `5/5`；真实 BYOK 模型的
+  用户可见首轮语义仍由安装包 owner UAT 核对，不以预制 fake Provider 冒充
 - **本轮结果**：通过
 
 ## TC-MODEL-001：Agent 内 Profile 与模型级联选择

@@ -1,6 +1,6 @@
 # Job Agent 首轮专业接管与持久提示升级开发计划
 
-状态：源码与自动化完成；唯一内部包和项目进展证据待回填
+状态：完成；源码、自动化、clean push、唯一内部包与项目进展证据均已闭环
 日期：2026-08-04
 
 ## 目标
@@ -40,7 +40,22 @@ Session 或 Supervisor。
 - [x] 完成 Desktop、产品旅程、格式与 diff 复验；
 - [x] 修复 Finder 启动 Host 缺少官方 CLI 目录，并把 fake 工具链补为
   `--version → doctor env` 顺序执行；
-- [ ] 更新项目进展，clean push，并生成、复验和单版本替换唯一内部包。
+- [x] 更新项目进展，clean push，并生成、复验和单版本替换唯一内部包。
+
+## 完成证据
+
+- 产品实现提交 `31ab43c`，审查修复与打包源码提交
+  `62eaca0e25f4b45c3df49c7185903eed5669ba5a`；两者均已推送 `origin/main`；
+- Rust `215 passed / 0 failed / 1 ignored`；Desktop Node
+  `227 total / 222 passed / 0 failed / 5 skipped`；包内真实 Host 补齐为
+  `5 passed / 0 failed / 0 skipped`；产品旅程 `88` 条、`14` 个领域通过；
+- 唯一内部包位于
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-62eaca0-arm64`，receipt 为
+  `desktop_internal_p6_62eaca0e25f4_arm64`；receipt、双 SHA、DMG、ZIP CRC 和构建/Downloads
+  四文件逐字节一致性全部通过；
+- 新包全绿后才删除旧包、旧 dist、约 `13G` 根 `target/` 和约 `6.4G` 中断构建临时目录；
+  Downloads 与 dist 现在各只保留当前一份证据，未修改已安装客户端；
+- 全程真实 Provider 请求 0、Job/Core 外部请求 0、credits 0、费用 $0，未使用 Kimi。
 
 ## 状态决策与预期交互
 

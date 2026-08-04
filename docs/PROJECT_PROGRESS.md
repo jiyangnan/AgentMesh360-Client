@@ -8612,7 +8612,7 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 
 ### 循环 160：Job Agent 首轮专业接管与通用持久定义升级
 
-状态：源码与自动化完成；clean push、打包 Host 复验和唯一内部包替换进行中
+状态：完成；源码、clean push、打包 Host 复验、唯一内部包替换与磁盘清理均已闭环
 
 本轮回到既定主链路“同源 Agent Package → Grok Build Harness → 本地持久 Main Session”，
 修复 Job Agent 首次对话只显示通用能力菜单、没有按真实 Job 状态推进的问题：
@@ -8650,11 +8650,29 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 - Desktop syntax 通过；Node 全量 `227 total / 222 passed / 0 failed / 5 skipped`，5 条仍是
   需要打包 Host 的显式门禁；产品旅程 `88` 条、`14` 个领域全部通过结构校验；Rust fmt 与
   `git diff --check` 通过；
+- 从 clean 且已推送的 `62eaca0e25f4b45c3df49c7185903eed5669ba5a` 冷构建后，包内
+  arm64 Host 报告 `grok 1000.1.1785823371001 (62eaca0)`；此前跳过的真实 Host 门禁已实际
+  执行为 `5 passed / 0 failed / 0 skipped`，覆盖持久 Leader 替换、订阅 gate、跨 Workspace
+  单会话、首次模型绑定/打开会话，以及 Session plan/后台任务恢复；
 - 测试只使用临时状态、回环 fake Core/Provider 和可执行 fixture。真实 Job Agent Key 读取
   0、真实 Provider 请求 0、Job/Core 外部请求 0、credits 0、消息发送 0、费用 $0；按用户
   要求未使用 Kimi。
 
+内部包交付证据：
+
+- Downloads 唯一目录：
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-62eaca0-arm64`；
+- receipt：`desktop_internal_p6_62eaca0e25f4_arm64`；构建与 Downloads 两侧均通过严格 receipt
+  复验、`SHA256SUMS`、`hdiutil verify`、ZIP CRC 和四文件逐字节 `cmp`；
+- DMG：`182030790` bytes，SHA-256
+  `4ad8f5d4931e93b162c4a25b1b512469129c87f0f29a01dc42f9dd38163716b7`；
+- ZIP：`181839114` bytes，SHA-256
+  `ddd4a1df290230c608f26339780fd33a4c6d47f885c772389ebdaa30a3094d75`；
+- 新包全绿后才删除旧 Downloads 包、旧 dist、仓库根 `target/`（约 `13G`）、本轮解压目录与
+  一个约 `6.4G` 的中断构建临时目录；现在 Downloads 与 dist 各只保留一份当前证据，约清理
+  `20G`，且没有修改 `/Applications/AgentMesh360.app`。
+
 计划复盘：本轮没有新增页面、Provider、会话引擎、生产 Trust/Registry、P7/P8、签名、公证
-或在线发布。下一步只允许 clean push 当前源码，从该提交生成唯一未签名 arm64 内部包，用
-包内真实 Host 补齐 5 条门禁并复验 receipt/SHA/DMG/ZIP/构建与 Downloads 一致性；新包全部
-通过前保留旧包，通过后再精确删除旧包并回填最终交付证据。
+或在线发布，仍严格停留在既定 P6 owner UAT 收口。下一步只由 owner 安装上述唯一内部包，
+使用自己的 Job Agent 与 BYOK 状态验证真实模型首轮和已有进度续跑；在 owner 另行授权前，
+不调用真实 Provider、Job 服务或 Core，也不横向扩展新功能。
