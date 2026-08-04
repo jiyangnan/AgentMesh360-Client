@@ -40,7 +40,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 安装和启动 | 安装内部版并稳定打开 | TC-INSTALL-001 ～ 003 |
 | 登录和订阅 | 用真实账号进入，失效时正确拦截 | TC-AUTH-001 ～ 004、TC-ACCESS-001 ～ 004 |
 | 持久 Agent | 激活后长期找到同一个 Agent，并管理其模型、行为与产品首轮接管 | TC-AGENT-001 ～ 007、TC-MODEL-001 ～ 006、TC-OVERLAY-001 ～ 005 |
-| 对话和工作区 | 对话、附件、连续输入、队列、命令、Skill、工作文件、历史、粘贴与听写不断档 | TC-CONV-001 ～ 025 |
+| 对话和工作区 | 对话、附件、连续输入、队列、命令、Skill、工作文件、历史、粘贴、听写与可确认停止不断档 | TC-CONV-001 ～ 026 |
 | BYOK Provider | 添加、验证、测试和管理模型供应商 | TC-PROVIDER-001 ～ 013 |
 | Agent Package | 在无公开入口阶段持续验证安全发现、安装、更新与回滚底层 | TC-PACKAGE-001 ～ 006 |
 | 后台 Host 和设置 | UI 关闭仍工作，设置结构清楚且故障可恢复 | TC-HOST-001 ～ 007、TC-SETTINGS-001 |
@@ -58,7 +58,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 左侧导航与引导 | Agent、模型供应商、设置、Host 状态、三步引导 | 默认落点、切页、Host 三态、恢复引导 | Electron；TC-NAV-001～003、TC-GUIDE-001 |
 | Agent 列表 | 管理、激活、失效修复；不展示尚不可兑现的新增入口 | 已激活、未激活、模型失效、零 Agent、公开新增入口缺席 | Node + Electron；TC-AGENT-001～006 |
 | Agent 产品接管 | Job Agent 按真实业务状态进入下一步；Package 升级后旧主会话保留历史并采用新定义 | 无 Key、Key 有效但无简历、已有画像、已有轮次、旧会话定义升级、非 Job 隔离 | Rust + fake Provider；TC-AGENT-007 |
-| Agent 对话 | Agent/会话二级栏、多内容 Composer、四种运行态意图、权威 Queue、`/`、`$`、`@`、历史、粘贴卡、听写、齿轮设置、权限确认、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、失败保留、Agent 切换草稿、重启恢复、危险命令、路径越界、异步旧响应、听写披露、不自动发送、字号与布局 | Node + Electron + Rust；TC-CONV-001～025 |
+| Agent 对话 | Agent/会话二级栏、多内容 Composer、四种运行态意图、权威 Queue、独立停止、`/`、`$`、`@`、历史、粘贴卡、听写、齿轮设置、权限确认、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、停止完成/失败/重复点击/Queue 并发、Agent 切换草稿、重启恢复、危险命令、路径越界、异步旧响应、听写披露、不自动发送、字号与布局 | Node + Electron + Rust；TC-CONV-001～026 |
 | Agent 模型 | Provider/模型应用内下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、本 Agent Turn 锁定、异步响应归属 | Node + Electron + Rust；TC-MODEL-001～006 |
 | 行为 `agent.md` | 编辑、保存、恢复默认、冲突处理 | 草稿、8000/8001 字符、秘密拒绝、revision 冲突、Turn 锁定 | Node + Electron + Rust；TC-OVERLAY-001～005 |
 | 偏好 `user.md` | 编辑、保存、恢复默认、冲突处理 | 账户+Agent 隔离、草稿、秘密拒绝、账号切换清理 | Node + Electron + Rust；TC-OVERLAY-001～005 |
@@ -1020,6 +1020,29 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **验证层**：Node + Electron + 紧凑布局
 - **本轮结果**：通过
 
+## TC-CONV-026：停止当前任务必须送达并以 Host 权威状态完成
+
+- **用户故事**：作为正在等待 Agent 的用户，我希望点击“停止当前任务”后立即看到客户端在
+  处理，并在任务真正停止后恢复输入；队列同步、编辑或网络竞态不能让点击悄悄失效。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：当前 Agent Main Session 有一个前台 Turn；分别覆盖 Queue 未首次同步、已同步、
+  普通 Queue mutation 待确认，以及 running 后有/没有排队 Prompt。
+- **输入**：首次停止、连续重复停止、Host 接受、Host 传输失败、停止期间 Prompt 自然完成、
+  权威 idle 先于取消 IPC 失败到达、当前 Turn 后存在两条待处理 Prompt。
+- **交互步骤**：开始延迟任务；在上述各 Queue 状态点击停止；观察按钮和活动提示；重复点击；
+  注入 Host `queueRevision + 1` 的 idle/next-running 快照；失败后重试。
+- **预期输出**：停止使用独立 Session authority，不等待 Queue sync 或 mutation；首击立即显示
+  “正在停止…”并禁用，只发送一次 `session/cancel`；Harness 移除 running prompt 后立即广播
+  更高 revision，单任务时为 `runningPromptId = null` 且空 Queue；有后续任务时先保留全部排队
+  项，再由下一项晋升；Renderer 只在权威 idle/新 running 或当前 Prompt 终态后退出取消态，
+  输入恢复且不会把已停止任务重新显示为运行中。
+- **失败与恢复**：Host 写失败时显示安全中文并恢复可重试；若失败到达前权威 Queue 已 idle，
+  不得把任务“复活”；Agent/账号切换后的迟到响应不能污染当前对话；停止不清空待处理队列，
+  也不终止已经明确后台化的长期任务。
+- **验证层**：Rust + Node + Electron + 四档紧凑布局
+- **本轮结果**：通过
+
 ## 8. BYOK Provider
 
 ## TC-PROVIDER-001：十个官方 Provider 入口与自动配置
@@ -1775,3 +1798,20 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   `.native-build` 与根 `target/` 不存在；
 - 外部副作用：真实麦克风请求 0、Provider/Vault 读取 0、Provider 请求 0、消息发送 0、
   AgentMesh credits 0、Apple 云服务请求 0、外部上传 0、费用 $0；本轮没有调用 Kimi。
+
+### 2026-08-04 “停止当前任务”取消链路修复执行
+
+- 新增 `TC-CONV-026` 后，产品旅程共 `89` 条、`14` 个领域，验证器 `3/3`，结构与所有
+  显式执行结果通过；
+- Controller 定向 `53/53`：覆盖 Queue 未同步、Queue mutation 待确认、重复停止只发一次、
+  目标 Prompt 自然终态、Host 失败后重试，以及 idle 先到/失败后到不能复活任务；
+- Rust 取消相关 `20/20`、Shell Prompt Queue `38/38`：唯一 running prompt 取消后广播
+  `runningPromptId = null` 与空 Queue；存在两条后续任务时先广播二者仍完整保留；
+- Conversation Electron 真实点击通过：send-now Queue IPC 保持 pending 时停止仍独立送达；
+  首击显示“正在停止…”、按钮 disabled/aria-busy，重复点击零新增 IPC；权威 idle 后按钮消失、
+  Composer 回到普通发送；
+- 四档内容视口 1180×760、1280×768、1280×800、1440×900 继续通过，Composer bottom
+  分别为 742、750、782、882px；Desktop 全量 Node `232 total / 227 passed / 0 failed /
+  5 skipped`，5 条为显式打包 Host 门禁；
+- 测试使用 fake Host、本机日志与隔离状态：真实 Provider/Job/Core 请求 0、Key 读取 0、
+  消息发送 0、credits 0、麦克风 0、外部上传 0、费用 $0；按用户要求未使用 Kimi。

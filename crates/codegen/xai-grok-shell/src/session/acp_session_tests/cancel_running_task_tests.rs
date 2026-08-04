@@ -1481,7 +1481,7 @@ async fn handle_prompt_synthetic_origin_preserves_interrupt_reminder() {
         .await;
 }
 #[tokio::test(flavor = "current_thread")]
-async fn cancel_running_task_interactive_preserves_queued_work() {
+async fn cancel_running_task_interactive_preserves_queued_work_and_broadcasts_idle() {
     use tokio::sync::oneshot::error::TryRecvError;
     fn make_item(
         prompt_id: &str,
@@ -1518,7 +1518,7 @@ async fn cancel_running_task_interactive_preserves_queued_work() {
     let local = tokio::task::LocalSet::new();
     local
         .run_until(async {
-            let (gateway_tx, _gateway_rx) =
+            let (gateway_tx, mut gateway_rx) =
                 tokio::sync::mpsc::unbounded_channel::<xai_acp_lib::AcpClientMessage>();
             let (persistence_tx, _persistence_rx) =
                 tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
@@ -1544,6 +1544,37 @@ async fn cancel_running_task_interactive_preserves_queued_work() {
                 state.pending_inputs.push_back(q2_item);
             }
             actor.cancel_running_task(true, false, false, None).await;
+            let queue_broadcasts = {
+                let mut broadcasts = Vec::new();
+                while let Ok(message) = gateway_rx.try_recv() {
+                    if let xai_acp_lib::AcpClientMessage::ExtNotification(args) = message
+                        && args.request.method.as_ref()
+                            == crate::session::prompt_queue::QUEUE_CHANGED_METHOD
+                    {
+                        broadcasts.push(
+                            serde_json::from_str::<crate::session::prompt_queue::QueueChanged>(
+                                args.request.params.get(),
+                            )
+                            .expect("cancel queue broadcast must use the canonical wire shape"),
+                        );
+                    }
+                }
+                broadcasts
+            };
+            let cancelled_queue = queue_broadcasts
+                .last()
+                .expect("cancelling the running turn must broadcast the authoritative queue");
+            assert_eq!(cancelled_queue.queue_revision, 1);
+            assert_eq!(cancelled_queue.running_prompt_id, None);
+            assert_eq!(
+                cancelled_queue
+                    .entries
+                    .iter()
+                    .map(|entry| entry.id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["q1", "q2"],
+                "the cancellation broadcast must preserve queued work"
+            );
             assert!(
                 actor
                     .current_prompt_id
@@ -1583,6 +1614,50 @@ async fn cancel_running_task_interactive_preserves_queued_work() {
                 matches!(q2_rx.try_recv(), Err(TryRecvError::Empty)),
                 "preserved prompt must remain pending, not be cancelled"
             );
+
+            let (single_gateway_tx, mut single_gateway_rx) =
+                tokio::sync::mpsc::unbounded_channel::<xai_acp_lib::AcpClientMessage>();
+            let (single_persistence_tx, _single_persistence_rx) =
+                tokio::sync::mpsc::unbounded_channel::<PersistenceMsg>();
+            let single =
+                create_test_actor(0, 256_000, 85, single_gateway_tx, single_persistence_tx).await;
+            *single
+                .current_prompt_id
+                .lock()
+                .expect("current_prompt_id mutex poisoned") = Some("only-running".to_string());
+            let (single_running_item, _single_running_rx) =
+                make_item("only-running", "only-running");
+            {
+                let mut state = single.state.lock().await;
+                state.running_task = Some(AgentTask {
+                    prompt_id: "only-running".into(),
+                    handle: tokio::task::spawn_local(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    })
+                    .abort_handle(),
+                });
+                state.pending_inputs.push_back(single_running_item);
+            }
+            single.cancel_running_task(true, false, false, None).await;
+            let idle_queue = std::iter::from_fn(|| single_gateway_rx.try_recv().ok())
+                .filter_map(|message| match message {
+                    xai_acp_lib::AcpClientMessage::ExtNotification(args)
+                        if args.request.method.as_ref()
+                            == crate::session::prompt_queue::QUEUE_CHANGED_METHOD =>
+                    {
+                        Some(
+                            serde_json::from_str::<crate::session::prompt_queue::QueueChanged>(
+                                args.request.params.get(),
+                            )
+                            .expect("single-turn cancel must broadcast canonical queue state"),
+                        )
+                    }
+                    _ => None,
+                })
+                .last()
+                .expect("a single running turn must broadcast authoritative idle on cancel");
+            assert_eq!(idle_queue.running_prompt_id, None);
+            assert!(idle_queue.entries.is_empty());
         })
         .await;
 }

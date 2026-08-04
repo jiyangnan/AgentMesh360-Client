@@ -454,6 +454,12 @@ impl SessionActor {
                 .pending_inputs
                 .iter()
                 .any(|i| !i.origin.is_synthetic());
+            // Publish cancellation immediately while this lock still contains
+            // the finalized queue. Without this authoritative idle snapshot,
+            // a client keeps projecting the removed running prompt forever
+            // when there is no queued prompt for `maybe_start_running_task` to
+            // promote (and therefore no later queue broadcast).
+            self.broadcast_queue_changed(&mut state);
             // NOTE: `current_prompt_id` is deliberately NOT cleared here —
             // cancel usage attribution must snapshot the ledger against the
             // live pin first; it is cleared below, right after the

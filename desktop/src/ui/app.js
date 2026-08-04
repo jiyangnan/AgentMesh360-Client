@@ -50,6 +50,7 @@ let conversationAttachmentAutoQueuePrevious = new Map();
 let conversationQueueExpanded = new Set();
 let conversationQueueEditing = new Map();
 let conversationQueueMutationInFlight = false;
+let conversationCancellationInFlight = new Set();
 let conversationPasteCards = new Map();
 let conversationPasteExpanded = new Set();
 let conversationInputCapabilities = new Map();
@@ -154,6 +155,7 @@ function render(state) {
     conversationQueueExpanded = new Set();
     conversationQueueEditing = new Map();
     conversationQueueMutationInFlight = false;
+    conversationCancellationInFlight = new Set();
     conversationPasteCards = new Map();
     conversationPasteExpanded = new Set();
     conversationInputCapabilities = new Map();
@@ -719,6 +721,7 @@ function conversationView() {
   const loading = conversationUi.phase === 'loading';
   const ready = conversationUi.phase === 'ready';
   const sending = conversationTurnIsRunning(conversationUi.agentId);
+  const cancelling = sending && conversationUi.cancelling === true;
   const displayName = conversationUi.displayName || 'Agent';
   const canReopen = conversationUi.phase === 'error' && conversationUi.agentId;
   const awaitingPermission = conversationUi.interaction?.kind === 'permission';
@@ -777,7 +780,7 @@ function conversationView() {
           ${messages.length
     ? messages.map(conversationMessage).join('')
     : `<div class="conversation-empty">${loading ? '正在恢复历史…' : `这里会显示 ${escapeHtml(displayName)} 的持久对话历史。`}</div>`}
-          ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${escapeHtml(displayName)} 正在继续这项工作</span></div>` : ''}
+          ${sending ? `<div class="conversation-typing"><i></i><i></i><i></i><span>${cancelling ? '正在停止当前任务…' : `${escapeHtml(displayName)} 正在继续这项工作`}</span></div>` : ''}
         </div>
       </div>
       <div class="conversation-composer-dock">
@@ -851,7 +854,7 @@ function conversationView() {
       ? '图片会交给当前模型；能否理解取决于该模型的视觉能力'
       : '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360'}</span>
             <div class="composer-actions">
-              ${sending ? '<button class="ghost composer-stop" type="button">停止当前任务</button>' : ''}
+              ${sending ? `<button class="ghost composer-stop" type="button" ${cancelling ? 'disabled aria-busy="true"' : ''}>${cancelling ? '正在停止…' : '停止当前任务'}</button>` : ''}
               <div class="composer-submit-wrap">
                 <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitWithoutTextarea ? 'disabled' : ''}>${submitLabel}</button>
                 ${sending ? `
@@ -2447,6 +2450,32 @@ function wireConversation() {
       if (currentState.phase === 'ready') renderReady(currentState);
     }
   };
+  const runCancelMutation = async () => {
+    const agentId = form?.dataset.agentId;
+    const accountId = form?.dataset.accountId;
+    const cancellationRegistry = conversationCancellationInFlight;
+    if (!form || !agentId || !accountId || cancellationRegistry.has(agentId)) return;
+    cancellationRegistry.add(agentId);
+    conversationUi = { ...conversationUi, cancelling: true, error: null };
+    if (currentState.phase === 'ready') renderReady(currentState);
+    try {
+      const nextState = await bridge.cancelCurrentConversationTask();
+      if (readyAccountId === accountId && agentManagementUi.agentId === agentId) {
+        applyConversationState(nextState);
+      }
+    } catch (error) {
+      if (readyAccountId === accountId && agentManagementUi.agentId === agentId) {
+        conversationUi = {
+          ...conversationUi,
+          cancelling: false,
+          error: publicError(error, '没有成功停止当前任务'),
+        };
+      }
+    } finally {
+      cancellationRegistry.delete(agentId);
+      if (currentState.phase === 'ready') renderReady(currentState);
+    }
+  };
   const closeToolMenu = () => {
     if (!toolMenu || !addButton) return;
     toolMenu.hidden = true;
@@ -2616,10 +2645,7 @@ function wireConversation() {
     });
   }
   form?.querySelector('.composer-stop')?.addEventListener('click', () => {
-    runQueueMutation(
-      () => bridge.cancelCurrentConversationTask(),
-      '没有成功停止当前任务',
-    );
+    runCancelMutation();
   });
   form?.addEventListener('focusout', () => {
     setTimeout(() => {

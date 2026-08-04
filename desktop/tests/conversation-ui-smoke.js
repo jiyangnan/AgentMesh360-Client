@@ -25,6 +25,7 @@ const historyId = 'history-1234567890abcdef1234567890abcdef';
 const delayedConversationOpens = new Map();
 let delayedConversationSend = null;
 let delayedWorkspaceSearch = null;
+let delayedQueueMutation = null;
 const workspaceSearchCalls = [];
 let conversationSendFailure = false;
 let attachmentCounter = 0;
@@ -356,6 +357,14 @@ app.whenReady().then(async () => {
   ]) {
     ipcMain.handle(channel, (event, ...args) => {
       queueMutations.push({ kind, args });
+      if (delayedQueueMutation?.kind === kind) {
+        return new Promise((resolve) => {
+          delayedQueueMutation.resolve = () => {
+            event.sender.send('conversation:state', currentConversation);
+            resolve(currentConversation);
+          };
+        });
+      }
       event.sender.send('conversation:state', currentConversation);
       return currentConversation;
     });
@@ -1610,6 +1619,7 @@ app.whenReady().then(async () => {
     queueMutations.find((entry) => entry.kind === 'edit')?.args,
     ['queue-1', '核对第一家公司和岗位'],
   );
+  delayedQueueMutation = { kind: 'send-now', resolve: null };
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-queue-now=\"queue-2\"]').click()",
   );
@@ -1619,6 +1629,53 @@ app.whenReady().then(async () => {
   );
   await waitFor(() => cancellations.length === 1);
   assert.deepEqual(cancellations, ['job-agent']);
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    text: document.querySelector('.composer-stop')?.innerText,
+    disabled: document.querySelector('.composer-stop')?.disabled,
+    busy: document.querySelector('.composer-stop')?.getAttribute('aria-busy'),
+    activity: document.querySelector('.conversation-typing span')?.innerText,
+  })`), {
+    text: '正在停止…',
+    disabled: true,
+    busy: 'true',
+    activity: '正在停止当前任务…',
+  });
+  await window.webContents.executeJavaScript(
+    "document.querySelector('.composer-stop').click()",
+  );
+  assert.equal(cancellations.length, 1, 'repeated stop clicks must not duplicate IPC');
+  assert.equal(
+    typeof delayedQueueMutation.resolve,
+    'function',
+    'the stop control must work while a Queue mutation is still pending',
+  );
+  delayedQueueMutation.resolve();
+  delayedQueueMutation = null;
+
+  currentConversation = {
+    ...currentConversation,
+    phase: 'ready',
+    streaming: false,
+    cancelling: false,
+    queue: { ...currentConversation.queue, running: false },
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.composer-stop') === null"
+      + " && document.getElementById('conversation-form')?.dataset.composerMode === 'send'",
+  ));
+
+  currentConversation = {
+    ...currentConversation,
+    phase: 'sending',
+    streaming: true,
+    cancelling: false,
+    queue: { ...currentConversation.queue, running: true },
+  };
+  window.webContents.send('conversation:state', currentConversation);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.composer-stop')?.innerText === '停止当前任务'",
+  ));
 
   await window.webContents.executeJavaScript(
     "document.querySelector('.composer-intent-toggle').click();"

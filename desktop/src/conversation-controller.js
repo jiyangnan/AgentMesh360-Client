@@ -139,6 +139,8 @@ const SESSION_STATE_FIELDS = Object.freeze([
   'queuePublicCounter',
   'submissions',
   'queueMutation',
+  'cancelRequested',
+  'cancelTargetPromptId',
 ]);
 const SAFE_STOP_REASONS = new Set([
   'end_turn',
@@ -230,6 +232,8 @@ class AgentConversationController {
     this.queuePublicCounter = 0;
     this.submissions = new Map();
     this.queueMutation = null;
+    this.cancelRequested = false;
+    this.cancelTargetPromptId = null;
     this.snapshot = Object.freeze({ phase: 'idle' });
     this.handleIdentity = (state) => this.#handleIdentity(state);
     this.handleNotification = (message) => this.#handleNotification(message);
@@ -585,6 +589,16 @@ class AgentConversationController {
     }
     this.#withSessionRecord(record, () => {
       this.submissions.delete(submission.promptId);
+      if (
+        this.cancelRequested
+        && (
+          this.cancelTargetPromptId === null
+          || this.cancelTargetPromptId === submission.promptId
+        )
+      ) {
+        this.cancelRequested = false;
+        this.cancelTargetPromptId = null;
+      }
       if (this.queueRevision < 0) {
         this.queueRunningPromptId = null;
         this.runningSessionIds.delete(record.authority.sessionId);
@@ -624,6 +638,16 @@ class AgentConversationController {
     }
     this.#withSessionRecord(record, () => {
       submission.status = uncertain ? 'unknown' : 'failed';
+      if (
+        this.cancelRequested
+        && (
+          this.cancelTargetPromptId === null
+          || this.cancelTargetPromptId === submission.promptId
+        )
+      ) {
+        this.cancelRequested = false;
+        this.cancelTargetPromptId = null;
+      }
       if (!uncertain) this.submissions.delete(submission.promptId);
       if (this.queueRevision < 0) this.runningSessionIds.delete(record.authority.sessionId);
       this.#cancelPermission();
@@ -775,11 +799,21 @@ class AgentConversationController {
   }
 
   async cancelCurrentTask() {
-    const authority = this.#requireQueueAuthority();
+    const authority = this.authority;
+    if (!authority || !this.currentSessionRecord) throw new Error('请先打开 Agent 对话');
+    this.#requireReadyAccount(authority.accountId);
     if (!this.queueRunningPromptId && !this.runningSessionIds.has(authority.sessionId)) {
       throw new Error('Agent 当前没有正在执行的任务');
     }
-    await this.host.cancelSession(authority.sessionId);
+    if (this.cancelRequested) return this.snapshot;
+    this.cancelRequested = true;
+    const unsettledSubmissions = [...this.submissions.values()];
+    this.cancelTargetPromptId = this.queueRunningPromptId
+      ?? unsettledSubmissions.find(({ status }) => status === 'running')?.promptId
+      ?? unsettledSubmissions.find(({ status }) => (
+        status === 'submitting' || status === 'unknown'
+      ))?.promptId
+      ?? null;
     this.#publish({
       ...this.#conversationBase(authority),
       phase: 'sending',
@@ -788,6 +822,28 @@ class AgentConversationController {
       error: null,
       stopReason: null,
     });
+    try {
+      await this.host.cancelSession(authority.sessionId);
+    } catch (error) {
+      if (this.authority === authority) {
+        this.cancelRequested = false;
+        this.cancelTargetPromptId = null;
+        const stillRunning = Boolean(
+          this.queueRunningPromptId
+          || this.runningSessionIds.has(authority.sessionId),
+        );
+        this.#publish({
+          ...this.#conversationBase(authority),
+          phase: stillRunning ? 'sending' : 'ready',
+          streaming: stillRunning,
+          error: stillRunning
+            ? safeConversationError(error, '没有成功停止当前任务。')
+            : null,
+          stopReason: stillRunning ? null : (this.snapshot.stopReason ?? null),
+        });
+      }
+      throw error;
+    }
     return this.snapshot;
   }
 
@@ -1093,6 +1149,8 @@ class AgentConversationController {
         // lower than the prior generation's last value.
         this.queueRevision = -1;
         this.queueMutation = null;
+        this.cancelRequested = false;
+        this.cancelTargetPromptId = null;
       });
     }
     this.#markSessionsDisconnected('后台连接已恢复，正在自动对账会话与待处理任务…');
@@ -1108,6 +1166,8 @@ class AgentConversationController {
     for (const record of this.sessionsByKey.values()) {
       this.#withSessionRecord(record, () => {
         this.#cancelPermission();
+        this.cancelRequested = false;
+        this.cancelTargetPromptId = null;
         for (const submission of this.submissions.values()) {
           if (submission.status === 'submitting') submission.status = 'unknown';
         }
@@ -1354,6 +1414,19 @@ class AgentConversationController {
         },
       }));
       this.queueRunningPromptId = next.runningPromptId;
+      if (
+        this.cancelRequested
+        && (
+          next.runningPromptId === null
+          || (
+            this.cancelTargetPromptId !== null
+            && next.runningPromptId !== this.cancelTargetPromptId
+          )
+        )
+      ) {
+        this.cancelRequested = false;
+        this.cancelTargetPromptId = null;
+      }
       removedPromptIds = new Set(
         [...previousLivePromptIds].filter((promptId) => !livePrivateIds.has(promptId)),
       );
@@ -1622,6 +1695,7 @@ class AgentConversationController {
       transcriptTruncated: this.transcriptTruncated,
       draftAttachments: this.#draftAttachments(authority),
       queue: this.#publicQueue(),
+      cancelling: this.cancelRequested === true,
       ...(this.permissionInteraction?.authority === authority
         ? { interaction: { ...this.permissionInteraction.public } }
         : {}),
@@ -2024,6 +2098,8 @@ function createPrivateSessionState() {
     queuePublicCounter: 0,
     submissions: new Map(),
     queueMutation: null,
+    cancelRequested: false,
+    cancelTargetPromptId: null,
   };
 }
 

@@ -183,6 +183,156 @@ test('conversation interjection fails closed when no turn is running or the Host
   await runningPrompt;
 });
 
+test('conversation stop is independent of Queue sync, publishes cancelling once, and returns to ready from authority', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let releasePrompt;
+  fixture.host.promptImpl = () => new Promise((resolve) => { releasePrompt = resolve; });
+
+  const runningPrompt = fixture.controller.send('执行一个可以取消的任务');
+  await waitFor(() => (
+    fixture.controller.getSnapshot().streaming === true
+    && typeof releasePrompt === 'function'
+  ));
+  assert.equal(
+    fixture.controller.getSnapshot().queue.synced,
+    false,
+    'the stop control must not require Queue sync to finish first',
+  );
+
+  const cancelling = await fixture.controller.cancelCurrentTask();
+  assert.equal(cancelling.phase, 'sending');
+  assert.equal(cancelling.streaming, true);
+  assert.equal(cancelling.cancelling, true);
+  assert.deepEqual(fixture.host.cancelCalls, ['private-session-id']);
+
+  const repeated = await fixture.controller.cancelCurrentTask();
+  assert.equal(repeated.cancelling, true);
+  assert.deepEqual(
+    fixture.host.cancelCalls,
+    ['private-session-id'],
+    'repeated clicks while cancellation is pending must not send duplicate cancels',
+  );
+
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 1,
+    entries: [],
+    runningPromptId: null,
+  });
+  const authoritativeIdle = fixture.controller.getSnapshot();
+  assert.equal(authoritativeIdle.phase, 'ready');
+  assert.equal(authoritativeIdle.streaming, false);
+  assert.equal(authoritativeIdle.cancelling, false);
+
+  releasePrompt({ stopReason: 'cancelled' });
+  await runningPrompt;
+
+  const stopped = fixture.controller.getSnapshot();
+  assert.equal(stopped.phase, 'ready');
+  assert.equal(stopped.streaming, false);
+  assert.equal(stopped.cancelling, false);
+  assert.equal(stopped.stopReason, 'cancelled');
+});
+
+test('conversation stop remains available while a Queue mutation awaits authority', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 10,
+    entries: [queueEntry('private-queued', '稍后执行', 0, { version: 2 })],
+    runningPromptId: 'private-running',
+  });
+  const queueId = fixture.controller.getSnapshot().queue.entries[0].queueId;
+
+  const mutating = await fixture.controller.removeQueuedPrompt(queueId);
+  assert.deepEqual(mutating.queue.mutation, { kind: 'remove', pending: true });
+
+  const cancelling = await fixture.controller.cancelCurrentTask();
+  assert.equal(cancelling.cancelling, true);
+  assert.deepEqual(fixture.host.cancelCalls, ['private-session-id']);
+});
+
+test('conversation stop clears on any terminal Prompt result, not only cancelled', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let releasePrompt;
+  fixture.host.promptImpl = () => new Promise((resolve) => { releasePrompt = resolve; });
+  const runningPrompt = fixture.controller.send('恰好自然完成的任务');
+  await waitFor(() => typeof releasePrompt === 'function');
+
+  await fixture.controller.cancelCurrentTask();
+  assert.equal(fixture.controller.getSnapshot().cancelling, true);
+  releasePrompt({ stopReason: 'end_turn' });
+  await runningPrompt;
+
+  const completed = fixture.controller.getSnapshot();
+  assert.equal(completed.phase, 'ready');
+  assert.equal(completed.streaming, false);
+  assert.equal(completed.cancelling, false);
+  assert.equal(completed.stopReason, 'end_turn');
+});
+
+test('late cancel failure cannot revive a task after authoritative Queue idle', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let rejectCancel;
+  fixture.host.cancelImpl = () => new Promise((resolve, reject) => { rejectCancel = reject; });
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 4,
+    entries: [],
+    runningPromptId: 'private-running',
+  });
+
+  const cancellation = fixture.controller.cancelCurrentTask();
+  await waitFor(() => fixture.controller.getSnapshot().cancelling === true);
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 5,
+    entries: [],
+    runningPromptId: null,
+  });
+  const rejectedCancellation = assert.rejects(cancellation, /cancel transport closed/u);
+  rejectCancel(new Error('cancel transport closed'));
+  await rejectedCancellation;
+
+  const stopped = fixture.controller.getSnapshot();
+  assert.equal(stopped.phase, 'ready');
+  assert.equal(stopped.streaming, false);
+  assert.equal(stopped.cancelling, false);
+  assert.equal(stopped.error, null);
+});
+
+test('conversation stop exposes a transport failure and remains retryable', async () => {
+  const fixture = makeFixture();
+  await fixture.controller.open('job-agent');
+  let attempts = 0;
+  fixture.host.cancelImpl = async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('cancel transport closed');
+  };
+  fixture.host.emitQueue('private-session-id', {
+    queueRevision: 2,
+    entries: [],
+    runningPromptId: 'private-running',
+  });
+
+  await assert.rejects(
+    fixture.controller.cancelCurrentTask(),
+    /cancel transport closed/u,
+  );
+  const failed = fixture.controller.getSnapshot();
+  assert.equal(failed.phase, 'sending');
+  assert.equal(failed.streaming, true);
+  assert.equal(failed.cancelling, false);
+  assert.equal(failed.error, '没有成功停止当前任务。');
+
+  const retried = await fixture.controller.cancelCurrentTask();
+  assert.equal(retried.cancelling, true);
+  assert.deepEqual(
+    fixture.host.cancelCalls,
+    ['private-session-id', 'private-session-id'],
+  );
+});
+
 test('conversation clears authority on identity loss but preserves and reconciles the Session on reconnect', async () => {
   const fixture = makeFixture();
   fixture.host.artifactImpl = async () => ({
@@ -2274,6 +2424,7 @@ function makeFixture({
     backgroundActivityImpl: async () => ({ activities: [] }),
     sessionPlanImpl: async () => ({ entries: [] }),
     syncQueueImpl: async () => {},
+    cancelImpl: async () => {},
     async listAgents() {
       return {
         agents: [
@@ -2353,6 +2504,7 @@ function makeFixture({
     },
     async cancelSession(sessionId) {
       this.cancelCalls.push(sessionId);
+      return this.cancelImpl(sessionId);
     },
     respondPermission(requestId, optionId) {
       this.permissionResponses.push({ requestId, optionId });

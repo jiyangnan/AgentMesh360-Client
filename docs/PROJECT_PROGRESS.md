@@ -8676,3 +8676,46 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 或在线发布，仍严格停留在既定 P6 owner UAT 收口。下一步只由 owner 安装上述唯一内部包，
 使用自己的 Job Agent 与 BYOK 状态验证真实模型首轮和已有进度续跑；在 owner 另行授权前，
 不调用真实 Provider、Job 服务或 Core，也不横向扩展新功能。
+
+### 循环 161：“停止当前任务”权威取消链路修复
+
+状态：产品修复与本机自动化已完成；clean push、唯一内部包构建复验与旧包替换待本循环收口
+
+本轮先复核输入系统 V2.3 的既定 Cancel/Queue 合同，并用安装版真实本机日志定位问题，没有
+把界面持续转圈误判成 Harness 未取消：
+
+1. 2026-08-04 18:21:08 的 Host 日志已记录 `shell.cancel.received`、
+   `shell.cancel.processing` 和 Session `turn_ended: cancelled`；之后两次重复点击的
+   `prompt_id` 已为 `null`。这证明任务本身已经停止，故障是客户端持续投影旧 running 状态；
+2. Harness 取消最后一个 running prompt 后，原路径只有在下一条 Queue 项晋升时才广播；无
+   后续项时客户端永远收不到 `runningPromptId = null`。现在取消在锁内完成队列重建后立即
+   广播更高 revision 的权威快照；有后续项时保留全部排队任务，再由正常晋升发布下一份
+   running 快照；
+3. Desktop 原先把 Session 级 `session/cancel` 错放进普通 Queue mutation guard：Queue 首次
+   同步未完成会拒绝，另一个编辑/重排/立即执行在途时 Renderer 又会静默吞点击。现在停止只
+   校验当前 Session 与订阅 authority，使用独立取消锁，不依赖 Queue sync/mutation；首击立即
+   显示“正在停止…”并禁用，重复点击只发送一次；
+4. Controller 为每个持久 Session 保存 `cancelling` 与目标 Prompt 关联；权威 idle、下一条
+   running 或目标 Prompt 任意终态都会清除取消态。取消传输失败时恢复安全中文与可重试状态；
+   若 idle 先到、失败后到，不会把已经结束的任务重新“复活”；迟到响应也不能污染其他账号
+   或 Agent；
+5. 新增 `TC-CONV-026`，把未同步 Queue、mutation pending、唯一任务、保留两条后续任务、
+   重复点击、自然终态、传输失败重试和 idle/failure 竞态写成结构化输入、输出与恢复合同。
+
+当前验证证据：
+
+- Desktop 全量 Node 在允许本机 loopback 的隔离环境中 `232 total / 227 passed / 0 failed /
+  5 skipped`；5 条仍是显式打包 Host 门禁；停止 Controller 定向 `53/53`；
+- Conversation Electron 真实点击覆盖 Queue mutation 未完成时仍可停止、立即反馈、禁用防重、
+  权威 idle 恢复；四档紧凑布局 1180×760、1280×768、1280×800、1440×900 全部退出 0，
+  Composer bottom 分别为 742、750、782、882px；
+- Rust 取消相关 `20/20`、Shell Prompt Queue `38/38`、新增唯一 running 与保留后续 Queue
+  回归通过；产品旅程验证器 `3/3`，当前 `89` 条、`14` 个领域通过结构与执行检查；syntax、
+  Rust fmt 与 diff check 通过；
+- 自动化只使用 fake Host、本机日志和隔离状态：真实 Provider/Job/Core 请求 0、Provider Key
+  读取 0、消息发送 0、credits 0、麦克风 0、外部上传 0、费用 $0；遵照用户要求未使用 Kimi。
+
+计划复盘：本轮只修复 V2.3 已有“停止当前前台 Turn”合同，不清空待处理 Queue、不终止已明确
+后台化的长期任务，也没有扩展 Provider、Agent Prompt、附件、听写、多会话、签名或在线发布。
+下一步只执行 clean commit/push、从该产品 commit 构建并严格复验唯一未签名内部包；新包全部
+通过后才删除旧 `62eaca0` 包与本轮构建缓存，然后由 owner 覆盖安装验证真实按钮。
