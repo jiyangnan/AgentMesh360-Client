@@ -43,6 +43,63 @@ test('Host runtime supports an explicit embedded diagnostic mode', () => {
   assert.equal(Object.hasOwn(runtime.env, 'GROK_LEADER_SOCKET'), false);
 });
 
+test('macOS Host appends official user CLI locations to a minimal LaunchServices PATH', () => {
+  const runtime = resolveHostRuntime({
+    env: {
+      HOME: '/Users/agentmesh-user',
+      PATH: '/usr/bin:/bin',
+    },
+    platform: 'darwin',
+  });
+
+  assert.equal(
+    runtime.env.PATH,
+    '/usr/bin:/bin:/Users/agentmesh-user/.local/bin:/opt/homebrew/bin:/usr/local/bin',
+  );
+  assert.equal(
+    runtime.env.PATH.indexOf('/usr/bin'),
+    0,
+    'user-writable CLI locations must not shadow the inherited system PATH',
+  );
+});
+
+test('macOS Host PATH never duplicates known CLI locations', () => {
+  const runtime = resolveHostRuntime({
+    env: {
+      HOME: '/Users/agentmesh-user',
+      PATH: '/usr/bin:/Users/agentmesh-user/.local/bin:/opt/homebrew/bin:/usr/local/bin',
+    },
+    platform: 'darwin',
+  });
+
+  assert.equal(
+    runtime.env.PATH,
+    '/usr/bin:/Users/agentmesh-user/.local/bin:/opt/homebrew/bin:/usr/local/bin',
+  );
+});
+
+test('macOS Host PATH has a safe system default before official user CLI locations', () => {
+  const runtime = resolveHostRuntime({
+    env: { HOME: '/Users/agentmesh-user' },
+    platform: 'darwin',
+  });
+
+  assert.equal(
+    runtime.env.PATH,
+    '/usr/bin:/bin:/usr/sbin:/sbin:/Users/agentmesh-user/.local/bin:/opt/homebrew/bin:/usr/local/bin',
+  );
+});
+
+test('Windows Host environment is not rewritten when PATH is absent', () => {
+  const runtime = resolveHostRuntime({
+    env: { HOME: 'C:\\Users\\agentmesh-user' },
+    homeDir: 'C:\\Users\\agentmesh-user',
+    platform: 'win32',
+  });
+
+  assert.equal(Object.hasOwn(runtime.env, 'PATH'), false);
+});
+
 test('Host runtime honors product state and socket overrides without mutating input', () => {
   const env = {
     HOME: '/tmp/agentmesh-user',

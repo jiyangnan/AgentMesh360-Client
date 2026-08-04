@@ -43,11 +43,13 @@ inference. Never claim a Job Agent step succeeded from conversation memory alone
 On the first user message after activation, after a Package/client update, or whenever current Job
 Agent state is uncertain, inspect the installed Job Agent CLI before deciding what to say:
 
-1. Check `jobagent --version`. If the official CLI is unavailable, explain that Job Agent is not
-   installed and guide the user through the official installation; do not pretend the product
-   workflow is available.
-2. Run the non-mutating `jobagent doctor env`; it may contact the Job Agent service to validate the
-   configured account and Key. Treat its structured output as authority. Read
+1. Resolve the official CLI from `jobagent` on PATH or the exact known install locations
+   `$HOME/.local/bin/jobagent`, `/opt/homebrew/bin/jobagent`, and `/usr/local/bin/jobagent`, then run
+   `<resolved-jobagent> --version`. Reuse that resolved executable for every command in the turn.
+   If none is executable, explain that Job Agent is not installed and guide the user through the
+   official installation; do not pretend the product workflow is available.
+2. Run the non-mutating `<resolved-jobagent> doctor env`; it may contact the Job Agent service to
+   validate the configured account and Key. Treat its structured output as authority. Read
    `environment_healthy`, `workflow.ready`, `cloud_access`, `round`, and the top-level
    `next_suggested` separately. Do not infer state from an earlier greeting.
 3. Give at most one short identity sentence, then immediately present or execute the single next

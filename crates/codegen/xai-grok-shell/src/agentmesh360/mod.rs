@@ -1463,6 +1463,7 @@ mod tests {
     }
 
     async fn serve_job_onboarding_provider_requests(
+        version_command: String,
         doctor_command: String,
     ) -> (
         String,
@@ -1485,6 +1486,7 @@ mod tests {
                 move |headers: HeaderMap, body: String| {
                     let request_tx = request_tx.clone();
                     let attempts = Arc::clone(&attempts);
+                    let version_command = version_command.clone();
                     let doctor_command = doctor_command.clone();
                     async move {
                         let authorization = headers
@@ -1496,31 +1498,60 @@ mod tests {
                             .ok()
                             .and_then(|value| value["model"].as_str().map(ToOwned::to_owned))
                             .unwrap_or_else(|| "model-main".to_string());
-                        let _ = request_tx.send((authorization, body));
-                        let events = if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
-                            xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
-                                "Read the authoritative Job Agent state before replying.",
-                                "call_jobagent_doctor",
-                                "run_terminal_command",
-                                &serde_json::json!({
-                                    "command": doctor_command,
-                                    "description": "Read the isolated Job Agent state fixture.",
-                                    "background": false
+                        let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                        let _ = request_tx.send((authorization, body.clone()));
+                        match attempt {
+                            1 => {
+                                assert!(body.contains("call_jobagent_version"));
+                                assert!(body.contains("jobagent 0.5.5-fixture"));
+                            }
+                            2 => {
+                                assert!(body.contains("call_jobagent_doctor"));
+                                assert!(body.contains("fixture-upload-resume"));
+                            }
+                            _ => {}
+                        }
+                        let events = match attempt {
+                            0 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                                    "Resolve and verify the installed Job Agent CLI first.",
+                                    "call_jobagent_version",
+                                    "run_terminal_command",
+                                    &serde_json::json!({
+                                        "command": version_command,
+                                        "description": "Verify the isolated Job Agent CLI fixture.",
+                                        "background": false
+                                    })
+                                    .to_string(),
+                                    &model,
+                                )
+                                .into_iter()
+                                .map(|event| match event.event {
+                                    Some(name) => Event::default().event(name).data(event.data),
+                                    None => Event::default().data(event.data),
                                 })
-                                .to_string(),
-                                &model,
-                            )
-                            .into_iter()
-                            .map(|event| match event.event {
-                                Some(name) => Event::default().event(name).data(event.data),
-                                None => Event::default().data(event.data),
-                            })
-                            .collect()
-                        } else {
-                            xai_grok_test_support::sse::responses_api_events_exact(
-                                "账号已经验证。下一步请上传 PDF、DOCX、TXT 或 Markdown 简历；我会先分析，不会自动投递。",
-                                &model,
-                            )
+                                .collect(),
+                            1 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                                    "The CLI is available; read the authoritative Job Agent state.",
+                                    "call_jobagent_doctor",
+                                    "run_terminal_command",
+                                    &serde_json::json!({
+                                        "command": doctor_command,
+                                        "description": "Read the isolated Job Agent state fixture.",
+                                        "background": false
+                                    })
+                                    .to_string(),
+                                    &model,
+                                )
+                                .into_iter()
+                                .map(|event| match event.event {
+                                    Some(name) => Event::default().event(name).data(event.data),
+                                    None => Event::default().data(event.data),
+                                })
+                                .collect(),
+                            _ => xai_grok_test_support::sse::responses_api_events_exact(
+                                    "账号已经验证。下一步请上传 PDF、DOCX、TXT 或 Markdown 简历；我会先分析，不会自动投递。",
+                                    &model,
+                                ),
                         };
                         Sse::new(stream::iter(
                             events.into_iter().map(Ok::<_, Infallible>),
@@ -1703,6 +1734,40 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct RecordingHostTestClient {
+        notification_tx: tokio::sync::mpsc::UnboundedSender<acp::SessionNotification>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl acp::Client for RecordingHostTestClient {
+        async fn request_permission(
+            &self,
+            request: acp::RequestPermissionRequest,
+        ) -> acp::Result<acp::RequestPermissionResponse> {
+            let outcome = request
+                .options
+                .iter()
+                .find(|option| option.kind == acp::PermissionOptionKind::AllowOnce)
+                .or(request.options.first())
+                .map(|option| {
+                    acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
+                        option.option_id.clone(),
+                    ))
+                })
+                .unwrap_or(acp::RequestPermissionOutcome::Cancelled);
+            Ok(acp::RequestPermissionResponse::new(outcome))
+        }
+
+        async fn session_notification(
+            &self,
+            notification: acp::SessionNotification,
+        ) -> acp::Result<()> {
+            let _ = self.notification_tx.send(notification);
+            Ok(())
+        }
+    }
+
     fn drive_gateway(
         mut receiver: tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
     ) -> tokio::task::JoinHandle<()> {
@@ -1713,6 +1778,25 @@ mod tests {
                 });
             }
         })
+    }
+
+    fn drive_recording_gateway(
+        mut receiver: tokio::sync::mpsc::UnboundedReceiver<xai_acp_lib::AcpClientMessage>,
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        tokio::sync::mpsc::UnboundedReceiver<acp::SessionNotification>,
+    ) {
+        let (notification_tx, notification_rx) = tokio::sync::mpsc::unbounded_channel();
+        let client = RecordingHostTestClient { notification_tx };
+        let task = tokio::task::spawn_local(async move {
+            while let Some(message) = receiver.recv().await {
+                let client = client.clone();
+                message.route_to_client(client, |future| {
+                    tokio::task::spawn_local(future);
+                });
+            }
+        });
+        (task, notification_rx)
     }
 
     fn build_host_test_agent(
@@ -2885,7 +2969,7 @@ mod tests {
                 let state_home = tempfile::tempdir().expect("state home");
                 let fixture_bin = state_home.path().join("fixture-bin");
                 std::fs::create_dir_all(&fixture_bin).expect("create fixture bin");
-                let fixture_marker = state_home.path().join("jobagent-doctor-ran");
+                let fixture_marker = state_home.path().join("jobagent-command-order");
                 let fixture_jobagent = fixture_bin.join("jobagent");
                 let fixture_state = serde_json::json!({
                     "environment_healthy": true,
@@ -2902,9 +2986,15 @@ mod tests {
                     &fixture_jobagent,
                     format!(
                         "#!/bin/sh\n\
+                         if [ \"$1\" = --version ]; then\n\
+                           /usr/bin/printf 'version\\n' >> '{}';\n\
+                           /usr/bin/printf '%s\\n' 'jobagent 0.5.5-fixture';\n\
+                           exit 0;\n\
+                         fi\n\
                          if [ \"$1\" != doctor ] || [ \"$2\" != env ]; then exit 64; fi\n\
-                         /usr/bin/touch '{}'\n\
+                         /usr/bin/printf 'doctor\\n' >> '{}'\n\
                          /usr/bin/printf '%s\\n' '{}'\n",
+                        fixture_marker.display(),
                         fixture_marker.display(),
                         fixture_state
                     ),
@@ -2915,16 +3005,18 @@ mod tests {
                     std::fs::Permissions::from_mode(0o755),
                 )
                 .expect("make isolated jobagent fixture executable");
-                let doctor_command = format!(
-                    "PATH='{}':$PATH jobagent doctor env",
-                    fixture_bin.display()
-                );
+                let version_command = format!("'{}' --version", fixture_jobagent.display());
+                let doctor_command = format!("'{}' doctor env", fixture_jobagent.display());
 
                 let (core_base_url, core) = serve_bootstrap_once().await;
                 let (provider_base_url, mut provider_requests, provider_task) =
-                    serve_job_onboarding_provider_requests(doctor_command.clone()).await;
+                    serve_job_onboarding_provider_requests(
+                        version_command.clone(),
+                        doctor_command.clone(),
+                    )
+                    .await;
                 let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
-                let gateway_task = drive_gateway(gateway_rx);
+                let (gateway_task, mut notifications) = drive_recording_gateway(gateway_rx);
                 agent
                     .initialize(
                         acp::InitializeRequest::new(acp::ProtocolVersion::V1)
@@ -3026,6 +3118,30 @@ mod tests {
                 .await
                 .expect("Job onboarding Prompt timed out")
                 .expect("Job onboarding Prompt response");
+                let mut visible_reply = String::new();
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while !visible_reply.contains("不会自动投递") {
+                        let notification = notifications
+                            .recv()
+                            .await
+                            .expect("Job onboarding notification channel closed");
+                        if let acp::SessionUpdate::AgentMessageChunk(chunk) = notification.update {
+                            if let acp::ContentBlock::Text(text) = chunk.content {
+                                visible_reply.push_str(&text.text);
+                            }
+                        }
+                    }
+                })
+                .await
+                .expect("final Job onboarding reply was not delivered to the client");
+                assert!(visible_reply.contains("PDF、DOCX、TXT 或 Markdown 简历"));
+                assert!(visible_reply.contains("不会自动投递"));
+                for generic_copy in ["我可以帮你做这些事情", "建立职业档案", "你想做什么"] {
+                    assert!(
+                        !visible_reply.contains(generic_copy),
+                        "first Job Agent reply regressed to a generic menu: {visible_reply}"
+                    );
+                }
                 let first = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
                     .await
                     .expect("first onboarding Provider request timed out")
@@ -3035,13 +3151,22 @@ mod tests {
                         .await
                         .expect("second onboarding Provider request timed out")
                         .expect("second onboarding Provider request");
-                for (authorization, _) in [&first, &second] {
+                let third = tokio::time::timeout(
+                    Duration::from_secs(5),
+                    provider_requests.recv(),
+                )
+                .await
+                .expect("third onboarding Provider request timed out")
+                .expect("third onboarding Provider request");
+                for (authorization, _) in [&first, &second, &third] {
                     assert_eq!(
                         authorization,
                         "Bearer sentinel-job-onboarding-secret"
                     );
                 }
-                if !fixture_marker.is_file() {
+                if std::fs::read_to_string(&fixture_marker).ok().as_deref()
+                    != Some("version\ndoctor\n")
+                {
                     let first_json: serde_json::Value =
                         serde_json::from_str(&first.1).expect("first onboarding request JSON");
                     let tool_names = first_json["tools"]
@@ -3052,7 +3177,9 @@ mod tests {
                         .collect::<Vec<_>>();
                     let second_json: serde_json::Value =
                         serde_json::from_str(&second.1).expect("second onboarding request JSON");
-                    let relevant_inputs = second_json["input"]
+                    let third_json: serde_json::Value =
+                        serde_json::from_str(&third.1).expect("third onboarding request JSON");
+                    let relevant_inputs = third_json["input"]
                         .as_array()
                         .into_iter()
                         .flatten()
@@ -3060,14 +3187,16 @@ mod tests {
                         .cloned()
                         .collect::<Vec<_>>();
                     panic!(
-                        "the first Job Agent turn did not execute the state probe; tools={tool_names:?}; relevant_inputs={relevant_inputs:?}"
+                        "the first Job Agent turn did not execute version then state probe; tools={tool_names:?}; relevant_inputs={relevant_inputs:?}"
                     );
                 }
-                assert!(first.1.contains("jobagent doctor env"));
+                assert!(first.1.contains("<resolved-jobagent> doctor env"));
                 assert!(first.1.contains("not a general chat assistant"));
-                assert!(second.1.contains("fixture-upload-resume"));
-                assert!(second.1.contains("call_jobagent_doctor"));
-                assert!(second.1.contains(&doctor_command));
+                assert!(second.1.contains("call_jobagent_version"));
+                assert!(second.1.contains(&version_command));
+                assert!(third.1.contains("fixture-upload-resume"));
+                assert!(third.1.contains("call_jobagent_doctor"));
+                assert!(third.1.contains(&doctor_command));
                 assert!(
                     tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
                         .await
@@ -3258,7 +3387,7 @@ mod tests {
                 );
                 for runtime_contract in [
                     "not a general chat assistant",
-                    "jobagent doctor env",
+                    "<resolved-jobagent> doctor env",
                     "jobagent resume analyze --file <resume-path>",
                     "Do not answer a first greeting with a generic capability menu",
                 ] {
@@ -3339,7 +3468,7 @@ mod tests {
                     upgraded_authorization,
                     "Bearer sentinel-provider-secret-5678"
                 );
-                assert!(upgraded_request_body.contains("jobagent doctor env"));
+                assert!(upgraded_request_body.contains("<resolved-jobagent> doctor env"));
                 assert!(upgraded_request_body.contains(
                     "Do not answer a first greeting with a generic capability menu"
                 ));

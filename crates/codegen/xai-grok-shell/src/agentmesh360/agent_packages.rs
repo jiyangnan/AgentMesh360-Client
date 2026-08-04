@@ -508,8 +508,11 @@ mod tests {
 
         for required in [
             "not a general chat assistant",
-            "jobagent --version",
-            "jobagent doctor env",
+            "<resolved-jobagent> --version",
+            "$HOME/.local/bin/jobagent",
+            "/opt/homebrew/bin/jobagent",
+            "/usr/local/bin/jobagent",
+            "<resolved-jobagent> doctor env",
             "environment_healthy",
             "workflow.ready",
             "next_suggested",
@@ -537,7 +540,12 @@ mod tests {
             let other = catalog
                 .package_for_agent(other_agent_id)
                 .expect("other product Agent");
-            assert!(!other.runtime.prompt_body.contains("jobagent doctor env"));
+            assert!(
+                !other
+                    .runtime
+                    .prompt_body
+                    .contains("<resolved-jobagent> doctor env")
+            );
             assert!(!other.runtime.prompt_body.contains("resume analyze"));
         }
     }

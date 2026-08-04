@@ -391,10 +391,11 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   6. **非 Job 隔离**：分别加载 LectureCast 与 Deploy 定义；动态 Agent 的安装、激活和
      同源双渠道边界沿用 TC-AGENT-004。
 - **交互步骤**：对前四组逐项核对实际进入 Sampling 的 Job runtime 状态决策合同；其中
-  “Key 有效但无画像”额外走完整 fake Provider → `run_terminal_command` → 隔离
-  `jobagent doctor env` → tool result → 第二次 Sampling 回路，证明 Harness 不只收到文字而是
-  真正执行状态探针。对第五组在保留会话历史的情况下替换定义后继续发送；对第六组读取并
-  比较非 Job 定义，并用 LectureCast 定义变化验证通用摘要机制，不调用外部服务。
+  “Key 有效但无画像”额外走完整 fake Provider → `run_terminal_command` → 隔离 CLI
+  `--version` → tool result → 隔离 `doctor env` → tool result → 第三次 Sampling 回路，证明
+  Harness 不只收到文字而是真正按序执行 CLI 识别与状态探针。对第五组在保留会话历史的
+  情况下替换定义后继续发送；对第六组读取并比较非 Job 定义，并用 LectureCast 定义变化
+  验证通用摘要机制，不调用外部服务。
 - **预期输出**：各组状态都必须得到与 authority 一致的单一步骤：
   1. 无 Key 时明确区分 Job Agent 服务 Key 与模型 Provider Key，引导用户在本机安全入口
      完成 `jobagent init --key`；不得要求把 Key 粘贴进普通对话，也不得伪造 Key；
@@ -415,7 +416,11 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **自动化证据**：Rust `job_agent_runtime_prompt_owns_state_driven_onboarding` 逐项核对
   Key/画像/round/`next_suggested`/credits/纵向平台合同与非 Job 隔离；
   `host_job_agent_first_turn_executes_state_probe_before_replying` 通过 fake Provider 和可执行
-  fixture 证明首轮真实进入工具循环并把无画像状态返回第二次 Sampling；
+  fixture 证明首轮按 `--version → doctor env` 顺序真实进入两段工具循环，并把无画像状态
+  返回第三次 Sampling；同时收集客户端 Session notification，证明最终可见回复明确要求上传
+  简历、先分析且不自动投递，并排除旧通用能力菜单。Desktop Host runtime 回归另证明 Finder
+  最小或缺失 PATH 都会保留安全系统顺序并追加 `~/.local/bin`、`/opt/homebrew/bin` 与
+  `/usr/local/bin`，且不产生重复；
   `host_acp_flow_activates_product_agent_and_routes_real_prompt` 核对实际 System Prompt、同一
   Session 的旧定义替换以及既有用户/Agent 历史保留；
   `definition_revision_tracks_every_product_agent_definition` 用 LectureCast 证明版本、最终定义和

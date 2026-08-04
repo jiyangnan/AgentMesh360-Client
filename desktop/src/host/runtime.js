@@ -9,6 +9,24 @@ const HOST_MODE_EMBEDDED = 'embedded';
 const HOST_MODES = new Set([HOST_MODE_PERSISTENT, HOST_MODE_EMBEDDED]);
 const MAX_UNIX_SOCKET_PATH_BYTES = 100;
 
+function hostToolPath({ currentPath, homeDir, platform }) {
+  if (platform === 'win32') return currentPath;
+  const delimiter = ':';
+  const base = currentPath || (
+    platform === 'darwin'
+      ? '/usr/bin:/bin:/usr/sbin:/sbin'
+      : '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+  );
+  const candidates = [path.join(homeDir, '.local', 'bin')];
+  if (platform === 'darwin') candidates.push('/opt/homebrew/bin');
+  candidates.push('/usr/local/bin');
+  const entries = base.split(delimiter).filter(Boolean);
+  for (const candidate of candidates) {
+    if (!entries.includes(candidate)) entries.push(candidate);
+  }
+  return entries.join(delimiter);
+}
+
 function resolveHostRuntime({
   env = process.env,
   homeDir = env.HOME || os.homedir(),
@@ -22,7 +40,13 @@ function resolveHostRuntime({
   const agentmeshHome = path.resolve(
     env.AGENTMESH360_HOME || path.join(homeDir, '.agentmesh360'),
   );
-  const childEnv = { ...env, AGENTMESH360_HOME: agentmeshHome };
+  const childEnv = {
+    ...env,
+    AGENTMESH360_HOME: agentmeshHome,
+  };
+  if (platform !== 'win32') {
+    childEnv.PATH = hostToolPath({ currentPath: env.PATH, homeDir, platform });
+  }
 
   if (mode === HOST_MODE_EMBEDDED) {
     delete childEnv.GROK_LEADER_SOCKET;

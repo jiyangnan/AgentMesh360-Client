@@ -53,6 +53,12 @@ Canonical Workflow 文件存在就推断客户端内的 Job Agent 已获得同�
 进程或聊天引擎；当前仍需 Package 作者显式维护 runtime 投影，后续自动编译不得被误认为
 已经上线。
 
+macOS 从 Finder/LaunchServices 启动时不会继承用户交互式 shell 的完整 PATH。Desktop 在
+启动 Host 子进程时保留原系统 PATH 顺序，并只在尾部去重追加官方 CLI 常见目录
+`~/.local/bin`、`/opt/homebrew/bin` 和 `/usr/local/bin`；不会 source `.zshrc`、执行用户
+shell 配置或让用户目录覆盖系统命令。Job Agent runtime 仍先解析可执行文件并在同一轮复用
+绝对路径，避免“终端里已安装、双击客户端却提示未安装”。
+
 本地 Registry 位于 `~/.agentmesh360/state.db`。测试和受管安装可以通过
 `AGENTMESH360_HOME` 覆盖根目录。Grok Session 数据仍使用上游 Session Store；
 Registry 只引用稳定 UUID，不复制对话记录。

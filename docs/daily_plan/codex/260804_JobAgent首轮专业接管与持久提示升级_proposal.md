@@ -38,6 +38,8 @@ Session 或 Supervisor。
 - [x] 完成 Manifest、Host fake Provider、旧会话升级和非 Job 隔离自动化；
 - [x] 完成 AgentMesh360 Rust 回归与历史保护复验；
 - [x] 完成 Desktop、产品旅程、格式与 diff 复验；
+- [x] 修复 Finder 启动 Host 缺少官方 CLI 目录，并把 fake 工具链补为
+  `--version → doctor env` 顺序执行；
 - [ ] 更新项目进展，clean push，并生成、复验和单版本替换唯一内部包。
 
 ## 状态决策与预期交互
@@ -85,6 +87,7 @@ Harness 与本地稳定 Main Session 持久化；本轮用 LectureCast 定义变
 - 不改变 LectureCast、Deploy 或未来动态 Agent 的运行时 Prompt；
 - 不启用生产 Trust/Registry、P7/P8、在线分发、自动更新、Developer ID 或公证；
 - 不借本轮扩展 Provider、价格、余额、fallback、多会话或 Composer 功能；
+- 不 source 用户 shell 配置；macOS Host 只在系统 PATH 尾部追加去重后的官方 CLI 常见目录；
 - applied-definition map 暂时只在 Host 进程内，重启后允许一次保守的幂等重建，不在本轮
   增加新的持久状态 Schema。
 

@@ -8618,8 +8618,9 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 修复 Job Agent 首次对话只显示通用能力菜单、没有按真实 Job 状态推进的问题：
 
 1. Job Agent 内置 Package 升级到 `0.4.8`，运行时合同要求首次、升级后首次或状态未知时先
-   检查 `jobagent --version` 和非变更型 `jobagent doctor env`，再按 Key、环境、画像、round
-   与顶层 `next_suggested` 只推进一个下一步；不得宽泛问“想做什么”；
+   从 PATH 与三个已知安装位置解析 CLI，并依次检查 `<resolved-jobagent> --version` 和
+   非变更型 `jobagent doctor env`，再按 Key、环境、画像、round 与顶层 `next_suggested`
+   只推进一个下一步；不得宽泛问“想做什么”；
 2. 明确区分 Job Agent 服务 Key 与 BYOK 模型 Key；无 Key 时只引导官网与本机安全初始化，
    不让用户把 Key 粘贴进普通聊天。无画像时先收简历并分析；已有画像时开始 round；已有
    round 时从返回状态续跑；只有真实 `paid_pass_required` 或 credits 错误才提示套餐；
@@ -8630,14 +8631,23 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 4. 这套摘要与重建没有 Job 特判。LectureCast 样本证明任意 Agent Package 的版本、定义或
    Overlay 变化都会更新自身 Harness，稳定定义不会反复重建。后续动态 Agent 继续从宿主
    Skill/Canonical Workflow 的同源版本生成 runtime 投影，再复用同一 Harness 和本地持久
-   Session，不复制客户端聊天引擎。
+   Session，不复制客户端聊天引擎；
+5. 独立只读审查在第一次冷构建完成前发现 Finder 启动的应用可能缺少 `~/.local/bin`。已
+   中止该构建，Desktop Host 现在保持系统 PATH 在前，只在末尾去重追加 `~/.local/bin`、
+   `/opt/homebrew/bin` 与 `/usr/local/bin`，不 source shell 配置；Job runtime 也要求解析并
+   复用绝对 CLI 路径，避免终端已安装而客户端误报未安装；
+6. fake Provider 回归不再只有 `doctor env`：临时可执行 CLI 会记录并强制验证
+   `--version → doctor env` 顺序，三个 Sampling 请求分别包含 runtime 合同、version tool
+   result 和结构化 Job 状态；测试还收集客户端真正收到的流式文本，确认最终是“上传简历、
+   先分析、不自动投递”而不是通用能力菜单。四类业务分支仍按 runtime 合同逐项核对；真实
+   BYOK 模型语义明确保留为安装包 UAT，不把 fake Provider 的预制回复冒充模型一定遵守。
 
 当前自动化证据：
 
 - AgentMesh360 Rust 整组 `215 passed / 0 failed / 1 ignored`；覆盖 Manifest 状态合同、
-  可执行 fake `jobagent doctor env` 工具循环、实际 Sampling System Prompt、旧定义替换、
+  可执行 fake `--version → doctor env` 双工具循环、实际 Sampling System Prompt、旧定义替换、
   同一 Session 用户/Agent 历史保留、非 Job 隔离和通用定义摘要；
-- Desktop syntax 通过；Node 全量 `223 total / 218 passed / 0 failed / 5 skipped`，5 条仍是
+- Desktop syntax 通过；Node 全量 `227 total / 222 passed / 0 failed / 5 skipped`，5 条仍是
   需要打包 Host 的显式门禁；产品旅程 `88` 条、`14` 个领域全部通过结构校验；Rust fmt 与
   `git diff --check` 通过；
 - 测试只使用临时状态、回环 fake Core/Provider 和可执行 fixture。真实 Job Agent Key 读取
