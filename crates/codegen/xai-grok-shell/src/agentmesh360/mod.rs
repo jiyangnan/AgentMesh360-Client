@@ -50,6 +50,7 @@ use std::path::PathBuf;
 use agent_client_protocol as acp;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::agent::MvpAgent;
 use crate::agent::mvp_agent::LocalRef;
@@ -89,9 +90,34 @@ pub(crate) struct AgentMesh360Runtime {
     credential_vault: credential_vault::RuntimeCredentialVault,
     dictation: dictation::DictationService,
     pinned_sessions: RefCell<HashSet<acp::SessionId>>,
-    applied_overlay_revisions: RefCell<HashMap<String, (u64, u64)>>,
+    applied_agent_definition_revisions: RefCell<HashMap<String, AppliedAgentDefinitionRevision>>,
     restore_started: Cell<bool>,
     access_generation: Cell<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AppliedAgentDefinitionRevision {
+    package_version: String,
+    definition_sha256: String,
+    agent_md_revision: u64,
+    user_md_revision: u64,
+}
+
+impl AppliedAgentDefinitionRevision {
+    fn from_definition(
+        package_version: impl Into<String>,
+        overlay_revisions: (u64, u64),
+        definition: &xai_grok_agent::AgentDefinition,
+    ) -> Result<Self> {
+        let definition = serde_json::to_vec(&definition.to_json_value())
+            .context("serialize Agent runtime definition")?;
+        Ok(Self {
+            package_version: package_version.into(),
+            definition_sha256: format!("{:x}", Sha256::digest(definition)),
+            agent_md_revision: overlay_revisions.0,
+            user_md_revision: overlay_revisions.1,
+        })
+    }
 }
 
 impl Default for AgentMesh360Runtime {
@@ -139,7 +165,7 @@ impl AgentMesh360Runtime {
             credential_vault,
             dictation: dictation::DictationService::default(),
             pinned_sessions: RefCell::default(),
-            applied_overlay_revisions: RefCell::default(),
+            applied_agent_definition_revisions: RefCell::default(),
             restore_started: Cell::default(),
             access_generation: Cell::default(),
         }
@@ -309,22 +335,49 @@ impl AgentMesh360Runtime {
     fn suspend_residency(&self) -> bool {
         let had_pins = !self.pinned_sessions.borrow().is_empty();
         self.pinned_sessions.borrow_mut().clear();
-        self.applied_overlay_revisions.borrow_mut().clear();
+        self.applied_agent_definition_revisions.borrow_mut().clear();
         let had_restore = self.restore_started.replace(false);
         had_pins || had_restore
     }
 
-    fn mark_overlays_applied(&self, session_id: &acp::SessionId, revisions: (u64, u64)) {
-        self.applied_overlay_revisions
+    fn mark_agent_definition_applied(
+        &self,
+        session_id: &acp::SessionId,
+        revision: AppliedAgentDefinitionRevision,
+    ) {
+        self.applied_agent_definition_revisions
             .borrow_mut()
-            .insert(session_id.0.to_string(), revisions);
+            .insert(session_id.0.to_string(), revision);
     }
 
-    fn applied_overlay_revisions(&self, session_id: &acp::SessionId) -> Option<(u64, u64)> {
-        self.applied_overlay_revisions
+    fn applied_agent_definition_revision(
+        &self,
+        session_id: &acp::SessionId,
+    ) -> Option<AppliedAgentDefinitionRevision> {
+        self.applied_agent_definition_revisions
             .borrow()
             .get(session_id.0.as_ref())
-            .copied()
+            .cloned()
+    }
+
+    fn record_activation_definition_state(
+        &self,
+        session_id: &acp::SessionId,
+        revision: AppliedAgentDefinitionRevision,
+        resumed: bool,
+    ) {
+        if resumed {
+            // A top-level Grok session deliberately keeps the System message
+            // persisted in its conversation. Loading it with a newer Package
+            // profile therefore does not prove that the new profile is active.
+            // Leave the revision unknown so the next Prompt rebuilds the
+            // harness before Sampling while preserving the conversation.
+            self.applied_agent_definition_revisions
+                .borrow_mut()
+                .remove(session_id.0.as_ref());
+        } else {
+            self.mark_agent_definition_applied(session_id, revision);
+        }
     }
 
     fn next_access_generation(&self) -> u64 {
@@ -753,6 +806,12 @@ pub(crate) async fn ensure_product_agent_overlays_applied(
     if agent.agentmesh360.access.current_account_id() != Some(owner_account_id) {
         return Err(acp::Error::invalid_params().data("session not found"));
     }
+    let package_version = agent
+        .agentmesh360
+        .registry()
+        .get(owner_account_id, &agent_id)
+        .map(|record| record.version)
+        .map_err(|_| acp::Error::internal_error().data("failed to read Agent Package revision"))?;
     let overlays = agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home);
     let definition = agent
         .agentmesh360
@@ -762,8 +821,20 @@ pub(crate) async fn ensure_product_agent_overlays_applied(
             overlays.apply_to_definition(owner_account_id, &agent_id, definition)
         })
         .map_err(|_| acp::Error::internal_error().data("failed to prepare Agent customization"))?;
-    let (definition, revisions) = definition;
-    if agent.agentmesh360.applied_overlay_revisions(session_id) == Some(revisions) {
+    let (definition, overlay_revisions) = definition;
+    let revision = AppliedAgentDefinitionRevision::from_definition(
+        package_version,
+        overlay_revisions,
+        &definition,
+    )
+    .map_err(|_| {
+        acp::Error::internal_error().data("failed to fingerprint Agent runtime definition")
+    })?;
+    if agent
+        .agentmesh360
+        .applied_agent_definition_revision(session_id)
+        == Some(revision.clone())
+    {
         return Ok(());
     }
     let cmd_tx = agent
@@ -795,7 +866,7 @@ pub(crate) async fn ensure_product_agent_overlays_applied(
         .map_err(|_| acp::Error::internal_error().data("Agent customization actor closed"))??;
     agent
         .agentmesh360
-        .mark_overlays_applied(session_id, revisions);
+        .mark_agent_definition_applied(session_id, revision);
     Ok(())
 }
 
@@ -941,6 +1012,11 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
     let (profile, overlay_revisions) =
         agent_overlays::AgentOverlayStore::in_home(&agent.agentmesh360.state_home)
             .apply_to_definition(owner_account_id, agent_id, profile)?;
+    let definition_revision = AppliedAgentDefinitionRevision::from_definition(
+        record.version.clone(),
+        overlay_revisions,
+        &profile,
+    )?;
     let mut meta = acp::Meta::new();
     meta.insert("agentProfile".into(), profile.to_json_value());
     meta.insert("agentmesh360AgentId".into(), agent_id.into());
@@ -986,9 +1062,11 @@ async fn activate(agent: &MvpAgent, agent_id: &str) -> Result<ActivateResponse> 
 
     match session_result {
         Ok(actual_session_id) if actual_session_id == session_id => {
-            agent
-                .agentmesh360
-                .mark_overlays_applied(&session_id, overlay_revisions);
+            agent.agentmesh360.record_activation_definition_state(
+                &session_id,
+                definition_revision,
+                resumed,
+            );
             agent.agentmesh360.pin(session_id);
             agent.agentmesh360.registry().mark_runtime(
                 owner_account_id,
@@ -1189,6 +1267,100 @@ mod tests {
             .join(" | ")
     }
 
+    #[test]
+    fn resumed_product_session_requires_definition_rebuild_before_next_prompt() {
+        let state_home = tempfile::tempdir().expect("state home");
+        let runtime = AgentMesh360Runtime::for_host_test(state_home.path(), "http://127.0.0.1:9");
+        let session_id = acp::SessionId::new("job-main-session");
+        let mut legacy_definition = xai_grok_agent::AgentDefinition::default_grok_build();
+        legacy_definition.prompt_body = Some("legacy generic profile".into());
+        let old =
+            AppliedAgentDefinitionRevision::from_definition("0.4.7", (0, 0), &legacy_definition)
+                .expect("legacy definition revision");
+        runtime.record_activation_definition_state(&session_id, old.clone(), false);
+        assert_eq!(
+            runtime.applied_agent_definition_revision(&session_id),
+            Some(old)
+        );
+
+        let mut upgraded_definition = legacy_definition.clone();
+        upgraded_definition.prompt_body = Some("state-driven onboarding profile".into());
+        let upgraded =
+            AppliedAgentDefinitionRevision::from_definition("0.4.8", (0, 0), &upgraded_definition)
+                .expect("upgraded definition revision");
+        assert_ne!(
+            runtime.applied_agent_definition_revision(&session_id),
+            Some(upgraded.clone()),
+            "a Package version change must invalidate the applied runtime definition"
+        );
+
+        runtime.record_activation_definition_state(&session_id, upgraded, true);
+        assert_eq!(
+            runtime.applied_agent_definition_revision(&session_id),
+            None,
+            "loading a persisted top-level conversation cannot mark its new Package prompt applied"
+        );
+    }
+
+    #[test]
+    fn definition_revision_tracks_every_product_agent_definition() {
+        let catalog = agent_packages::AgentPackageCatalog::builtin().expect("built-in packages");
+        let lecturecast = catalog
+            .package_for_agent("lecturecast-agent")
+            .expect("LectureCast Agent package");
+        let definition = lecturecast
+            .agent_definition()
+            .expect("LectureCast Agent definition");
+        let baseline = AppliedAgentDefinitionRevision::from_definition(
+            lecturecast.version.clone(),
+            (0, 0),
+            &definition,
+        )
+        .expect("baseline definition revision");
+        assert_eq!(
+            baseline,
+            AppliedAgentDefinitionRevision::from_definition(
+                lecturecast.version.clone(),
+                (0, 0),
+                &definition,
+            )
+            .expect("stable definition revision"),
+            "the same Package definition must not rebuild its resident harness repeatedly"
+        );
+
+        let mut prompt_upgrade = definition.clone();
+        prompt_upgrade.prompt_body = Some(format!(
+            "{}\n\nFuture Package-owned workflow marker.",
+            prompt_upgrade.prompt_body.as_deref().unwrap_or_default()
+        ));
+        assert_ne!(
+            baseline,
+            AppliedAgentDefinitionRevision::from_definition(
+                lecturecast.version.clone(),
+                (0, 0),
+                &prompt_upgrade,
+            )
+            .expect("prompt-upgraded definition revision"),
+            "a non-Job Agent Package prompt change must rebuild that Agent's harness"
+        );
+        assert_ne!(
+            baseline,
+            AppliedAgentDefinitionRevision::from_definition("0.4.1", (0, 0), &definition,)
+                .expect("version-upgraded definition revision"),
+            "a Package version change must invalidate the resident definition"
+        );
+        assert_ne!(
+            baseline,
+            AppliedAgentDefinitionRevision::from_definition(
+                lecturecast.version.clone(),
+                (1, 0),
+                &definition,
+            )
+            .expect("overlay-upgraded definition revision"),
+            "an Agent customization revision must invalidate the resident definition"
+        );
+    }
+
     async fn serve_bootstrap_once() -> (String, tokio::task::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -1280,6 +1452,79 @@ mod tests {
                         .into_iter()
                         .map(Ok::<_, Infallible>);
                         Sse::new(stream::iter(events))
+                    }
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{address}/v1"), request_rx, task)
+    }
+
+    async fn serve_job_onboarding_provider_requests(
+        doctor_command: String,
+    ) -> (
+        String,
+        tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind Job onboarding Provider mock");
+        let address = listener
+            .local_addr()
+            .expect("Job onboarding Provider mock address");
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/v1/responses",
+            post({
+                let request_tx = request_tx.clone();
+                let attempts = Arc::clone(&attempts);
+                move |headers: HeaderMap, body: String| {
+                    let request_tx = request_tx.clone();
+                    let attempts = Arc::clone(&attempts);
+                    let doctor_command = doctor_command.clone();
+                    async move {
+                        let authorization = headers
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok())
+                            .unwrap_or_default()
+                            .to_owned();
+                        let model = serde_json::from_str::<serde_json::Value>(&body)
+                            .ok()
+                            .and_then(|value| value["model"].as_str().map(ToOwned::to_owned))
+                            .unwrap_or_else(|| "model-main".to_string());
+                        let _ = request_tx.send((authorization, body));
+                        let events = if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                            xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                                "Read the authoritative Job Agent state before replying.",
+                                "call_jobagent_doctor",
+                                "run_terminal_command",
+                                &serde_json::json!({
+                                    "command": doctor_command,
+                                    "description": "Read the isolated Job Agent state fixture.",
+                                    "background": false
+                                })
+                                .to_string(),
+                                &model,
+                            )
+                            .into_iter()
+                            .map(|event| match event.event {
+                                Some(name) => Event::default().event(name).data(event.data),
+                                None => Event::default().data(event.data),
+                            })
+                            .collect()
+                        } else {
+                            xai_grok_test_support::sse::responses_api_events_exact(
+                                "账号已经验证。下一步请上传 PDF、DOCX、TXT 或 Markdown 简历；我会先分析，不会自动投递。",
+                                &model,
+                            )
+                        };
+                        Sse::new(stream::iter(
+                            events.into_iter().map(Ok::<_, Infallible>),
+                        ))
                     }
                 }
             }),
@@ -1566,15 +1811,15 @@ mod tests {
     ) {
         let root_key_id = "agentmesh360-root-host-test-2026";
         let release_url = format!(
-            "{}/com.agentmesh360.job-agent-0.4.7.agent-release.v1.json",
+            "{}/com.agentmesh360.job-agent-0.4.8.agent-release.v1.json",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let artifact_url = format!(
-            "{}/com.agentmesh360.job-agent-0.4.7.ampkg.tar.zst",
+            "{}/com.agentmesh360.job-agent-0.4.8.ampkg.tar.zst",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let envelope_url = format!(
-            "{}/com.agentmesh360.job-agent-0.4.7.signature.v1.json",
+            "{}/com.agentmesh360.job-agent-0.4.8.signature.v1.json",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let trust = package_trust::signed_bundle_document_for_test(
@@ -1591,7 +1836,7 @@ mod tests {
             7,
             "com.agentmesh360.job-agent",
             "job-agent",
-            "0.4.7",
+            "0.4.8",
             &release_url,
             &package_authoring::sha256_hex(release_document),
             &artifact_url,
@@ -1923,7 +2168,7 @@ mod tests {
                 let release = package_release::release_document_for_download_test(
                     "com.agentmesh360.job-agent",
                     "job-agent",
-                    "0.4.7",
+                    "0.4.8",
                     &fixture.artifact_sha256,
                     &fixture.envelope_sha256,
                     &fixture.file_manifest_sha256,
@@ -1976,7 +2221,7 @@ mod tests {
                     serde_json::json!([{
                         "packageId": "com.agentmesh360.job-agent",
                         "agentId": "job-agent",
-                        "version": "0.4.7",
+                        "version": "0.4.8",
                         "publisher": "agentmesh360"
                     }])
                 );
@@ -2077,7 +2322,7 @@ mod tests {
                 .map(ext_result)
                 .expect("owner account installs Package");
                 assert_eq!(installed["packageId"], "com.agentmesh360.job-agent");
-                assert_eq!(installed["version"], "0.4.7");
+                assert_eq!(installed["version"], "0.4.8");
                 assert_eq!(installed["runtimeVisibility"]["status"], "visible");
                 assert_eq!(
                     agent
@@ -2132,7 +2377,7 @@ mod tests {
                     packages.iter().any(|package| {
                         package["kind"] == "installed_active"
                             && package["packageId"] == "com.agentmesh360.job-agent"
-                            && package["version"] == "0.4.7"
+                            && package["version"] == "0.4.8"
                     })
                 }));
                 let response_json = serde_json::to_string(&serde_json::json!([
@@ -2632,6 +2877,212 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     #[serial_test::serial]
+    async fn host_job_agent_first_turn_executes_state_probe_before_replying() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                use std::os::unix::fs::PermissionsExt as _;
+
+                let state_home = tempfile::tempdir().expect("state home");
+                let fixture_bin = state_home.path().join("fixture-bin");
+                std::fs::create_dir_all(&fixture_bin).expect("create fixture bin");
+                let fixture_marker = state_home.path().join("jobagent-doctor-ran");
+                let fixture_jobagent = fixture_bin.join("jobagent");
+                let fixture_state = serde_json::json!({
+                    "environment_healthy": true,
+                    "cloud_access": {"usable": true, "paid_pass_required": false},
+                    "workflow": {
+                        "ready": false,
+                        "profile": null,
+                        "round": null,
+                        "next_suggested": "fixture-upload-resume"
+                    },
+                    "next_suggested": "fixture-upload-resume"
+                });
+                std::fs::write(
+                    &fixture_jobagent,
+                    format!(
+                        "#!/bin/sh\n\
+                         if [ \"$1\" != doctor ] || [ \"$2\" != env ]; then exit 64; fi\n\
+                         /usr/bin/touch '{}'\n\
+                         /usr/bin/printf '%s\\n' '{}'\n",
+                        fixture_marker.display(),
+                        fixture_state
+                    ),
+                )
+                .expect("write isolated jobagent fixture");
+                std::fs::set_permissions(
+                    &fixture_jobagent,
+                    std::fs::Permissions::from_mode(0o755),
+                )
+                .expect("make isolated jobagent fixture executable");
+                let doctor_command = format!(
+                    "PATH='{}':$PATH jobagent doctor env",
+                    fixture_bin.display()
+                );
+
+                let (core_base_url, core) = serve_bootstrap_once().await;
+                let (provider_base_url, mut provider_requests, provider_task) =
+                    serve_job_onboarding_provider_requests(doctor_command.clone()).await;
+                let (agent, gateway_rx) = build_host_test_agent(state_home.path(), core_base_url);
+                let gateway_task = drive_gateway(gateway_rx);
+                agent
+                    .initialize(
+                        acp::InitializeRequest::new(acp::ProtocolVersion::V1)
+                            .client_capabilities(
+                                acp::ClientCapabilities::new()
+                                    .fs(acp::FileSystemCapabilities::new())
+                                    .terminal(false),
+                            )
+                            .meta(
+                                serde_json::json!({
+                                    "startupHints": {
+                                        "nonInteractive": true,
+                                        "skipGitStatus": true,
+                                        "skipProjectLayout": true
+                                    },
+                                    "clientType": "agentmesh360-host-test",
+                                    "clientVersion": "0.0.0-test"
+                                })
+                                .as_object()
+                                .cloned(),
+                            ),
+                    )
+                    .await
+                    .expect("initialize Host ACP agent");
+
+                let bootstrap = handle(
+                    &agent,
+                    &ext_request(
+                        ACCOUNT_BOOTSTRAP_METHOD,
+                        serde_json::json!({"accessToken": "sentinel-bootstrap-token"}),
+                    ),
+                )
+                .await
+                .expect("bootstrap response");
+                assert_eq!(ext_result(bootstrap)["access"]["canEnterClient"], true);
+                let _ = core.await.expect("Core request task");
+
+                let provider = handle(
+                    &agent,
+                    &ext_request(
+                        providers::PROVIDERS_CREATE_METHOD,
+                        serde_json::json!({
+                            "profile": {
+                                "presetId": "compatible-openai-responses",
+                                "displayName": "Job Onboarding Mock",
+                                "protocol": "openai_responses",
+                                "baseUrl": provider_base_url,
+                                "authKind": "bearer_api_key",
+                                "enabledModels": ["model-main"]
+                            },
+                            "apiKey": "sentinel-job-onboarding-secret"
+                        }),
+                    ),
+                )
+                .await
+                .expect("create Provider response");
+                let profile_id = ext_result(provider)["profile"]["profileId"]
+                    .as_str()
+                    .expect("profile id")
+                    .to_owned();
+                handle(
+                    &agent,
+                    &ext_request(
+                        model_routing::ASSIGNMENTS_UPSERT_METHOD,
+                        serde_json::json!({
+                            "assignment": {
+                                "scopeKind": "agent",
+                                "scopeId": "job-agent",
+                                "role": "main",
+                                "providerProfileId": profile_id,
+                                "modelId": "model-main"
+                            }
+                        }),
+                    ),
+                )
+                .await
+                .expect("upsert Assignment");
+                let activation = handle(
+                    &agent,
+                    &ext_request(
+                        AGENTS_ACTIVATE_METHOD,
+                        serde_json::json!({"agentId": "job-agent"}),
+                    ),
+                )
+                .await
+                .expect("activate Job Agent");
+                let session_id = ext_result(activation)["agent"]["mainSessionId"]
+                    .as_str()
+                    .expect("Job Agent Main Session")
+                    .to_owned();
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        acp::SessionId::new(session_id),
+                        vec![acp::ContentBlock::from("你好，你是谁？")],
+                    )),
+                )
+                .await
+                .expect("Job onboarding Prompt timed out")
+                .expect("Job onboarding Prompt response");
+                let first = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("first onboarding Provider request timed out")
+                    .expect("first onboarding Provider request");
+                let second =
+                    tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                        .await
+                        .expect("second onboarding Provider request timed out")
+                        .expect("second onboarding Provider request");
+                for (authorization, _) in [&first, &second] {
+                    assert_eq!(
+                        authorization,
+                        "Bearer sentinel-job-onboarding-secret"
+                    );
+                }
+                if !fixture_marker.is_file() {
+                    let first_json: serde_json::Value =
+                        serde_json::from_str(&first.1).expect("first onboarding request JSON");
+                    let tool_names = first_json["tools"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|tool| tool["name"].as_str())
+                        .collect::<Vec<_>>();
+                    let second_json: serde_json::Value =
+                        serde_json::from_str(&second.1).expect("second onboarding request JSON");
+                    let relevant_inputs = second_json["input"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|item| item.to_string().contains("call_jobagent_doctor"))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    panic!(
+                        "the first Job Agent turn did not execute the state probe; tools={tool_names:?}; relevant_inputs={relevant_inputs:?}"
+                    );
+                }
+                assert!(first.1.contains("jobagent doctor env"));
+                assert!(first.1.contains("not a general chat assistant"));
+                assert!(second.1.contains("fixture-upload-resume"));
+                assert!(second.1.contains("call_jobagent_doctor"));
+                assert!(second.1.contains(&doctor_command));
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
+                        .await
+                        .is_err(),
+                    "one first-turn state probe must not create an unbounded Provider loop"
+                );
+
+                provider_task.abort();
+                gateway_task.abort();
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    #[serial_test::serial]
     async fn host_acp_flow_activates_product_agent_and_routes_real_prompt() {
         tokio::task::LocalSet::new()
             .run_until(async {
@@ -2805,6 +3256,17 @@ mod tests {
                         .expect("main Provider request JSON")["model"],
                     "model-main"
                 );
+                for runtime_contract in [
+                    "not a general chat assistant",
+                    "jobagent doctor env",
+                    "jobagent resume analyze --file <resume-path>",
+                    "Do not answer a first greeting with a generic capability menu",
+                ] {
+                    assert!(
+                        main_request_body.contains(runtime_contract),
+                        "the real Sampling request is missing Job Agent onboarding: {runtime_contract}"
+                    );
+                }
                 assert!(
                     main_request_body.contains("data:image/png;base64,"),
                     "the active Grok template must keep image data on the bound main request"
@@ -2814,6 +3276,84 @@ mod tests {
                         .await
                         .is_err(),
                     "the current non-Cursor template must not issue a separate vision request"
+                );
+
+                // Simulate an already-resident main session that was created by
+                // the previous Job Agent Package. The Package upgrade must swap
+                // only the harness definition: the stable session id and prior
+                // conversation stay intact.
+                let resident_session_id = acp::SessionId::new(session_id.clone());
+                let mut legacy_definition = agent
+                    .agentmesh360
+                    .registry()
+                    .agent_definition("job-agent")
+                    .expect("current Job Agent definition");
+                legacy_definition.prompt_body =
+                    Some("LEGACY_GENERIC_JOB_AGENT_PROMPT".to_string());
+                let legacy_revision = AppliedAgentDefinitionRevision::from_definition(
+                    "0.4.7",
+                    (0, 0),
+                    &legacy_definition,
+                )
+                .expect("legacy Job Agent definition revision");
+                let resident_cmd_tx = agent
+                    .sessions
+                    .borrow()
+                    .get(&resident_session_id)
+                    .expect("resident Job Agent session")
+                    .cmd_tx
+                    .clone();
+                let (legacy_responds_to, legacy_response) = tokio::sync::oneshot::channel();
+                resident_cmd_tx
+                    .send(crate::session::SessionCommand::RebuildAgentForDefinition {
+                        definition: legacy_definition,
+                        responds_to: legacy_responds_to,
+                    })
+                    .expect("request legacy harness fixture");
+                legacy_response
+                    .await
+                    .expect("legacy harness actor response")
+                    .expect("install legacy harness fixture");
+                agent
+                    .agentmesh360
+                    .mark_agent_definition_applied(&resident_session_id, legacy_revision);
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        resident_session_id.clone(),
+                        vec![acp::ContentBlock::from(
+                            "Continue the existing Job Agent work without restarting.",
+                        )],
+                    )),
+                )
+                .await
+                .expect("upgraded resident product Prompt timed out")
+                .expect("upgraded resident product Prompt response");
+                let (upgraded_authorization, upgraded_request_body) =
+                    tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                        .await
+                        .expect("upgraded resident Provider request timed out")
+                        .expect("upgraded resident Provider request capture");
+                assert_eq!(
+                    upgraded_authorization,
+                    "Bearer sentinel-provider-secret-5678"
+                );
+                assert!(upgraded_request_body.contains("jobagent doctor env"));
+                assert!(upgraded_request_body.contains(
+                    "Do not answer a first greeting with a generic capability menu"
+                ));
+                assert!(
+                    !upgraded_request_body.contains("LEGACY_GENERIC_JOB_AGENT_PROMPT"),
+                    "the next resident turn must not keep the previous Package System prompt"
+                );
+                assert!(
+                    upgraded_request_body.contains("Describe the image, then return the marker."),
+                    "upgrading the harness must preserve prior user history"
+                );
+                assert!(
+                    upgraded_request_body.contains("host-e2e-ok"),
+                    "upgrading the harness must preserve prior assistant history"
                 );
 
                 tokio::time::timeout(
@@ -2858,8 +3398,9 @@ mod tests {
                 .await
                 .expect("Turn Route history response");
                 let routes = ext_result(routes);
-                assert_eq!(routes["turnRoutes"].as_array().map(Vec::len), Some(1));
+                assert_eq!(routes["turnRoutes"].as_array().map(Vec::len), Some(2));
                 assert_eq!(routes["turnRoutes"][0]["modelId"], "model-main");
+                assert_eq!(routes["turnRoutes"][1]["modelId"], "model-main");
                 assert!(!routes.to_string().contains("sentinel-provider-secret-5678"));
 
                 let vision_routes = handle(

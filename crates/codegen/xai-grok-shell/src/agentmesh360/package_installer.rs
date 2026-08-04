@@ -1088,7 +1088,8 @@ mod tests {
                 "browser_control",
                 "external_actions",
                 "local_files",
-                "network_access"
+                "network_access",
+                "process_execution"
             ]
         );
         assert!(service.get(JOB_PACKAGE_ID).expect("registry").is_none());
@@ -1099,7 +1100,7 @@ mod tests {
                 .expect("install"),
         );
 
-        assert_eq!(installed.active.version, "0.4.7");
+        assert_eq!(installed.active.version, "0.4.8");
         assert!(installed.previous.is_none());
         assert!(
             temp.path()
@@ -1126,7 +1127,7 @@ mod tests {
         let PackageInstallResult::ApprovalRequired { approval } = request else {
             panic!("expected approval");
         };
-        assert_eq!(approval.added_permissions, ["process_execution"]);
+        assert_eq!(approval.added_permissions, ["external_mutations"]);
         assert_eq!(
             service
                 .get(JOB_PACKAGE_ID)
@@ -1134,7 +1135,7 @@ mod tests {
                 .expect("active")
                 .active
                 .version,
-            "0.4.7"
+            "0.4.8"
         );
 
         let upgraded = installed(
@@ -1142,23 +1143,23 @@ mod tests {
                 .install_verified_for_test(verified(temp.path(), &upgrade, 'b'), true)
                 .expect("upgrade"),
         );
-        assert_eq!(upgraded.active.version, "0.4.8");
+        assert_eq!(upgraded.active.version, "0.4.9");
         assert_eq!(
             upgraded
                 .previous
                 .as_ref()
                 .map(|version| version.version.as_str()),
-            Some("0.4.7")
+            Some("0.4.8")
         );
 
         let rolled_back = service.rollback(JOB_PACKAGE_ID).expect("rollback");
-        assert_eq!(rolled_back.active.version, "0.4.7");
+        assert_eq!(rolled_back.active.version, "0.4.8");
         assert_eq!(
             rolled_back
                 .previous
                 .as_ref()
                 .map(|version| version.version.as_str()),
-            Some("0.4.8")
+            Some("0.4.9")
         );
         assert_eq!(rolled_back.agent_id, "job-agent");
     }
@@ -1186,7 +1187,7 @@ mod tests {
             .get(JOB_PACKAGE_ID)
             .expect("registry")
             .expect("active");
-        assert_eq!(active.active.version, "0.4.7");
+        assert_eq!(active.active.version, "0.4.8");
         assert!(active.previous.is_none());
         let version_dirs = WalkDir::new(temp.path().join("packages").join("versions"))
             .min_depth(3)
@@ -1221,7 +1222,7 @@ mod tests {
         assert!(digest_error.to_string().contains("immutable"));
 
         let build_metadata =
-            JOB_MANIFEST.replacen("version = \"0.4.7\"", "version = \"0.4.7+replacement\"", 1);
+            JOB_MANIFEST.replacen("version = \"0.4.8\"", "version = \"0.4.8+replacement\"", 1);
         let build_metadata_error = service
             .install_verified_for_test(verified(temp.path(), &build_metadata, 'd'), true)
             .expect_err("same precedence with new build metadata");
@@ -1231,7 +1232,7 @@ mod tests {
                 .contains("SemVer precedence")
         );
 
-        let downgrade = JOB_MANIFEST.replacen("version = \"0.4.7\"", "version = \"0.4.6\"", 1);
+        let downgrade = JOB_MANIFEST.replacen("version = \"0.4.8\"", "version = \"0.4.7\"", 1);
         let downgrade_error = service
             .install_verified_for_test(verified(temp.path(), &downgrade, 'e'), true)
             .expect_err("implicit downgrade");
@@ -1346,7 +1347,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("Job Agent")
                 .version,
-            "0.4.8"
+            "0.4.9"
         );
         assert!(
             catalog.package_for_agent("research-agent").is_ok(),
@@ -1551,7 +1552,7 @@ mod tests {
         assert!(statuses.iter().any(|status| {
             status.kind == PackageStatusKind::InstalledPrevious
                 && status.slot == Some(PackageStatusSlot::Previous)
-                && status.version.as_deref() == Some("0.4.7")
+                && status.version.as_deref() == Some("0.4.8")
         }));
         assert!(statuses.iter().any(|status| {
             status.kind == PackageStatusKind::Orphan
@@ -1633,10 +1634,10 @@ mod tests {
 
     fn upgraded_manifest() -> String {
         JOB_MANIFEST
-            .replacen("version = \"0.4.7\"", "version = \"0.4.8\"", 1)
+            .replacen("version = \"0.4.8\"", "version = \"0.4.9\"", 1)
             .replacen(
-                "  \"network_access\",\n]",
-                "  \"network_access\",\n  \"process_execution\",\n]",
+                "  \"external_actions\",\n  \"local_files\",",
+                "  \"external_actions\",\n  \"external_mutations\",\n  \"local_files\",",
                 1,
             )
     }
@@ -1648,7 +1649,7 @@ mod tests {
                 "packageId = \"com.agentmesh360.research-agent\"",
                 1,
             )
-            .replacen("version = \"0.4.7\"", "version = \"0.1.0\"", 1)
+            .replacen("version = \"0.4.8\"", "version = \"0.1.0\"", 1)
             .replacen("agentId = \"job-agent\"", "agentId = \"research-agent\"", 1)
             .replacen(
                 "displayName = \"Job Agent\"",

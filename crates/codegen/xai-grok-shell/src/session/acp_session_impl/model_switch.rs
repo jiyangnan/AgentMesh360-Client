@@ -123,10 +123,9 @@ impl SessionActor {
     /// rewrites the system message in the conversation, persists the
     /// new prompt artifacts, and updates `active_agent_type`.
     ///
-    /// Triggered from `MvpAgent::set_session_model` only when the new
-    /// model's `agent_type` differs from the session's current
-    /// `active_agent_type` AND `turn_count == 0` (no user message has
-    /// been sent yet). Defense-in-depth: rejects if a turn is in flight.
+    /// Triggered from zero-turn model switching and from persistent Product
+    /// Agent Package upgrades. Existing conversation history is preserved;
+    /// defense-in-depth rejects only while a turn is in flight.
     pub(super) async fn handle_rebuild_agent_for_definition(
         &self,
         definition: xai_grok_agent::AgentDefinition,
@@ -247,14 +246,31 @@ impl SessionActor {
         }
         let new_user_prefix = self.build_user_message_prefix().await;
         {
+            let has_completed_prompt = self.chat_state_handle.get_prompt_index().await > 0;
             let mut conversation = self.chat_state_handle.get_conversation().await;
+            let regular_user_items = conversation
+                .iter()
+                .filter(|item| {
+                    matches!(item, ConversationItem::User(user) if user.synthetic_reason.is_none())
+                })
+                .count();
+            let has_persisted_history = has_completed_prompt
+                || regular_user_items > 1
+                || conversation.iter().any(|item| {
+                    matches!(
+                        item,
+                        ConversationItem::Assistant(_) | ConversationItem::ToolResult(_)
+                    )
+                });
             let _ = replace_or_insert_system_head(&mut conversation, &new_system_prompt);
-            let drop_startup_skill_reminder = false;
-            Self::rewrite_zero_turn_prefix(
-                &mut conversation,
-                new_user_prefix,
-                drop_startup_skill_reminder,
-            );
+            if !has_persisted_history {
+                let drop_startup_skill_reminder = false;
+                Self::rewrite_zero_turn_prefix(
+                    &mut conversation,
+                    new_user_prefix,
+                    drop_startup_skill_reminder,
+                );
+            }
             if !conversation_has_project_instructions(&conversation)
                 && let Some(agents_md_reminder) = self.agent.borrow().agents_md_user_reminder()
             {

@@ -660,7 +660,7 @@ pub(super) fn download_artifact_fixture_for_test() -> DownloadArtifactFixture {
         key_id: "agentmesh360-release-test".into(),
         publisher: "agentmesh360".into(),
         package_id: "com.agentmesh360.job-agent".into(),
-        version: "0.4.7".into(),
+        version: "0.4.8".into(),
         artifact_sha256: artifact_sha256.clone(),
         signature: String::new(),
     };
@@ -702,7 +702,7 @@ mod tests {
             .expect("verify package");
 
         assert_eq!(verified.manifest.package_id, "com.agentmesh360.job-agent");
-        assert_eq!(verified.manifest.version, "0.4.7");
+        assert_eq!(verified.manifest.version, "0.4.8");
         assert_eq!(verified.signature_key_id, TEST_KEY_ID);
         assert_eq!(verified.artifact_sha256.len(), 64);
         assert_eq!(verified.file_manifest_sha256.len(), 64);
@@ -943,7 +943,7 @@ mod tests {
             key_id: TEST_KEY_ID.into(),
             publisher: TEST_PUBLISHER.into(),
             package_id: "com.agentmesh360.job-agent".into(),
-            version: "0.4.7".into(),
+            version: "0.4.8".into(),
             artifact_sha256: digest_artifact(&artifact_path).expect("artifact digest"),
             signature: String::new(),
         };

@@ -913,7 +913,7 @@ mod tests {
                 key_id: TEST_KEY_ID.into(),
                 publisher: "agentmesh360".into(),
                 package_id: "com.agentmesh360.job-agent".into(),
-                version: "0.4.7".into(),
+                version: "0.4.8".into(),
                 artifact_sha256: first.artifact_sha256.clone(),
                 signature: String::new(),
             })

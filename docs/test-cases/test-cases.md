@@ -1,7 +1,7 @@
 # AgentMesh360 Client 产品用户旅程测试用例
 
-版本：2.0
-更新时间：2026-08-03
+版本：2.1
+更新时间：2026-08-04
 产品依据：`docs/architecture/PRODUCT_BLUEPRINT.md`
 执行原则：文档中的“设计状态”和“本轮结果”分开；没有真实执行证据不得写成通过。
 
@@ -39,7 +39,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 信息架构和引导 | 一眼知道去哪里配置、管理和继续工作 | TC-NAV-001 ～ 003、TC-GUIDE-001 |
 | 安装和启动 | 安装内部版并稳定打开 | TC-INSTALL-001 ～ 003 |
 | 登录和订阅 | 用真实账号进入，失效时正确拦截 | TC-AUTH-001 ～ 004、TC-ACCESS-001 ～ 004 |
-| 持久 Agent | 激活后长期找到同一个 Agent，并管理其模型与行为 | TC-AGENT-001 ～ 006、TC-MODEL-001 ～ 006、TC-OVERLAY-001 ～ 005 |
+| 持久 Agent | 激活后长期找到同一个 Agent，并管理其模型、行为与产品首轮接管 | TC-AGENT-001 ～ 007、TC-MODEL-001 ～ 006、TC-OVERLAY-001 ～ 005 |
 | 对话和工作区 | 对话、附件、连续输入、队列、命令、Skill、工作文件、历史、粘贴与听写不断档 | TC-CONV-001 ～ 025 |
 | BYOK Provider | 添加、验证、测试和管理模型供应商 | TC-PROVIDER-001 ～ 013 |
 | Agent Package | 在无公开入口阶段持续验证安全发现、安装、更新与回滚底层 | TC-PACKAGE-001 ～ 006 |
@@ -57,6 +57,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 登录与订阅 | Google/GitHub 登录、重新验证、退出、订阅入口 | 成功、取消、state 错配、过期、订阅阻断、后台复验 | Node；TC-AUTH-001～004、TC-ACCESS-001～004 |
 | 左侧导航与引导 | Agent、模型供应商、设置、Host 状态、三步引导 | 默认落点、切页、Host 三态、恢复引导 | Electron；TC-NAV-001～003、TC-GUIDE-001 |
 | Agent 列表 | 管理、激活、失效修复；不展示尚不可兑现的新增入口 | 已激活、未激活、模型失效、零 Agent、公开新增入口缺席 | Node + Electron；TC-AGENT-001～006 |
+| Agent 产品接管 | Job Agent 按真实业务状态进入下一步；Package 升级后旧主会话保留历史并采用新定义 | 无 Key、Key 有效但无简历、已有画像、已有轮次、旧会话定义升级、非 Job 隔离 | Rust + fake Provider；TC-AGENT-007 |
 | Agent 对话 | Agent/会话二级栏、多内容 Composer、四种运行态意图、权威 Queue、`/`、`$`、`@`、历史、粘贴卡、听写、齿轮设置、权限确认、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、失败保留、Agent 切换草稿、重启恢复、危险命令、路径越界、异步旧响应、听写披露、不自动发送、字号与布局 | Node + Electron + Rust；TC-CONV-001～025 |
 | Agent 模型 | Provider/模型应用内下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、本 Agent Turn 锁定、异步响应归属 | Node + Electron + Rust；TC-MODEL-001～006 |
 | 行为 `agent.md` | 编辑、保存、恢复默认、冲突处理 | 草稿、8000/8001 字符、秘密拒绝、revision 冲突、Turn 锁定 | Node + Electron + Rust；TC-OVERLAY-001～005 |
@@ -335,7 +336,9 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **前置条件**：新 Agent Manifest、Skill 和权限声明；测试 Root/Publisher 或离线 fixture。
 - **输入**：同一来源执行 Artifact、Host Skill plan、Release Manifest 构建与客户端安装。
 - **交互步骤**：复验摘要/签名/权限；在 Package Center 安装；激活 Main Session；导出宿主 Skill。
-- **预期输出**：两个渠道身份、版本、能力和来源一致；无需改客户端硬编码；客户端得到持久 Main Session。
+- **预期输出**：两个渠道身份、版本、能力和来源一致；宿主 Skill/Canonical Workflow 的
+  同版本必要规则进入 Package runtime；无需改客户端硬编码或复制聊天引擎；客户端得到
+  持久 Main Session。未来 Package 定义升级时，Harness 更新但 Session/Workspace/历史不变。
 - **失败与恢复**：任何跨渠道摘要/版本/权限不一致时拒绝；当前生产 Trust/Registry 关闭。
 - **验证层**：Rust + Node
 - **本轮结果**：通过
@@ -365,6 +368,60 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **预期输出**：激活不可确认；显示“先添加模型供应商”和直达 Provider 页的按钮；不会创建 Session。
 - **失败与恢复**：完成 Provider 保存后返回 Agent，状态自动刷新且草稿不丢。
 - **验证层**：Node + Electron
+- **本轮结果**：通过
+
+## TC-AGENT-007：Job Agent 首轮专业接管与旧持久会话提示升级
+
+- **用户故事**：作为首次或持续使用 Job Agent 的用户，我希望它先读取真实的 Job 工作流
+  状态并直接推进唯一正确的下一步，而不是像通用助手一样罗列能力、重新问“想做什么”；
+  客户端升级后也应在同一个主会话继续，并采用最新版 Job Agent 定义。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：订阅与模型 Provider 准入已经通过；测试仅使用隔离状态、固定
+  `jobagent doctor env` fixture 和 fake Provider，不读取真实 Job Agent Key，不调用
+  Provider、AgentMesh360 Core 或 Job Agent 外部服务。
+- **输入**：使用以下六组隔离合同：
+  1. **无 Job Agent Key**：用户首次说“帮我找工作”；fixture 返回 Key 缺失；
+  2. **Key 有效但无简历/画像**：fixture 返回环境可用、尚无 profile；用户可选择
+     PDF、DOCX、TXT 或 Markdown 简历；
+  3. **已有画像但无轮次**：fixture 返回 profile 已存在、尚未开始 round；
+  4. **已有轮次**：fixture 返回 active round 和明确的 `next_suggested`；
+  5. **旧持久会话升级**：先用旧 Job Agent 定义创建并写入历史，再把 Package 升级到
+     `0.4.8`，以同一账号、`agentId` 和 Main Session 发送下一条消息；
+  6. **非 Job 隔离**：分别加载 LectureCast 与 Deploy 定义；动态 Agent 的安装、激活和
+     同源双渠道边界沿用 TC-AGENT-004。
+- **交互步骤**：对前四组逐项核对实际进入 Sampling 的 Job runtime 状态决策合同；其中
+  “Key 有效但无画像”额外走完整 fake Provider → `run_terminal_command` → 隔离
+  `jobagent doctor env` → tool result → 第二次 Sampling 回路，证明 Harness 不只收到文字而是
+  真正执行状态探针。对第五组在保留会话历史的情况下替换定义后继续发送；对第六组读取并
+  比较非 Job 定义，并用 LectureCast 定义变化验证通用摘要机制，不调用外部服务。
+- **预期输出**：各组状态都必须得到与 authority 一致的单一步骤：
+  1. 无 Key 时明确区分 Job Agent 服务 Key 与模型 Provider Key，引导用户在本机安全入口
+     完成 `jobagent init --key`；不得要求把 Key 粘贴进普通对话，也不得伪造 Key；
+  2. Key 有效但无画像时直接要求上传简历，并在用户提供本机文件后进入
+     `jobagent resume analyze --file <resume-path>`；未形成画像前不得提前执行投递；
+  3. 已有画像时继续目标岗位/约束确认和 `jobagent round start`，不重复注册与上传引导；
+  4. 已有轮次时严格从 `next_suggested` 续跑，保持 Boss 直聘 → 猎聘 → 智联招聘 →
+     前程无忧的站内纵向链，以及 discover → review → preview → send → audit 的确认边界；
+  5. 所有状态都直接给出一个可行动下一步，不先输出通用能力菜单或宽泛追问；只有真实
+     credits 不足且 `paid_pass_required` 时才提示套餐；
+  6. 旧会话升级后 Session 身份和既有用户/Agent 历史不变，下一条 Prompt 已包含
+     `0.4.8` 的完整 Job Agent 运行时契约；定义重建不生成第二个主会话；
+  7. LectureCast 与 Deploy 不包含 Job Agent 注册、简历、轮次或招聘站点指令；动态 Agent
+     仍通过 TC-AGENT-004 的同源 Package 合同进入相同持久机制。
+- **失败与恢复**：`doctor env` 不可用、状态字段矛盾或定义摘要无法计算时失败关闭并说明
+  可恢复动作；不得把未知状态猜成“无 Key/无简历”，不得清空历史、静默换 Session 或
+  自动执行外部投递。进程重启后允许再次做幂等定义核对，但结果仍须保持同一历史。
+- **自动化证据**：Rust `job_agent_runtime_prompt_owns_state_driven_onboarding` 逐项核对
+  Key/画像/round/`next_suggested`/credits/纵向平台合同与非 Job 隔离；
+  `host_job_agent_first_turn_executes_state_probe_before_replying` 通过 fake Provider 和可执行
+  fixture 证明首轮真实进入工具循环并把无画像状态返回第二次 Sampling；
+  `host_acp_flow_activates_product_agent_and_routes_real_prompt` 核对实际 System Prompt、同一
+  Session 的旧定义替换以及既有用户/Agent 历史保留；
+  `definition_revision_tracks_every_product_agent_definition` 用 LectureCast 证明版本、最终定义和
+  Overlay 变化对所有 Agent 生效且稳定定义不会反复重建。真实模型语义与真实 Job 服务仍是
+  安装包 UAT，不冒充本轮自动化证据。禁止用真实 Key 或真实 Provider 请求替代上述自动化。
+- **验证层**：Rust + fake Provider；Electron/安装包人工验收仅核对用户可见首轮行为
 - **本轮结果**：通过
 
 ## TC-MODEL-001：Agent 内 Profile 与模型级联选择

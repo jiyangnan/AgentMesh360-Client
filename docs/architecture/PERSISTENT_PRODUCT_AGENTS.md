@@ -3,7 +3,7 @@
 状态：基础实现完成，已接入 Host 订阅门禁、多 Agent 桌面对话恢复、通用只读工作区
 与 Harness 后台活动安全投影
 建立日期：2026-07-21
-最近更新：2026-07-27
+最近更新：2026-08-04
 
 相关的产品结构、流程、Package、Provider 与信任边界图见：
 [`PRODUCT_BLUEPRINT.md`](PRODUCT_BLUEPRINT.md)。CC Switch Provider 调研、Host Vault、
@@ -39,6 +39,20 @@ Grok Build 继续负责 Agent Loop、Sampling 数据面、工具、权限、对�
 常驻策略，以及目标 Provider Control Plane；后者只把 Profile/Vault/Binding 编译成
 Grok 现有 Sampling 配置，不重写推理循环。
 
+当前 Package v1 中，真正进入 Harness 的产品行为契约是 Manifest 的
+`runtime.promptBody`：Host 用它构造产品 `AgentDefinition`。`skills.canonicalWorkflow`
+仍是受签 Package 内的工作流来源路径，由校验、Authoring 和宿主 Skill 导出消费；当前
+运行时不会自动读取该文件并注入 System Prompt。因此，Job Agent 的注册、Key、简历、
+画像、轮次和 `next_suggested` 接管规则必须存在于 `runtime.promptBody`，不能仅凭
+Canonical Workflow 文件存在就推断客户端内的 Job Agent 已获得同样行为。
+
+这不是 Job Agent 专属通道。Job、LectureCast、Deploy 以及以后动态安装的 Agent 都使用
+同一条链：宿主 Skill/Canonical Workflow 定义产品能力，发布时把相同版本的必要规则投影
+到 Package runtime，客户端把该 `AgentDefinition` 注入 Grok Build Harness，并用本地
+稳定 Main Session、Workspace 和历史把它变成持久 Agent。新增 Agent 不复制 Harness
+进程或聊天引擎；当前仍需 Package 作者显式维护 runtime 投影，后续自动编译不得被误认为
+已经上线。
+
 本地 Registry 位于 `~/.agentmesh360/state.db`。测试和受管安装可以通过
 `AGENTMESH360_HOME` 覆盖根目录。Grok Session 数据仍使用上游 Session Store；
 Registry 只引用稳定 UUID，不复制对话记录。
@@ -46,6 +60,32 @@ Registry 只引用稳定 UUID，不复制对话记录。
 AgentMesh360 Core 的默认地址为 `https://api.agentmesh360.com`；本地开发可以通过
 `AGENTMESH360_CORE_URL` 覆盖。该变量只允许改变服务地址，不改变 Core 返回的
 `schema_version = 1` 契约与 Host 的失败关闭策略。
+
+## 产品定义升级与持久历史
+
+固定 Main Session 的“持久”指产品身份、Session、Workspace 和历史连续，不表示它必须
+永远冻结在首次创建时的 System 定义。Host 在最终合并 Package `runtime.promptBody`、
+`agent.md` 和 `user.md` 后，对完整 `AgentDefinition` 做确定性 SHA-256，并把摘要与
+Package 版本、两层 Overlay revision 组成当前定义身份。
+
+每条产品 Prompt 前，Host 将该身份与进程内 applied-definition map 比较：
+
+1. 完全一致时直接沿用当前 Harness Agent；
+2. Package 版本、完整定义摘要或任一 Overlay revision 变化时，通过
+   `RebuildAgentForDefinition` 重建 Agent 的 System 定义；
+3. 重建继续挂接原 Main Session 的历史与 Workspace，不改变确定性 Session UUID，也不
+   生成第二个同名产品 Agent；
+4. 从磁盘恢复已有产品 Session 时，把 applied 状态视为未知，确保升级后的第一条消息
+   必须按当前 Package 定义重新核对。
+
+以上逻辑按任意 Agent Package 的最终定义工作，没有 Job Agent 分支。零轮会话可以刷新
+启动前缀；已经有用户轮次时只替换 System/Harness，原用户消息、Agent 回复和历史前缀
+全部保留。
+
+applied-definition map 当前只存于 Host 进程内。Host 重启后首条 Prompt 因此可能再次执行
+一次幂等重建；这是可接受的保守行为，不会清空历史或改变 Session authority。当前不把
+摘要另写进 `state.db`，以免在尚未设计账户隔离、事务、迁移与损坏恢复前制造第二份持久
+真相。后续若要消除这次幂等重建，应作为独立状态迁移切片处理。
 
 ## 生命周期
 

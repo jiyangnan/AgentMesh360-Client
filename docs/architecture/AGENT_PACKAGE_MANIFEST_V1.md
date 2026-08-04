@@ -66,9 +66,9 @@ H0 采用编译期嵌入，目的是先验证 Schema、运行时投影和旧状�
 | Persistence | `mainSessionStrategy` | Main Session 身份算法 | Agent Registry |
 | Persistence | `workspaceStrategy` | Workspace 账户隔离规则 | Agent Registry |
 | Runtime | `promptMode` / Skill 发现开关 | Grok AgentDefinition 行为 | Harness |
-| Runtime | `promptBody` | 当前持久 Agent Profile | Harness |
+| Runtime | `promptBody` | 当前真正注入持久 Agent `AgentDefinition`、进入 Harness 的运行时契约 | Harness |
 | Model | `modelPolicy` | 工具、视觉、结构化输出等要求 | RouteCompiler |
-| Skills | `canonicalWorkflow` | 产品工作流的唯一来源路径 | H1/H2 投影器 |
+| Skills | `canonicalWorkflow` | Package 内产品工作流来源路径；当前只用于打包、校验和宿主 Skill 导出 | H1/H2 投影器 |
 | Skills | `adapters[]` | 已存在且经过维护的宿主 Skill 入口 | Catalog；H2 安装器 |
 
 `requestedPermissions` 在 H0 只是声明，不授予任何 Host、Sandbox、操作系统或云端
@@ -79,7 +79,7 @@ H0 采用编译期嵌入，目的是先验证 Schema、运行时投影和旧状�
 
 | Agent | Package 版本 | Canonical Workflow | 已声明宿主 Adapter |
 | --- | --- | --- | --- |
-| Job Agent | `0.4.7` | `docs/agent-onboarding.md` | Claude Code、OpenClaw |
+| Job Agent | `0.4.8` | `docs/agent-onboarding.md` | Claude Code、OpenClaw |
 | LectureCast Agent | `0.4.0` | `skills/shared/director-workflow.md` | Codex、Claude Code、OpenClaw |
 | Deploy Agent | `0.1.1` | `AGENTS.md` | 暂无独立 Skill Adapter |
 
@@ -97,10 +97,46 @@ Manifest 已经成为以下数据的唯一来源：
 5. 产品 Agent 的 `AgentModelPolicy`；
 6. 只读 ACP `x.agentmesh360/agent-packages/catalog`。
 
+这里必须区分“产品工作流来源”和“当前运行时注入”两条链：
+
+- `skills.canonicalWorkflow` 指向 Package 内经签名、可复核的产品工作流文件，当前由
+  Artifact/Manifest 校验、Authoring 和宿主 Skill 导出链消费；v1 运行时不会自动读取
+  该文件并把全文追加到 System Prompt；
+- `runtime.promptBody` 才是当前直接编译进 Grok `AgentDefinition` 并随 Prompt 交给
+  Harness 的可执行产品契约。因此任何影响首轮接管、状态恢复、工具顺序或安全边界的
+  产品规则，在建立受签工作流编译器以前，都必须同步进入 `promptBody`，不能只更新
+  `canonicalWorkflow` 后假定客户端 Agent 已经获得该能力；
+- 两者语义不一致属于 Package authoring 缺陷，应在构建和回归阶段阻断；但当前不会
+  由运行时临时拼接两份文本，以免引入顺序不确定或未经复核的 Prompt。
+
+这条边界适用于 Job、LectureCast、Deploy 和以后动态安装的所有 Agent。新 Agent 仍以
+宿主 Skill/Canonical Workflow 作为产品能力来源，但在 Package 发布时必须把同一版本的
+必要运行规则投影进 `runtime.promptBody`；客户端随后用通用 Harness 投影和持久 Main
+Session 承载它，而不是为每个 Agent 复制一套聊天引擎。当前投影仍由 Package 作者显式
+维护并由构建/回归核对，自动工作流编译器属于后续独立切片，不能把“未来会自动生成”
+当成当前已经具备的能力。
+
 稳定 `agentId` 保持不变，因此 Main Session UUID 算法和现有 Session 历史都不变。
 旧 `state.db` 再次打开时只更新 Package 管理的目录元数据，不覆盖
 `desired_state`、`runtime_state`、`main_session_id`、`workspace_dir` 或
 `activated_at`。
+
+Package 或账户级 `agent.md` / `user.md` 改变时，Host 对最终合成后的完整
+`AgentDefinition` 做确定性 JSON 序列化并计算 SHA-256，同时记录 Package 版本与两层
+Overlay revision。下一条产品 Prompt 前，如果这组定义身份与当前进程内已应用记录不
+一致，Host 通过 Harness 的定义重建入口替换 System 定义，但继续复用原 Main Session、
+Workspace 和对话历史。恢复已有持久 Session 时也先把“已应用”标记视为未知，使升级后
+第一条 Prompt 必须重新核对，而不是沿用 Session 创建当时的旧产品 Prompt。
+
+该定义身份算法不包含 Job Agent 特判。任何已安装 Agent 的 Package 版本、最终定义或
+Overlay revision 变化都会只重建该 Agent 的 Harness；零轮会话可以刷新启动前缀，已有
+用户轮次只替换 System/Harness，不能覆盖第一条用户消息或改写历史。
+
+当前 applied-definition map 只存在于 Host 进程内，不是新的持久 authority。其短期代价
+是 Host 重启后第一个产品 Prompt 会再做一次幂等定义重建；它不会删除或重写历史，也不
+替代 Package Registry、Overlay revision 或稳定 Session 身份。若未来要持久化该标记，
+必须另行设计账户作用域、原子提交、版本迁移和损坏后的失败关闭，不能直接把内存缓存写入
+现有 Session 记录。
 
 ## 6. 失败关闭规则
 

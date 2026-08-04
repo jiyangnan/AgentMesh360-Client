@@ -415,7 +415,7 @@ mod tests {
         let release = release_document_for_download_test(
             PACKAGE_ID,
             "job-agent",
-            "0.4.7",
+            "0.4.8",
             &fixture.artifact_sha256,
             &fixture.envelope_sha256,
             &fixture.file_manifest_sha256,
@@ -798,11 +798,11 @@ mod tests {
         let service = PackageDeliveryService::in_home(temp.path());
         let older = install_direct(
             &service,
-            verified_download_from_manifest(temp.path(), &runtime_upgrade_manifest("0.4.8"), 'd'),
+            verified_download_from_manifest(temp.path(), &runtime_upgrade_manifest("0.4.9"), 'd'),
         );
         let newer = install_direct(
             &service,
-            verified_download_from_manifest(temp.path(), &runtime_upgrade_manifest("0.4.9"), 'e'),
+            verified_download_from_manifest(temp.path(), &runtime_upgrade_manifest("0.4.10"), 'e'),
         );
 
         let superseded = service.finalize_installed(older);
@@ -813,7 +813,7 @@ mod tests {
             PackageRuntimeVisibility::Superseded {
                 active_version,
                 ..
-            } if active_version == "0.4.9"
+            } if active_version == "0.4.10"
         ));
         assert!(matches!(
             visible.runtime_visibility,
@@ -827,7 +827,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("Job Agent")
                 .version,
-            "0.4.9"
+            "0.4.10"
         );
     }
 
@@ -835,8 +835,8 @@ mod tests {
     fn rollback_refreshes_catalog_and_preserves_the_stable_main_session() {
         let temp = tempfile::tempdir().expect("tempdir");
         let service = PackageDeliveryService::in_home(temp.path());
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'f');
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'g');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'f');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.10"), 'g');
         let before_session = service
             .registry
             .prepare_activation(1, "job-agent")
@@ -849,7 +849,7 @@ mod tests {
             .rollback(PACKAGE_ID, &access())
             .expect("rollback Package");
 
-        assert_eq!(receipt.version, "0.4.8");
+        assert_eq!(receipt.version, "0.4.9");
         assert!(matches!(
             receipt.runtime_visibility,
             PackageRuntimeVisibility::Visible { .. }
@@ -862,7 +862,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("Job Agent")
                 .version,
-            "0.4.8"
+            "0.4.9"
         );
         assert_eq!(
             service
@@ -887,8 +887,8 @@ mod tests {
     fn rollback_rejects_invalid_access_and_damaged_previous_without_mutation() {
         let temp = tempfile::tempdir().expect("tempdir");
         let service = PackageDeliveryService::in_home(temp.path());
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'h');
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'i');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'h');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.10"), 'i');
         let before = service
             .installer
             .get(PACKAGE_ID)
@@ -942,7 +942,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("Job Agent")
                 .version,
-            "0.4.9"
+            "0.4.10"
         );
     }
 
@@ -950,8 +950,8 @@ mod tests {
     fn committed_rollback_reports_pending_until_catalog_reconciliation_recovers() {
         let temp = tempfile::tempdir().expect("tempdir");
         let service = PackageDeliveryService::in_home(temp.path());
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'j');
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'k');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'j');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.10"), 'k');
         deliver_manifest(&service, &new_agent_manifest(), 'l');
         let last_good_health = service.registry.package_catalog_health();
         let research = service
@@ -970,7 +970,7 @@ mod tests {
             .rollback(PACKAGE_ID, &access())
             .expect("rollback commits before refresh failure");
 
-        assert_eq!(pending.version, "0.4.8");
+        assert_eq!(pending.version, "0.4.9");
         assert!(matches!(
             pending.runtime_visibility,
             PackageRuntimeVisibility::RefreshPending { .. }
@@ -983,7 +983,7 @@ mod tests {
                 .expect("rolled-back Package")
                 .active
                 .version,
-            "0.4.8"
+            "0.4.9"
         );
         assert_eq!(
             service
@@ -993,7 +993,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("last-good Job Agent")
                 .version,
-            "0.4.9"
+            "0.4.10"
         );
         let degraded = service.registry.package_catalog_health();
         assert_eq!(degraded.generation, last_good_health.generation);
@@ -1009,7 +1009,7 @@ mod tests {
             .reconcile_runtime_catalog(PACKAGE_ID, &access())
             .expect("reconcile Catalog");
 
-        assert_eq!(recovered.version, "0.4.8");
+        assert_eq!(recovered.version, "0.4.9");
         assert!(matches!(
             recovered.runtime_visibility,
             PackageRuntimeVisibility::Visible { .. }
@@ -1022,7 +1022,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("recovered Job Agent")
                 .version,
-            "0.4.8"
+            "0.4.9"
         );
         let recovered_health = service.registry.package_catalog_health();
         assert_eq!(recovered_health.generation, last_good_health.generation + 1);
@@ -1033,8 +1033,8 @@ mod tests {
     fn rollback_waits_for_the_shared_package_mutation_gate() {
         let temp = tempfile::tempdir().expect("tempdir");
         let service = PackageDeliveryService::in_home(temp.path());
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.8"), 'm');
-        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'n');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.9"), 'm');
+        deliver_manifest(&service, &runtime_upgrade_manifest("0.4.10"), 'n');
         let gate_holder = service.registry.clone();
         let rollback_registry = service.registry.clone();
         let (entered_tx, entered_rx) = mpsc::channel();
@@ -1077,13 +1077,13 @@ mod tests {
                 .expect("installed Package")
                 .active
                 .version,
-            "0.4.9"
+            "0.4.10"
         );
         release_tx.send(()).expect("release gate");
         let receipt = rolled_back_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("rollback after gate");
-        assert_eq!(receipt.version, "0.4.8");
+        assert_eq!(receipt.version, "0.4.9");
         assert!(matches!(
             receipt.runtime_visibility,
             PackageRuntimeVisibility::Visible { .. }
@@ -1218,7 +1218,7 @@ mod tests {
                 "packageId = \"com.agentmesh360.research-agent\"",
                 1,
             )
-            .replacen("version = \"0.4.7\"", "version = \"0.1.0\"", 1)
+            .replacen("version = \"0.4.8\"", "version = \"0.1.0\"", 1)
             .replacen("agentId = \"job-agent\"", "agentId = \"research-agent\"", 1)
             .replacen(
                 "displayName = \"Job Agent\"",
@@ -1231,7 +1231,7 @@ mod tests {
     fn runtime_upgrade_manifest(version: &str) -> String {
         JOB_MANIFEST
             .replacen(
-                "version = \"0.4.7\"",
+                "version = \"0.4.8\"",
                 &format!("version = \"{version}\""),
                 1,
             )
@@ -1245,10 +1245,10 @@ mod tests {
         release_document: &[u8],
     ) {
         let release_url =
-            format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.7.agent-release.v1.json");
-        let artifact_url = format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.7.ampkg.tar.zst");
+            format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.8.agent-release.v1.json");
+        let artifact_url = format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.8.ampkg.tar.zst");
         let envelope_url =
-            format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.7.signature.v1.json");
+            format!("{PRODUCTION_PACKAGE_ORIGIN}/{PACKAGE_ID}-0.4.8.signature.v1.json");
         let trust =
             signed_bundle_document_for_test(root, ROOT_KEY_ID, 7, "2026-08-01T00:00:00Z", 7);
         let registry = signed_registry_release_record_document_for_test(
@@ -1258,7 +1258,7 @@ mod tests {
             7,
             PACKAGE_ID,
             "job-agent",
-            "0.4.7",
+            "0.4.8",
             &release_url,
             &lower_hex(&Sha256::digest(release_document)),
             &artifact_url,

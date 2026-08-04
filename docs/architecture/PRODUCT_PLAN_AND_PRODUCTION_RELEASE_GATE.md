@@ -1229,3 +1229,36 @@ Queue/附件 reservation，再加入停止和 send-now；之后才开放经过 a
 
 本轮不改变 Provider、credits、订阅、Package、生产发布或 P7/P8；完整设计与测试合同见
 [`GROK_FIRST_INPUT_SYSTEM_V2.md`](GROK_FIRST_INPUT_SYSTEM_V2.md) 和 TC-CONV-017。
+
+## 72. 当前切片：Job Agent 首轮专业接管与持久定义升级
+
+owner 在既定主路径“配置 Provider → 激活 Agent → 固定 Main Session 开始工作”中继续
+验收，发现客户端 Job Agent 虽能对话，却只给出通用能力介绍，没有像宿主 Skill 一样按
+Job Agent 的真实 Key、简历/画像、round 和 `next_suggested` 状态直接接管工作。本轮只
+修复这条已承诺的垂直行为，不扩展新的页面、Provider、会话或发布能力。
+
+当前切片固定以下合同：
+
+1. Job Agent 内置 Package 升级到 `0.4.8`；当前真正进入 Harness 的行为来自
+   `runtime.promptBody`，`canonicalWorkflow` 仍只作为 Package 校验、Authoring 和宿主
+   Skill 导出来源，不能再把后者的存在误认为客户端运行时已经自动加载完整流程；
+2. 首次或恢复工作先根据 Job Agent authority 状态选择唯一下一步：安全配置服务 Key、
+   上传并分析简历、补齐画像并开始 round，或从 `next_suggested` 续跑；不得先输出通用
+   能力菜单，也不得让用户把 Key 粘贴进普通对话；
+3. 最终 `AgentDefinition` 的完整 SHA、Package 版本和 Overlay revisions 共同决定是否
+   重建 Harness Agent；旧 Main Session 在定义升级后保留 Session 身份、Workspace 和
+   全部历史，下一条 Prompt 使用当前定义；
+4. applied-definition map 暂时只在 Host 进程内，重启后首条 Prompt 可再次幂等重建；
+   本轮不引入未经设计的第二份持久 authority；
+5. 自动化只用固定状态 fixture 和 fake Provider，真实 Job Agent Key、外部服务、Provider、
+   credits、生产 mutation 和费用均不在本轮授权范围；当前按用户要求由主 Agent 自主复核，
+   不使用 Kimi；
+6. 定义摘要、重建和历史保留是所有 Agent Package 的通用能力，Job Agent 只是首个垂直
+   工作流验收样板。后续 Agent 继续从宿主 Skill/Canonical Workflow 的同源版本生成
+   runtime 投影，再由同一 Harness 和本地稳定 Main Session 持久化，不为每个 Agent 复制
+   客户端聊天引擎。
+
+本切片不改变生产 Trust/Registry 空常量、P7/P8、unsigned internal、Developer ID、
+notarization 或在线发布结论，也不修改前述历史 evidence。下一步只允许先完成
+TC-AGENT-007 的无 Key/无画像/已有画像/已有轮次/旧会话升级/非 Job 隔离回归，更新项目
+进展并生成唯一内部包；owner 真实首轮与续跑验收通过前，不横向延伸新功能。

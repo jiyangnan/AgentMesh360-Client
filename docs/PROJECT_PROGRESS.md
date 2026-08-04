@@ -8609,3 +8609,42 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 附件库、Provider fallback、语言选择、P7/P8、签名、公证或在线发布。源码、自动化、打包、
 复验、单包替换与文档已经闭环；下一步只由 owner 在安装环境完成 `TC-CONV-024` 的“本机
 语言准备 → 首击披露 → 双权限 → 只回填 → 断网复验”。
+
+### 循环 160：Job Agent 首轮专业接管与通用持久定义升级
+
+状态：源码与自动化完成；clean push、打包 Host 复验和唯一内部包替换进行中
+
+本轮回到既定主链路“同源 Agent Package → Grok Build Harness → 本地持久 Main Session”，
+修复 Job Agent 首次对话只显示通用能力菜单、没有按真实 Job 状态推进的问题：
+
+1. Job Agent 内置 Package 升级到 `0.4.8`，运行时合同要求首次、升级后首次或状态未知时先
+   检查 `jobagent --version` 和非变更型 `jobagent doctor env`，再按 Key、环境、画像、round
+   与顶层 `next_suggested` 只推进一个下一步；不得宽泛问“想做什么”；
+2. 明确区分 Job Agent 服务 Key 与 BYOK 模型 Key；无 Key 时只引导官网与本机安全初始化，
+   不让用户把 Key 粘贴进普通聊天。无画像时先收简历并分析；已有画像时开始 round；已有
+   round 时从返回状态续跑；只有真实 `paid_pass_required` 或 credits 错误才提示套餐；
+3. Host 不再只比较 `agent.md`/`user.md` revision，而是用 Package 版本、最终
+   `AgentDefinition` SHA-256 和两层 Overlay revision 识别当前 Harness 定义。恢复旧 Session
+   时下一条 Prompt 保历史重建；零轮会话可以刷新启动前缀，已有轮次只替换 System/Harness，
+   不覆盖用户消息、Agent 回复、Workspace 或确定性 Main Session；
+4. 这套摘要与重建没有 Job 特判。LectureCast 样本证明任意 Agent Package 的版本、定义或
+   Overlay 变化都会更新自身 Harness，稳定定义不会反复重建。后续动态 Agent 继续从宿主
+   Skill/Canonical Workflow 的同源版本生成 runtime 投影，再复用同一 Harness 和本地持久
+   Session，不复制客户端聊天引擎。
+
+当前自动化证据：
+
+- AgentMesh360 Rust 整组 `215 passed / 0 failed / 1 ignored`；覆盖 Manifest 状态合同、
+  可执行 fake `jobagent doctor env` 工具循环、实际 Sampling System Prompt、旧定义替换、
+  同一 Session 用户/Agent 历史保留、非 Job 隔离和通用定义摘要；
+- Desktop syntax 通过；Node 全量 `223 total / 218 passed / 0 failed / 5 skipped`，5 条仍是
+  需要打包 Host 的显式门禁；产品旅程 `88` 条、`14` 个领域全部通过结构校验；Rust fmt 与
+  `git diff --check` 通过；
+- 测试只使用临时状态、回环 fake Core/Provider 和可执行 fixture。真实 Job Agent Key 读取
+  0、真实 Provider 请求 0、Job/Core 外部请求 0、credits 0、消息发送 0、费用 $0；按用户
+  要求未使用 Kimi。
+
+计划复盘：本轮没有新增页面、Provider、会话引擎、生产 Trust/Registry、P7/P8、签名、公证
+或在线发布。下一步只允许 clean push 当前源码，从该提交生成唯一未签名 arm64 内部包，用
+包内真实 Host 补齐 5 条门禁并复验 receipt/SHA/DMG/ZIP/构建与 Downloads 一致性；新包全部
+通过前保留旧包，通过后再精确删除旧包并回填最终交付证据。

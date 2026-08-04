@@ -503,7 +503,7 @@ mod tests {
     async fn downloads_registry_selected_bytes_and_returns_verified_staging() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let (origin, server) = serve(vec![
             TestResponse::json_bytes(&release),
             TestResponse::json(&fixture.envelope),
@@ -511,7 +511,7 @@ mod tests {
         ])
         .await;
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
         let downloader = downloader(temp.path(), &root, &origin);
 
         let downloaded = downloader
@@ -546,7 +546,7 @@ mod tests {
     async fn digest_failure_cleans_download_without_creating_verified_staging() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let mut tampered = fixture.artifact.clone();
         tampered.push(0);
         let (origin, server) = serve(vec![
@@ -556,7 +556,7 @@ mod tests {
         ])
         .await;
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
 
         let error = downloader(temp.path(), &root, &origin)
             .download_verified(PACKAGE_ID, &access())
@@ -573,14 +573,14 @@ mod tests {
     async fn declared_oversized_envelope_is_rejected_before_artifact_download() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let (origin, server) = serve(vec![
             TestResponse::json_bytes(&release),
             TestResponse::json(&fixture.envelope).with_content_length(ENVELOPE_LIMIT + 1),
         ])
         .await;
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
 
         let error = downloader(temp.path(), &root, &origin)
             .download_verified(PACKAGE_ID, &access())
@@ -597,7 +597,7 @@ mod tests {
     async fn registry_identity_mismatch_discards_both_staging_areas() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.8");
+        let release = release_fixture(&fixture, "0.4.9");
         let (origin, server) = serve(vec![
             TestResponse::json_bytes(&release),
             TestResponse::json(&fixture.envelope),
@@ -605,7 +605,7 @@ mod tests {
         ])
         .await;
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.9", &release);
 
         let error = downloader(temp.path(), &root, &origin)
             .download_verified(PACKAGE_ID, &access())
@@ -630,11 +630,11 @@ mod tests {
         let root = SigningKey::from_bytes(&[91_u8; 32]);
 
         let digest_temp = tempfile::tempdir().expect("digest tempdir");
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let mut tampered = release.clone();
         tampered.push(b' ');
         let (origin, server) = serve(vec![TestResponse::json_bytes(&tampered)]).await;
-        seed_remote_package(digest_temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(digest_temp.path(), &root, &fixture, "0.4.8", &release);
         let error = downloader(digest_temp.path(), &root, &origin)
             .download_verified(PACKAGE_ID, &access())
             .await
@@ -650,7 +650,7 @@ mod tests {
             strict_temp.path(),
             &root,
             &fixture,
-            "0.4.7",
+            "0.4.8",
             &invalid_release,
         );
         let error = downloader(strict_temp.path(), &root, &origin)
@@ -665,7 +665,7 @@ mod tests {
         let drifted_release = release_document_for_download_test(
             PACKAGE_ID,
             "job-agent",
-            "0.4.7",
+            "0.4.8",
             &"0".repeat(64),
             &fixture.envelope_sha256,
             &fixture.file_manifest_sha256,
@@ -676,7 +676,7 @@ mod tests {
             drift_temp.path(),
             &root,
             &fixture,
-            "0.4.7",
+            "0.4.8",
             &drifted_release,
         );
         let error = downloader(drift_temp.path(), &root, &origin)
@@ -691,7 +691,7 @@ mod tests {
         let metadata_release = release_document_for_download_test(
             PACKAGE_ID,
             "job-agent",
-            "0.4.7",
+            "0.4.8",
             &fixture.artifact_sha256,
             &fixture.envelope_sha256,
             &"0".repeat(64),
@@ -707,7 +707,7 @@ mod tests {
             metadata_temp.path(),
             &root,
             &fixture,
-            "0.4.7",
+            "0.4.8",
             &metadata_release,
         );
         let error = downloader(metadata_temp.path(), &root, &origin)
@@ -734,7 +734,7 @@ mod tests {
     #[tokio::test]
     async fn missing_or_redirected_release_is_rejected_before_envelope_download() {
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let root = SigningKey::from_bytes(&[91_u8; 32]);
 
         for response in [
@@ -745,7 +745,7 @@ mod tests {
         ] {
             let temp = tempfile::tempdir().expect("tempdir");
             let (origin, server) = serve(vec![response]).await;
-            seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+            seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
 
             downloader(temp.path(), &root, &origin)
                 .download_verified(PACKAGE_ID, &access())
@@ -761,13 +761,13 @@ mod tests {
     async fn declared_oversized_release_is_rejected_before_envelope_download() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let (origin, server) = serve(vec![
             TestResponse::json_bytes(&release).with_content_length(MAX_RELEASE_MANIFEST_BYTES + 1),
         ])
         .await;
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
 
         let error = downloader(temp.path(), &root, &origin)
             .download_verified(PACKAGE_ID, &access())
@@ -783,11 +783,11 @@ mod tests {
     async fn invalid_access_blocks_before_any_download_connection() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let root = SigningKey::from_bytes(&[91_u8; 32]);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let origin = format!("http://{}", listener.local_addr().expect("address"));
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
         let access = access();
         access.invalidate();
 
@@ -808,9 +808,9 @@ mod tests {
     async fn expired_registry_blocks_release_fetch_instead_of_using_stale_lkg() {
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let root = SigningKey::from_bytes(&[91_u8; 32]);
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let origin = format!("http://{}", listener.local_addr().expect("address"));
         let expired = ClientAccess::with_trusted_time_for_test(
@@ -839,11 +839,11 @@ mod tests {
 
         let temp = tempfile::tempdir().expect("tempdir");
         let fixture = download_artifact_fixture_for_test();
-        let release = release_fixture(&fixture, "0.4.7");
+        let release = release_fixture(&fixture, "0.4.8");
         let root = SigningKey::from_bytes(&[91_u8; 32]);
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let origin = format!("http://{}", listener.local_addr().expect("address"));
-        seed_remote_package(temp.path(), &root, &fixture, "0.4.7", &release);
+        seed_remote_package(temp.path(), &root, &fixture, "0.4.8", &release);
         fs::create_dir_all(temp.path().join("packages")).expect("packages");
         let outside = temp.path().join("outside");
         fs::create_dir(&outside).expect("outside");

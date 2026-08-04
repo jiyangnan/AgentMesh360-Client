@@ -202,15 +202,15 @@ pub enum SessionCommand {
         auto_compact_threshold_percent: u8,
         responds_to: oneshot::Sender<Result<acp::ModelId, acp::Error>>,
     },
-    /// Zero-turn harness rebuild: build a brand-new `Agent` from the
+    /// History-preserving harness rebuild: build a brand-new `Agent` from the
     /// session's `AgentRebuildSpec` and the new `AgentDefinition`,
     /// re-register MCP tools, swap the live `Agent`, rewrite the
     /// system message in the conversation, persist the new prompt
     /// artifacts, and update `active_agent_type`.
     ///
-    /// Triggered by `MvpAgent::set_session_model` when the new model's
-    /// `agent_type` differs from the session's current one and no user
-    /// message has been sent yet (`turn_count == 0`).
+    /// Used both by zero-turn model switching and by persistent Product
+    /// Agent Package upgrades. Existing user/assistant history is retained;
+    /// only the live harness and leading System message are replaced.
     RebuildAgentForDefinition {
         definition: xai_grok_agent::AgentDefinition,
         responds_to: oneshot::Sender<Result<(), acp::Error>>,
