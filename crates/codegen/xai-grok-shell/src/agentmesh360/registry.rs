@@ -587,7 +587,7 @@ mod tests {
         );
         assert_eq!(claimed.workspace_dir.as_deref(), Some("/legacy/workspace"));
         assert_eq!(claimed.desired_state, "running");
-        assert_eq!(claimed.version, "0.4.8");
+        assert_eq!(claimed.version, "0.5.6");
         registry
             .claim_legacy_and_seed(42)
             .expect("seed second account");

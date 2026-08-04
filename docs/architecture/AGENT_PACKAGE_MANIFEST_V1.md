@@ -79,7 +79,7 @@ H0 采用编译期嵌入，目的是先验证 Schema、运行时投影和旧状�
 
 | Agent | Package 版本 | Canonical Workflow | 已声明宿主 Adapter |
 | --- | --- | --- | --- |
-| Job Agent | `0.4.8` | `docs/agent-onboarding.md` | Claude Code、OpenClaw |
+| Job Agent | `0.5.6` | `docs/agent-onboarding.md` | Claude Code、OpenClaw |
 | LectureCast Agent | `0.4.0` | `skills/shared/director-workflow.md` | Codex、Claude Code、OpenClaw |
 | Deploy Agent | `0.1.1` | `AGENTS.md` | 暂无独立 Skill Adapter |
 

@@ -493,7 +493,7 @@ mod tests {
                 ))
                 .collect::<Vec<_>>(),
             vec![
-                ("job-agent", "0.4.8", 2, 2),
+                ("job-agent", "0.5.6", 2, 2),
                 ("lecturecast-agent", "0.4.0", 3, 2),
                 ("deploy-agent", "0.1.1", 0, 2),
             ]
@@ -509,10 +509,15 @@ mod tests {
         for required in [
             "not a general chat assistant",
             "<resolved-jobagent> --version",
+            "jobagent 0.5.6",
+            "older than `0.5.6`",
             "$HOME/.local/bin/jobagent",
             "/opt/homebrew/bin/jobagent",
             "/usr/local/bin/jobagent",
             "<resolved-jobagent> doctor env",
+            "<resolved-jobagent> upgrade-check",
+            "client_command_resumed",
+            "client_update_failed",
             "environment_healthy",
             "workflow.ready",
             "next_suggested",
@@ -524,6 +529,9 @@ mod tests {
             "Boss直聘 -> 猎聘 -> 智联招聘 -> 51Job",
             "paid_pass_required=true",
             "Do not answer a first greeting with a generic capability menu",
+            "liepin_city_code_not_found",
+            "not as `no_candidates`",
+            "Do not add Liepin scraping code to this client",
         ] {
             assert!(
                 prompt.contains(required),
@@ -681,8 +689,8 @@ mod tests {
     #[test]
     fn installed_active_upgrades_builtin_and_appends_new_agent_deterministically() {
         let upgraded = AgentPackageCatalog::parse_document(&JOB_DOCUMENT.replacen(
-            "version = \"0.4.8\"",
-            "version = \"0.4.9\"",
+            "version = \"0.5.6\"",
+            "version = \"0.5.7\"",
             1,
         ))
         .expect("upgraded built-in");
@@ -692,7 +700,7 @@ mod tests {
                 "packageId = \"com.agentmesh360.research-agent\"",
                 1,
             )
-            .replacen("version = \"0.4.8\"", "version = \"0.1.0\"", 1)
+            .replacen("version = \"0.5.6\"", "version = \"0.1.0\"", 1)
             .replacen("agentId = \"job-agent\"", "agentId = \"research-agent\"", 1)
             .replacen(
                 "displayName = \"Job Agent\"",
@@ -712,7 +720,7 @@ mod tests {
                 .package_for_agent("job-agent")
                 .expect("upgraded Job Agent")
                 .version,
-            "0.4.9"
+            "0.5.7"
         );
         assert_eq!(
             catalog
@@ -753,9 +761,9 @@ mod tests {
                 .contains("conflicts")
         );
 
-        for version in ["0.4.7", "0.4.8+replacement"] {
+        for version in ["0.5.5", "0.5.6+replacement"] {
             let replacement = JOB_DOCUMENT.replacen(
-                "version = \"0.4.8\"",
+                "version = \"0.5.6\"",
                 &format!("version = \"{version}\""),
                 1,
             );

@@ -8806,3 +8806,50 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 模型或推理强度控件，也没有减少 AgentMesh360 已有能力；源码、自动化、打包、包内真实 Host、
 交付副本与单包清理已经闭环。下一步只由 owner 从上述目录覆盖安装并做视觉/真实输入 UAT；
 在 owner 另行授权前，不自动修改当前安装，不扩展 Provider、Harness、P7/P8、签名或在线发布。
+
+### 循环 163：Job Agent 0.5.6 持久包传播与猎聘结果分层（源码阶段）
+
+状态：源码与自动化完成；等待 clean commit 后构建唯一内部包
+
+本轮先对照官方 `AgentMesh-JobAgent v0.5.6`、当前安装包和原持久 Main Session 的实际证据，
+确认此前猎聘失败发生在旧运行链，而不是在 Client 内复制一套猎聘抓取实现：
+
+1. 官方 tag `v0.5.6` 对应 canonical commit
+   `4e13fa8cf9bd4785c4c2d14006cbd841146c4aea`，规范 archive SHA-256 为
+   `d1062d683a616f87ffefc3e3590a8912c8a26e88f055ad0936070865bddd75b2`；公开版本/parser
+   fixture `17/17`、内部猎聘边界 `7/7` 通过，均未联网；
+2. 原持久 Session 的历史工具记录明确显示当时解析到 `/opt/homebrew/bin/jobagent 0.5.5`，
+   随后四次猎聘 Discover 才返回 `no_candidates`；当前本机同路径虽已显示 `0.5.6`，但它是
+   指向内部工作副本的 editable CLI，且旧安装包 Host 仍为 `75b225b`、内置 Job Package 仍是
+   `0.4.8`。因此“CLI 现在显示 0.5.6”不能冒充持久 Client 已完成传播；
+3. builtin `com.agentmesh360.job-agent` 已从 `0.4.8` 升到 `0.5.6`，所有依赖当前
+   `JOB_MANIFEST` 的 artifact、installer、downloader、delivery、Registry 和升级/回滚样本
+   同步级联到 `0.5.6 / 0.5.7 / 0.5.8`；冻结 canary 标识和历史事实保持不变；
+4. Harness 合同要求每次激活、恢复、Package 更新或命令状态不明时确定性解析实际 CLI，先执行
+   `--version`。缺失、畸形或低于 `0.5.6` 时停止 `doctor env` 和平台命令；通过版本门后再执行
+   `upgrade-check`，转发更新/恢复事件并复用同一绝对 executable；
+5. 猎聘城市码、页面元数据、URL、selector、DOM 和抓取继续完全归官方 CLI；Client 只投影
+   结构化结果。`liepin_city_code_not_found` 必须解释为城市筛选无法验证，只有 `0.5.6+`
+   完成 Discover 后的 `no_candidates` 才可解释为真实空结果；
+6. 新回归在同一账号、Agent、Main Session 与 Workspace 中先运行 fake CLI `0.5.5`，证明只
+   调用一次 `--version` 并向客户端显示升级阻断；随后把同一 Session 的旧 `0.4.8` definition
+   升至当前 `0.5.6`，再验证 `--version → upgrade-check → doctor env`、旧可见历史进入下一次
+   Sampling、新定义生效且最终回复继续专业下一步而不是通用能力菜单。
+
+当前源码验证证据：
+
+- AgentMesh360 Rust 整组 `215 passed / 0 failed / 1 ignored`；新增同一持久 Session 定向回归
+  `1/1`；Rust fmt 与 `git diff --check` 通过；
+- Desktop syntax 通过；允许本机 OAuth loopback 后 Node 全量
+  `232 total / 227 passed / 0 failed / 5 skipped`，5 条为必须在新包内真实 Host 上执行的门禁；
+- 产品旅程验证器 `3/3`，当前 `92` 条、`14` 个领域均有结构化输入、交互、预期输出、恢复和
+  明确执行状态；最终只读审查指出 fake Provider 只能证明 Harness 接线，不能证明任意真实
+  BYOK 模型必然遵守版本门，也未实际执行完整更新失败事件和两类猎聘结果。现已拆分为自动化
+  传播 `TC-AGENT-008` 与 owner 安装后真实复跑 `TC-AGENT-009`，后者明确保持阻断；
+- 自动化只使用临时 CLI、fake Core/Provider 和隔离状态；真实猎聘请求 0、真实 Provider/Core
+  请求 0、Key/Cookie/简历/岗位正文读取 0、credits 0、费用 $0；按用户要求未使用 Kimi。
+
+计划复盘：当前实现严格停留在官方 Package 传播、实际 CLI 版本门、通用 definition refresh、
+更新/命令恢复和错误分层，没有新增猎聘实现，也没有扩展 Provider、页面、Agent、P7/P8、签名、
+公证或在线发布。下一步只执行 clean commit/push、冷构建、包内真实 Host/DMG/ZIP 验证和唯一
+内部包替换；真实猎聘 Client UAT 必须等 owner 安装新包后从原持久 Main Session 续跑。

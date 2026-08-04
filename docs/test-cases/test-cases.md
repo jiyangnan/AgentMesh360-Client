@@ -386,8 +386,8 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
      PDF、DOCX、TXT 或 Markdown 简历；
   3. **已有画像但无轮次**：fixture 返回 profile 已存在、尚未开始 round；
   4. **已有轮次**：fixture 返回 active round 和明确的 `next_suggested`；
-  5. **旧持久会话升级**：先用旧 Job Agent 定义创建并写入历史，再把 Package 升级到
-     `0.4.8`，以同一账号、`agentId` 和 Main Session 发送下一条消息；
+  5. **旧持久会话升级**：先用旧 `0.4.8` Job Agent 定义创建并写入历史，再把 Package
+     升级到 `0.5.6`，以同一账号、`agentId` 和 Main Session 发送下一条消息；
   6. **非 Job 隔离**：分别加载 LectureCast 与 Deploy 定义；动态 Agent 的安装、激活和
      同源双渠道边界沿用 TC-AGENT-004。
 - **交互步骤**：对前四组逐项核对实际进入 Sampling 的 Job runtime 状态决策合同；其中
@@ -407,7 +407,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   5. 所有状态都直接给出一个可行动下一步，不先输出通用能力菜单或宽泛追问；只有真实
      credits 不足且 `paid_pass_required` 时才提示套餐；
   6. 旧会话升级后 Session 身份和既有用户/Agent 历史不变，下一条 Prompt 已包含
-     `0.4.8` 的完整 Job Agent 运行时契约；定义重建不生成第二个主会话；
+     `0.5.6` 的完整 Job Agent 运行时契约；定义重建不生成第二个主会话；
   7. LectureCast 与 Deploy 不包含 Job Agent 注册、简历、轮次或招聘站点指令；动态 Agent
      仍通过 TC-AGENT-004 的同源 Package 合同进入相同持久机制。
 - **失败与恢复**：`doctor env` 不可用、状态字段矛盾或定义摘要无法计算时失败关闭并说明
@@ -429,6 +429,72 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **验证层**：Rust + fake Provider；Desktop Node；包内真实 Host `5/5`；真实 BYOK 模型的
   用户可见首轮语义仍由安装包 owner UAT 核对，不以预制 fake Provider 冒充
 - **本轮结果**：通过
+
+## TC-AGENT-008：Job Agent 0.5.6 Package 传播与同会话恢复
+
+- **用户故事**：作为已经使用持久 Job Agent 的用户，我希望 Client 的 builtin Package 升到
+  `0.5.6` 后仍回到同一个 Main Session，并在下一条消息使用新 Harness 定义；旧 CLI 必须先
+  阻断，不能悄悄继续平台命令。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：官方公开仓库存在 `v0.5.6`，canonical commit 为
+  `4e13fa8cf9bd4785c4c2d14006cbd841146c4aea`，规范 archive SHA-256 为
+  `d1062d683a616f87ffefc3e3590a8912c8a26e88f055ad0936070865bddd75b2`；自动化仅使用
+  当前 builtin Manifest、隔离 CLI、fake Provider/Core 与临时状态，不读取真实 Key、Cookie、
+  简历、岗位或审计正文，也不打开猎聘。
+- **输入**：三组隔离合同输入：
+  1. builtin Job Agent Package `0.5.6` 与旧 `0.4.8` definition revision；
+  2. 隔离 CLI 先返回旧 `jobagent 0.5.5`，验证阻断；同一 Session 恢复时再返回
+     `jobagent 0.5.6`、固定 `upgrade-check` 事件和 `doctor env` 状态；
+  3. 当前 definition 中的最低版本、更新/恢复事件和猎聘 ownership/error-boundary 文本。
+- **交互步骤**：激活或恢复 Job Agent；核对真实进入 Sampling 的 System Prompt；解析同一个
+  `jobagent` 绝对路径并先执行 `--version`；Package/client 更新或命令恢复待处理时执行
+  `upgrade-check`，再按结构化 `next_suggested` 继续；用旧 definition revision 模拟已驻留
+  Main Session，并在升级后发送下一条消息。
+- **预期输出**：五项自动化合同必须同时满足：
+  1. Catalog 与 Agent Registry 当前版本均为 `0.5.6`，来源仍指向官方
+     `AgentMesh-JobAgent`；不得只改 UI 标签而继续使用旧 definition；
+  2. `--version` 不明确或低于 `0.5.6` 时停止 `doctor env` 和所有平台命令，并走官方签名
+     更新/安装器恢复；版本通过后整轮复用同一绝对可执行文件；
+  3. 当前 definition 明确把猎聘 URL、城市码、selector、DOM、抓取和结构化错误判定交给
+     官方 CLI；Client 源码不复制这些实现；
+  4. `0.4.8 → 0.5.6` 后账号、`agentId`、Main Session、Workspace、历史和 Job Agent 本地
+     状态不变，下一条消息使用新定义；更新完成后恢复原命令，失败时停止并保留状态；
+  5. fake Provider 的实际工具循环按 `0.5.5` 版本阻断，以及同一 Session 恢复后的
+     `0.5.6 → upgrade-check → doctor env` 顺序执行；此前可见历史进入下一次 Sampling。
+- **失败与恢复**：版本、来源或 definition revision 无法证明时失败关闭；保留上一份已验证
+  内部包和全部 Job Agent 状态。自动化通过不能冒充真实安装后的猎聘结果，只有 owner 安装
+  新包并从同一持久 Job Agent 续跑才算 Client UAT。
+- **自动化证据**：Rust Catalog/Manifest、artifact、installer/downloader/delivery、Registry、
+  definition digest 与 fake Provider 工具循环；Desktop Node 与包内真实 Host；产品旅程校验。
+  fake Provider 证明 Harness 接线和可见回复，不证明每个真实 BYOK 模型必然遵守工具调用；
+  官方仓库 parser fixture 也不冒充安装版 Client 的猎聘结果。
+- **验证层**：Rust + fake Provider/Core + Desktop Node + 包内真实 Host；owner 安装后真实猎聘 UAT
+- **本轮结果**：阻断
+
+## TC-AGENT-009：安装后原持久 Job Agent 复跑猎聘并分层结果
+
+- **用户故事**：作为刚覆盖安装新 Client 的用户，我希望在原 Job Agent 主会话续跑猎聘，明确
+  看到实际使用官方 `0.5.6+` CLI；若仍无候选，能够区分城市解析失败、传播/恢复失败和真实空结果。
+- **优先级**：P0
+- **设计状态**：部分实现
+- **前置条件**：owner 已安装本轮新内部包；原账号、Job Agent Main Session、Job Agent Key、
+  专用浏览器状态和原猎聘 round 均保留；测试只沿原 review/preview/send/audit 权限边界续跑。
+- **输入**：原持久会话中的猎聘续跑命令，以及实际 resolved executable、`--version`、
+  `upgrade-check`、Package/definition revision 和猎聘 Discover 结构化结果。
+- **交互步骤**：从原 Main Session 继续；先核对实际 executable 与 `jobagent 0.5.6+`；确认
+  `upgrade-check` 和必要的 `client_update_* / client_command_resumed`；再恢复原猎聘命令。
+  若返回错误，只按 CLI 的 `next_suggested` 操作，不在 Client 中猜城市码或修改抓取逻辑。
+- **预期输出**：Package 与下一次 Sampling 均为 `0.5.6` definition；同一 Session、Workspace、
+  历史、round、Key 和登录状态不变；`liepin_city_code_not_found` 显示为城市筛选无法验证，
+  不得显示为 `no_candidates`；只有由实际 `0.5.6+` 完成的 Discover 才可显示真实空候选。
+- **失败与恢复**：若仍是异常 `no_candidates`，按 Package 传播、resolved executable/version、
+  更新/命令恢复事件、持久 definition context、官方 CLI 实际结果的顺序诊断；恢复时保留全部
+  业务状态。不得在 Client 新增猎聘 URL、城市码、selector、DOM 或抓取代码。
+- **自动化证据**：TC-AGENT-008 的 fake CLI/Harness 回归与官方 `0.5.6` 离线 parser fixture
+  只提供前置证据；本用例必须保留安装版实际命令和用户可见结果，不能用 CLI 直跑替代。
+- **验证层**：owner 安装包 UAT + 原持久 Main Session + 实际官方 Job Agent CLI
+- **本轮结果**：阻断
 
 ## TC-MODEL-001：Agent 内 Profile 与模型级联选择
 

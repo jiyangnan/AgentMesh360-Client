@@ -1262,3 +1262,26 @@ Job Agent 的真实 Key、简历/画像、round 和 `next_suggested` 状态直�
 notarization 或在线发布结论，也不修改前述历史 evidence。下一步只允许先完成
 TC-AGENT-007 的无 Key/无画像/已有画像/已有轮次/旧会话升级/非 Job 隔离回归，更新项目
 进展并生成唯一内部包；owner 真实首轮与续跑验收通过前，不横向延伸新功能。
+
+## 73. 当前切片：Job Agent 0.5.6 传播与猎聘复验
+
+owner 已在另一个任务中把猎聘页面变化修复到官方 `AgentMesh-JobAgent v0.5.6`。Client 本轮
+只负责把这份官方能力传播进持久 Agent，不在桌面端复制平台抓取逻辑：
+
+1. builtin `com.agentmesh360.job-agent` 从 `0.4.8` 升到 `0.5.6`，官方发行身份固定为
+   tag `v0.5.6`、commit `4e13fa8cf9bd4785c4c2d14006cbd841146c4aea`、规范 archive
+   SHA-256 `d1062d683a616f87ffefc3e3590a8912c8a26e88f055ad0936070865bddd75b2`；
+2. Harness 在 `doctor env` 或平台命令前解析并复用真实 `jobagent` 绝对路径，要求明确的
+   `0.5.6+`；Package/client 更新或恢复中的命令先走官方 `upgrade-check`、更新阶段事件与
+   `next_suggested`，保留 Key、浏览器登录、画像、round、decision 和 audit；
+3. 猎聘当前城市码、页面元数据、URL、selector 与 DOM 全部由官方 CLI 负责。Client 只把
+   `liepin_city_code_not_found` 投影为城市筛选验证失败，把完成 Discover 后的
+   `no_candidates` 投影为真实空结果，不猜城市码、不新增抓取代码；
+4. 通用 definition digest 继续保证 `0.4.8 → 0.5.6` 只重建 Harness 定义，同一账号、
+   `agentId`、Main Session、Workspace 和历史保持不变；
+5. 自动化只用 fake Core/Provider、隔离 CLI 与临时状态。真实猎聘复验必须在 owner 安装新包
+   后从原持久 Job Agent 续跑；CLI 直跑、源码测试或界面版本号都不能冒充 Client UAT。
+
+本切片不改变 Provider、credits、生产 Trust/Registry、P7/P8、在线发布、签名或公证结论。
+若新包真实复验仍出现 `no_candidates`，按 Package 传播、实际 executable/version、更新与命令
+恢复、持久会话定义上下文、官方 CLI 真实结果的顺序诊断，禁止在 Client 横向实现猎聘抓取。

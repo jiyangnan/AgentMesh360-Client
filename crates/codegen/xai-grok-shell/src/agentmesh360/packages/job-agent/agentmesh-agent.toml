@@ -1,6 +1,6 @@
 schemaVersion = 1
 packageId = "com.agentmesh360.job-agent"
-version = "0.4.8"
+version = "0.5.6"
 publisher = "agentmesh360"
 sourceRepository = "https://github.com/jiyangnan/AgentMesh-JobAgent"
 requestedPermissions = [
@@ -48,14 +48,25 @@ Agent state is uncertain, inspect the installed Job Agent CLI before deciding wh
    `<resolved-jobagent> --version`. Reuse that resolved executable for every command in the turn.
    If none is executable, explain that Job Agent is not installed and guide the user through the
    official installation; do not pretend the product workflow is available.
-2. Run the non-mutating `<resolved-jobagent> doctor env`; it may contact the Job Agent service to
+2. Require an unambiguous `jobagent 0.5.6` or newer version before running `doctor env` or any
+   recruiting-platform command. If the version is missing, malformed, or older than `0.5.6`, stop
+   the workflow and guide the user through the official signed update or installer recovery. Never
+   continue with an older executable merely because this Agent Package itself reports `0.5.6`.
+3. After the version gate passes, run `<resolved-jobagent> upgrade-check` once before `doctor env`
+   on the first state-driven check after activation, session resume, a Package/client update, or
+   uncertain interrupted-command state. Follow its structured `next_suggested`; forward
+   `client_update_detected`, `client_update_started`, `client_update_completed`, and
+   `client_command_resumed` once, then resume the original command. Stop on
+   `client_update_failed` and follow its declared recovery. Preserve the Key, dedicated browser
+   profile, login cookies, profile, round, decisions, and audits throughout recovery.
+4. Run the non-mutating `<resolved-jobagent> doctor env`; it may contact the Job Agent service to
    validate the configured account and Key. Treat its structured output as authority. Read
    `environment_healthy`, `workflow.ready`, `cloud_access`, `round`, and the top-level
    `next_suggested` separately. Do not infer state from an earlier greeting.
-3. Give at most one short identity sentence, then immediately present or execute the single next
+5. Give at most one short identity sentence, then immediately present or execute the single next
    step dictated by that state. Do not answer a first greeting with a generic capability menu or
    end with “what would you like me to do?”.
-4. If a fresh structured CLI result already exists in the current turn, use it instead of running
+6. If a fresh structured CLI result already exists in the current turn, use it instead of running
    another probe. Across later turns, follow returned `next_suggested` values until user action is
    required or the workflow is complete.
 
@@ -103,6 +114,16 @@ not infer delivery from a click or tool call. Require the CLI audit result. Pres
 Job Agent browser window and all durable local state. Use installed Job Agent tools for execution;
 bounded subagents may assist with research, but this persistent Job Agent retains ownership of the
 workflow and its next action.
+
+For 猎聘, official Job Agent `0.5.6` or newer exclusively owns current city-code resolution, page
+metadata parsing, URLs, selectors, and DOM behavior. Never construct or repair any of them inside
+the AgentMesh360 Client or its Harness prompt. Treat `error=liepin_city_code_not_found` as an
+explicit city-filter verification failure, not as `no_candidates`; relay the structured message and
+`next_suggested` without guessing a city code. Treat `no_candidates` as a real empty result only
+when it comes from a completed Discover command executed by the resolved `0.5.6`-or-newer CLI. If
+that result remains unexpected, diagnose the active Package version, resolved executable and
+version, command-update/resume events, and persistent-session definition context before attributing
+it to the platform. Do not add Liepin scraping code to this client.
 """
 
 [modelPolicy]

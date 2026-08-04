@@ -1275,7 +1275,7 @@ mod tests {
         let mut legacy_definition = xai_grok_agent::AgentDefinition::default_grok_build();
         legacy_definition.prompt_body = Some("legacy generic profile".into());
         let old =
-            AppliedAgentDefinitionRevision::from_definition("0.4.7", (0, 0), &legacy_definition)
+            AppliedAgentDefinitionRevision::from_definition("0.4.8", (0, 0), &legacy_definition)
                 .expect("legacy definition revision");
         runtime.record_activation_definition_state(&session_id, old.clone(), false);
         assert_eq!(
@@ -1286,7 +1286,7 @@ mod tests {
         let mut upgraded_definition = legacy_definition.clone();
         upgraded_definition.prompt_body = Some("state-driven onboarding profile".into());
         let upgraded =
-            AppliedAgentDefinitionRevision::from_definition("0.4.8", (0, 0), &upgraded_definition)
+            AppliedAgentDefinitionRevision::from_definition("0.5.6", (0, 0), &upgraded_definition)
                 .expect("upgraded definition revision");
         assert_ne!(
             runtime.applied_agent_definition_revision(&session_id),
@@ -1464,6 +1464,7 @@ mod tests {
 
     async fn serve_job_onboarding_provider_requests(
         version_command: String,
+        upgrade_command: String,
         doctor_command: String,
     ) -> (
         String,
@@ -1487,6 +1488,7 @@ mod tests {
                     let request_tx = request_tx.clone();
                     let attempts = Arc::clone(&attempts);
                     let version_command = version_command.clone();
+                    let upgrade_command = upgrade_command.clone();
                     let doctor_command = doctor_command.clone();
                     async move {
                         let authorization = headers
@@ -1503,18 +1505,31 @@ mod tests {
                         match attempt {
                             1 => {
                                 assert!(body.contains("call_jobagent_version"));
-                                assert!(body.contains("jobagent 0.5.5-fixture"));
+                                assert!(body.contains("jobagent 0.5.5"));
                             }
-                            2 => {
+                            3 => {
+                                assert!(body.contains("call_jobagent_version_current"));
+                                assert!(body.contains("jobagent 0.5.6"));
+                            }
+                            4 => {
+                                assert!(body.contains("call_jobagent_upgrade"));
+                                assert!(body.contains("client_command_resumed"));
+                                assert!(body.contains("fixture-upgrade-ready"));
+                            }
+                            5 => {
                                 assert!(body.contains("call_jobagent_doctor"));
                                 assert!(body.contains("fixture-upload-resume"));
                             }
                             _ => {}
                         }
                         let events = match attempt {
-                            0 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                            0 | 2 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
                                     "Resolve and verify the installed Job Agent CLI first.",
-                                    "call_jobagent_version",
+                                    if attempt == 0 {
+                                        "call_jobagent_version"
+                                    } else {
+                                        "call_jobagent_version_current"
+                                    },
                                     "run_terminal_command",
                                     &serde_json::json!({
                                         "command": version_command,
@@ -1530,8 +1545,30 @@ mod tests {
                                     None => Event::default().data(event.data),
                                 })
                                 .collect(),
-                            1 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
-                                    "The CLI is available; read the authoritative Job Agent state.",
+                            1 => xai_grok_test_support::sse::responses_api_events_exact(
+                                    "检测到 Job Agent CLI 0.5.5，低于最低要求 0.5.6。我已停止状态探针和猎聘操作；请先完成官方更新，再在这个持久会话继续。",
+                                    &model,
+                                ),
+                            3 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                                    "The CLI version is current; verify upgrade and command recovery state.",
+                                    "call_jobagent_upgrade",
+                                    "run_terminal_command",
+                                    &serde_json::json!({
+                                        "command": upgrade_command,
+                                        "description": "Verify isolated Job Agent upgrade readiness.",
+                                        "background": false
+                                    })
+                                    .to_string(),
+                                    &model,
+                                )
+                                .into_iter()
+                                .map(|event| match event.event {
+                                    Some(name) => Event::default().event(name).data(event.data),
+                                    None => Event::default().data(event.data),
+                                })
+                                .collect(),
+                            4 => xai_grok_test_support::sse::responses_api_reasoning_then_tool_call_events(
+                                    "The version and recovery state are current; read authoritative Job Agent state.",
                                     "call_jobagent_doctor",
                                     "run_terminal_command",
                                     &serde_json::json!({
@@ -1895,15 +1932,15 @@ mod tests {
     ) {
         let root_key_id = "agentmesh360-root-host-test-2026";
         let release_url = format!(
-            "{}/com.agentmesh360.job-agent-0.4.8.agent-release.v1.json",
+            "{}/com.agentmesh360.job-agent-0.5.6.agent-release.v1.json",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let artifact_url = format!(
-            "{}/com.agentmesh360.job-agent-0.4.8.ampkg.tar.zst",
+            "{}/com.agentmesh360.job-agent-0.5.6.ampkg.tar.zst",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let envelope_url = format!(
-            "{}/com.agentmesh360.job-agent-0.4.8.signature.v1.json",
+            "{}/com.agentmesh360.job-agent-0.5.6.signature.v1.json",
             package_registry_fetcher::PRODUCTION_PACKAGE_ORIGIN
         );
         let trust = package_trust::signed_bundle_document_for_test(
@@ -1920,7 +1957,7 @@ mod tests {
             7,
             "com.agentmesh360.job-agent",
             "job-agent",
-            "0.4.8",
+            "0.5.6",
             &release_url,
             &package_authoring::sha256_hex(release_document),
             &artifact_url,
@@ -2252,7 +2289,7 @@ mod tests {
                 let release = package_release::release_document_for_download_test(
                     "com.agentmesh360.job-agent",
                     "job-agent",
-                    "0.4.8",
+                    "0.5.6",
                     &fixture.artifact_sha256,
                     &fixture.envelope_sha256,
                     &fixture.file_manifest_sha256,
@@ -2305,7 +2342,7 @@ mod tests {
                     serde_json::json!([{
                         "packageId": "com.agentmesh360.job-agent",
                         "agentId": "job-agent",
-                        "version": "0.4.8",
+                        "version": "0.5.6",
                         "publisher": "agentmesh360"
                     }])
                 );
@@ -2406,7 +2443,7 @@ mod tests {
                 .map(ext_result)
                 .expect("owner account installs Package");
                 assert_eq!(installed["packageId"], "com.agentmesh360.job-agent");
-                assert_eq!(installed["version"], "0.4.8");
+                assert_eq!(installed["version"], "0.5.6");
                 assert_eq!(installed["runtimeVisibility"]["status"], "visible");
                 assert_eq!(
                     agent
@@ -2461,7 +2498,7 @@ mod tests {
                     packages.iter().any(|package| {
                         package["kind"] == "installed_active"
                             && package["packageId"] == "com.agentmesh360.job-agent"
-                            && package["version"] == "0.4.8"
+                            && package["version"] == "0.5.6"
                     })
                 }));
                 let response_json = serde_json::to_string(&serde_json::json!([
@@ -2961,7 +2998,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     #[serial_test::serial]
-    async fn host_job_agent_first_turn_executes_state_probe_before_replying() {
+    async fn host_job_agent_version_gate_and_package_upgrade_resume_in_same_session() {
         tokio::task::LocalSet::new()
             .run_until(async {
                 use std::os::unix::fs::PermissionsExt as _;
@@ -2970,7 +3007,15 @@ mod tests {
                 let fixture_bin = state_home.path().join("fixture-bin");
                 std::fs::create_dir_all(&fixture_bin).expect("create fixture bin");
                 let fixture_marker = state_home.path().join("jobagent-command-order");
+                let fixture_version = state_home.path().join("jobagent-version");
                 let fixture_jobagent = fixture_bin.join("jobagent");
+                std::fs::write(&fixture_version, "jobagent 0.5.5\n")
+                    .expect("write outdated Job Agent version fixture");
+                let fixture_upgrade = serde_json::json!({
+                    "ok": true,
+                    "event": "client_command_resumed",
+                    "next_suggested": "fixture-upgrade-ready"
+                });
                 let fixture_state = serde_json::json!({
                     "environment_healthy": true,
                     "cloud_access": {"usable": true, "paid_pass_required": false},
@@ -2988,30 +3033,41 @@ mod tests {
                         "#!/bin/sh\n\
                          if [ \"$1\" = --version ]; then\n\
                            /usr/bin/printf 'version\\n' >> '{}';\n\
-                           /usr/bin/printf '%s\\n' 'jobagent 0.5.5-fixture';\n\
+                           /bin/cat '{}';\n\
                            exit 0;\n\
                          fi\n\
-                         if [ \"$1\" != doctor ] || [ \"$2\" != env ]; then exit 64; fi\n\
+                         if [ \"$1\" = upgrade-check ]; then\n\
+                           /usr/bin/printf 'upgrade\\n' >> '{}';\n\
+                           /usr/bin/printf '%s\\n' '{}';\n\
+                           exit 0;\n\
+                         fi\n\
+                         if [ \"$1\" != doctor ] || [ \"$2\" != env ]; then\n\
+                           /usr/bin/printf 'unexpected:%s %s\\n' \"$1\" \"$2\" >> '{}';\n\
+                           exit 64;\n\
+                         fi\n\
                          /usr/bin/printf 'doctor\\n' >> '{}'\n\
                          /usr/bin/printf '%s\\n' '{}'\n",
+                        fixture_marker.display(),
+                        fixture_version.display(),
+                        fixture_marker.display(),
+                        fixture_upgrade,
                         fixture_marker.display(),
                         fixture_marker.display(),
                         fixture_state
                     ),
                 )
                 .expect("write isolated jobagent fixture");
-                std::fs::set_permissions(
-                    &fixture_jobagent,
-                    std::fs::Permissions::from_mode(0o755),
-                )
-                .expect("make isolated jobagent fixture executable");
+                std::fs::set_permissions(&fixture_jobagent, std::fs::Permissions::from_mode(0o755))
+                    .expect("make isolated jobagent fixture executable");
                 let version_command = format!("'{}' --version", fixture_jobagent.display());
+                let upgrade_command = format!("'{}' upgrade-check", fixture_jobagent.display());
                 let doctor_command = format!("'{}' doctor env", fixture_jobagent.display());
 
                 let (core_base_url, core) = serve_bootstrap_once().await;
                 let (provider_base_url, mut provider_requests, provider_task) =
                     serve_job_onboarding_provider_requests(
                         version_command.clone(),
+                        upgrade_command.clone(),
                         doctor_command.clone(),
                     )
                     .await;
@@ -3111,20 +3167,118 @@ mod tests {
                 tokio::time::timeout(
                     Duration::from_secs(45),
                     agent.prompt(acp::PromptRequest::new(
-                        acp::SessionId::new(session_id),
+                        acp::SessionId::new(session_id.clone()),
                         vec![acp::ContentBlock::from("你好，你是谁？")],
                     )),
                 )
                 .await
-                .expect("Job onboarding Prompt timed out")
-                .expect("Job onboarding Prompt response");
+                .expect("outdated Job Agent Prompt timed out")
+                .expect("outdated Job Agent Prompt response");
+                let mut outdated_reply = String::new();
+                tokio::time::timeout(Duration::from_secs(5), async {
+                    while !outdated_reply.contains("官方更新") {
+                        let notification = notifications
+                            .recv()
+                            .await
+                            .expect("outdated Job Agent notification channel closed");
+                        if let acp::SessionUpdate::AgentMessageChunk(chunk) = notification.update {
+                            if let acp::ContentBlock::Text(text) = chunk.content {
+                                outdated_reply.push_str(&text.text);
+                            }
+                        }
+                    }
+                })
+                .await
+                .expect("outdated Job Agent warning was not delivered to the client");
+                assert!(outdated_reply.contains("0.5.5"));
+                assert!(outdated_reply.contains("最低要求 0.5.6"));
+                assert!(outdated_reply.contains("停止状态探针和猎聘操作"));
+                let first = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("outdated initial Provider request timed out")
+                    .expect("outdated initial Provider request");
+                let second = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("outdated version-result Provider request timed out")
+                    .expect("outdated version-result Provider request");
+                for (authorization, _) in [&first, &second] {
+                    assert_eq!(authorization, "Bearer sentinel-job-onboarding-secret");
+                }
+                assert_eq!(
+                    std::fs::read_to_string(&fixture_marker).ok().as_deref(),
+                    Some("version\n"),
+                    "an outdated CLI must block upgrade-check, doctor and all platform commands"
+                );
+                assert!(first.1.contains("<resolved-jobagent> doctor env"));
+                assert!(first.1.contains("not a general chat assistant"));
+                assert!(first.1.contains("jobagent 0.5.6"));
+                assert!(first.1.contains("<resolved-jobagent> upgrade-check"));
+                assert!(first.1.contains("liepin_city_code_not_found"));
+                assert!(second.1.contains("call_jobagent_version"));
+                assert!(second.1.contains(&version_command));
+
+                let resident_session_id = acp::SessionId::new(session_id.clone());
+                let before = agent
+                    .agentmesh360
+                    .registry()
+                    .get(41, "job-agent")
+                    .expect("activated Job Agent before Package upgrade");
+                let before_workspace = before.workspace_dir.clone();
+                let mut legacy_definition = agent
+                    .agentmesh360
+                    .registry()
+                    .agent_definition("job-agent")
+                    .expect("current Job Agent definition");
+                legacy_definition.prompt_body = Some("LEGACY_JOB_AGENT_0_4_8".into());
+                let legacy_revision = AppliedAgentDefinitionRevision::from_definition(
+                    "0.4.8",
+                    (0, 0),
+                    &legacy_definition,
+                )
+                .expect("legacy 0.4.8 Job Agent revision");
+                let resident_cmd_tx = agent
+                    .sessions
+                    .borrow()
+                    .get(&resident_session_id)
+                    .expect("resident Job Agent session")
+                    .cmd_tx
+                    .clone();
+                let (legacy_responds_to, legacy_response) = tokio::sync::oneshot::channel();
+                resident_cmd_tx
+                    .send(crate::session::SessionCommand::RebuildAgentForDefinition {
+                        definition: legacy_definition,
+                        responds_to: legacy_responds_to,
+                    })
+                    .expect("request legacy 0.4.8 Harness fixture");
+                legacy_response
+                    .await
+                    .expect("legacy Harness actor response")
+                    .expect("install legacy 0.4.8 Harness fixture");
+                agent
+                    .agentmesh360
+                    .mark_agent_definition_applied(&resident_session_id, legacy_revision);
+                std::fs::write(&fixture_version, "jobagent 0.5.6\n")
+                    .expect("promote isolated Job Agent fixture to 0.5.6");
+
+                tokio::time::timeout(
+                    Duration::from_secs(45),
+                    agent.prompt(acp::PromptRequest::new(
+                        resident_session_id.clone(),
+                        vec![acp::ContentBlock::from(
+                            "更新完成，请在同一个会话继续刚才的工作。",
+                        )],
+                    )),
+                )
+                .await
+                .expect("upgraded persistent Job Agent Prompt timed out")
+                .expect("upgraded persistent Job Agent Prompt response");
                 let mut visible_reply = String::new();
                 tokio::time::timeout(Duration::from_secs(5), async {
                     while !visible_reply.contains("不会自动投递") {
                         let notification = notifications
                             .recv()
                             .await
-                            .expect("Job onboarding notification channel closed");
+                            .expect("upgraded Job Agent notification channel closed");
                         if let acp::SessionUpdate::AgentMessageChunk(chunk) = notification.update {
                             if let acp::ContentBlock::Text(text) = chunk.content {
                                 visible_reply.push_str(&text.text);
@@ -3133,75 +3287,64 @@ mod tests {
                     }
                 })
                 .await
-                .expect("final Job onboarding reply was not delivered to the client");
+                .expect("upgraded Job Agent reply was not delivered to the client");
                 assert!(visible_reply.contains("PDF、DOCX、TXT 或 Markdown 简历"));
                 assert!(visible_reply.contains("不会自动投递"));
-                for generic_copy in ["我可以帮你做这些事情", "建立职业档案", "你想做什么"] {
+                for generic_copy in ["我可以帮你做这些事情", "建立职业档案", "你想做什么"]
+                {
                     assert!(
                         !visible_reply.contains(generic_copy),
-                        "first Job Agent reply regressed to a generic menu: {visible_reply}"
+                        "upgraded Job Agent reply regressed to a generic menu: {visible_reply}"
                     );
                 }
-                let first = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+
+                let third = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
                     .await
-                    .expect("first onboarding Provider request timed out")
-                    .expect("first onboarding Provider request");
-                let second =
-                    tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
-                        .await
-                        .expect("second onboarding Provider request timed out")
-                        .expect("second onboarding Provider request");
-                let third = tokio::time::timeout(
-                    Duration::from_secs(5),
-                    provider_requests.recv(),
-                )
-                .await
-                .expect("third onboarding Provider request timed out")
-                .expect("third onboarding Provider request");
-                for (authorization, _) in [&first, &second, &third] {
-                    assert_eq!(
-                        authorization,
-                        "Bearer sentinel-job-onboarding-secret"
-                    );
+                    .expect("upgraded initial Provider request timed out")
+                    .expect("upgraded initial Provider request");
+                let fourth = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("current version-result Provider request timed out")
+                    .expect("current version-result Provider request");
+                let fifth = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("upgrade-result Provider request timed out")
+                    .expect("upgrade-result Provider request");
+                let sixth = tokio::time::timeout(Duration::from_secs(5), provider_requests.recv())
+                    .await
+                    .expect("doctor-result Provider request timed out")
+                    .expect("doctor-result Provider request");
+                for (authorization, _) in [&third, &fourth, &fifth, &sixth] {
+                    assert_eq!(authorization, "Bearer sentinel-job-onboarding-secret");
                 }
-                if std::fs::read_to_string(&fixture_marker).ok().as_deref()
-                    != Some("version\ndoctor\n")
-                {
-                    let first_json: serde_json::Value =
-                        serde_json::from_str(&first.1).expect("first onboarding request JSON");
-                    let tool_names = first_json["tools"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|tool| tool["name"].as_str())
-                        .collect::<Vec<_>>();
-                    let second_json: serde_json::Value =
-                        serde_json::from_str(&second.1).expect("second onboarding request JSON");
-                    let third_json: serde_json::Value =
-                        serde_json::from_str(&third.1).expect("third onboarding request JSON");
-                    let relevant_inputs = third_json["input"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
-                        .filter(|item| item.to_string().contains("call_jobagent_doctor"))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    panic!(
-                        "the first Job Agent turn did not execute version then state probe; tools={tool_names:?}; relevant_inputs={relevant_inputs:?}"
-                    );
-                }
-                assert!(first.1.contains("<resolved-jobagent> doctor env"));
-                assert!(first.1.contains("not a general chat assistant"));
-                assert!(second.1.contains("call_jobagent_version"));
-                assert!(second.1.contains(&version_command));
-                assert!(third.1.contains("fixture-upload-resume"));
-                assert!(third.1.contains("call_jobagent_doctor"));
-                assert!(third.1.contains(&doctor_command));
+                assert_eq!(
+                    std::fs::read_to_string(&fixture_marker).ok().as_deref(),
+                    Some("version\nversion\nupgrade\ndoctor\n")
+                );
+                assert!(third.1.contains("jobagent 0.5.6"));
+                assert!(third.1.contains("liepin_city_code_not_found"));
+                assert!(!third.1.contains("LEGACY_JOB_AGENT_0_4_8"));
+                assert!(third.1.contains("低于最低要求 0.5.6"));
+                assert!(fourth.1.contains("call_jobagent_version_current"));
+                assert!(fourth.1.contains(&version_command));
+                assert!(fifth.1.contains("call_jobagent_upgrade"));
+                assert!(fifth.1.contains(&upgrade_command));
+                assert!(fifth.1.contains("client_command_resumed"));
+                assert!(sixth.1.contains("call_jobagent_doctor"));
+                assert!(sixth.1.contains(&doctor_command));
+                assert!(sixth.1.contains("fixture-upload-resume"));
+                let after = agent
+                    .agentmesh360
+                    .registry()
+                    .get(41, "job-agent")
+                    .expect("activated Job Agent after Package upgrade");
+                assert_eq!(after.main_session_id.as_deref(), Some(session_id.as_str()));
+                assert_eq!(after.workspace_dir, before_workspace);
                 assert!(
                     tokio::time::timeout(Duration::from_millis(200), provider_requests.recv())
                         .await
                         .is_err(),
-                    "one first-turn state probe must not create an unbounded Provider loop"
+                    "version recovery must not create an unbounded Provider loop"
                 );
 
                 provider_task.abort();
@@ -3387,8 +3530,12 @@ mod tests {
                 );
                 for runtime_contract in [
                     "not a general chat assistant",
+                    "jobagent 0.5.6",
                     "<resolved-jobagent> doctor env",
+                    "<resolved-jobagent> upgrade-check",
                     "jobagent resume analyze --file <resume-path>",
+                    "liepin_city_code_not_found",
+                    "not as `no_candidates`",
                     "Do not answer a first greeting with a generic capability menu",
                 ] {
                     assert!(
@@ -3420,7 +3567,7 @@ mod tests {
                 legacy_definition.prompt_body =
                     Some("LEGACY_GENERIC_JOB_AGENT_PROMPT".to_string());
                 let legacy_revision = AppliedAgentDefinitionRevision::from_definition(
-                    "0.4.7",
+                    "0.4.8",
                     (0, 0),
                     &legacy_definition,
                 )
@@ -3469,6 +3616,8 @@ mod tests {
                     "Bearer sentinel-provider-secret-5678"
                 );
                 assert!(upgraded_request_body.contains("<resolved-jobagent> doctor env"));
+                assert!(upgraded_request_body.contains("jobagent 0.5.6"));
+                assert!(upgraded_request_body.contains("liepin_city_code_not_found"));
                 assert!(upgraded_request_body.contains(
                     "Do not answer a first greeting with a generic capability menu"
                 ));
