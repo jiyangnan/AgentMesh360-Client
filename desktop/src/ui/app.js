@@ -749,6 +749,13 @@ function conversationView() {
       : composerIntent === 'now'
         ? '立即执行'
         : '发送';
+  const intentLabel = composerIntent === 'adjust'
+    ? '调整当前任务'
+    : composerIntent === 'queue'
+      ? '排队等待'
+      : composerIntent === 'now'
+        ? '立即执行'
+        : '普通发送';
   const gates = `${conversationUi.error ? `
     <div class="conversation-error" role="alert">
       <span>${escapeHtml(conversationUi.error)}</span>
@@ -793,6 +800,8 @@ function conversationView() {
           data-session-key="main"
           data-composer-enabled="${composerDisabled ? 'false' : 'true'}"
           data-composer-mode="${escapeHtml(composerIntent)}"
+          data-composer-layout="unified"
+          aria-label="给 ${escapeHtml(displayName)} 发送消息"
         >
           ${pasteCards.length ? conversationPasteCardsView(pasteCards) : ''}
           ${visibleDraftAttachments.length ? `
@@ -800,32 +809,7 @@ function conversationView() {
               ${visibleDraftAttachments.map(conversationAttachmentChip).join('')}
             </div>` : ''}
           <div class="composer-entry-row">
-            <div class="composer-tool-wrap">
-              <button
-                class="composer-tool-button"
-                id="composer-add-button"
-                type="button"
-                aria-label="添加图片、文件或链接"
-                aria-haspopup="menu"
-                aria-expanded="false"
-                ${composerDisabled ? 'disabled' : ''}
-              >+</button>
-              <div class="composer-tool-menu" id="composer-tool-menu" role="menu" hidden>
-                <button type="button" role="menuitem" id="composer-pick-files">
-                  <i aria-hidden="true">↥</i><span><strong>图片或文件</strong><small>选择、拖放或粘贴，最多 10 个</small></span>
-                </button>
-                <button type="button" role="menuitem" id="composer-add-link">
-                  <i aria-hidden="true">↗</i><span><strong>网页链接</strong><small>把网址作为上下文交给 Agent</small></span>
-                </button>
-                <button type="button" role="menuitem" id="composer-authorize-workspace">
-                  <i aria-hidden="true">@</i><span><strong>授权工作文件夹</strong><small>允许当前 Agent 引用你选择的文件</small></span>
-                </button>
-                <button type="button" role="menuitem" id="composer-prompt-history">
-                  <i aria-hidden="true">↺</i><span><strong>历史消息</strong><small>找回这个 Agent 主会话中的输入</small></span>
-                </button>
-              </div>
-            </div>
-            <textarea name="message" maxlength="16000" rows="2" placeholder="${modelBlocked
+            <textarea name="message" maxlength="16000" rows="2" aria-label="消息内容" placeholder="${modelBlocked
     ? '请先重新选择可用模型…'
     : composerIntent === 'adjust'
       ? '继续补充要求，Agent 会在当前任务中调整方向…'
@@ -834,7 +818,6 @@ function conversationView() {
         : composerIntent === 'now'
           ? '这条消息会立即执行，并打断当前任务…'
       : '继续上次的工作，或告诉这个 Agent 你现在需要什么…'}" ${composerDisabled ? 'disabled' : ''}></textarea>
-            <button class="composer-dictation-button" type="button" aria-label="本机听写" title="本机听写" ${composerDisabled ? 'disabled' : ''}>◉</button>
           </div>
           <div class="composer-suggestions" id="composer-suggestions" role="listbox" hidden></div>
           <div class="composer-link-entry" id="composer-link-entry" hidden>
@@ -853,17 +836,53 @@ function conversationView() {
     : draftAttachments.some((attachment) => attachment.kind === 'image')
       ? '图片会交给当前模型；能否理解取决于该模型的视觉能力'
       : '附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360'}</span>
-            <div class="composer-actions">
-              ${sending ? `<button class="ghost composer-stop" type="button" ${cancelling ? 'disabled aria-busy="true"' : ''}>${cancelling ? '正在停止…' : '停止当前任务'}</button>` : ''}
-              <div class="composer-submit-wrap">
-                <button class="secondary composer-send" type="submit" ${composerDisabled || !canSubmitWithoutTextarea ? 'disabled' : ''}>${submitLabel}</button>
-                ${sending ? `
-                  <button class="secondary composer-intent-toggle" type="button" aria-label="选择发送方式" aria-haspopup="menu" aria-expanded="false">⌄</button>
+            <div class="composer-toolbar-tools">
+              <div class="composer-tool-wrap">
+                <button
+                  class="composer-tool-button"
+                  id="composer-add-button"
+                  type="button"
+                  aria-label="添加图片、文件或链接"
+                  title="添加图片、文件或链接"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                  ${composerDisabled ? 'disabled' : ''}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <div class="composer-tool-menu" id="composer-tool-menu" role="menu" hidden>
+                  <button type="button" role="menuitem" id="composer-pick-files">
+                    <i aria-hidden="true">↥</i><span><strong>图片或文件</strong><small>选择、拖放或粘贴，最多 10 个</small></span>
+                  </button>
+                  <button type="button" role="menuitem" id="composer-add-link">
+                    <i aria-hidden="true">↗</i><span><strong>网页链接</strong><small>把网址作为上下文交给 Agent</small></span>
+                  </button>
+                  <button type="button" role="menuitem" id="composer-authorize-workspace">
+                    <i aria-hidden="true">@</i><span><strong>授权工作文件夹</strong><small>允许当前 Agent 引用你选择的文件</small></span>
+                  </button>
+                  <button type="button" role="menuitem" id="composer-prompt-history">
+                    <i aria-hidden="true">↺</i><span><strong>历史消息</strong><small>找回这个 Agent 主会话中的输入</small></span>
+                  </button>
+                </div>
+              </div>
+              ${sending ? `
+                <div class="composer-intent-wrap">
+                  <button class="composer-intent-toggle" type="button" aria-label="选择发送方式，当前为${escapeHtml(intentLabel)}" title="选择发送方式" aria-haspopup="menu" aria-expanded="false">
+                    <strong>${escapeHtml(intentLabel)}</strong>
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6.5 8 3.5 3.5L13.5 8"/></svg>
+                  </button>
                   <div class="composer-intent-menu" role="menu" hidden>
                     <button type="button" role="menuitemradio" aria-checked="${composerIntent === 'adjust'}" data-composer-intent="adjust"><strong>调整当前任务</strong><small>把要求加入正在执行的工作</small></button>
                     <button type="button" role="menuitemradio" aria-checked="${composerIntent === 'queue'}" data-composer-intent="queue"><strong>排队等待</strong><small>当前任务结束后按顺序执行</small></button>
                     <button type="button" role="menuitemradio" aria-checked="${composerIntent === 'now'}" data-composer-intent="now"><strong>立即执行</strong><small>打断当前任务并优先处理</small></button>
-                  </div>` : ''}
+                  </div>
+                </div>` : ''}
+            </div>
+            <div class="composer-actions">
+              ${sending ? `<button class="composer-stop" type="button" aria-label="${cancelling ? '正在停止当前任务' : '停止当前任务'}" title="${cancelling ? '正在停止…' : '停止当前任务'}" ${cancelling ? 'disabled aria-busy="true"' : ''}><span class="visually-hidden">${cancelling ? '正在停止…' : '停止当前任务'}</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="8" height="8" rx="1.5"/></svg></button>` : ''}
+              <button class="composer-dictation-button" type="button" aria-label="本机听写" title="本机听写" ${composerDisabled ? 'disabled' : ''}><span class="visually-hidden">本机听写</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 0 0 3.5-3.5V7a3.5 3.5 0 1 0-7 0v5a3.5 3.5 0 0 0 3.5 3.5Z"/><path d="M5.5 11.5v.5a6.5 6.5 0 0 0 13 0v-.5M12 18.5V22M9 22h6"/></svg></button>
+              <div class="composer-submit-wrap">
+                <button class="composer-send" type="submit" aria-label="${escapeHtml(submitLabel)}" title="${escapeHtml(submitLabel)}" ${composerDisabled || !canSubmitWithoutTextarea ? 'disabled' : ''}><span class="visually-hidden">${escapeHtml(submitLabel)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6.5 10.5 12 5l5.5 5.5"/></svg></button>
               </div>
             </div>
           </div>

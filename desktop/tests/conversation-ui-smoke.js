@@ -447,12 +447,23 @@ app.whenReady().then(async () => {
     const messageBody = document.querySelector('.conversation-message-body');
     const sender = document.querySelector('.conversation-message b');
     const composer = document.querySelector('#conversation-form textarea');
+    const composerForm = document.getElementById('conversation-form');
     const composerAdd = document.getElementById('composer-add-button');
+    const composerDictation = document.querySelector('.composer-dictation-button');
+    const composerSend = document.querySelector('.composer-send');
+    const composerFooter = document.querySelector('.composer-footer');
     const state = document.querySelector('.conversation-state');
     const gearRect = gear.getBoundingClientRect();
     const sidebarRect = sidebar.getBoundingClientRect();
     const railRect = rail.getBoundingClientRect();
     const mainRect = main.getBoundingClientRect();
+    const composerRect = composerForm.getBoundingClientRect();
+    const composerEntryRect = document.querySelector('.composer-entry-row').getBoundingClientRect();
+    const composerFooterRect = composerFooter.getBoundingClientRect();
+    const composerSendRect = composerSend.getBoundingClientRect();
+    const composerStyle = getComputedStyle(composerForm);
+    const composerInputStyle = getComputedStyle(composer);
+    const composerSendStyle = getComputedStyle(composerSend);
     return {
       body: document.body.innerText,
       messages: document.querySelectorAll('.conversation-message').length,
@@ -480,8 +491,24 @@ app.whenReady().then(async () => {
       messageFont: parseFloat(getComputedStyle(messageBody).fontSize),
       senderFont: parseFloat(getComputedStyle(sender).fontSize),
       composerFont: parseFloat(getComputedStyle(composer).fontSize),
+      composerLayout: composerForm.dataset.composerLayout,
+      composerRadius: parseFloat(composerStyle.borderRadius),
+      composerBackground: composerStyle.backgroundImage,
+      composerInputBorder: parseFloat(composerInputStyle.borderTopWidth),
+      composerInputBackground: composerInputStyle.backgroundColor,
+      composerEntryBeforeToolbar: composerEntryRect.bottom <= composerFooterRect.top + 1,
+      composerFooterInside: composerFooterRect.bottom <= composerRect.bottom + 1,
       composerAddWidth: composerAdd.getBoundingClientRect().width,
       composerAddHeight: composerAdd.getBoundingClientRect().height,
+      composerAddLabel: composerAdd.getAttribute('aria-label'),
+      composerDictationLabel: composerDictation.getAttribute('aria-label'),
+      composerSendLabel: composerSend.getAttribute('aria-label'),
+      composerSendTitle: composerSend.getAttribute('title'),
+      composerSendWidth: composerSendRect.width,
+      composerSendHeight: composerSendRect.height,
+      composerSendRadius: parseFloat(composerSendStyle.borderRadius),
+      composerSendHasArrow: composerSend.querySelector('svg') !== null,
+      composerSendHasHiddenLabel: composerSend.querySelector('.visually-hidden')?.textContent,
       composerMenuHidden: document.getElementById('composer-tool-menu').hidden,
       composerPrivacyCopy: document.querySelector('.composer-footer span')?.textContent.trim(),
       stateFont: parseFloat(getComputedStyle(state).fontSize),
@@ -523,8 +550,23 @@ app.whenReady().then(async () => {
   assert.equal(openedDom.messageFont >= 14 && openedDom.messageFont < 15, true);
   assert.equal(openedDom.senderFont >= 12, true);
   assert.equal(openedDom.composerFont >= 15, true);
+  assert.equal(openedDom.composerLayout, 'unified');
+  assert.equal(openedDom.composerRadius >= 28, true);
+  assert.equal(openedDom.composerBackground.includes('linear-gradient'), true);
+  assert.equal(openedDom.composerInputBorder, 0);
+  assert.equal(openedDom.composerInputBackground, 'rgba(0, 0, 0, 0)');
+  assert.equal(openedDom.composerEntryBeforeToolbar, true);
+  assert.equal(openedDom.composerFooterInside, true);
   assert.equal(openedDom.composerAddWidth >= 40, true);
   assert.equal(openedDom.composerAddHeight >= 40, true);
+  assert.equal(openedDom.composerAddLabel, '添加图片、文件或链接');
+  assert.equal(openedDom.composerDictationLabel, '本机听写');
+  assert.equal(openedDom.composerSendLabel, '发送');
+  assert.equal(openedDom.composerSendTitle, '发送');
+  assert.equal(Math.abs(openedDom.composerSendWidth - openedDom.composerSendHeight) <= 1, true);
+  assert.equal(openedDom.composerSendRadius >= openedDom.composerSendWidth / 2 - 1, true);
+  assert.equal(openedDom.composerSendHasArrow, true);
+  assert.equal(openedDom.composerSendHasHiddenLabel, '发送');
   assert.equal(openedDom.composerMenuHidden, true);
   assert.equal(
     openedDom.composerPrivacyCopy,
@@ -1631,13 +1673,24 @@ app.whenReady().then(async () => {
   assert.deepEqual(cancellations, ['job-agent']);
   assert.deepEqual(await window.webContents.executeJavaScript(`({
     text: document.querySelector('.composer-stop')?.innerText,
+    ariaLabel: document.querySelector('.composer-stop')?.getAttribute('aria-label'),
+    title: document.querySelector('.composer-stop')?.getAttribute('title'),
     disabled: document.querySelector('.composer-stop')?.disabled,
     busy: document.querySelector('.composer-stop')?.getAttribute('aria-busy'),
+    round: (() => {
+      const rect = document.querySelector('.composer-stop')?.getBoundingClientRect();
+      return rect ? Math.abs(rect.width - rect.height) <= 1 : false;
+    })(),
+    hasSquare: document.querySelector('.composer-stop svg rect') !== null,
     activity: document.querySelector('.conversation-typing span')?.innerText,
   })`), {
     text: '正在停止…',
+    ariaLabel: '正在停止当前任务',
+    title: '正在停止…',
     disabled: true,
     busy: 'true',
+    round: true,
+    hasSquare: true,
     activity: '正在停止当前任务…',
   });
   await window.webContents.executeJavaScript(
@@ -1676,6 +1729,9 @@ app.whenReady().then(async () => {
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.composer-stop')?.innerText === '停止当前任务'",
   ));
+  assert.equal(await window.webContents.executeJavaScript(
+    "document.querySelector('.composer-stop')?.getAttribute('aria-label')",
+  ), '停止当前任务');
 
   await window.webContents.executeJavaScript(
     "document.querySelector('.composer-intent-toggle').click();"

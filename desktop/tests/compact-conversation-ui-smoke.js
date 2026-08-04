@@ -215,6 +215,8 @@ app.whenReady().then(async () => {
       const textarea = form?.elements.message;
       const attachmentStrip = document.querySelector('.composer-attachment-strip');
       const messageBody = document.querySelector('.conversation-message.assistant .conversation-message-body');
+      const footer = document.querySelector('.composer-footer');
+      const send = document.querySelector('.composer-send');
       const rect = (node) => {
         const value = node.getBoundingClientRect();
         return { top: value.top, bottom: value.bottom, height: value.height };
@@ -238,6 +240,13 @@ app.whenReady().then(async () => {
         transcriptOverflowY: getComputedStyle(transcript).overflowY,
         messageFont: parseFloat(getComputedStyle(messageBody).fontSize),
         composerFont: parseFloat(getComputedStyle(textarea).fontSize),
+        composerLayout: form.dataset.composerLayout,
+        composerRadius: parseFloat(getComputedStyle(form).borderRadius),
+        composerFooterHeight: footer.getBoundingClientRect().height,
+        composerFooterBottom: footer.getBoundingClientRect().bottom,
+        composerSendWidth: send.getBoundingClientRect().width,
+        composerSendHeight: send.getBoundingClientRect().height,
+        composerSendLabel: send.getAttribute('aria-label'),
         attachmentCount: document.querySelectorAll('.composer-attachment-chip').length,
         attachmentStripHeight: attachmentStrip.getBoundingClientRect().height,
         attachmentStripClientWidth: attachmentStrip.clientWidth,
@@ -270,6 +279,12 @@ app.whenReady().then(async () => {
     assert.equal(['auto', 'scroll'].includes(metrics.transcriptOverflowY), true);
     assert.equal(metrics.messageFont >= 14 && metrics.messageFont < 15, true);
     assert.equal(metrics.composerFont >= 15, true);
+    assert.equal(metrics.composerLayout, 'unified');
+    assert.equal(metrics.composerRadius >= 28, true);
+    assert.equal(metrics.composerFooterHeight <= 44, true);
+    assert.equal(metrics.composerFooterBottom <= metrics.form.bottom + 1, true);
+    assert.equal(Math.abs(metrics.composerSendWidth - metrics.composerSendHeight) <= 1, true);
+    assert.equal(metrics.composerSendLabel, '发送');
     assert.equal(metrics.attachmentCount, 10);
     assert.equal(metrics.attachmentStripHeight < 55, true);
     assert.equal(metrics.attachmentStripScrollWidth > metrics.attachmentStripClientWidth, true);

@@ -40,7 +40,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 安装和启动 | 安装内部版并稳定打开 | TC-INSTALL-001 ～ 003 |
 | 登录和订阅 | 用真实账号进入，失效时正确拦截 | TC-AUTH-001 ～ 004、TC-ACCESS-001 ～ 004 |
 | 持久 Agent | 激活后长期找到同一个 Agent，并管理其模型、行为与产品首轮接管 | TC-AGENT-001 ～ 007、TC-MODEL-001 ～ 006、TC-OVERLAY-001 ～ 005 |
-| 对话和工作区 | 对话、附件、连续输入、队列、命令、Skill、工作文件、历史、粘贴、听写与可确认停止不断档 | TC-CONV-001 ～ 026 |
+| 对话和工作区 | 对话、附件、连续输入、队列、命令、Skill、工作文件、历史、粘贴、听写与可确认停止不断档 | TC-CONV-001 ～ 027 |
 | BYOK Provider | 添加、验证、测试和管理模型供应商 | TC-PROVIDER-001 ～ 013 |
 | Agent Package | 在无公开入口阶段持续验证安全发现、安装、更新与回滚底层 | TC-PACKAGE-001 ～ 006 |
 | 后台 Host 和设置 | UI 关闭仍工作，设置结构清楚且故障可恢复 | TC-HOST-001 ～ 007、TC-SETTINGS-001 |
@@ -58,7 +58,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 | 左侧导航与引导 | Agent、模型供应商、设置、Host 状态、三步引导 | 默认落点、切页、Host 三态、恢复引导 | Electron；TC-NAV-001～003、TC-GUIDE-001 |
 | Agent 列表 | 管理、激活、失效修复；不展示尚不可兑现的新增入口 | 已激活、未激活、模型失效、零 Agent、公开新增入口缺席 | Node + Electron；TC-AGENT-001～006 |
 | Agent 产品接管 | Job Agent 按真实业务状态进入下一步；Package 升级后旧主会话保留历史并采用新定义 | 无 Key、Key 有效但无简历、已有画像、已有轮次、旧会话定义升级、非 Job 隔离 | Rust + fake Provider；TC-AGENT-007 |
-| Agent 对话 | Agent/会话二级栏、多内容 Composer、四种运行态意图、权威 Queue、独立停止、`/`、`$`、`@`、历史、粘贴卡、听写、齿轮设置、权限确认、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、停止完成/失败/重复点击/Queue 并发、Agent 切换草稿、重启恢复、危险命令、路径越界、异步旧响应、听写披露、不自动发送、字号与布局 | Node + Electron + Rust；TC-CONV-001～026 |
+| Agent 对话 | Agent/会话二级栏、多内容 Composer、四种运行态意图、权威 Queue、独立停止、`/`、`$`、`@`、历史、粘贴卡、听写、齿轮设置、权限确认、活动/计划/产物 | 文字/图片/文件/链接、拖放/粘贴、流式、停止完成/失败/重复点击/Queue 并发、Agent 切换草稿、重启恢复、危险命令、路径越界、异步旧响应、听写披露、不自动发送、统一输入层级、字号与布局 | Node + Electron + Rust；TC-CONV-001～027 |
 | Agent 模型 | Provider/模型应用内下拉、保存、激活确认 | 已绑定切换、常驻但未绑定、失效绑定、零/单/多 Provider、保存失败、本 Agent Turn 锁定、异步响应归属 | Node + Electron + Rust；TC-MODEL-001～006 |
 | 行为 `agent.md` | 编辑、保存、恢复默认、冲突处理 | 草稿、8000/8001 字符、秘密拒绝、revision 冲突、Turn 锁定 | Node + Electron + Rust；TC-OVERLAY-001～005 |
 | 偏好 `user.md` | 编辑、保存、恢复默认、冲突处理 | 账户+Agent 隔离、草稿、秘密拒绝、账号切换清理 | Node + Electron + Rust；TC-OVERLAY-001～005 |
@@ -1043,6 +1043,29 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **验证层**：Rust + Node + Electron + 四档紧凑布局
 - **本轮结果**：通过
 
+## TC-CONV-027：统一 Composer 的视觉层级与完整能力
+
+- **用户故事**：作为持续使用客户端的用户，我希望输入框像一个安静、完整的工作面板，能
+  直接看懂哪里写内容、哪里添加上下文、哪里发送；丰富能力不能把它变成多层表单。
+- **优先级**：P0
+- **设计状态**：已实现
+- **前置条件**：已打开持久 Agent 主会话；分别覆盖空闲、运行中、十个附件、建议浮层、停止
+  中，以及 1180×760、1280×768、1280×800、1440×900 四档视口。
+- **输入**：空草稿、文字、图片/文件/链接、运行中三种发送意图、本机听写、停止、键盘焦点、
+  Hover、Disabled 和附件错误。
+- **交互步骤**：进入对话；点击“＋”添加上下文；输入文字；在运行态切换调整/排队/立即执行；
+  点击听写、发送或停止；用键盘遍历按钮；在四档视口重复并打开最长浮层。
+- **预期输出**：Composer 是一个 `data-composer-layout="unified"` 的大圆角单体容器；上层输入
+  无独立边框和底色，下层工具栏左侧为“＋”与按需出现的发送意图，右侧为停止、听写和圆形
+  箭头发送；每个图标都有稳定中文 `aria-label`/title，发送与停止仍保留可测试文本名称；隐私
+  文案精确为“附件仅在本机暂存，发送时交给当前模型；不会上传到 AgentMesh360”。全部附件、
+  命令、Skill、工作文件、历史、粘贴、听写、Queue、草稿和 Cancel 行为保持不变。
+- **失败与恢复**：模型未绑定、附件失败或 Host 失败继续显示原有安全错误；Disabled 不能触发
+  发送；视觉改版不能丢草稿、重复消息、阻塞 Agent 切换、把浮层或 Composer 推出视口，也不能
+  暴露 Core、Host、Session、路径或 Key。
+- **验证层**：Node + Electron + visual smoke + 四档紧凑布局 + 安装包
+- **本轮结果**：通过
+
 ## 8. BYOK Provider
 
 ## TC-PROVIDER-001：十个官方 Provider 入口与自动配置
@@ -1823,3 +1846,20 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   当前安装或 Login Item，也不把该项登记为通过。Downloads 现在只保留
   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-75b225b-arm64`，旧包与
   临时构建缓存均已清理；owner 覆盖安装后的真实按钮 UAT 是唯一后续人工确认。
+
+### 2026-08-04 单体 Composer 视觉重设计执行（打包前）
+
+- 新增 `TC-CONV-027` 后，产品旅程共 `90` 条、`14` 个领域，验证器 `3/3`，结构与所有显式
+  执行结果通过；
+- Conversation Electron 真实点击通过：单体容器、无内层输入边框、添加/听写/发送中文
+  ARIA、圆形箭头、运行意图、停止方块和隐藏文本名称均被断言；附件、链接、Queue、停止防重、
+  Agent 切换与失败草稿恢复无回退；
+- 四档内容视口 1180×760、1280×768、1280×800、1440×900 全部通过；十附件状态下 Composer
+  高 209px、Footer 高 42px，bottom 分别为 742、750、782、882px，Transcript 独立滚动；
+- 1180×760 visual smoke 通过 30px 外圆角、透明无边框输入画布、15px 输入字号和 42×42
+  圆形发送断言；Desktop 全量 Node `232 total / 227 passed / 0 failed / 5 skipped`，5 条仍为
+  显式打包 Host 门禁；syntax 与 `git diff --check` 通过；
+- 测试使用 fake Host 与本机隔离状态：真实 Provider/Job/Core 请求 0、Key 读取 0、消息发送
+  0、credits 0、麦克风 0、外部上传 0、费用 $0；本轮按用户要求未使用 Kimi；
+- 当前为打包前记录。新包必须来自 clean pushed 产品 commit，receipt、SHA、DMG、ZIP、包内
+  Host 与唯一包留存全部通过后，才可把旧 `75b225b` 包替换并回填交付证据。

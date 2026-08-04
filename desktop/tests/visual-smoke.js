@@ -351,6 +351,8 @@ async function assertConversationVisual(window) {
     const gear = document.getElementById('agent-settings-button');
     const messageBody = document.querySelector('.conversation-message-body');
     const composer = document.querySelector('#conversation-form textarea');
+    const composerForm = document.getElementById('conversation-form');
+    const composerSend = document.querySelector('.composer-send');
     const state = document.querySelector('.conversation-state');
     const feed = document.querySelector('.conversation-feed');
     const gearRect = gear?.getBoundingClientRect();
@@ -366,6 +368,12 @@ async function assertConversationVisual(window) {
       gearHeight: gearRect?.height,
       messageFont: messageBody ? parseFloat(getComputedStyle(messageBody).fontSize) : 0,
       composerFont: composer ? parseFloat(getComputedStyle(composer).fontSize) : 0,
+      composerLayout: composerForm?.dataset.composerLayout,
+      composerRadius: composerForm ? parseFloat(getComputedStyle(composerForm).borderRadius) : 0,
+      composerSendLabel: composerSend?.getAttribute('aria-label'),
+      composerSendRound: composerSend
+        ? Math.abs(composerSend.getBoundingClientRect().width - composerSend.getBoundingClientRect().height) <= 1
+        : false,
       stateFont: state ? parseFloat(getComputedStyle(state).fontSize) : 0,
       feedWidth: feed?.getBoundingClientRect().width,
       feedFitsTranscript: feed?.getBoundingClientRect().width
@@ -383,6 +391,10 @@ async function assertConversationVisual(window) {
   assert.equal(metrics.gearHeight, 44);
   assert.equal(metrics.messageFont >= 14 && metrics.messageFont < 15, true);
   assert.equal(metrics.composerFont >= 15, true);
+  assert.equal(metrics.composerLayout, 'unified');
+  assert.equal(metrics.composerRadius >= 28, true);
+  assert.equal(metrics.composerSendLabel, '发送');
+  assert.equal(metrics.composerSendRound, true);
   assert.equal(metrics.stateFont >= 12, true);
   assert.equal(metrics.feedWidth <= 900, true);
   assert.equal(metrics.feedFitsTranscript, true);
