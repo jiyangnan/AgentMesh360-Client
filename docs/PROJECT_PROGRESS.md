@@ -8883,7 +8883,7 @@ owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果�
 
 ### 循环 164：首次使用三步引导状态与真实下一步
 
-状态：执行中；源码、自动化与独立终审已通过，等待 clean push 后的新包复验
+状态：完成；源码、自动化、独立终审、clean push、唯一内部包与旧包清理均已闭环
 
 本轮先复核总产品计划、信息架构、设计系统、2026-08-02 的静态三步提示合同和当前真实首页，
 严格回到 Job Agent `0.5.6` UAT 后排定的首次使用主路径，没有开启新业务模块：
@@ -8915,7 +8915,30 @@ owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果�
   Host/Core/Provider 与隔离状态，真实 Provider/Core 请求 0、消息 0、credits 0、费用 $0；
   按用户要求未使用 Kimi。
 
-计划复盘：实现仍只覆盖首次使用的三步引导、既有激活结果核验和必要的账号并发保护，没有
-新增多会话、Agent 商店、在线 Package、P7/P8、签名、公证或线上发布。下一步先提交并推送
-当前源码，再生成唯一 unsigned internal 包，执行 receipt、DMG/ZIP、包内 Host、安装版动态
-引导和单包清理；完成前 `TC-GUIDE-001/002` 保持阻断，不把源码通过冒充安装包完成。
+最终交付证据：
+
+1. 产品 commit `d0902bc5e052606c87f7a2f7671eb133111a0c01` 已 clean push；receipt
+   `desktop_internal_p6_d0902bc5e052_arm64` 为 `passed`，包内 arm64 Host 报告
+   `grok 1000.1.1785873093001 (d0902bc)`；
+2. 新包内真实 Host 执行完整 Desktop 门禁为 `239 passed / 0 failed / 0 skipped`；DMG checksum、
+   ZIP CRC、构建与 Downloads 两侧严格 receipt、`SHA256SUMS` 和四文件逐字节比较全部通过；
+3. ZIP `app.asar` 的 `app.js`、`style.css`、`preload.js`、`main.js` 与源码逐字节一致；DMG 与
+   ZIP 的 Host、`app.asar`、主 `Info.plist`、听写 Helper、Helper `Info.plist` 和 capabilities
+   也逐字节一致。Host 与 Helper 均为可执行 arm64；
+4. DMG 为 `181624806` bytes，SHA-256
+   `a699ef468ce2a6d072d605b4bea90f0309a672ba4723f1ebd2e91d571be82736`；ZIP 为
+   `181428040` bytes，SHA-256
+   `d33e69a19926ce3828fae7c6986c7980c4c635e26600d69b0570d85b326da16a`；
+5. 完整安装生命周期发现真实 `/Applications/AgentMesh360.app` 已存在后按设计拒绝覆盖，
+   没有启动、移动或修改当前安装。Downloads 唯一目录为
+   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-d0902bc-arm64`，构建证据
+   只保留 `desktop/dist/internal/0.1.1-d0902bc5e052-arm64/`；新包全绿后才删除旧 `dba4275`
+   两份与临时解压/挂载目录，根 `target/`、`desktop/.native-build` 均不存在，磁盘可用约
+   `16GiB`；
+6. `TC-GUIDE-001/002` 已由阻断转为通过；owner 安装新包后的真实账号态 UAT 仍明确属于下一
+   证据层，不把未执行的覆盖安装冒充为完成。
+
+计划复盘：本轮仍只覆盖首次使用三步引导、既有激活结果核验和必要的账号并发保护，没有新增
+多会话、Agent 商店、在线 Package、P7/P8、签名、公证或线上发布。源码、自动化、终审、冷
+构建、包内真实 Host、DMG/ZIP、交付副本和单版本清理均已闭环；下一步只由 owner 从上述唯一
+目录覆盖安装做真实账号 UAT，本轮不自动修改当前安装，也不继续横向扩展。

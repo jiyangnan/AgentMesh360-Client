@@ -1,6 +1,6 @@
 # 首次使用引导计划
 
-状态：执行中
+状态：完成
 
 日期：2026-08-05
 
@@ -24,8 +24,9 @@
    Renderer 持久进度、不读取 API Key、不从界面字符串猜测；
 5. 对已有模型正常常驻 Agent 的回访用户，首页隐藏新手卡；“设置 > 使用指南”仍可随时查看
    当前步骤和继续入口，不弹全屏引导、不遮挡对话、不自动跳页；
-6. 修复激活失败被 Renderer 误判为成功的既有缺口：目标 Agent 未进入 `running` 时 Main
-   必须拒绝 IPC，界面留在模型设置并允许重试。
+6. 修复激活失败被 Renderer 误判为成功的既有缺口：身份非 ready、存在激活错误，或目标
+   没有同时进入 `desiredState=running` 与允许的常驻/启动运行态时，Main 必须拒绝 IPC，
+   界面留在模型设置并允许重试。
 
 ## 3. 状态与交互合同
 
@@ -81,5 +82,27 @@
 - 源码验证已通过：Desktop Node `239 total / 234 passed / 0 failed / 5 skipped`，5 条为待接
   新包 Host 的显式门禁；六组 Electron 页面回归、首次引导状态矩阵、四档紧凑布局、1180×760
   视觉检查、产品旅程 `3/3` 与 `93 cases / 14 domains` 均通过；
-- 当前仍处于执行中：必须先 clean commit/push，再冷构建新包、执行 receipt/DMG/ZIP/包内 Host
-  复验，确认新包全绿后才替换旧 `dba4275` 包并把本计划关闭。
+- 产品 commit `d0902bc5e052606c87f7a2f7671eb133111a0c01` 已 clean push；receipt
+  `desktop_internal_p6_d0902bc5e052_arm64` 为 `passed`，包内 arm64 Host 报告
+  `grok 1000.1.1785873093001 (d0902bc)`；
+- 包内真实 Host 执行完整 Desktop 门禁为 `239 passed / 0 failed / 0 skipped`；DMG checksum、
+  ZIP CRC、构建与 Downloads 两侧严格 receipt、`SHA256SUMS` 和四个交付文件逐字节比较通过；
+- ZIP 包内 `app.asar` 的 `app.js`、`style.css`、`preload.js`、`main.js` 与提交源码逐字节一致，
+  并包含真实 Agent Catalog 刷新；DMG 与 ZIP 的 Host、`app.asar`、主 `Info.plist`、听写 Helper、
+  Helper `Info.plist` 与 capabilities 逐字节一致；
+- DMG 为 `181624806` bytes，SHA-256
+  `a699ef468ce2a6d072d605b4bea90f0309a672ba4723f1ebd2e91d571be82736`；ZIP 为
+  `181428040` bytes，SHA-256
+  `d33e69a19926ce3828fae7c6986c7980c4c635e26600d69b0570d85b326da16a`；
+- 完整安装生命周期因真实 `/Applications/AgentMesh360.app` 已存在而按设计 fail-closed，
+  没有移动、启动、覆盖或修改当前安装；owner 安装后的动态 UAT 仍由 owner 使用新包执行，
+  不把这条安全拒绝冒充安装完成；
+- Downloads 唯一目录为
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-d0902bc-arm64`，构建证据
+  只保留 `desktop/dist/internal/0.1.1-d0902bc5e052-arm64/`。新包全部通过后才删除旧 `dba4275`
+  两份与临时解压/挂载目录；根 `target/`、`desktop/.native-build` 均不存在。
+
+计划复盘：本轮没有新增页面、Provider、会话后端、Agent 商店、P7/P8、签名、公证或线上
+发布；实现、自动化、代码终审、冷构建、包内真实 Host、DMG/ZIP、交付副本和单包清理已经
+闭环。下一步只由 owner 从上述唯一目录覆盖安装并按首页真实状态完成 UAT；本轮不自动修改
+当前安装，也不继续横向扩展。
