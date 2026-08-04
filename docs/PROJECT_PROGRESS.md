@@ -8807,9 +8807,9 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 交付副本与单包清理已经闭环。下一步只由 owner 从上述目录覆盖安装并做视觉/真实输入 UAT；
 在 owner 另行授权前，不自动修改当前安装，不扩展 Provider、Harness、P7/P8、签名或在线发布。
 
-### 循环 163：Job Agent 0.5.6 持久包传播与猎聘结果分层（源码阶段）
+### 循环 163：Job Agent 0.5.6 持久包传播与猎聘结果分层
 
-状态：源码与自动化完成；等待 clean commit 后构建唯一内部包
+状态：工程交付完成；clean push、唯一内部包与包内 Host 复验闭环，真实猎聘 UAT 待 owner 安装
 
 本轮先对照官方 `AgentMesh-JobAgent v0.5.6`、当前安装包和原持久 Main Session 的实际证据，
 确认此前猎聘失败发生在旧运行链，而不是在 Client 内复制一套猎聘抓取实现：
@@ -8849,7 +8849,30 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 - 自动化只使用临时 CLI、fake Core/Provider 和隔离状态；真实猎聘请求 0、真实 Provider/Core
   请求 0、Key/Cookie/简历/岗位正文读取 0、credits 0、费用 $0；按用户要求未使用 Kimi。
 
-计划复盘：当前实现严格停留在官方 Package 传播、实际 CLI 版本门、通用 definition refresh、
+最终交付证据：
+
+1. 源码 commit `dba42755e581bf18965d7225a7e475641f74cd10` 已 clean push；receipt
+   `desktop_internal_p6_dba42755e581_arm64` 为 `passed`，包内 arm64 Host 报告
+   `grok 1000.1.1785861395001 (dba4275)`；
+2. 包内真实 Host 定向门禁 `5 passed / 0 failed / 0 skipped`；与源码 Desktop
+   `227 passed / 0 failed / 5 skipped` 互补，全部 `232` 条门禁均有通过证据。Host 二进制
+   `strings` 还直接核对到 `jobagent 0.5.6` 最低版本门、`liepin_city_code_not_found` 分层和
+   “Client 不新增猎聘抓取”的合同；
+3. DMG 为 `181443272` bytes，SHA-256
+   `1b2bb25f8e1ab198cb4e7f7d18d42b0f5f8f5d0c42f42b0cd9ef443f294a45c6`；ZIP 为
+   `181231509` bytes，SHA-256
+   `d2865cb581389f4e3fae006fd3810c5aa27c342612705cac6e012437bab74863`；构建与 Downloads
+   两侧 receipt verifier、`SHA256SUMS`、DMG checksum、ZIP CRC 和四文件逐字节 `cmp` 均通过；
+4. DMG 只读挂载副本与 ZIP 解压副本的 Host、`app.asar`、主 `Info.plist`、听写 Helper、Helper
+   `Info.plist` 和 capabilities 均逐字节一致；Host 为可执行 arm64。完整安装生命周期发现真实
+   `/Applications/AgentMesh360.app` 已存在后按设计拒绝覆盖，没有启动、移动或修改当前安装；
+5. Downloads 唯一目录为
+   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-dba4275-arm64`，构建证据
+   只保留 `desktop/dist/internal/0.1.1-dba42755e581-arm64/`。新包全绿后才删除旧 `7e0a60e`
+   两份与 430MB 临时解压目录；`target/`、`.native-build` 均不存在，最终可用磁盘约 `24GiB`。
+
+计划复盘：本轮严格停留在官方 Package 传播、实际 CLI 版本门、通用 definition refresh、
 更新/命令恢复和错误分层，没有新增猎聘实现，也没有扩展 Provider、页面、Agent、P7/P8、签名、
-公证或在线发布。下一步只执行 clean commit/push、冷构建、包内真实 Host/DMG/ZIP 验证和唯一
-内部包替换；真实猎聘 Client UAT 必须等 owner 安装新包后从原持久 Main Session 续跑。
+公证或在线发布。源码、自动化、冷构建、包内真实 Host、DMG/ZIP、交付副本和单包清理已经闭环。
+下一步只有 `TC-AGENT-009`：owner 从上述目录覆盖安装，并在原持久 Job Agent Main Session 中
+核对实际 `0.5.6+` executable/upgrade-check 后复跑猎聘；在此之前不把真实 Client UAT写成通过。

@@ -1,6 +1,6 @@
 # Job Agent 0.5.6 持久包同步与猎聘复验计划
 
-状态：源码与自动化完成；等待 clean commit 后构建唯一内部包
+状态：工程交付完成；owner 安装后真实猎聘 UAT 待执行
 日期：2026-08-04
 
 ## 问题事实
@@ -84,3 +84,15 @@
 - 实际用户持久 Job Agent 的猎聘复跑仍不能在旧安装包上冒充完成。源码 clean commit 后先生成
   新内部包，验证包内 Host 与 `0.5.6` definition，再由 owner 覆盖安装并从原 Main Session
   续跑；本轮没有向 Client 添加猎聘城市码、URL、selector、DOM 或抓取逻辑。
+- 源码 commit `dba42755e581bf18965d7225a7e475641f74cd10` 已 clean push；新包 receipt
+  `desktop_internal_p6_dba42755e581_arm64` 为 `passed`，包内 arm64 Host 报告
+  `grok 1000.1.1785861395001 (dba4275)`，二进制实际包含 `jobagent 0.5.6` 最低版本门、
+  `liepin_city_code_not_found` 分层和“Client 不实现猎聘抓取”合同；
+- 包内真实 Host 定向门禁 `5/5`，与源码 Desktop `227/227` 合并覆盖全部 `232` 条；DMG/ZIP
+  receipt verifier、SHA256SUMS、DMG checksum、ZIP CRC、构建与 Downloads 四文件 `cmp`、
+  DMG/ZIP 内 Host、app.asar、Info.plist 与听写 Helper 逐字节比较均通过；
+- 唯一交付目录为
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-dba4275-arm64`；旧
+  `7e0a60e` 两份包和临时解压目录只在新包全绿后删除，`target/` 与 `.native-build` 均不存在，
+  `/Applications/AgentMesh360.app` 未被覆盖。下一步只有 `TC-AGENT-009`：owner 安装后从原
+  持久 Main Session 复跑真实猎聘。
