@@ -8679,7 +8679,7 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 
 ### 循环 161：“停止当前任务”权威取消链路修复
 
-状态：产品修复与本机自动化已完成；clean push、唯一内部包构建复验与旧包替换待本循环收口
+状态：完成；产品修复、自动化、clean push、唯一内部包复验与旧包替换均已闭环
 
 本轮先复核输入系统 V2.3 的既定 Cancel/Queue 合同，并用安装版真实本机日志定位问题，没有
 把界面持续转圈误判成 Harness 未取消：
@@ -8715,7 +8715,29 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 - 自动化只使用 fake Host、本机日志和隔离状态：真实 Provider/Job/Core 请求 0、Provider Key
   读取 0、消息发送 0、credits 0、麦克风 0、外部上传 0、费用 $0；遵照用户要求未使用 Kimi。
 
+内部交付：
+
+1. 产品 commit `75b225b520dc854fb330d5fa5ff73b1b5e6d4755` 已 clean push；回执
+   `desktop_internal_p6_75b225b520dc_arm64` 为 `passed`，包内 arm64 Host 报告
+   `grok 1000.1.1785843306001 (75b225b)`；
+2. DMG 为 `181433730` bytes，SHA-256
+   `9bdfe954a6ce9279d0004f5e5b7a21dad9a46e0639a76512343f5524b4edb21a`；ZIP 为
+   `181229582` bytes，SHA-256
+   `471190f144b7fe80def527982d4375cbfaeffa07008453f4323b23a8e3dbd934`。构建目录与
+   Downloads 两侧均通过严格 receipt、`SHA256SUMS`、DMG checksum、ZIP CRC 和四文件
+   逐字节比较；
+3. DMG 只读挂载副本与 ZIP 解压副本的 Host、听写 Helper 均逐字节一致；两个 Host 均为
+   arm64 并绑定产品 commit。新包内真实 Host 门禁 `5 passed / 0 failed / 0 skipped`；
+4. 完整安装生命周期因真实 `/Applications/AgentMesh360.app` 已存在而按设计 fail-closed，
+   没有移动、覆盖或修改当前安装和 Login Item，不把这条安全拒绝冒充成生命周期通过；
+5. 首次冷构建因磁盘峰值中止；关闭 Cargo 增量、限制并发并通过上游支持的本机 arm64 `rg`
+   离线覆盖后成功，构建临时目录已销毁。Downloads 唯一目录为
+   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-75b225b-arm64`，构建证据
+   只保留 `desktop/dist/internal/0.1.1-75b225b520dc-arm64/`；旧 `62eaca0` 两份、临时验证目录、
+   根 `target/` 和 `.native-build` 均已删除。
+
 计划复盘：本轮只修复 V2.3 已有“停止当前前台 Turn”合同，不清空待处理 Queue、不终止已明确
 后台化的长期任务，也没有扩展 Provider、Agent Prompt、附件、听写、多会话、签名或在线发布。
-下一步只执行 clean commit/push、从该产品 commit 构建并严格复验唯一未签名内部包；新包全部
-通过后才删除旧 `62eaca0` 包与本轮构建缓存，然后由 owner 覆盖安装验证真实按钮。
+本轮没有横向扩展；源码、自动化、打包、复验和单版本清理已经闭环。下一步只由 owner 从上述
+本地目录覆盖安装，在真实长回复中点击一次“停止当前任务”，确认界面立即显示“正在停止…”，
+随后恢复普通输入；当前安装在本轮未被自动覆盖。

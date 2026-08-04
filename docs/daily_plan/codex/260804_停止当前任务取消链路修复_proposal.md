@@ -1,6 +1,6 @@
 # “停止当前任务”取消链路修复开发计划
 
-状态：源码与自动化完成，提交和唯一内部包收口中
+状态：完成；源码、自动化、clean push、唯一内部包复验与旧包清理均已闭环
 日期：2026-08-04
 
 ## 目标
@@ -36,7 +36,7 @@ Queue 是否已同步，也不被普通 Queue 编辑操作阻塞；Host 完成�
 - [x] 补 Controller 与 Electron UI 的停止完成、失败、未同步 Queue、重复点击测试；
 - [x] 执行 Rust、Desktop、Electron、产品旅程和格式回归；
 - [x] 更新测试用例与项目进展，复核计划没有横向扩展；
-- [ ] clean commit/push，生成并严格复验唯一内部包；新包全绿后再删除旧包。
+- [x] clean commit/push，生成并严格复验唯一内部包；新包全绿后再删除旧包。
 
 ## 当前回归证据
 
@@ -48,6 +48,27 @@ Queue 是否已同步，也不被普通 Queue 编辑操作阻塞；Host 完成�
   idle 恢复；四档紧凑视口全部通过；
 - 产品旅程验证器 `3/3`，`89` 条、`14` 个领域完整且都有执行结果；syntax、fmt、diff check
   通过。
+
+## 内部包交付证据
+
+- 产品 commit `75b225b520dc854fb330d5fa5ff73b1b5e6d4755` 已 clean push，回执
+  `desktop_internal_p6_75b225b520dc_arm64` 为 `passed`；包内 arm64 Host 报告
+  `grok 1000.1.1785843306001 (75b225b)`；
+- DMG 为 `181433730` bytes，SHA-256
+  `9bdfe954a6ce9279d0004f5e5b7a21dad9a46e0639a76512343f5524b4edb21a`；ZIP 为
+  `181229582` bytes，SHA-256
+  `471190f144b7fe80def527982d4375cbfaeffa07008453f4323b23a8e3dbd934`；严格 receipt、
+  `SHA256SUMS`、`hdiutil verify`、ZIP CRC 和构建/Downloads 四文件逐字节比较均通过；
+- 只读挂载的 DMG 与解压 ZIP 中，Host 和听写 Helper 分别逐字节一致；两个 Host 均为 arm64
+  且绑定本次产品 commit。以新包 Host 执行的五条真实 Host 门禁 `5/5` 通过；
+- 完整安装生命周期工具因 `/Applications/AgentMesh360.app` 已存在而按安全设计拒绝覆盖；没有
+  移动、覆盖或修改当前安装及 Login Item。此项记录为 fail-closed 安全边界，不冒充生命周期
+  全通过；
+- 首次冷构建被磁盘峰值中止，随后按一次性交付属性关闭 Cargo 增量、限制并发，并使用上游
+  明确支持的 `GROK_SHELL_BUNDLE_RG_PATH=/opt/homebrew/bin/rg` 离线构建；最终临时目录已销毁，
+  未调用 Provider、Core、Job、credits 或外部上传；
+- Downloads 与构建证据现在各只保留一份 `75b225b` 新包；旧 `62eaca0`、验证临时目录、
+  根 `target/` 与 `.native-build` 均已清理。
 
 ## 测试合同
 

@@ -1815,3 +1815,11 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   5 skipped`，5 条为显式打包 Host 门禁；
 - 测试使用 fake Host、本机日志与隔离状态：真实 Provider/Job/Core 请求 0、Key 读取 0、
   消息发送 0、credits 0、麦克风 0、外部上传 0、费用 $0；按用户要求未使用 Kimi。
+- 产品 commit `75b225b520dc854fb330d5fa5ff73b1b5e6d4755` 已 clean push；唯一内部包 receipt
+  `desktop_internal_p6_75b225b520dc_arm64`、`SHA256SUMS`、DMG checksum、ZIP CRC、构建与
+  Downloads 四文件 `cmp` 均通过。包内 arm64 Host 版本为
+  `1000.1.1785843306001 (75b225b)`，五条真实 Host 门禁 `5/5`；
+- 完整安装生命周期因 `/Applications/AgentMesh360.app` 已存在而安全拒绝覆盖，因此没有修改
+  当前安装或 Login Item，也不把该项登记为通过。Downloads 现在只保留
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-75b225b-arm64`，旧包与
+  临时构建缓存均已清理；owner 覆盖安装后的真实按钮 UAT 是唯一后续人工确认。
