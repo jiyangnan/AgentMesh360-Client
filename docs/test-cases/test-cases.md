@@ -1847,7 +1847,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-75b225b-arm64`，旧包与
   临时构建缓存均已清理；owner 覆盖安装后的真实按钮 UAT 是唯一后续人工确认。
 
-### 2026-08-04 单体 Composer 视觉重设计执行（打包前）
+### 2026-08-04 单体 Composer 视觉重设计与唯一内部包执行
 
 - 新增 `TC-CONV-027` 后，产品旅程共 `90` 条、`14` 个领域，验证器 `3/3`，结构与所有显式
   执行结果通过；
@@ -1861,5 +1861,12 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   显式打包 Host 门禁；syntax 与 `git diff --check` 通过；
 - 测试使用 fake Host 与本机隔离状态：真实 Provider/Job/Core 请求 0、Key 读取 0、消息发送
   0、credits 0、麦克风 0、外部上传 0、费用 $0；本轮按用户要求未使用 Kimi；
-- 当前为打包前记录。新包必须来自 clean pushed 产品 commit，receipt、SHA、DMG、ZIP、包内
-  Host 与唯一包留存全部通过后，才可把旧 `75b225b` 包替换并回填交付证据。
+- 产品 commit `7e0a60e5b2c6bf6333e7ad80a5b90b4072d4372f` 已 clean push；receipt
+  `desktop_internal_p6_7e0a60e5b2c6_arm64`、`SHA256SUMS`、DMG checksum、ZIP CRC、构建与
+  Downloads 四文件逐字节比较全部通过；
+- DMG/ZIP 内 Host、`app.asar`、主/嵌套 `Info.plist` 与听写 Helper 逐字节一致；Host/Helper
+  均为 arm64，Host 版本 `1000.1.1785851967001 (7e0a60e)`；包内真实 Host 完整测试
+  `232/232`，此前五条显式 gate 均实际执行；
+- 包内 `app.asar` 包含单体 Composer 标记、30px 外圆角和准确附件隐私文案，公开 UI 不含
+  `AgentMesh360 Core`。Downloads 与 dist 各只保留 `7e0a60e` 一份，旧 `75b225b` 和临时缓存
+  已删除；没有覆盖 `/Applications/AgentMesh360.app`。

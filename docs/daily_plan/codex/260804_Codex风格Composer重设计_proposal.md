@@ -1,6 +1,6 @@
 # Codex 风格 Composer 重设计计划
 
-状态：实现与自动化完成；clean push 与唯一内部包待完成
+状态：完成；实现、自动化、clean push、包内真实 Host 与唯一内部包均已闭环
 日期：2026-08-04
 
 ## 背景
@@ -69,3 +69,16 @@
 - 不改变 Harness、Queue、Cancel、附件存储和听写 authority；
 - 不新增云附件库、音视频理解、多会话、P7/P8、签名、公证或在线发布；
 - 不自动覆盖 `/Applications/AgentMesh360.app`。
+
+## 完成结果
+
+- 产品 commit `7e0a60e5b2c6bf6333e7ad80a5b90b4072d4372f` 已 clean push；
+- Desktop 源码回归 `227 passed / 5 skipped`，再使用新包内真实 Host 执行后为
+  `232 passed / 0 failed / 0 skipped`；
+- 1180×760、1280×768、1280×800、1440×900 四档窗口和十附件状态全部通过；
+- receipt `desktop_internal_p6_7e0a60e5b2c6_arm64`、SHA256、DMG、ZIP、DMG/ZIP
+  应用内容与交付副本全部复验通过；
+- Downloads 与 `desktop/dist/internal` 各只保留一份 `7e0a60e` 证据；旧 `75b225b`、
+  构建缓存和验证临时目录已删除；
+- 没有覆盖 `/Applications/AgentMesh360.app`，也没有访问真实 Provider、Core、Job 服务、
+  麦克风或外部上传。

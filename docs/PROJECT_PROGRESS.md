@@ -8744,7 +8744,7 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 
 ### 循环 162：Codex 风格单体 Composer 重设计
 
-状态：源码与自动化完成；clean push、唯一内部包生成与旧包替换待闭环
+状态：完成；源码、自动化、clean push、包内真实 Host、唯一内部包与旧包清理均已闭环
 
 本轮先复核 `GROK_FIRST_INPUT_SYSTEM_V2.md` 和既定产品计划，只重做已经存在的输入交互层级，
 没有借视觉调整扩展 Provider、模型、云附件或 Harness authority：
@@ -8778,7 +8778,31 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
   与本机临时状态，真实 Provider/Job/Core 请求 0、Key 读取 0、消息发送 0、credits 0、麦克风
   0、外部上传 0、费用 $0；按用户要求未使用 Kimi。
 
+最终交付证据：
+
+1. 产品 commit `7e0a60e5b2c6bf6333e7ad80a5b90b4072d4372f` 已 clean push；回执
+   `desktop_internal_p6_7e0a60e5b2c6_arm64` 严格复验为 `passed`，包内 arm64 Host 报告
+   `grok 1000.1.1785851967001 (7e0a60e)`；
+2. 新包内真实 Host 直接执行完整 Desktop 测试为 `232 passed / 0 failed / 0 skipped`，此前
+   条件跳过的五条持久 Leader、订阅 gate、跨 Workspace 单会话、首次模型绑定和 Session
+   plan/后台任务恢复门禁均实际通过；首次沙箱执行的 OAuth 与 real-Host `EPERM` 仅因禁止
+   `127.0.0.1` 监听，开放本机 loopback 后同一套用例全绿；
+3. DMG 为 `181426241` bytes，SHA-256
+   `942465d2710c057868bd4e07e27f8e688a0b204ad7577e4a21b8960f10859a36`；ZIP 为
+   `181231241` bytes，SHA-256
+   `b1445ed417fdcc966a40e1d642554144b1f0165afead273bbb0717a8a342602a`；构建与 Downloads
+   两侧 receipt、`SHA256SUMS`、DMG checksum、ZIP CRC 和四文件逐字节比较全部通过；
+4. DMG 只读挂载副本与 ZIP 独立解压副本的 Host、`app.asar`、主/嵌套 `Info.plist`、听写
+   Helper executable/capabilities 均逐字节一致；Host 与 Helper 都是可执行 arm64，Helper 非
+   symlink 且只链接 macOS 系统框架；包内 `app.asar` 包含 `data-composer-layout="unified"`、
+   30px 单体 Composer 与准确附件隐私文案，公开 UI 不含 `AgentMesh360 Core`；
+5. Downloads 唯一目录为
+   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-7e0a60e-arm64`，构建
+   证据只保留 `desktop/dist/internal/0.1.1-7e0a60e5b2c6-arm64/`。新包全绿后才删除旧
+   `75b225b` 两份、根 `target/`、`.native-build`、残留镜像和本轮临时目录；最终可用磁盘约
+   `27GiB`，没有覆盖或修改 `/Applications/AgentMesh360.app`。
+
 计划复盘：本轮严格停留在 Composer 视觉与语义结构，没有复制 Codex 的品牌、Custom、Goal、
-模型或推理强度控件，也没有减少 AgentMesh360 已有能力。下一步只完成 clean commit/push、
-从该产品 commit 生成并复验唯一未签名 arm64 内部包；新包全绿后再删除旧 `75b225b` 包与构建
-缓存，并把最终 package evidence 回填本节。
+模型或推理强度控件，也没有减少 AgentMesh360 已有能力；源码、自动化、打包、包内真实 Host、
+交付副本与单包清理已经闭环。下一步只由 owner 从上述目录覆盖安装并做视觉/真实输入 UAT；
+在 owner 另行授权前，不自动修改当前安装，不扩展 Provider、Harness、P7/P8、签名或在线发布。

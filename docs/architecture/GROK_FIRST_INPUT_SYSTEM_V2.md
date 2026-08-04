@@ -240,3 +240,16 @@ V2 全量至少覆盖：
   费用。当前机器的无麦克风能力探测返回 `locale=zh-CN, onDevice=false`，因此真实 UAT 前需要
   先在“系统设置 → 键盘 → 听写”准备当前语言；该结果不被伪装成断网听写已通过；
 - Downloads 与构建证据目录各只保留 `1d70849` 一份，旧内部包与临时挂载/解包目录已清理。
+
+## 9. 2026-08-04 Composer 视觉交付检查点
+
+- Composer 已按 5.6 收敛为 `data-composer-layout="unified"` 单体面板：输入画布无独立边框，
+  左侧“＋”与运行意图、右侧停止/听写/圆形箭头形成唯一底部工具栏；
+- 这次只改变视觉层级与可访问语义，没有改变附件、Queue、Cancel、听写、草稿或 Host
+  authority；`TC-CONV-027` 与 90 条产品旅程均通过；
+- 产品 commit `7e0a60e5b2c6bf6333e7ad80a5b90b4072d4372f` 已 clean push，包内真实 Host 完整
+  Desktop 回归为 `232 passed / 0 failed / 0 skipped`；
+- receipt `desktop_internal_p6_7e0a60e5b2c6_arm64`、DMG/ZIP 摘要、DMG/ZIP 应用内容与
+  Downloads 交付副本全部通过；包内 Host 为 `1000.1.1785851967001 (7e0a60e)`；
+- Downloads 与构建证据各只保留 `7e0a60e` 一份；未覆盖现有安装，真实 Provider、Core、
+  Job、credits、麦克风和外部上传均为 0。
