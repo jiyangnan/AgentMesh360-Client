@@ -64,7 +64,13 @@ class AgentManagementController {
       ? assignments.assignments
       : [];
     const agents = Array.isArray(state.agents) ? state.agents : [];
+    const configuredProviderCount = profileList.filter((profile) => (
+      profile?.credentialConfigured === true
+      && Array.isArray(profile.enabledModels)
+      && profile.enabledModels.length > 0
+    )).length;
     return publicAgentManagementPayload({
+      configuredProviderCount,
       agents: agents.map((agent) => {
         const agentId = normalizeAgentId(agent.agentId);
         const resolved = resolveModelBinding(agentId, profileList, assignmentList);

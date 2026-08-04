@@ -191,6 +191,7 @@ app.whenReady().then(async () => {
     return currentDictation;
   });
   ipcMain.handle('agent:get-model-overview', () => ({
+    configuredProviderCount: 1,
     agents: readyState().agents.map((agent) => ({
       agentId: agent.agentId,
       providerProfileId: 'pp_test',

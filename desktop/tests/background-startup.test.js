@@ -160,7 +160,11 @@ test('first successful Agent activation enables packaged background startup once
     async activateAgent() {
       state = {
         phase: 'ready',
-        agents: [{ agentId: 'job-agent', desiredState: 'running' }],
+        agents: [{
+          agentId: 'job-agent',
+          desiredState: 'running',
+          runtimeState: 'resident',
+        }],
       };
       return state;
     },
@@ -184,7 +188,11 @@ test('first successful Agent activation enables packaged background startup once
 test('Login Item refusal does not roll back a successful Agent activation', async () => {
   const expected = {
     phase: 'ready',
-    agents: [{ agentId: 'job-agent', desiredState: 'running' }],
+    agents: [{
+      agentId: 'job-agent',
+      desiredState: 'running',
+      runtimeState: 'resident',
+    }],
   };
   const result = await activateAgentAndEnableBackground({
     identity: {
@@ -201,6 +209,65 @@ test('Login Item refusal does not roll back a successful Agent activation', asyn
   });
 
   assert.equal(result, expected);
+});
+
+test('failed Agent activation is rejected instead of being reported as ready', async () => {
+  const writes = [];
+  const failedState = {
+    phase: 'ready',
+    activationError: 'Agent Host 初始化失败',
+    agents: [{ agentId: 'job-agent', desiredState: 'stopped' }],
+  };
+
+  await assert.rejects(
+    activateAgentAndEnableBackground({
+      identity: {
+        getState: () => ({
+          phase: 'ready',
+          agents: [{ agentId: 'job-agent', desiredState: 'stopped' }],
+        }),
+        activateAgent: async () => failedState,
+      },
+      loginItems: { setEnabled: (enabled) => writes.push(enabled) },
+      agentId: 'job-agent',
+    }),
+    (error) => (
+      error.code === 'agent_activation_failed'
+      && error.message === 'Agent Host 初始化失败'
+    ),
+  );
+
+  assert.deepEqual(writes, []);
+});
+
+test('an old running/error projection cannot turn a failed retry into activation success', async () => {
+  const writes = [];
+  const failedState = {
+    phase: 'ready',
+    activationError: 'Agent 激活失败，请稍后重试',
+    agents: [{
+      agentId: 'job-agent',
+      desiredState: 'running',
+      runtimeState: 'error',
+    }],
+  };
+
+  await assert.rejects(
+    activateAgentAndEnableBackground({
+      identity: {
+        getState: () => failedState,
+        activateAgent: async () => failedState,
+      },
+      loginItems: { setEnabled: (enabled) => writes.push(enabled) },
+      agentId: 'job-agent',
+    }),
+    (error) => (
+      error.code === 'agent_activation_failed'
+      && error.message === 'Agent 激活失败，请稍后重试'
+    ),
+  );
+
+  assert.deepEqual(writes, []);
 });
 
 function fakeWindow(calls, { minimized = false } = {}) {

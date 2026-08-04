@@ -31,6 +31,8 @@ class IdentityController {
     this.listeners = new Set();
     this.timer = null;
     this.activeOperation = null;
+    this.logoutPromise = null;
+    this.logoutRequested = false;
     this.hostReconnectPromise = null;
     this.shuttingDown = false;
     this.validationRevision = 0;
@@ -126,13 +128,25 @@ class IdentityController {
   }
 
   logout() {
-    return this.#exclusive(async () => {
+    if (this.logoutPromise) return this.logoutPromise;
+    this.logoutRequested = true;
+    const pendingOperation = this.activeOperation;
+    this.logoutPromise = (async () => {
+      this.tokenStore.clear();
+      this.accessToken = null;
+      this.#publish({ phase: 'signed_out' });
+      await this.host.invalidate().catch(() => {});
+      await pendingOperation?.catch(() => {});
       this.tokenStore.clear();
       this.accessToken = null;
       await this.host.invalidate().catch(() => {});
       this.#publish({ phase: 'signed_out' });
       return this.state;
+    })().finally(() => {
+      this.logoutPromise = null;
+      this.logoutRequested = false;
     });
+    return this.logoutPromise;
   }
 
   activateAgent(agentId) {
@@ -166,6 +180,22 @@ class IdentityController {
           activationError: publicActivationError(error),
         });
       }
+      return this.state;
+    });
+  }
+
+  refreshAgents() {
+    if (this.activeOperation) return this.activeOperation;
+    return this.#exclusive(async () => {
+      if (this.state.phase !== 'ready' || !this.accessToken) {
+        throw new Error('当前账号尚未通过订阅验证');
+      }
+      const list = await this.host.listAgents();
+      this.#publish({
+        ...this.state,
+        agents: publicAgents(list?.agents),
+        agentCatalogCheckedAt: new Date().toISOString(),
+      });
       return this.state;
     });
   }
@@ -346,6 +376,7 @@ class IdentityController {
   }
 
   #publish(next) {
+    if (this.logoutRequested && next?.phase !== 'signed_out') return;
     this.state = deepFreeze(stripSecrets(next));
     for (const listener of this.listeners) listener(this.state);
   }

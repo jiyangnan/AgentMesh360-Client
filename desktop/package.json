@@ -9,6 +9,7 @@
     "start": "npm run build:dictation-helper && electron .",
     "test": "node --test tests/*.test.js",
     "test:agent-management-ui": "electron tests/agent-management-ui-smoke.js -ApplePersistenceIgnoreState YES",
+    "test:first-use-guide-ui": "electron tests/first-use-guide-ui-smoke.js -ApplePersistenceIgnoreState YES",
     "test:conversation-compact-ui": "electron tests/compact-conversation-ui-smoke.js -ApplePersistenceIgnoreState YES",
     "test:conversation-ui": "electron tests/conversation-ui-smoke.js -ApplePersistenceIgnoreState YES",
     "test:package-ui": "electron tests/package-ui-smoke.js -ApplePersistenceIgnoreState YES",

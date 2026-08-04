@@ -152,6 +152,8 @@ app.whenReady().then(async () => {
     await assertAgentSettingsVisual(window);
   } else if (phase === 'ready') {
     await assertAgentHomeVisual(window);
+  } else if (phase === 'guide') {
+    await assertFirstUseGuideVisual(window);
   } else if (phase === 'provider-bottom') {
     await assertProviderSelectVisual(window);
   } else if (phase === 'package') {
@@ -191,7 +193,7 @@ app.whenReady().then(async () => {
 });
 
 function fixtureState(selected) {
-  if (selected === 'ready' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'package-ready' || selected === 'background' || selected === 'conversation' || selected === 'agent-settings') {
+  if (selected === 'ready' || selected === 'guide' || selected === 'provider' || selected === 'provider-bottom' || selected === 'package' || selected === 'package-ready' || selected === 'background' || selected === 'conversation' || selected === 'agent-settings') {
     return {
       phase: 'ready',
       account: { id: 7, email: 'ferdinand@example.com', displayName: 'Ferdinand' },
@@ -199,9 +201,9 @@ function fixtureState(selected) {
       credits: { balance: 1280 },
       access: { canEnterClient: true, reason: 'subscription_active' },
       agents: [
-        { agentId: 'job-agent', displayName: 'Job Agent', description: '持续理解你的岗位目标、求职材料和当前进度。', desiredState: 'running', runtimeState: 'resident' },
+        { agentId: 'job-agent', displayName: 'Job Agent', description: '持续理解你的岗位目标、求职材料和当前进度。', desiredState: selected === 'guide' ? 'stopped' : 'running', runtimeState: selected === 'guide' ? 'available' : 'resident' },
         { agentId: 'lecturecast-agent', displayName: 'Lecturecast Agent', description: '把课程资料转化为可发布、可校验的音视频内容。', desiredState: 'stopped', runtimeState: 'available' },
-        { agentId: 'deploy-agent', displayName: 'Deploy Agent', description: '负责发布前检查、部署执行以及上线后的证据验证。', desiredState: 'running', runtimeState: 'working' },
+        { agentId: 'deploy-agent', displayName: 'Deploy Agent', description: '负责发布前检查、部署执行以及上线后的证据验证。', desiredState: selected === 'guide' ? 'stopped' : 'running', runtimeState: selected === 'guide' ? 'available' : 'working' },
       ],
       checkedAt: new Date().toISOString(),
     };
@@ -221,40 +223,49 @@ function fixtureState(selected) {
 async function assertAgentHomeVisual(window) {
   const metrics = await window.webContents.executeJavaScript(`(() => {
     const strip = document.querySelector('.onboarding-strip');
-    const list = document.querySelector('.onboarding-steps');
-    const steps = [...document.querySelectorAll('.onboarding-step')];
-    const stripRect = strip?.getBoundingClientRect();
     return {
-      ariaLabel: strip?.getAttribute('aria-label'),
-      listTag: list?.tagName,
-      stepLabels: steps.map((step) => step.querySelector('strong')?.textContent.trim()),
-      stepNumbers: steps.map((step) => step.querySelector('.onboarding-step-number')?.textContent.trim()),
-      interactiveCount: strip?.querySelectorAll('button, a').length,
-      containsMisleadingCopy: strip?.textContent.includes('开始使用')
-        || strip?.textContent.includes('打开 Agent 继续工作'),
-      stepFontSizes: steps.map((step) => (
-        parseFloat(getComputedStyle(step.querySelector('strong')).fontSize)
-      )),
-      stripFitsViewport: Boolean(
-        stripRect
-        && stripRect.left >= 0
-        && stripRect.right <= window.innerWidth + 1
-      ),
+      guideHiddenForReturningUser: strip === null,
+      agentCards: document.querySelectorAll('.agent-card').length,
       noDocumentOverflow: document.documentElement.scrollWidth
         <= document.documentElement.clientWidth + 1,
     };
   })()`);
-  assert.equal(metrics.ariaLabel, 'Agent 使用顺序');
-  assert.equal(metrics.listTag, 'OL');
-  assert.deepEqual(metrics.stepLabels, [
+  assert.equal(metrics.guideHiddenForReturningUser, true);
+  assert.equal(metrics.agentCards, 3);
+  assert.equal(metrics.noDocumentOverflow, true);
+}
+
+async function assertFirstUseGuideVisual(window) {
+  const metrics = await window.webContents.executeJavaScript(`(() => {
+    const strip = document.querySelector('.onboarding-strip.ready');
+    const action = strip?.querySelector('.onboarding-step-action');
+    const rect = strip?.getBoundingClientRect();
+    return {
+      labels: [...document.querySelectorAll('.onboarding-step strong')]
+        .map((item) => item.innerText.trim()),
+      statuses: [...document.querySelectorAll('.onboarding-step-status')]
+        .map((item) => item.innerText.trim()),
+      currentCount: document.querySelectorAll('[aria-current="step"]').length,
+      action: action?.innerText.trim(),
+      actionHeight: action?.getBoundingClientRect().height || 0,
+      actionFontSize: action ? parseFloat(getComputedStyle(action).fontSize) : 0,
+      stripFitsViewport: Boolean(rect)
+        && rect.left >= 0
+        && rect.right <= window.innerWidth + 1,
+      noDocumentOverflow: document.documentElement.scrollWidth
+        <= document.documentElement.clientWidth + 1,
+    };
+  })()`);
+  assert.deepEqual(metrics.labels, [
     '添加模型供应商',
     '激活 Agent',
     '在 Agent 对话中开始工作',
   ]);
-  assert.deepEqual(metrics.stepNumbers, ['1', '2', '3']);
-  assert.equal(metrics.interactiveCount, 0);
-  assert.equal(metrics.containsMisleadingCopy, false);
-  assert.equal(metrics.stepFontSizes.every((value) => value >= 13), true);
+  assert.deepEqual(metrics.statuses, ['已完成', '当前步骤', '待完成']);
+  assert.equal(metrics.currentCount, 1);
+  assert.equal(metrics.action, '查看可激活 Agent');
+  assert.equal(metrics.actionHeight >= 44, true);
+  assert.equal(metrics.actionFontSize >= 13, true);
   assert.equal(metrics.stripFitsViewport, true);
   assert.equal(metrics.noDocumentOverflow, true);
 }
@@ -565,6 +576,7 @@ function backgroundFixture() {
 
 function modelOverviewFixture() {
   return {
+    configuredProviderCount: providerFixture().profiles.length,
     agents: (fixtureState(phase).agents || []).map((agent) => ({
       agentId: agent.agentId,
       providerProfileId: agent.agentId === 'lecturecast-agent' ? null : 'pp_openai',

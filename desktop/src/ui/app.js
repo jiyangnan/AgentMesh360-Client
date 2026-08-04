@@ -514,6 +514,7 @@ function renderReady(state) {
   } else if (workspaceView === 'settings') {
     wireSettings();
   }
+  if (workspaceView === 'agents') wireOnboardingGuide();
   for (const button of document.querySelectorAll('[data-manage-agent]')) {
     button.addEventListener('click', () => {
       const agent = currentState.agents?.find(
@@ -3644,7 +3645,7 @@ function settingsView(state) {
     ${settingsTab === 'background'
       ? backgroundSettingsView()
       : settingsTab === 'guide'
-        ? guideSettingsView()
+        ? guideSettingsView(state)
         : settingsTab === 'diagnostics'
           ? diagnosticsSettingsView()
           : accountSettingsView(state)}
@@ -3668,17 +3669,12 @@ function accountSettingsView(state) {
     </section>`;
 }
 
-function guideSettingsView() {
+function guideSettingsView(state) {
   return `
     <header class="workspace-header settings-header">
-      <div><p class="eyebrow">Guide</p><h1>使用指南</h1><p>你随时可以从这里重新查看，不会因为首次引导关闭就找不到操作路径。</p></div>
+      <div><p class="eyebrow">Guide</p><h1>使用指南</h1><p>这里会显示你的当前进度；离开后再回来，仍可继续真正的下一步。</p></div>
     </header>
-    <section class="guide-steps">
-      <article><span>1</span><div><strong>添加模型供应商</strong><p>验证 Key，读取可用模型，测试连接后安全保存。</p></div></article>
-      <article><span>2</span><div><strong>激活一个 Agent</strong><p>选择供应商与模型，明确确认后创建固定主会话。</p></div></article>
-      <article><span>3</span><div><strong>开始长期协作</strong><p>以后从 Agent 列表进入同一个对话；模型、行为和偏好都在 Agent 内管理。</p></div></article>
-      <button class="secondary" id="guide-go-agents" type="button">回到 Agent</button>
-    </section>`;
+    ${onboardingGuideView(state, { context: 'settings' })}`;
 }
 
 function diagnosticsSettingsView() {
@@ -3704,14 +3700,13 @@ function wireSettings() {
       renderReady(currentState);
       if (settingsTab === 'background' && backgroundUi.phase === 'idle') {
         refreshBackgroundSnapshot();
+      } else if (settingsTab === 'guide' && agentOverviewUi.phase === 'idle') {
+        refreshAgentOverview();
       }
     });
   });
   document.getElementById('settings-logout')?.addEventListener('click', () => bridge.logout());
-  document.getElementById('guide-go-agents')?.addEventListener('click', () => {
-    workspaceView = 'agents';
-    renderReady(currentState);
-  });
+  wireOnboardingGuide();
   if (settingsTab === 'background') wireBackgroundSettings();
 }
 
@@ -3888,13 +3883,18 @@ function backgroundStatusCopy(loginItem) {
   return '设备重启后不会自动恢复 Agent；你仍可手动打开客户端继续原有会话。';
 }
 
-async function refreshAgentOverview() {
+async function refreshAgentOverview({ refreshCatalog = false } = {}) {
   const requestRevision = ++agentOverviewRequestRevision;
   const accountId = readyAccountId;
   agentOverviewUi = { ...agentOverviewUi, phase: 'loading', error: null };
-  if (workspaceView === 'agents') renderReady(currentState);
+  if (
+    workspaceView === 'agents'
+    || (workspaceView === 'settings' && settingsTab === 'guide')
+  ) renderReady(currentState);
   try {
-    const snapshot = await bridge.getAgentModelOverview();
+    const snapshot = refreshCatalog
+      ? await bridge.refreshAgentModelOverview()
+      : await bridge.getAgentModelOverview();
     if (
       requestRevision !== agentOverviewRequestRevision
       || currentState.phase !== 'ready'
@@ -3921,11 +3921,258 @@ async function refreshAgentOverview() {
       error: publicError(error, '无法读取 Agent 模型摘要'),
     };
   }
-  if (workspaceView === 'agents' && currentState.phase === 'ready') renderReady(currentState);
+  if (
+    currentState.phase === 'ready'
+    && (
+      workspaceView === 'agents'
+      || (workspaceView === 'settings' && settingsTab === 'guide')
+    )
+  ) renderReady(currentState);
 }
 
 function agentDisplayName(agentId) {
   return currentState.agents?.find((agent) => agent.agentId === agentId)?.displayName || agentId;
+}
+
+function onboardingProgress(state) {
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  const residentAgents = agents.filter(isResident);
+  const runtimeStartingAgents = residentAgents.filter(
+    (agent) => agent.runtimeState === 'starting',
+  );
+  const explicitlyActivatingAgent = agents.find(
+    (agent) => agent.agentId === state.activatingAgentId,
+  );
+  const startingAgents = explicitlyActivatingAgent
+    && !runtimeStartingAgents.some(
+      (agent) => agent.agentId === explicitlyActivatingAgent.agentId,
+    )
+    ? [...runtimeStartingAgents, explicitlyActivatingAgent]
+    : runtimeStartingAgents;
+  const establishedResidentAgents = residentAgents.filter(
+    (agent) => agent.runtimeState !== 'starting',
+  );
+  const activatableAgents = agents.filter((agent) => (
+    !isResident(agent)
+    && agent.agentId !== state.activatingAgentId
+  ));
+  const overviewAgents = Array.isArray(agentOverviewUi.snapshot?.agents)
+    ? agentOverviewUi.snapshot.agents
+    : [];
+  const validResidentAgents = establishedResidentAgents.filter((agent) => {
+    const model = overviewAgents.find((item) => item.agentId === agent.agentId);
+    return model && !model.bindingIssue;
+  });
+  const invalidResidentAgents = establishedResidentAgents.filter((agent) => (
+    !validResidentAgents.some((item) => item.agentId === agent.agentId)
+  ));
+  if (agentOverviewUi.phase === 'error') {
+    return {
+      phase: 'error',
+      providerComplete: false,
+      agentComplete: establishedResidentAgents.length > 0,
+      residentAgents,
+      startingAgents,
+      activatableAgents,
+      validResidentAgents: [],
+      invalidResidentAgents: [],
+    };
+  }
+  const configuredProviderCount = agentOverviewUi.snapshot?.configuredProviderCount;
+  if (
+    agentOverviewUi.phase !== 'ready'
+    || !Number.isSafeInteger(configuredProviderCount)
+    || configuredProviderCount < 0
+  ) {
+    return {
+      phase: 'loading',
+      providerComplete: false,
+      agentComplete: establishedResidentAgents.length > 0,
+      residentAgents,
+      startingAgents,
+      activatableAgents,
+      validResidentAgents: [],
+      invalidResidentAgents: [],
+    };
+  }
+  return {
+    phase: 'ready',
+    providerComplete: configuredProviderCount > 0,
+    agentComplete: establishedResidentAgents.length > 0,
+    residentAgents,
+    startingAgents,
+    activatableAgents,
+    validResidentAgents,
+    invalidResidentAgents,
+  };
+}
+
+function onboardingStepView({ number, label, description, status, action = null }) {
+  const statusLabel = {
+    complete: '已完成',
+    current: '当前步骤',
+    locked: '待完成',
+    unknown: '待确认',
+  }[status] || '待确认';
+  const current = status === 'current';
+  return `
+    <li class="onboarding-step ${escapeHtml(status)}" ${current ? 'aria-current="step"' : ''}>
+      <span class="onboarding-step-number" aria-hidden="true">${number}</span>
+      <div class="onboarding-step-copy">
+        <div><strong>${escapeHtml(label)}</strong><span class="onboarding-step-status">${escapeHtml(statusLabel)}</span></div>
+        <p>${escapeHtml(description)}</p>
+        ${action ? `<button class="onboarding-step-action" id="${escapeHtml(action.id)}" type="button"${action.agentId ? ` data-agent-id="${escapeHtml(action.agentId)}"` : ''}>${escapeHtml(action.label)}</button>` : ''}
+      </div>
+    </li>`;
+}
+
+function onboardingGuideView(state, { context = 'home' } = {}) {
+  const progress = onboardingProgress(state);
+  if (
+    context === 'home'
+    && progress.phase === 'ready'
+    && progress.providerComplete
+    && progress.validResidentAgents.length > 0
+  ) return '';
+  let heading = '正在确认你的设置进度';
+  let summary = '不会打开新的页面，也不会打断现有 Agent。';
+  let steps = [
+    ['添加模型供应商', '验证 Key、读取可用模型并安全保存。', 'unknown'],
+    ['激活 Agent', '选择一个专业 Agent 和模型，创建固定主会话。', 'unknown'],
+    ['在 Agent 对话中开始工作', '进入主对话，以后仍会回到同一进度。', 'unknown'],
+  ];
+  let recoveryAction = null;
+
+  if (progress.phase === 'error') {
+    heading = '暂时无法确认当前进度';
+    summary = '已有 Provider、Agent 和会话不会被改变；可以重新读取当前进度。';
+    recoveryAction = { id: 'onboarding-retry', label: '重新确认进度' };
+  } else if (progress.phase === 'ready') {
+    if (!progress.providerComplete) {
+      heading = '下一步：添加模型供应商';
+      summary = '先连接你自己的模型，Agent 才能开始工作。';
+      steps = [
+        ['添加模型供应商', '验证 Key、读取可用模型并安全保存。', 'current', {
+          id: 'onboarding-go-providers',
+          label: '配置模型供应商',
+        }],
+        ['激活 Agent', progress.agentComplete ? '这个 Agent 已经激活；恢复模型后即可继续。' : '完成第 1 步后，从下方选择一个 Agent。', progress.agentComplete ? 'complete' : 'locked'],
+        ['在 Agent 对话中开始工作', '模型供应商已配置且 Agent 已激活后即可进入。', 'locked'],
+      ];
+    } else if (progress.startingAgents.length > 0 && !progress.agentComplete) {
+      const starting = progress.startingAgents[0];
+      heading = `${starting.displayName} 正在启动`;
+      summary = '启动会在后台继续，不会阻止你查看其他 Agent。';
+      steps = [
+        ['添加模型供应商', '模型供应商已经保存。', 'complete'],
+        ['激活 Agent', `${starting.displayName} 正在后台启动。`, 'current', {
+          id: 'onboarding-focus-agent',
+          label: `查看 ${starting.displayName} 状态`,
+          agentId: starting.agentId,
+        }],
+        ['在 Agent 对话中开始工作', '启动完成后即可进入这个 Agent 的主对话。', 'locked'],
+      ];
+    } else if (!progress.agentComplete) {
+      const hasActivatableAgent = progress.activatableAgents.length > 0;
+      heading = hasActivatableAgent
+        ? '下一步：激活一个 Agent'
+        : '暂时没有可激活的 Agent';
+      summary = hasActivatableAgent
+        ? '模型供应商已经保存，现在选择你需要的专业 Agent。'
+        : '模型供应商已经保存，但 Agent 列表为空；重新读取不会改变已有设置。';
+      steps = [
+        ['添加模型供应商', '模型供应商已经保存。', 'complete'],
+        ['激活 Agent', hasActivatableAgent
+          ? '选择供应商和模型，确认后创建固定主会话。'
+          : '当前没有可激活的 Agent。', 'current', {
+          id: hasActivatableAgent ? 'onboarding-go-agents' : 'onboarding-refresh-agents',
+          label: hasActivatableAgent ? '查看可激活 Agent' : '重新确认 Agent',
+        }],
+        ['在 Agent 对话中开始工作', '激活完成后会直接进入这个 Agent 的主对话。', 'locked'],
+      ];
+    } else if (!progress.validResidentAgents.length) {
+      const resident = progress.invalidResidentAgents[0];
+      heading = '下一步：修复 Agent 的模型';
+      summary = 'Agent 已经常驻，但当前模型设置需要处理；对话历史不会删除。';
+      steps = [
+        ['添加模型供应商', '至少一个模型供应商已经保存。', 'complete'],
+        ['激活 Agent', `${resident.displayName} 已经常驻。`, 'complete'],
+        ['在 Agent 对话中开始工作', '重新选择可用的供应商和模型后即可继续。', 'current', {
+          id: 'onboarding-fix-agent',
+          label: `设置 ${resident.displayName} 模型`,
+          agentId: resident.agentId,
+        }],
+      ];
+    } else {
+      const resident = progress.validResidentAgents[0];
+      heading = '模型配置已经完成';
+      summary = progress.validResidentAgents.length > 1
+        ? `已有 ${progress.validResidentAgents.length} 个 Agent 可以进入主对话，也可从列表选择其他 Agent。`
+        : '现在可以进入主对话，以后仍会回到同一进度。';
+      steps = [
+        ['添加模型供应商', '模型供应商已经保存。', 'complete'],
+        ['激活 Agent', `${resident.displayName} 已经完成激活。`, 'complete'],
+        ['在 Agent 对话中开始工作', '可以打开主对话，开始或继续工作。', 'current', {
+          id: 'onboarding-open-agent',
+          label: `打开或继续 ${resident.displayName}`,
+          agentId: resident.agentId,
+        }],
+      ];
+    }
+  }
+
+  return `
+    <section class="onboarding-strip ${escapeHtml(progress.phase)} ${context === 'settings' ? 'settings-guide' : ''}" aria-label="Agent 使用顺序" aria-live="polite" data-onboarding-phase="${escapeHtml(progress.phase)}" ${progress.phase === 'loading' ? 'aria-busy="true"' : ''}>
+      <header class="onboarding-heading">
+        <div><p>三步开始</p><h2>${escapeHtml(heading)}</h2><span>${escapeHtml(summary)}</span></div>
+        ${recoveryAction ? `<button class="onboarding-retry" id="${escapeHtml(recoveryAction.id)}" type="button">${escapeHtml(recoveryAction.label)}</button>` : ''}
+      </header>
+      <ol class="onboarding-steps">
+        ${steps.map(([label, description, status, action], index) => onboardingStepView({
+    number: index + 1,
+    label,
+    description,
+    status,
+    action,
+  })).join('')}
+      </ol>
+    </section>`;
+}
+
+function wireOnboardingGuide() {
+  document.getElementById('onboarding-go-providers')?.addEventListener('click', () => {
+    workspaceView = 'providers';
+    renderReady(currentState);
+    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+  });
+  document.getElementById('onboarding-go-agents')?.addEventListener('click', () => {
+    workspaceView = 'agents';
+    renderReady(currentState);
+    const target = [...document.querySelectorAll('[data-manage-agent]')].find((button) => {
+      const agent = currentState.agents?.find((item) => item.agentId === button.dataset.manageAgent);
+      return agent && !isResident(agent);
+    });
+    target?.scrollIntoView({ block: 'center' });
+    target?.focus();
+  });
+  document.getElementById('onboarding-open-agent')?.addEventListener('click', (event) => {
+    openAgentDetail(event.currentTarget.dataset.agentId, 'conversation');
+  });
+  document.getElementById('onboarding-fix-agent')?.addEventListener('click', (event) => {
+    openAgentDetail(event.currentTarget.dataset.agentId, 'model');
+  });
+  document.getElementById('onboarding-focus-agent')?.addEventListener('click', (event) => {
+    const agentId = event.currentTarget.dataset.agentId;
+    const target = document.querySelector(`[data-agent-card="${CSS.escape(agentId)}"]`);
+    target?.scrollIntoView({ block: 'center' });
+    target?.focus();
+  });
+  document.getElementById('onboarding-retry')?.addEventListener('click', () => {
+    refreshAgentOverview();
+  });
+  document.getElementById('onboarding-refresh-agents')?.addEventListener('click', () => {
+    refreshAgentOverview({ refreshCatalog: true });
+  });
 }
 
 function agentWorkspaceView(state) {
@@ -3947,13 +4194,7 @@ function agentWorkspaceView(state) {
       <div><p class="eyebrow">Persistent Agent Workspace</p><h1 data-ready-welcome>欢迎回来，${escapeHtml(firstName(account))}</h1><p data-ready-subscription>${escapeHtml(subscriptionLabel(subscription))} · 订阅验证通过</p></div>
       <div class="credit-card"><span>AgentMesh360 Credits</span><strong data-ready-credits>${formatNumber(credits.balance)}</strong></div>
     </header>
-    <section class="onboarding-strip" aria-label="Agent 使用顺序">
-      <ol class="onboarding-steps">
-        <li class="onboarding-step"><span class="onboarding-step-number" aria-hidden="true">1</span><strong>添加模型供应商</strong></li>
-        <li class="onboarding-step"><span class="onboarding-step-number" aria-hidden="true">2</span><strong>激活 Agent</strong></li>
-        <li class="onboarding-step"><span class="onboarding-step-number" aria-hidden="true">3</span><strong>在 Agent 对话中开始工作</strong></li>
-      </ol>
-    </section>
+    ${onboardingGuideView(state)}
     ${invalidAgents.length ? `
       <div class="agent-model-alert" role="alert">
         <div><strong>${invalidAgents.length} 个 Agent 的模型需要重新选择</strong><span>${escapeHtml(invalidAgents.map((item) => agentDisplayName(item.agentId)).join('、'))}</span></div>
@@ -5841,8 +6082,9 @@ function agentCard(agent, index, activatingAgentId, overview = null) {
     overview?.bindingIssue
     && overview.bindingIssue.code !== 'model_not_configured',
   );
+  const runtimeStatus = runtimeLabel(agent.runtimeState, agent.desiredState);
   return `
-    <article class="agent-card ${tones[index % tones.length]}">
+    <article class="agent-card ${tones[index % tones.length]}" data-agent-card="${escapeHtml(agent.agentId)}" tabindex="-1" aria-label="${escapeHtml(`${agent.displayName}，${runtimeStatus}`)}">
       <div class="agent-symbol">${escapeHtml(symbol)}</div>
       <h3>${escapeHtml(agent.displayName)}</h3>
       <p>${escapeHtml(agent.description)}</p>
@@ -5851,7 +6093,7 @@ function agentCard(agent, index, activatingAgentId, overview = null) {
         <strong>${escapeHtml(modelSummary)}</strong>
       </div>
       <div class="agent-meta">
-        <span class="runtime ${resident ? 'running' : ''}">${escapeHtml(runtimeLabel(agent.runtimeState, agent.desiredState))}</span>
+        <span class="runtime ${resident ? 'running' : ''}">${escapeHtml(runtimeStatus)}</span>
         <button class="agent-action" ${buttonAttribute} ${activating || anotherActivationPending ? 'disabled' : ''}>${buttonLabel}</button>
       </div>
     </article>`;

@@ -240,6 +240,10 @@ function registerIpc(
   ipcMain.handle('agent:get-model-overview', () => {
     return agentManagement.getOverview();
   });
+  ipcMain.handle('agent:refresh-model-overview', async () => {
+    await identity.refreshAgents();
+    return agentManagement.getOverview();
+  });
   ipcMain.handle(
     'agent:configure-and-activate',
     async (_event, { agentId, providerProfileId, modelId } = {}) => {

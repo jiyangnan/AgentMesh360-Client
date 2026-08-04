@@ -31,6 +31,7 @@ H2d4 后的产品顺序复核与生产发布硬门见
 [`PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md`](PRODUCT_PLAN_AND_PRODUCTION_RELEASE_GATE.md)。
 Cycle 56 的生产准备、三种内部 canary、R1-R6 证据与 P0-P8 顺序见
 [`PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md`](PRODUCTION_PREPARATION_AND_INTERNAL_CANARY_PLAN.md)。
+
 Cycle 57 的 P1 Release Event 与事故响应基线分别见
 [`RELEASE_EVENT_SCHEMA_V1.md`](RELEASE_EVENT_SCHEMA_V1.md) 和
 [`../operations/RELEASE_INCIDENT_RESPONSE_RUNBOOK_V1.md`](../operations/RELEASE_INCIDENT_RESPONSE_RUNBOOK_V1.md)。
@@ -42,6 +43,16 @@ Cycle 60 的 P3 零新 key provenance preflight 见
 [`../operations/RELEASE_PROVENANCE_PREFLIGHT_V1.md`](../operations/RELEASE_PROVENANCE_PREFLIGHT_V1.md)。
 当前实现证据、逐轮计划复盘和下一轮工作见
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
+
+## 2026-08-05：首次使用引导状态化
+
+首次用户的默认主路径保持“配置模型供应商 → 激活 Agent → 开始或继续对话”。首页只在路径
+未完成或模型配置需要修复时展示三步状态与唯一下一步；正常常驻 Agent 的回访首页直接显示
+Agent 列表，“设置 > 使用指南”可随时重新打开同一套状态。进度来自 Host 的非秘密
+`configuredProviderCount`、常驻状态和 `bindingIssue`，不读取 Key、不拉完整 Provider
+Snapshot、不建立 Renderer 完成标记。加载/失败/空 Catalog 均失败关闭；空 Catalog 的恢复
+会真实重读 Host Agent 目录。Agent 激活只有在身份 ready、无激活错误、目标同时进入
+`desiredState=running` 和允许的常驻/启动运行态时才算成功，否则不得误开主对话。
 
 ## 已确定的产品决策
 

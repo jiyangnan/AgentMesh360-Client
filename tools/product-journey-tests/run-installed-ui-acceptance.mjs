@@ -167,48 +167,160 @@ function acceptanceExpression() {
       ) {
         throw new Error('installed persistent Host did not reconnect');
       }
-      const residentAgentCount = Array.isArray(identity.agents)
-        ? identity.agents.filter((agent) => (
-          agent.desiredState === 'running'
-          && [
-            'resident',
-            'working',
-            'needs_input',
-            'dormant',
-            'starting',
-          ].includes(agent.runtimeState)
-        )).length
-        : 0;
+      const publicAgents = Array.isArray(identity.agents) ? identity.agents : [];
+      const residentRuntimeStates = new Set([
+        'resident',
+        'working',
+        'needs_input',
+        'dormant',
+        'starting',
+      ]);
+      const establishedRuntimeStates = new Set([
+        'resident',
+        'working',
+        'needs_input',
+        'dormant',
+      ]);
+      const isResidentAgent = (agent) => (
+        agent.desiredState === 'running'
+        && residentRuntimeStates.has(agent.runtimeState)
+      );
+      const residentAgentCount = publicAgents.filter(isResidentAgent).length;
       if (residentAgentCount < 1) {
         throw new Error('installed client did not recover a resident Agent');
       }
 
-      const onboardingStrip = document.querySelector('.onboarding-strip');
-      const onboardingSteps = [...document.querySelectorAll(
-        '.onboarding-steps > .onboarding-step',
-      )];
-      const agentHomeOrderedGuide = Boolean(
-        onboardingStrip
-        && onboardingStrip.getAttribute('aria-label') === 'Agent 使用顺序'
-        && onboardingStrip.querySelector('ol.onboarding-steps')
-        && onboardingSteps.length === 3
-        && JSON.stringify(onboardingSteps.map((step) => (
-          step.querySelector('strong')?.textContent.trim()
-        ))) === JSON.stringify([
-          '添加模型供应商',
-          '激活 Agent',
-          '在 Agent 对话中开始工作',
-        ])
-        && JSON.stringify(onboardingSteps.map((step) => (
-          step.querySelector('.onboarding-step-number')?.textContent.trim()
-        ))) === JSON.stringify(['1', '2', '3'])
-        && onboardingStrip.querySelectorAll('button, a').length === 0
-        && !onboardingStrip.textContent.includes('开始使用')
-        && !onboardingStrip.textContent.includes('打开 Agent 继续工作')
-      );
-      if (!agentHomeOrderedGuide) {
-        throw new Error('installed Agent home does not expose the ordered three-step guide');
+      const onboardingOverview = await window.agentmesh360.getAgentModelOverview();
+      if (
+        !Number.isSafeInteger(onboardingOverview?.configuredProviderCount)
+        || onboardingOverview.configuredProviderCount < 0
+        || Object.hasOwn(onboardingOverview, 'profiles')
+      ) {
+        throw new Error('installed onboarding overview is not a safe configured-state projection');
       }
+      const overviewByAgent = new Map(
+        (onboardingOverview.agents || []).map((agent) => [agent.agentId, agent]),
+      );
+      const establishedResidentAgents = publicAgents.filter((agent) => (
+        agent.desiredState === 'running'
+        && establishedRuntimeStates.has(agent.runtimeState)
+      ));
+      const validResidentAgents = establishedResidentAgents.filter((agent) => {
+        const model = overviewByAgent.get(agent.agentId);
+        return Boolean(model && !model.bindingIssue);
+      });
+      const invalidResidentAgents = establishedResidentAgents.filter((agent) => (
+        !validResidentAgents.some((validAgent) => validAgent.agentId === agent.agentId)
+      ));
+      const runtimeStartingAgents = publicAgents.filter((agent) => (
+        agent.desiredState === 'running' && agent.runtimeState === 'starting'
+      ));
+      const activatingAgent = publicAgents.find(
+        (agent) => agent.agentId === identity.activatingAgentId,
+      );
+      const startingAgents = activatingAgent
+        && !runtimeStartingAgents.some((agent) => agent.agentId === activatingAgent.agentId)
+        ? [...runtimeStartingAgents, activatingAgent]
+        : runtimeStartingAgents;
+      const activatableAgents = publicAgents.filter((agent) => (
+        !isResidentAgent(agent) && agent.agentId !== identity.activatingAgentId
+      ));
+      const providerComplete = onboardingOverview.configuredProviderCount > 0;
+      const agentComplete = establishedResidentAgents.length > 0;
+      const hasReadyResident = providerComplete && validResidentAgents.length > 0;
+      const namedAction = (id, label, agent = null) => ({
+        id,
+        label,
+        agentId: agent?.agentId || null,
+      });
+      let expectedGuide;
+      if (!providerComplete) {
+        expectedGuide = {
+          statuses: ['current', agentComplete ? 'complete' : 'locked', 'locked'],
+          action: namedAction('onboarding-go-providers', '配置模型供应商'),
+        };
+      } else if (startingAgents.length > 0 && !agentComplete) {
+        expectedGuide = {
+          statuses: ['complete', 'current', 'locked'],
+          action: namedAction(
+            'onboarding-focus-agent',
+            '查看 ' + startingAgents[0].displayName + ' 状态',
+            startingAgents[0],
+          ),
+        };
+      } else if (!agentComplete) {
+        expectedGuide = {
+          statuses: ['complete', 'current', 'locked'],
+          action: activatableAgents.length > 0
+            ? namedAction('onboarding-go-agents', '查看可激活 Agent')
+            : namedAction('onboarding-refresh-agents', '重新确认 Agent'),
+        };
+      } else if (validResidentAgents.length === 0) {
+        expectedGuide = {
+          statuses: ['complete', 'complete', 'current'],
+          action: namedAction(
+            'onboarding-fix-agent',
+            '设置 ' + invalidResidentAgents[0].displayName + ' 模型',
+            invalidResidentAgents[0],
+          ),
+        };
+      } else {
+        expectedGuide = {
+          statuses: ['complete', 'complete', 'current'],
+          action: namedAction(
+            'onboarding-open-agent',
+            '打开或继续 ' + validResidentAgents[0].displayName,
+            validResidentAgents[0],
+          ),
+        };
+      }
+      const guideMatches = (strip) => {
+        if (!strip) return false;
+        const steps = [...strip.querySelectorAll('.onboarding-steps > .onboarding-step')];
+        const statuses = steps.map((step) => (
+          ['complete', 'current', 'locked', 'unknown']
+            .find((status) => step.classList.contains(status)) || null
+        ));
+        const buttons = [...strip.querySelectorAll('button')];
+        const action = buttons[0];
+        return strip.getAttribute('aria-label') === 'Agent 使用顺序'
+          && strip.getAttribute('aria-live') === 'polite'
+          && steps.length === 3
+          && JSON.stringify(steps.map((step) => step.querySelector('strong')?.textContent.trim()))
+            === JSON.stringify([
+              '添加模型供应商',
+              '激活 Agent',
+              '在 Agent 对话中开始工作',
+            ])
+          && JSON.stringify(statuses) === JSON.stringify(expectedGuide.statuses)
+          && strip.querySelectorAll('[aria-current="step"]').length === 1
+          && buttons.length === 1
+          && action.id === expectedGuide.action.id
+          && action.textContent.trim() === expectedGuide.action.label
+          && (action.dataset.agentId || null) === expectedGuide.action.agentId;
+      };
+      await waitFor(
+        () => hasReadyResident
+          ? !document.querySelector('.onboarding-strip')
+          : document.querySelector('.onboarding-strip[data-onboarding-phase="ready"]'),
+        'installed Agent home onboarding did not settle to the authoritative state',
+      );
+      if (!hasReadyResident) {
+        const onboardingStrip = document.querySelector('.onboarding-strip');
+        if (!guideMatches(onboardingStrip)) {
+          throw new Error('installed Agent home does not expose the actionable three-step guide');
+        }
+      }
+      document.getElementById('nav-settings').click();
+      document.querySelector('[data-settings-tab="guide"]')?.click();
+      await waitFor(
+        () => document.querySelector('.onboarding-strip.settings-guide[data-onboarding-phase="ready"]'),
+        'installed Settings guide did not load authoritative onboarding state',
+      );
+      if (!guideMatches(document.querySelector('.onboarding-strip.settings-guide'))) {
+        throw new Error('installed Settings guide does not match the authoritative next action');
+      }
+      document.getElementById('nav-agents').click();
       const agentAddEntryHidden = !document.getElementById('add-agent')
         && !document.body.textContent.includes('＋ 添加 Agent');
       if (!agentAddEntryHidden) {

@@ -114,6 +114,7 @@ app.whenReady().then(async () => {
     return conversationSnapshot;
   });
   ipcMain.handle('agent:get-model-overview', () => ({
+    configuredProviderCount: 1,
     agents: [{
       agentId: 'job-agent',
       providerProfileId: 'pp_test',

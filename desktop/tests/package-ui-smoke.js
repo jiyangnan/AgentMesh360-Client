@@ -15,6 +15,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('identity:get-state', () => readyState());
   ipcMain.handle('conversation:get-snapshot', () => ({ phase: 'idle' }));
   ipcMain.handle('agent:get-model-overview', () => ({
+    configuredProviderCount: 0,
     agents: readyState().agents.map((agent) => ({
       agentId: agent.agentId,
       providerProfileId: null,

@@ -8880,3 +8880,42 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果不产生 Client 侧猎聘抓取需求。
 下一轮回到既定产品计划按序推进，若同类问题复现，仍按 Package 传播、实际 executable/version、
 命令恢复、持久 definition context 与官方 CLI 结果分层诊断，不横向扩展。
+
+### 循环 164：首次使用三步引导状态与真实下一步
+
+状态：执行中；源码、自动化与独立终审已通过，等待 clean push 后的新包复验
+
+本轮先复核总产品计划、信息架构、设计系统、2026-08-02 的静态三步提示合同和当前真实首页，
+严格回到 Job Agent `0.5.6` UAT 后排定的首次使用主路径，没有开启新业务模块：
+
+1. “添加模型供应商 → 激活 Agent → 在 Agent 对话中开始工作”的顺序保持不变，但未完成用户
+   现在能看到“待确认 / 当前步骤 / 已完成 / 待完成”和唯一真实 CTA；正常常驻 Agent 的回访
+   首页保持紧凑，“设置 > 使用指南”复用同一状态与动作；
+2. 首页沿用 Host 权威模型 Overview，只增加 `configuredProviderCount` 非秘密投影；它只统计
+   已保存凭据且至少启用一个模型的 Profile，不把完整 Provider Snapshot、Key、路径或内部
+   authority 交给 Renderer；加载和失败状态不猜测为“未配置”；
+3. CTA 只进入模型供应商列表、聚焦真实 Agent、打开具体 Agent 模型设置或进入明确命名的主
+   对话。Agent Catalog 为空时会真实重读 Host Agent 目录；启动中的 Agent 显示后台进度，
+   不阻塞用户切换已经存在的 Agent；
+4. 激活成功改为 fail-closed：身份必须仍为 ready、没有激活错误，目标同时满足
+   `desiredState=running` 与允许的常驻/启动运行态；旧 running 投影加新错误不能误报成功；
+5. 补齐账号切换与迟到 Overview 保护；登出会立即清理内存/安全存储令牌、失效 Host，并压过
+   在途激活或后台复验，迟到 token pair 和旧状态都不能重新打开工作区。
+
+当前源码证据：
+
+- Desktop 全量 Node 在允许本机 loopback 的隔离环境中 `239 total / 234 passed / 0 failed /
+  5 skipped`；5 条为必须由新包内真实 Host 执行的显式门禁；关键 Controller 定向 `45/45`；
+- 首次引导 Electron 状态矩阵覆盖加载、失败、零 Provider、零 Agent、失效、启动中、
+  `activatingAgentId`、正常/失效混合、回访、设置指南、迟到旧账号响应、键盘 Space 激活和
+  720px 窄窗口；Agent 管理、Provider、对话、四档紧凑布局与 Package UI 回归全部退出 0；
+- 1180×760 最终视觉检查通过；CTA 不小于 44px/13px，状态与说明不小于 12px，整卡不以
+  opacity 降低对比度；产品旅程验证器 `3/3`，当前 `93` 条、`14` 个领域通过；
+- 最终独立只读代码审查为 `APPROVE`，当前 diff 未发现剩余 P0/P1；自动化只使用 fake
+  Host/Core/Provider 与隔离状态，真实 Provider/Core 请求 0、消息 0、credits 0、费用 $0；
+  按用户要求未使用 Kimi。
+
+计划复盘：实现仍只覆盖首次使用的三步引导、既有激活结果核验和必要的账号并发保护，没有
+新增多会话、Agent 商店、在线 Package、P7/P8、签名、公证或线上发布。下一步先提交并推送
+当前源码，再生成唯一 unsigned internal 包，执行 receipt、DMG/ZIP、包内 Host、安装版动态
+引导和单包清理；完成前 `TC-GUIDE-001/002` 保持阻断，不把源码通过冒充安装包完成。

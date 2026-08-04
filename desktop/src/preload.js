@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('agentmesh360', {
     String(agentId || '').slice(0, 100),
   ),
   getAgentModelOverview: () => ipcRenderer.invoke('agent:get-model-overview'),
+  refreshAgentModelOverview: () => ipcRenderer.invoke('agent:refresh-model-overview'),
   configureAndActivateAgent: ({ agentId, providerProfileId, modelId }) => ipcRenderer.invoke(
     'agent:configure-and-activate',
     {

@@ -9,6 +9,7 @@ const calls = [];
 let bindingIssue = null;
 let jobBindingMissing = false;
 let modelSaveFailure = false;
+let activationFailure = false;
 let deletedProvider = false;
 let profilesUnavailable = false;
 let customizationConflict = false;
@@ -109,6 +110,10 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('agent:configure-and-activate', async (event, request) => {
     calls.push(['activate', request]);
+    if (activationFailure) {
+      calls.push(['activate-failed', request]);
+      throw new Error('fixture activation failed');
+    }
     event.sender.send('identity:state', {
       ...readyState(),
       activatingAgentId: request.agentId,
@@ -213,12 +218,6 @@ app.whenReady().then(async () => {
   })`);
   assert.deepEqual({
     ...navigation,
-    guide: undefined,
-    guideTag: undefined,
-    guideSteps: undefined,
-    guideStepNumbers: undefined,
-    guideStepCount: undefined,
-    guideInteractiveCount: undefined,
   }, {
     labels: ['Agent', '模型供应商', '设置'],
     currentConversation: false,
@@ -228,25 +227,11 @@ app.whenReady().then(async () => {
     jobModel: '智谱 GLM Coding Plan · glm-5.2',
     guide: undefined,
     guideTag: undefined,
-    guideSteps: undefined,
-    guideStepNumbers: undefined,
-    guideStepCount: undefined,
-    guideInteractiveCount: undefined,
+    guideSteps: [],
+    guideStepNumbers: [],
+    guideStepCount: 0,
+    guideInteractiveCount: 0,
   });
-  assert.equal(navigation.guide.includes('添加模型供应商'), true);
-  assert.equal(navigation.guide.includes('激活 Agent'), true);
-  assert.equal(navigation.guide.includes('在 Agent 对话中开始工作'), true);
-  assert.equal(navigation.guide.includes('开始使用'), false);
-  assert.equal(navigation.guide.includes('打开 Agent 继续工作'), false);
-  assert.equal(navigation.guideTag, 'OL');
-  assert.equal(navigation.guideStepCount, 3);
-  assert.equal(navigation.guideInteractiveCount, 0);
-  assert.deepEqual(navigation.guideSteps, [
-    '添加模型供应商',
-    '激活 Agent',
-    '在 Agent 对话中开始工作',
-  ]);
-  assert.deepEqual(navigation.guideStepNumbers, ['1', '2', '3']);
 
   smokeStep = 'show Host recovering and attention states';
   backgroundDelayMs = 150;
@@ -266,6 +251,27 @@ app.whenReady().then(async () => {
   assert.deepEqual(await window.webContents.executeJavaScript(
     "[...document.querySelectorAll('[data-settings-tab]')].map((item) => item.innerText.trim())",
   ), ['账号与订阅', '后台运行', '使用指南', '高级诊断']);
+  await window.webContents.executeJavaScript(
+    "document.querySelector('[data-settings-tab=\"guide\"]').click()",
+  );
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.onboarding-strip[data-onboarding-phase=\"ready\"]') !== null",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    steps: [...document.querySelectorAll('.onboarding-step strong')]
+      .map((item) => item.innerText.trim()),
+    statuses: [...document.querySelectorAll('.onboarding-step-status')]
+      .map((item) => item.innerText.trim()),
+    currentCount: document.querySelectorAll('[aria-current="step"]').length,
+    action: document.getElementById('onboarding-open-agent')?.innerText.trim(),
+    live: document.querySelector('.onboarding-strip')?.getAttribute('aria-live'),
+  })`), {
+    steps: ['添加模型供应商', '激活 Agent', '在 Agent 对话中开始工作'],
+    statuses: ['已完成', '已完成', '当前步骤'],
+    currentCount: 1,
+    action: '打开或继续 Job Agent',
+    live: 'polite',
+  });
   hostBridgeState = 'connected';
   backgroundDelayMs = 0;
   validationRevision += 1;
@@ -306,6 +312,31 @@ app.whenReady().then(async () => {
       form.elements.providerProfileId.dispatchEvent(new Event('change', { bubbles: true }));
     })()
   `);
+  smokeStep = 'fail inactive Agent activation closed';
+  activationFailure = true;
+  await window.webContents.executeJavaScript(`
+    (() => {
+      const form = document.getElementById('agent-model-form');
+      form.elements.modelId.value = 'glm-5.2';
+      form.elements.modelId.dispatchEvent(new Event('change', { bubbles: true }));
+      form.elements.confirmActivation.checked = true;
+      form.elements.confirmActivation.dispatchEvent(new Event('change', { bubbles: true }));
+      form.requestSubmit();
+    })()
+  `);
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.provider-notice.error')?.innerText === '无法保存 Agent 模型设置'",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    remainsInModelSettings: document.getElementById('agent-model-form') !== null,
+    openedConversation: document.querySelector('#conversation-form[data-agent-id="lecturecast-agent"]') !== null,
+    retryEnabled: document.querySelector('#agent-model-form button[type="submit"]')?.disabled === false,
+  })`), {
+    remainsInModelSettings: true,
+    openedConversation: false,
+    retryEnabled: false,
+  });
+  activationFailure = false;
   smokeStep = 'confirm inactive Agent activation';
   activationBarrier = createBarrier();
   await window.webContents.executeJavaScript(`
@@ -318,8 +349,8 @@ app.whenReady().then(async () => {
       form.requestSubmit();
     })()
   `);
-  await waitFor(() => calls.some(([kind]) => kind === 'activate'));
-  assert.deepEqual(calls.find(([kind]) => kind === 'activate')[1], {
+  await waitFor(() => calls.filter(([kind]) => kind === 'activate').length === 2);
+  assert.deepEqual(calls.filter(([kind]) => kind === 'activate').at(-1)[1], {
     agentId: 'lecturecast-agent',
     providerProfileId: 'pp_glm',
     modelId: 'glm-5.2',
@@ -1337,6 +1368,7 @@ function managementSnapshot(agentId, binding = null) {
 
 function modelOverview() {
   return {
+    configuredProviderCount: providerSnapshot().profiles.length,
     agents: readyState().agents.map((agent) => ({
       agentId: agent.agentId,
       providerProfileId: agent.agentId === 'job-agent' && !jobBindingMissing

@@ -17,6 +17,7 @@ function fixture() {
             profileId: 'pp_glm',
             displayName: 'GLM Coding Plan',
             enabledModels: ['glm-5.2'],
+            credentialConfigured: true,
             credentialRef: 'private://must-not-project',
           },
         ],
@@ -137,6 +138,7 @@ test('overview projects one effective model summary per Agent for list and delet
   const { controller } = fixture();
   const overview = await controller.getOverview();
 
+  assert.equal(overview.configuredProviderCount, 1);
   assert.deepEqual(overview.agents, [{
     agentId: 'job-agent',
     providerProfileId: 'pp_glm',
@@ -146,6 +148,51 @@ test('overview projects one effective model summary per Agent for list and delet
     inheritedFromLegacyGlobal: true,
   }]);
   assert.equal(Object.isFrozen(overview), true);
+});
+
+test('overview reports zero configured Providers without exposing Provider records', async () => {
+  const { controller } = fixture();
+  controller.host.listProviderProfiles = async () => ({ profiles: [] });
+
+  const overview = await controller.getOverview();
+
+  assert.equal(overview.configuredProviderCount, 0);
+  assert.equal(Object.hasOwn(overview, 'profiles'), false);
+  assert.equal(overview.agents[0].bindingIssue.code, 'provider_unavailable');
+});
+
+test('overview counts only credentialed Provider profiles with at least one enabled model', async () => {
+  const { controller } = fixture();
+  controller.host.listProviderProfiles = async () => ({
+    profiles: [
+      {
+        profileId: 'pp_glm',
+        displayName: 'GLM Coding Plan',
+        enabledModels: ['glm-5.2'],
+        credentialConfigured: true,
+        credentialRef: 'private://must-not-project',
+      },
+      {
+        profileId: 'pp_without_key',
+        displayName: 'No key',
+        enabledModels: ['model-a'],
+        credentialConfigured: false,
+      },
+      {
+        profileId: 'pp_without_models',
+        displayName: 'No models',
+        enabledModels: [],
+        credentialConfigured: true,
+      },
+      null,
+    ],
+  });
+
+  const overview = await controller.getOverview();
+
+  assert.equal(overview.configuredProviderCount, 1);
+  assert.equal(Object.hasOwn(overview, 'profiles'), false);
+  assert.equal(JSON.stringify(overview).includes('private://must-not-project'), false);
 });
 
 test('Agent model save is always an agent/main assignment', async () => {

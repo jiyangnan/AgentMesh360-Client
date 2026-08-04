@@ -180,6 +180,35 @@ test('login persists only the refresh token and activation is available only fro
   assert.equal(fixture.host.calls.activateAgent, 1);
 });
 
+test('Agent catalog refresh updates the ready projection without revalidating Core', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  const refreshCallsBefore = fixture.core.refreshCalls;
+  const listCallsBefore = fixture.host.calls.listAgents;
+  fixture.host.listAgents = async () => {
+    fixture.host.calls.listAgents += 1;
+    return { agents: [{
+      agentId: 'lecturecast-agent',
+      displayName: 'LectureCast Agent',
+      description: 'Production copilot',
+      version: '0.1.0',
+      runtimeState: 'available',
+      desiredState: 'stopped',
+      workspaceDir: '/private/user/workspace',
+      mainSessionId: 'private-session-id',
+    }] };
+  };
+
+  const state = await fixture.controller.refreshAgents();
+
+  assert.equal(state.phase, 'ready');
+  assert.equal(state.agents[0].agentId, 'lecturecast-agent');
+  assert.equal(fixture.host.calls.listAgents, listCallsBefore + 1);
+  assert.equal(fixture.core.refreshCalls, refreshCallsBefore);
+  assert.equal(typeof state.agentCatalogCheckedAt, 'string');
+  assert.equal(JSON.stringify(state).includes('/private/user/workspace'), false);
+});
+
 test('an existing resident Agent stays usable while another Agent activates', async () => {
   const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
   let deployResident = false;
@@ -223,6 +252,67 @@ test('an existing resident Agent stays usable while another Agent activates', as
   releaseDeploy();
   const completed = await deployActivation;
   assert.equal(completed.agents.find((agent) => agent.agentId === 'deploy-agent').runtimeState, 'resident');
+});
+
+test('logout wins over an in-flight Agent activation and cannot be silently swallowed', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  let releaseActivation;
+  const activationBarrier = new Promise((resolve) => { releaseActivation = resolve; });
+  fixture.host.activateAgent = async () => {
+    fixture.host.calls.activateAgent += 1;
+    await activationBarrier;
+  };
+  await fixture.controller.start();
+
+  const activation = fixture.controller.activateAgent('job-agent');
+  await waitFor(() => fixture.controller.getState().activatingAgentId === 'job-agent');
+  const logout = fixture.controller.logout();
+
+  assert.equal(fixture.controller.getState().phase, 'signed_out');
+  assert.equal(fixture.tokenStore.cleared, 1);
+  await waitFor(() => fixture.host.calls.invalidate === 1);
+  releaseActivation();
+  await activation;
+  const finalState = await logout;
+
+  assert.equal(finalState.phase, 'signed_out');
+  assert.equal(fixture.controller.getState().phase, 'signed_out');
+  assert.equal(fixture.tokenStore.value, null);
+  assert.equal(fixture.controller.accessToken, null);
+  assert.equal(fixture.host.calls.invalidate, 2);
+  assert.equal(Object.hasOwn(finalState, 'agents'), false);
+});
+
+test('logout removes tokens restored by an in-flight background revalidation', async () => {
+  const fixture = makeFixture({ storedRefreshToken: 'old-refresh-token' });
+  await fixture.controller.start();
+  let releaseRefresh;
+  const refreshBarrier = new Promise((resolve) => { releaseRefresh = resolve; });
+  fixture.core.refresh = async () => {
+    fixture.core.refreshCalls += 1;
+    await refreshBarrier;
+    return {
+      access_token: 'late-access-token',
+      refresh_token: 'late-refresh-token',
+    };
+  };
+
+  const revalidation = fixture.controller.revalidate('periodic');
+  await waitFor(() => fixture.core.refreshCalls === 2);
+  const logout = fixture.controller.logout();
+
+  assert.equal(fixture.controller.getState().phase, 'signed_out');
+  assert.equal(fixture.tokenStore.value, null);
+  await waitFor(() => fixture.host.calls.invalidate === 1);
+  releaseRefresh();
+  await revalidation;
+  const finalState = await logout;
+
+  assert.equal(finalState.phase, 'signed_out');
+  assert.equal(fixture.tokenStore.value, null);
+  assert.equal(fixture.controller.accessToken, null);
+  assert.equal(fixture.host.calls.invalidate, 2);
+  assert.equal(fixture.tokenStore.cleared, 2);
 });
 
 test('OAuth login persists only the refresh token before the same subscription gate', async () => {

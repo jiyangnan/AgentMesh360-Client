@@ -129,8 +129,21 @@ async function activateAgentAndEnableBackground({
   const wasRunning = identity.getState().agents
     ?.some((agent) => agent.agentId === agentId && agent.desiredState === 'running') === true;
   const state = await identity.activateAgent(agentId);
-  const isRunning = state.agents
-    ?.some((agent) => agent.agentId === agentId && agent.desiredState === 'running') === true;
+  const activatedAgent = state.agents?.find((agent) => agent.agentId === agentId);
+  const isRunning = (
+    state.phase === 'ready'
+    && !state.activationError
+    && activatedAgent?.desiredState === 'running'
+    && ['resident', 'working', 'needs_input', 'dormant', 'starting']
+      .includes(activatedAgent?.runtimeState)
+  );
+  if (!isRunning) {
+    const error = new Error(
+      state?.activationError || 'Agent 激活未完成，请重新尝试。',
+    );
+    error.code = 'agent_activation_failed';
+    throw error;
+  }
   if (!wasRunning && isRunning) {
     try {
       loginItems.setEnabled(true);
