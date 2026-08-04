@@ -477,7 +477,7 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - **用户故事**：作为刚覆盖安装新 Client 的用户，我希望在原 Job Agent 主会话续跑猎聘，明确
   看到实际使用官方 `0.5.6+` CLI；若仍无候选，能够区分城市解析失败、传播/恢复失败和真实空结果。
 - **优先级**：P0
-- **设计状态**：部分实现
+- **设计状态**：已实现
 - **前置条件**：owner 已安装本轮新内部包；原账号、Job Agent Main Session、Job Agent Key、
   专用浏览器状态和原猎聘 round 均保留；测试只沿原 review/preview/send/audit 权限边界续跑。
 - **输入**：原持久会话中的猎聘续跑命令，以及实际 resolved executable、`--version`、
@@ -493,8 +493,11 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   业务状态。不得在 Client 新增猎聘 URL、城市码、selector、DOM 或抓取代码。
 - **自动化证据**：TC-AGENT-008 的 fake CLI/Harness 回归与官方 `0.5.6` 离线 parser fixture
   只提供前置证据；本用例必须保留安装版实际命令和用户可见结果，不能用 CLI 直跑替代。
+- **Owner UAT 证据**：2026-08-05，owner 在本轮新客户端包的持久 Job Agent 中复跑真实猎聘，
+  明确确认“顺利投递”。该结论只记录端到端结果，不保存账号、Key、Cookie、简历、岗位或
+  投递正文；它证明安装版 Client 链路已通过，不反向扩大为所有猎聘场景均已验证。
 - **验证层**：owner 安装包 UAT + 原持久 Main Session + 实际官方 Job Agent CLI
-- **本轮结果**：阻断
+- **本轮结果**：通过
 
 ## TC-MODEL-001：Agent 内 Profile 与模型级联选择
 

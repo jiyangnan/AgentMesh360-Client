@@ -8809,7 +8809,7 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
 
 ### 循环 163：Job Agent 0.5.6 持久包传播与猎聘结果分层
 
-状态：工程交付完成；clean push、唯一内部包与包内 Host 复验闭环，真实猎聘 UAT 待 owner 安装
+状态：完成；工程交付、唯一内部包、包内 Host 与 owner 真实猎聘 UAT 均已闭环
 
 本轮先对照官方 `AgentMesh-JobAgent v0.5.6`、当前安装包和原持久 Main Session 的实际证据，
 确认此前猎聘失败发生在旧运行链，而不是在 Client 内复制一套猎聘抓取实现：
@@ -8870,9 +8870,13 @@ owner 安装唯一内部包后，用自己的 xAI 听写 Provider 完成“首�
    `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-dba4275-arm64`，构建证据
    只保留 `desktop/dist/internal/0.1.1-dba42755e581-arm64/`。新包全绿后才删除旧 `7e0a60e`
    两份与 430MB 临时解压目录；`target/`、`.native-build` 均不存在，最终可用磁盘约 `24GiB`。
+6. 2026-08-05，owner 使用新客户端包中的持久 Job Agent 复跑真实猎聘，并明确确认“顺利投递”。
+   `TC-AGENT-009` 因此由阻断转为通过。这是安装版 Client 的真实端到端证据，不是独立 CLI、
+   fake Provider 或自动化替代；只记录结果，不保留账号、Key、Cookie、简历、岗位或投递正文。
 
 计划复盘：本轮严格停留在官方 Package 传播、实际 CLI 版本门、通用 definition refresh、
 更新/命令恢复和错误分层，没有新增猎聘实现，也没有扩展 Provider、页面、Agent、P7/P8、签名、
 公证或在线发布。源码、自动化、冷构建、包内真实 Host、DMG/ZIP、交付副本和单包清理已经闭环。
-下一步只有 `TC-AGENT-009`：owner 从上述目录覆盖安装，并在原持久 Job Agent Main Session 中
-核对实际 `0.5.6+` executable/upgrade-check 后复跑猎聘；在此之前不把真实 Client UAT写成通过。
+owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果不产生 Client 侧猎聘抓取需求。
+下一轮回到既定产品计划按序推进，若同类问题复现，仍按 Package 传播、实际 executable/version、
+命令恢复、持久 definition context 与官方 CLI 结果分层诊断，不横向扩展。

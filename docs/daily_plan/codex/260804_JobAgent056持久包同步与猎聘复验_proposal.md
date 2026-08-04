@@ -1,6 +1,6 @@
 # Job Agent 0.5.6 持久包同步与猎聘复验计划
 
-状态：工程交付完成；owner 安装后真实猎聘 UAT 待执行
+状态：完成；工程交付与 owner 安装后真实猎聘 UAT 均已闭环
 日期：2026-08-04
 
 ## 问题事实
@@ -94,5 +94,10 @@
 - 唯一交付目录为
   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-04-dba4275-arm64`；旧
   `7e0a60e` 两份包和临时解压目录只在新包全绿后删除，`target/` 与 `.native-build` 均不存在，
-  `/Applications/AgentMesh360.app` 未被覆盖。下一步只有 `TC-AGENT-009`：owner 安装后从原
-  持久 Main Session 复跑真实猎聘。
+  `/Applications/AgentMesh360.app` 未被自动覆盖；
+- 2026-08-05，owner 在新客户端包的持久 Job Agent 中完成真实猎聘复跑并确认“顺利投递”，
+  `TC-AGENT-009` 由阻断转为通过。此处只保留端到端结论，不记录账号、Key、Cookie、简历、
+  岗位或投递正文，也不把一次通过泛化为所有猎聘场景；
+- 计划复盘结论：本轮目标已经完成，不需要在 Client 内新增猎聘抓取、城市码或 selector。
+  后续开发回到既定产品计划顺序，若猎聘再次异常，仍先检查 Package 版本传播、实际命令恢复、
+  持久会话 definition 与官方 CLI 结构化结果。
