@@ -8980,6 +8980,11 @@ owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果�
   费用均为 0；按用户要求未使用 Kimi；最终独立 Codex 只读审查在补齐 Provider 跨账号竞态
   和头像元数据同步后给出 `APPROVE`，无 P0/P1/P2 遗留。
 
+打包前磁盘预检发现仅余约 14GiB，而默认 Release profile 开启 incremental，历史临时 Cargo
+target 峰值约 24GB。首次冷构建在输出 Artifact 前主动中止并清理 1.8GiB 临时目录，旧包完整
+保留；内部构建器随后固定 `CARGO_INCREMENTAL=0`，并新增单元测试，避免后续靠手工清理才能
+打包。该调整只减少可丢弃编译缓存，不改变 Host runtime、签名边界或产物验证门槛。
+
 计划复盘：当前 diff 仍严格对应信息架构收敛，没有新增 Provider、Agent、多会话、在线
 Package、生产 Trust、P7/P8、签名、公证或在线发布，也没有修改真实账号、持久会话或
 `/Applications`。下一步只允许先关闭独立审查问题，clean commit/push 后构建同一 commit 的

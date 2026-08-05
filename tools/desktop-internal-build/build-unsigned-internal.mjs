@@ -165,6 +165,13 @@ export function createHostVersionInspectionEnvironment({
   };
 }
 
+export function createInternalCargoEnvironment(environment = process.env) {
+  return {
+    ...environment,
+    CARGO_INCREMENTAL: '0',
+  };
+}
+
 function digest(bytes) {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 }
@@ -526,7 +533,7 @@ async function build() {
       ],
       {
         env: {
-          ...process.env,
+          ...createInternalCargoEnvironment(process.env),
           AGENTMESH360_HOST_RUNTIME_VERSION: hostRuntimeVersion,
         },
         inherit: true,

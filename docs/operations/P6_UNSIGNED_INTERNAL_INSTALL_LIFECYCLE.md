@@ -25,15 +25,16 @@ Provider、credits 或 Apple 服务，也不把内部版升级成生产 R4。
 2. `hdiutil verify`、DMG 只读挂载和临时 `Applications` 复制；
 3. ZIP 解压并与 DMG 的 Host、`app.asar` 摘要一致；
 4. Bundle ID/版本、arm64/x64 Host 与可执行位；
-5. Developer ID 缺失、deep codesign 与 Gatekeeper assessment 不通过，明确进入手动
+5. 嵌套本机听写 Helper 的 Bundle、隐私声明、架构、可执行位和系统框架边界；
+6. Developer ID 缺失、deep codesign 与 Gatekeeper assessment 不通过，明确进入手动
    单应用放行边界；
-6. 独立 HOME/userData/state 下首次启动为 `signed_out`，Host 不提前运行；
-7. 关闭窗口后第二实例退出并让原主进程恢复窗口；
-8. 打包态 Login Item 开启、读取、关闭，并以关闭状态结束；
-9. 未登录的 `--agentmesh360-background` 不建窗口、不启 Host 并自动退出；
-10. 打包 Host 对 Job、Lecturecast、Deploy 三个 Agent 的固定 Main Session、
+7. 独立 HOME/userData/state 下首次启动为 `signed_out`，Host 不提前运行；
+8. 关闭窗口后第二实例退出并让原主进程恢复窗口；
+9. 打包态 Login Item 开启、读取、关闭，并以关闭状态结束；
+10. 未登录的 `--agentmesh360-background` 不建窗口、不启 Host 并自动退出；
+11. 打包 Host 对 Job、Lecturecast、Deploy 三个 Agent 的固定 Main Session、
     UI Bridge detach、Leader 重连、崩溃替换与恢复；
-11. App/Helper/Host、socket、DMG mount 和隔离目录全部清理。
+12. App/Helper/Host、socket、DMG mount 和隔离目录全部清理。
 
 执行器只在 `127.0.0.1` 的临时端口打开短时 DevTools，用于调用 preload 已有的脱敏
 IPC；子进程环境采用白名单，不继承 Provider、Apple、发布或其他秘密。端口随 App

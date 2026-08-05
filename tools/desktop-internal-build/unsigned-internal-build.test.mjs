@@ -17,6 +17,7 @@ import {
   assertFrozenInternalSource,
   assertHostRuntimeVersionOutput,
   assertSafeInternalEnvironment,
+  createInternalCargoEnvironment,
   createHostVersionInspectionEnvironment,
   createUnsignedInternalReceipt,
   deriveHostRuntimeVersion,
@@ -290,6 +291,15 @@ test('inspects the compiled Host without reading the user Grok version cache', (
     }),
     /inspection home is invalid/u,
   );
+});
+
+test('disables disposable Cargo incremental state for internal package builds', () => {
+  const environment = createInternalCargoEnvironment({
+    PATH: '/usr/bin:/bin',
+    CARGO_INCREMENTAL: '1',
+  });
+  assert.equal(environment.PATH, '/usr/bin:/bin');
+  assert.equal(environment.CARGO_INCREMENTAL, '0');
 });
 
 test('refuses signing and publishing credentials in internal mode', () => {

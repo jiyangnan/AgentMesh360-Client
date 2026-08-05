@@ -78,3 +78,5 @@ Agent 的模型、`agent.md` 与 `user.md` 继续只由 Agent 对话右上角齿
   credits 或产生费用；按 owner 要求未使用 Kimi；
 - 独立只读终审结论为 `APPROVE`，无 P0/P1/P2；剩余门槛是 clean commit/push、新唯一内部包
   及包内真实 Host/安装 UI 验收。
+- 打包前磁盘预检已阻止一次可能占满磁盘的 incremental 冷构建；内部构建器现固定关闭可丢弃的
+  Cargo incremental，并保留旧包直到新包完整通过。
