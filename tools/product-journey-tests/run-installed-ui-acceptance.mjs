@@ -305,13 +305,40 @@ function acceptanceExpression() {
           : document.querySelector('.onboarding-strip[data-onboarding-phase="ready"]'),
         'installed Agent home onboarding did not settle to the authoritative state',
       );
+      const agentHomeOrderedGuide = hasReadyResident
+        ? !document.querySelector('.onboarding-strip')
+        : guideMatches(document.querySelector('.onboarding-strip'));
       if (!hasReadyResident) {
         const onboardingStrip = document.querySelector('.onboarding-strip');
-        if (!guideMatches(onboardingStrip)) {
+        if (!agentHomeOrderedGuide || !guideMatches(onboardingStrip)) {
           throw new Error('installed Agent home does not expose the actionable three-step guide');
         }
       }
-      document.getElementById('nav-settings').click();
+      document.getElementById('open-account-settings').click();
+      document.querySelector('[data-settings-tab="account"]')?.click();
+      await waitFor(
+        () => document.getElementById('settings-logout'),
+        'installed Account settings did not open from the remembered setting',
+      );
+      const accountSettingsStructure =
+        document.querySelector('.account-center-header h1')?.textContent?.trim()
+          === '账户与设置'
+        && JSON.stringify(
+          [...document.querySelectorAll('[data-settings-tab]')]
+            .map((button) => button.querySelector('strong')?.textContent?.trim()),
+        ) === JSON.stringify([
+          '账号与订阅',
+          '模型供应商',
+          '后台运行',
+          '使用指南',
+          '高级诊断',
+        ])
+        && document.querySelectorAll('[data-settings-tab].active').length === 1
+        && document.querySelectorAll('[data-settings-tab][aria-current="page"]').length === 1
+        && document.getElementById('settings-logout');
+      if (!accountSettingsStructure) {
+        throw new Error('installed account settings center does not match the product structure');
+      }
       document.querySelector('[data-settings-tab="guide"]')?.click();
       await waitFor(
         () => document.querySelector('.onboarding-strip.settings-guide[data-onboarding-phase="ready"]'),
@@ -331,7 +358,8 @@ function acceptanceExpression() {
         (await window.agentmesh360.getProviderSnapshot())?.probes || [],
       );
 
-      document.getElementById('nav-providers').click();
+      document.getElementById('open-account-settings').click();
+      document.querySelector('[data-settings-tab="providers"]')?.click();
       await waitFor(
         () => document.querySelector('.provider-list-shell'),
         'Provider list did not load',
@@ -390,7 +418,8 @@ function acceptanceExpression() {
       form.elements.displayName.value = ${JSON.stringify(FAKE_PROVIDER_NAME)};
       form.elements.apiKey.value = ${JSON.stringify(FAKE_PROVIDER_KEY)};
       document.getElementById('nav-agents').click();
-      document.getElementById('nav-providers').click();
+      document.getElementById('open-account-settings').click();
+      document.querySelector('[data-settings-tab="providers"]')?.click();
       await waitFor(
         () => document.querySelector('.provider-editor-dialog[role="dialog"]')
           && document.getElementById('provider-profile-form'),
@@ -456,8 +485,10 @@ function acceptanceExpression() {
 
       const globalNavigationReady =
         document.querySelector('#nav-agents.nav-item.active')
-        && document.getElementById('nav-providers')
-        && document.getElementById('nav-settings');
+        && document.querySelectorAll('.nav-item').length === 1
+        && !document.getElementById('nav-providers')
+        && !document.getElementById('nav-settings')
+        && document.getElementById('open-account-settings');
       if (!globalNavigationReady) {
         throw new Error('installed global navigation does not match the product structure');
       }
@@ -638,6 +669,7 @@ function acceptanceExpression() {
         persistentHostConnected: true,
         residentAgentCount,
         agentHomeOrderedGuide,
+        accountSettingsStructure: true,
         agentAddEntryHidden,
         officialProviderCount: presetIds.length,
         appOwnedProviderSelects,

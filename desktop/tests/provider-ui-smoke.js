@@ -29,6 +29,7 @@ let providerFailure = null;
 let createFailure = null;
 let deleteFailure = null;
 let nextProfileId = 1;
+let providerSnapshotCalls = 0;
 
 app.whenReady().then(run).catch(fail);
 
@@ -36,12 +37,17 @@ async function run() {
   registerFixtures();
   const window = await createWindow();
 
-  await window.webContents.executeJavaScript(
-    "document.getElementById('nav-providers').click()",
-  );
+  assert.equal(providerSnapshotCalls, 0);
+  await openProviderSettings(window);
   await waitForDom(window, "document.querySelector('.provider-list-shell') !== null");
+  assert.equal(providerSnapshotCalls, 1);
 
   const defaultHierarchy = await window.webContents.executeJavaScript(`({
+    topLevelNavigation: [...document.querySelectorAll('.nav-item')]
+      .map((item) => item.innerText.trim()),
+    accountEntryActive: document.getElementById('open-account-settings')
+      ?.classList.contains('active'),
+    activeSetting: document.querySelector('[data-settings-tab].active')?.dataset.settingsTab,
     listVisible: document.querySelector('.provider-list-shell') !== null,
     profileCount: document.querySelectorAll('[data-edit-profile]').length,
     editorAbsent: document.getElementById('provider-profile-form') === null,
@@ -49,6 +55,9 @@ async function run() {
     openButtonVisible: document.querySelector('[data-open-provider-editor]') !== null,
   })`);
   assert.deepEqual(defaultHierarchy, {
+    topLevelNavigation: ['Agent'],
+    accountEntryActive: true,
+    activeSetting: 'providers',
     listVisible: true,
     profileCount: 1,
     editorAbsent: true,
@@ -184,7 +193,8 @@ async function run() {
   await window.webContents.executeJavaScript(`
     (() => {
       document.getElementById('nav-agents').click();
-      document.getElementById('nav-providers').click();
+      document.getElementById('open-account-settings').click();
+      document.querySelector('[data-settings-tab="providers"]').click();
     })()
   `);
   await waitForDom(
@@ -247,9 +257,7 @@ async function run() {
     window,
     "document.querySelector('[data-ready-account-name]')?.textContent === 'Other Account'",
   );
-  await window.webContents.executeJavaScript(
-    "document.getElementById('nav-providers').click()",
-  );
+  await openProviderSettings(window);
   await waitForDom(window, "document.querySelector('.provider-list-shell') !== null");
   assert.equal(
     await window.webContents.executeJavaScript(
@@ -279,9 +287,7 @@ async function run() {
     window,
     "document.querySelector('[data-ready-account-name]')?.textContent === 'Ferdinand'",
   );
-  await window.webContents.executeJavaScript(
-    "document.getElementById('nav-providers').click()",
-  );
+  await openProviderSettings(window);
   await waitForDom(window, "document.querySelector('.provider-list-shell') !== null");
   await openProviderEditor(window);
   assert.deepEqual(
@@ -527,9 +533,7 @@ async function run() {
     "Error invoking remote method 'provider:get-snapshot': HostRequestError: Authentication required",
   );
   const errorWindow = await createWindow();
-  await errorWindow.webContents.executeJavaScript(
-    "document.getElementById('nav-providers').click()",
-  );
+  await openProviderSettings(errorWindow);
   await waitForDom(errorWindow, "document.querySelector('.retry-providers') !== null");
   const errorText = await errorWindow.webContents.executeJavaScript('document.body.innerText');
   assert.equal(errorText.includes('本地身份正在恢复，请稍后重试。'), true);
@@ -572,6 +576,7 @@ function registerFixtures() {
     loginItem: { supported: true, openAtLogin: true },
   }));
   ipcMain.handle('provider:get-snapshot', () => {
+    providerSnapshotCalls += 1;
     if (providerFailure) throw providerFailure;
     return providerSnapshot();
   });
@@ -1051,6 +1056,13 @@ function providerCatalog() {
       ],
     },
   ];
+}
+
+async function openProviderSettings(window) {
+  await window.webContents.executeJavaScript(`
+    document.getElementById('open-account-settings').click();
+    document.querySelector('[data-settings-tab="providers"]').click();
+  `);
 }
 
 async function waitForDom(window, expression, timeoutMs = 3_000) {

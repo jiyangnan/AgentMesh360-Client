@@ -1,8 +1,11 @@
 # AgentMesh360 Client 信息架构 v1
 
-状态：已实现并通过本轮回归
+状态：历史版本；已由 [`CLIENT_INFORMATION_ARCHITECTURE_V2.md`](CLIENT_INFORMATION_ARCHITECTURE_V2.md) 取代
 确认日期：2026-08-02
 联合评审：主 Agent + KimiCLI 0.26.0（三轮只读、脱敏源码审查）
+
+> 2026-08-05 owner 真实使用反馈确认：模型供应商与客户端设置属于低频配置，不再长期占据
+> 一级导航。本文保留当时已实现的历史事实；当前页面层级、入口和测试合同以 v2 为准。
 
 ## 1. 决策
 

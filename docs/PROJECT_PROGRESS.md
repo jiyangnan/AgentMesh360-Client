@@ -2,7 +2,7 @@
 
 状态：持续开发中
 
-最近更新：2026-08-03
+最近更新：2026-08-05
 
 本文档是当前仓库的实施进展账本。架构目标以
 [`architecture/PRODUCT_BLUEPRINT.md`](architecture/PRODUCT_BLUEPRINT.md) 为准，
@@ -8942,3 +8942,46 @@ owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果�
 多会话、Agent 商店、在线 Package、P7/P8、签名、公证或线上发布。源码、自动化、终审、冷
 构建、包内真实 Host、DMG/ZIP、交付副本和单版本清理均已闭环；下一步只由 owner 从上述唯一
 目录覆盖安装做真实账号 UAT，本轮不自动修改当前安装，也不继续横向扩展。
+
+### 循环 165：Agent 唯一主导航与账户设置中心
+
+状态：源码、UI 回归与独立终审完成；等待 clean commit 后执行唯一内部包及包内 Host 验收
+
+本轮开始前重新核对产品蓝图、信息架构、首次使用三步引导和 owner 回访态反馈，确认主路径
+仍是“配置模型供应商 → 激活 Agent → 在 Agent 对话中开始工作”，但访问频率不同：Agent 是
+日常目的，Provider 与普通客户端设置只在首次配置或低频维护时出现。因此本轮只重构入口
+层级，不开启新业务模块：
+
+1. 全局一级导航只保留 Agent；左下完整账号区域成为具有中文可访问名称的“账户与设置”
+   button，不再用含义不清的箭头直接退出；
+2. 新设置中心按“账户摘要 + 垂直菜单 + 内容区”集中承载账号与订阅、模型供应商、后台运行、
+   使用指南和高级诊断；退出登录只在账号页显式出现；
+3. Provider 继续保持已配置列表优先、新增/编辑弹窗、动态模型发现、连接测试和安全保存，只有
+   首次进入 Provider 子页才读取 Snapshot；Agent 模型、`agent.md` 和 `user.md` 仍属于具体
+   Agent 右上角齿轮，不被搬进全局设置；
+4. 首页零 Provider、Host 状态和 Agent 模型失效仍按 Host 权威状态深链真实目标；账号切换会
+   关闭设置中心、清理旧 Provider 投影和草稿并重置到新账号；旧列表读取、删除影响查询、
+   Probe 和增删改操作的迟到结果都受“账号 + 请求代次”约束，不会污染新账号；
+5. 新增账户设置中心独立 Electron smoke，并同步改造 Agent、Provider、首次引导、视觉和安装
+   包动态验收；安装验收脚本同时关闭此前 `agentHomeOrderedGuide` 未定义的潜在假绿缺陷。
+
+当前源码验证证据：
+
+- Desktop syntax 和 `git diff --check` 通过；Node 全量 `239 total / 234 passed / 0 failed /
+  5 skipped`，五条仍是必须由新包内真实 Host 执行的显式门禁；
+- 账户设置中心、Provider、首次引导、Agent 管理、对话、四档紧凑布局与 Package Electron
+  回归全部退出 0；Provider/Agent 日志中的失败为自动化主动注入的恢复场景；
+- 1180×760 的 Agent 首页、Provider、后台运行和首次引导四态视觉 smoke 退出 0；账户设置
+  中心另覆盖 1180×760、1280×768、1280×800、1440×900 和 720×760，无水平溢出，菜单
+  点击区不小于 44px、标题不小于 13px、说明不小于 12px；
+- 产品旅程结构验证器 `3/3`，当前 `93` 条、`14` 个领域；导航、指南和设置三条在源码层通过，
+  但安装包/人工层明确保持待执行，最终 `--require-executed` 因此按设计阻断；自动化只使用
+  fake Host/Core/Provider 与隔离临时状态，真实账号、Key、Provider 请求、消息、credits 和
+  费用均为 0；按用户要求未使用 Kimi；最终独立 Codex 只读审查在补齐 Provider 跨账号竞态
+  和头像元数据同步后给出 `APPROVE`，无 P0/P1/P2 遗留。
+
+计划复盘：当前 diff 仍严格对应信息架构收敛，没有新增 Provider、Agent、多会话、在线
+Package、生产 Trust、P7/P8、签名、公证或在线发布，也没有修改真实账号、持久会话或
+`/Applications`。下一步只允许先关闭独立审查问题，clean commit/push 后构建同一 commit 的
+unsigned internal arm64 包，执行包内真实 Host、DMG/ZIP/receipt 与动态 UI 验收；新包全绿后
+才清理上一包，并把最终证据回填本节。

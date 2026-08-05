@@ -201,7 +201,11 @@ app.whenReady().then(async () => {
     labels: [...document.querySelectorAll('.nav-item')].map((item) => item.innerText.trim()),
     currentConversation: document.getElementById('nav-conversation') !== null,
     packages: document.getElementById('nav-packages') !== null,
+    directProviders: document.getElementById('nav-providers') !== null,
+    directSettings: document.getElementById('nav-settings') !== null,
     addAgentEntry: document.getElementById('add-agent') !== null,
+    accountEntry: document.getElementById('open-account-settings')?.getAttribute('aria-label'),
+    directLogout: document.querySelector('.sidebar-account #logout') !== null,
     hostStatus: document.querySelector('[data-host-status]')?.innerText,
     jobModel: document.querySelector('[data-manage-agent="job-agent"]')
       ?.closest('.agent-card')?.querySelector('.agent-model-summary strong')?.innerText,
@@ -219,10 +223,14 @@ app.whenReady().then(async () => {
   assert.deepEqual({
     ...navigation,
   }, {
-    labels: ['Agent', '模型供应商', '设置'],
+    labels: ['Agent'],
     currentConversation: false,
     packages: false,
+    directProviders: false,
+    directSettings: false,
     addAgentEntry: false,
+    accountEntry: '打开账户与设置',
+    directLogout: false,
     hostStatus: '已连接 · 点击查看',
     jobModel: '智谱 GLM Coding Plan · glm-5.2',
     guide: undefined,
@@ -232,6 +240,38 @@ app.whenReady().then(async () => {
     guideStepCount: 0,
     guideInteractiveCount: 0,
   });
+
+  smokeStep = 'open account settings from the bottom account entry by keyboard';
+  assert.equal(await window.webContents.executeJavaScript(`(() => {
+    const entry = document.getElementById('open-account-settings');
+    entry.focus();
+    return document.activeElement === entry && entry.tagName === 'BUTTON';
+  })()`), true);
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('.account-center') !== null",
+  ));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    heading: document.querySelector('.account-center-header h1')?.innerText,
+    labels: [...document.querySelectorAll('[data-settings-tab]')]
+      .map((item) => item.querySelector('strong')?.innerText.trim()),
+    active: [...document.querySelectorAll('[data-settings-tab].active')]
+      .map((item) => item.dataset.settingsTab),
+    accountEntryActive: document.getElementById('open-account-settings')
+      ?.classList.contains('active'),
+    logout: document.getElementById('settings-logout')?.innerText.trim(),
+  })`), {
+    heading: '账户与设置',
+    labels: ['账号与订阅', '模型供应商', '后台运行', '使用指南', '高级诊断'],
+    active: ['account'],
+    accountEntryActive: true,
+    logout: '退出当前账号',
+  });
+  await window.webContents.executeJavaScript("document.getElementById('nav-agents').click()");
+  await waitFor(() => window.webContents.executeJavaScript(
+    "document.querySelector('[data-manage-agent=\"job-agent\"]') !== null",
+  ));
 
   smokeStep = 'show Host recovering and attention states';
   backgroundDelayMs = 150;
@@ -249,8 +289,8 @@ app.whenReady().then(async () => {
     "document.body.innerText.includes('桌面已断开')",
   ));
   assert.deepEqual(await window.webContents.executeJavaScript(
-    "[...document.querySelectorAll('[data-settings-tab]')].map((item) => item.innerText.trim())",
-  ), ['账号与订阅', '后台运行', '使用指南', '高级诊断']);
+    "[...document.querySelectorAll('[data-settings-tab]')].map((item) => item.querySelector('strong')?.innerText.trim())",
+  ), ['账号与订阅', '模型供应商', '后台运行', '使用指南', '高级诊断']);
   await window.webContents.executeJavaScript(
     "document.querySelector('[data-settings-tab=\"guide\"]').click()",
   );
@@ -748,7 +788,8 @@ app.whenReady().then(async () => {
       const textarea = document.querySelector('#agent-customization-form textarea');
       textarea.value = '先给简短计划，再执行。';
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
-      document.getElementById('nav-providers').click();
+      document.getElementById('open-account-settings').click();
+      document.querySelector('[data-settings-tab="providers"]').click();
     })()
   `);
   await waitFor(() => window.webContents.executeJavaScript(
@@ -1076,7 +1117,10 @@ app.whenReady().then(async () => {
   ));
 
   smokeStep = 'verify Provider page boundary';
-  await window.webContents.executeJavaScript("document.getElementById('nav-providers').click()");
+  await window.webContents.executeJavaScript(`
+    document.getElementById('open-account-settings').click();
+    document.querySelector('[data-settings-tab="providers"]').click();
+  `);
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.provider-only-column') !== null",
   ));

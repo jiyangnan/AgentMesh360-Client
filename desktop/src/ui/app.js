@@ -30,6 +30,7 @@ let conversationSendPendingByAgent = new Map();
 let conversationInterjectionPending = new Set();
 let conversationStreamingAgents = new Set();
 let settingsTab = 'account';
+let settingsFocusAfterRender = null;
 let providerUi = {
   phase: 'idle',
   snapshot: null,
@@ -42,6 +43,7 @@ let providerUi = {
   focusAfterRender: null,
 };
 let providerDraft = null;
+let providerRequestRevision = 0;
 let conversationDrafts = new Map();
 let conversationAttachmentErrors = new Map();
 let conversationAttachmentMutationInFlight = false;
@@ -147,6 +149,7 @@ function render(state) {
       focusAfterRender: null,
     };
     providerDraft = null;
+    providerRequestRevision += 1;
     conversationDrafts = new Map();
     conversationAttachmentErrors = new Map();
     conversationAttachmentMutationInFlight = false;
@@ -185,6 +188,7 @@ function render(state) {
     conversationInterjectionPending = new Set();
     conversationStreamingAgents = new Set();
     settingsTab = 'account';
+    settingsFocusAfterRender = null;
     packageUi = {
       phase: 'idle',
       snapshot: null,
@@ -211,6 +215,7 @@ function render(state) {
     providerUi.snapshot = null;
     providerUi.phase = 'idle';
     providerDraft = null;
+    providerRequestRevision += 1;
     conversationDrafts = new Map();
     conversationAttachmentErrors = new Map();
     conversationAttachmentMutationInFlight = false;
@@ -294,11 +299,21 @@ function refreshReadyIdentityMetadata(state) {
   const account = state.account || {};
   const subscription = state.subscription || {};
   const credits = state.credits || {};
+  setText('[data-ready-account-avatar]', initials(account));
+  setText('[data-settings-account-avatar]', initials(account));
+  setText('[data-settings-card-avatar]', initials(account));
   setText('[data-ready-account-name]', account.displayName || 'AgentMesh360 用户');
   setText('[data-ready-account-email]', account.email || '');
+  setText('[data-settings-account-name]', account.displayName || 'AgentMesh360 用户');
+  setText('[data-settings-account-email]', account.email || '');
+  setText('.account-settings-card .account-chip strong', account.displayName || 'AgentMesh360 用户');
+  setText('.account-settings-card .account-chip span', account.email || '');
   setText('[data-ready-welcome]', `欢迎回来，${firstName(account)}`);
   setText('[data-ready-subscription]', `${subscriptionLabel(subscription)} · 订阅验证通过`);
   setText('[data-ready-credits]', formatNumber(credits.balance));
+  setText('[data-settings-subscription]', subscriptionLabel(subscription));
+  setText('[data-settings-credits]', formatNumber(credits.balance));
+  setText('[data-settings-checked-at]', formatCheckedAt(state.checkedAt));
   setText(
     '[data-ready-checked-at]',
     `订阅状态已安全验证 · ${formatCheckedAt(state.checkedAt)}`,
@@ -468,49 +483,35 @@ function renderReady(state) {
         ${brand()}
         <p class="nav-label">工作区</p>
         <button class="nav-item ${agentAreaActive ? 'active' : ''}" id="nav-agents" type="button"><i class="nav-dot"></i>Agent</button>
-        <button class="nav-item ${workspaceView === 'providers' ? 'active' : ''}" id="nav-providers" type="button"><i class="nav-dot"></i>模型供应商</button>
-        <button class="nav-item ${workspaceView === 'settings' ? 'active' : ''}" id="nav-settings" type="button"><i class="nav-dot"></i>设置</button>
         <div class="sidebar-spacer"></div>
         <button class="sidebar-host ${hostStatus.code}" id="sidebar-host" type="button">
           <i></i><span><strong>后台 Agent 服务</strong><small data-host-status>${escapeHtml(hostStatus.label)} · 点击查看</small></span>
         </button>
-        <div class="sidebar-account">
-          <div class="avatar">${escapeHtml(initials(account))}</div>
+        <button class="sidebar-account ${workspaceView === 'settings' ? 'active' : ''}" id="open-account-settings" type="button" aria-label="打开账户与设置">
+          <div class="avatar" data-ready-account-avatar>${escapeHtml(initials(account))}</div>
           <div class="copy"><strong data-ready-account-name>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span data-ready-account-email>${escapeHtml(account.email || '')}</span></div>
-          <button class="ghost" id="logout" title="退出登录">↗</button>
-        </div>
+          <span class="sidebar-account-arrow" aria-hidden="true">›</span>
+        </button>
       </aside>
       ${showAgentContext ? agentWorkspaceRail(state) : ''}
       <main class="workspace-main ${showAgentContext ? 'agent-workspace-main' : ''}">${readyWorkspaceContent(state)}</main>
     </section>`;
-  document.getElementById('logout').addEventListener('click', () => bridge.logout());
   document.getElementById('nav-agents').addEventListener('click', () => {
     workspaceView = 'agents';
     renderReady(currentState);
     if (agentOverviewUi.phase === 'idle') refreshAgentOverview();
   });
-  document.getElementById('nav-providers').addEventListener('click', () => {
-    workspaceView = 'providers';
-    renderReady(currentState);
-    if (providerUi.phase === 'idle') refreshProviderSnapshot();
-  });
-  document.getElementById('nav-settings').addEventListener('click', () => {
-    workspaceView = 'settings';
-    renderReady(currentState);
+  document.getElementById('open-account-settings').addEventListener('click', () => {
+    openClientSettings(settingsTab);
   });
   document.getElementById('sidebar-host').addEventListener('click', () => {
-    settingsTab = 'background';
-    workspaceView = 'settings';
-    renderReady(currentState);
-    if (backgroundUi.phase === 'idle') refreshBackgroundSnapshot();
+    openClientSettings('background');
   });
   if (showAgentContext) wireAgentWorkspaceRail();
   if (workspaceView === 'agent-detail') {
     wireAgentDetail();
   } else if (workspaceView === 'add-agent') {
     wirePackageCenter();
-  } else if (workspaceView === 'providers') {
-    wireProviderSettings();
   } else if (workspaceView === 'settings') {
     wireSettings();
   }
@@ -535,7 +536,6 @@ function renderReady(state) {
 function readyWorkspaceContent(state) {
   if (workspaceView === 'agent-detail') return agentDetailView(state);
   if (workspaceView === 'add-agent') return packageCenterView();
-  if (workspaceView === 'providers') return providerSettingsView(state);
   if (workspaceView === 'settings') return settingsView(state);
   return agentWorkspaceView(state);
 }
@@ -3631,25 +3631,106 @@ function setPackageOperationError(error, fallback) {
   };
 }
 
+const clientSettingItems = [
+  {
+    id: 'account',
+    group: '账户',
+    label: '账号与订阅',
+    description: '登录、订阅与 Credits',
+    glyph: '人',
+  },
+  {
+    id: 'providers',
+    group: '模型与 Agent',
+    label: '模型供应商',
+    description: 'BYOK Key 与可用模型',
+    glyph: '模',
+  },
+  {
+    id: 'background',
+    group: '客户端',
+    label: '后台运行',
+    description: '常驻服务与开机恢复',
+    glyph: '常',
+  },
+  {
+    id: 'guide',
+    group: '客户端',
+    label: '使用指南',
+    description: '查看当前配置进度',
+    glyph: '引',
+  },
+  {
+    id: 'diagnostics',
+    group: '其他',
+    label: '高级诊断',
+    description: '只读查看本机运行状态',
+    glyph: '诊',
+  },
+];
+
+function openClientSettings(tab = 'account') {
+  const nextTab = clientSettingItems.some((item) => item.id === tab) ? tab : 'account';
+  settingsTab = nextTab;
+  settingsFocusAfterRender = nextTab;
+  workspaceView = 'settings';
+  renderReady(currentState);
+  if (nextTab === 'providers' && providerUi.phase === 'idle') {
+    refreshProviderSnapshot();
+  } else if (nextTab === 'background' && backgroundUi.phase === 'idle') {
+    refreshBackgroundSnapshot();
+  } else if (nextTab === 'guide' && agentOverviewUi.phase === 'idle') {
+    refreshAgentOverview();
+  }
+}
+
 function settingsView(state) {
-  const tabs = [
-    ['account', '账号与订阅'],
-    ['background', '后台运行'],
-    ['guide', '使用指南'],
-    ['diagnostics', '高级诊断'],
-  ];
+  const account = state.account || {};
+  const groupedItems = clientSettingItems.reduce((groups, item) => {
+    const current = groups.at(-1);
+    if (!current || current.group !== item.group) groups.push({ group: item.group, items: [item] });
+    else current.items.push(item);
+    return groups;
+  }, []);
   return `
-    <nav class="settings-tabs" aria-label="客户端设置">
-      ${tabs.map(([id, label]) => `<button type="button" data-settings-tab="${id}" class="${settingsTab === id ? 'active' : ''}">${label}</button>`).join('')}
-    </nav>
-    ${settingsTab === 'background'
+    <section class="account-center" aria-label="账户与设置">
+      <header class="account-center-header">
+        <p class="eyebrow">Account & Settings</p>
+        <h1>账户与设置</h1>
+        <p>模型连接、订阅和客户端偏好都集中在这里；日常工作只需要回到 Agent。</p>
+      </header>
+      <div class="account-center-layout">
+        <aside class="account-center-rail">
+          <div class="account-center-identity">
+            <div class="avatar" data-settings-account-avatar>${escapeHtml(initials(account))}</div>
+            <div><strong data-settings-account-name>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span data-settings-account-email>${escapeHtml(account.email || '')}</span></div>
+          </div>
+          <nav class="account-center-menu" aria-label="账户与客户端配置">
+            ${groupedItems.map(({ group, items }) => `
+              <section class="account-center-menu-group">
+                <p>${escapeHtml(group)}</p>
+                ${items.map((item) => `
+                  <button type="button" data-settings-tab="${escapeHtml(item.id)}" class="${settingsTab === item.id ? 'active' : ''}" ${settingsTab === item.id ? 'aria-current="page"' : ''}>
+                    <span class="account-center-menu-glyph" aria-hidden="true">${escapeHtml(item.glyph)}</span>
+                    <span><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description)}</small></span>
+                    <i aria-hidden="true">›</i>
+                  </button>`).join('')}
+              </section>`).join('')}
+          </nav>
+        </aside>
+        <div class="account-center-content">
+          ${settingsTab === 'providers'
+    ? providerSettingsView(state)
+    : settingsTab === 'background'
       ? backgroundSettingsView()
       : settingsTab === 'guide'
         ? guideSettingsView(state)
         : settingsTab === 'diagnostics'
           ? diagnosticsSettingsView()
           : accountSettingsView(state)}
-  `;
+        </div>
+      </div>
+    </section>`;
 }
 
 function accountSettingsView(state) {
@@ -3662,9 +3743,9 @@ function accountSettingsView(state) {
     </header>
     <section class="agent-settings-panel account-settings-card">
       ${accountChip(account)}
-      <div class="runtime-fact"><span>订阅</span><strong>${escapeHtml(subscriptionLabel(subscription))}</strong></div>
-      <div class="runtime-fact"><span>AgentMesh360 Credits</span><strong>${formatNumber(credits.balance)}</strong></div>
-      <div class="runtime-fact"><span>最近验证</span><strong>${escapeHtml(formatCheckedAt(state.checkedAt))}</strong></div>
+      <div class="runtime-fact"><span>订阅</span><strong data-settings-subscription>${escapeHtml(subscriptionLabel(subscription))}</strong></div>
+      <div class="runtime-fact"><span>AgentMesh360 Credits</span><strong data-settings-credits>${formatNumber(credits.balance)}</strong></div>
+      <div class="runtime-fact"><span>最近验证</span><strong data-settings-checked-at>${escapeHtml(formatCheckedAt(state.checkedAt))}</strong></div>
       <button class="ghost danger-text" id="settings-logout" type="button">退出当前账号</button>
     </section>`;
 }
@@ -3696,18 +3777,20 @@ function diagnosticsSettingsView() {
 function wireSettings() {
   document.querySelectorAll('[data-settings-tab]').forEach((button) => {
     button.addEventListener('click', () => {
-      settingsTab = button.dataset.settingsTab;
-      renderReady(currentState);
-      if (settingsTab === 'background' && backgroundUi.phase === 'idle') {
-        refreshBackgroundSnapshot();
-      } else if (settingsTab === 'guide' && agentOverviewUi.phase === 'idle') {
-        refreshAgentOverview();
-      }
+      openClientSettings(button.dataset.settingsTab);
     });
   });
   document.getElementById('settings-logout')?.addEventListener('click', () => bridge.logout());
   wireOnboardingGuide();
+  if (settingsTab === 'providers') wireProviderSettings();
   if (settingsTab === 'background') wireBackgroundSettings();
+  if (settingsFocusAfterRender) {
+    const target = settingsFocusAfterRender;
+    settingsFocusAfterRender = null;
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-settings-tab="${CSS.escape(target)}"]`)?.focus();
+    });
+  }
 }
 
 function backgroundSettingsView() {
@@ -4141,9 +4224,7 @@ function onboardingGuideView(state, { context = 'home' } = {}) {
 
 function wireOnboardingGuide() {
   document.getElementById('onboarding-go-providers')?.addEventListener('click', () => {
-    workspaceView = 'providers';
-    renderReady(currentState);
-    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+    openClientSettings('providers');
   });
   document.getElementById('onboarding-go-agents')?.addEventListener('click', () => {
     workspaceView = 'agents';
@@ -4635,9 +4716,7 @@ function wireAgentDetail() {
   });
   modelForm?.addEventListener('submit', saveAgentModel);
   document.getElementById('agent-go-providers')?.addEventListener('click', () => {
-    workspaceView = 'providers';
-    renderReady(currentState);
-    if (providerUi.phase === 'idle') refreshProviderSnapshot();
+    openClientSettings('providers');
   });
   const customizationForm = document.getElementById('agent-customization-form');
   customizationForm?.elements.content?.addEventListener('input', (event) => {
@@ -5333,6 +5412,7 @@ function cssEscape(value) {
 }
 
 async function refreshProviderSnapshot(message = null) {
+  const requestContext = beginProviderAsyncContext();
   const hasSnapshot = Boolean(providerUi.snapshot);
   providerUi = {
     ...providerUi,
@@ -5341,9 +5421,10 @@ async function refreshProviderSnapshot(message = null) {
     message,
     busy: false,
   };
-  if (['providers', 'agents'].includes(workspaceView)) renderReady(currentState);
+  if (providerSettingsIsVisible() || workspaceView === 'agents') renderReady(currentState);
   try {
     const snapshot = await bridge.getProviderSnapshot();
+    if (!providerAsyncContextIsCurrent(requestContext)) return false;
     providerUi = {
       ...providerUi,
       phase: 'ready',
@@ -5353,6 +5434,7 @@ async function refreshProviderSnapshot(message = null) {
       busy: false,
     };
   } catch (error) {
+    if (!providerAsyncContextIsCurrent(requestContext)) return false;
     providerUi = {
       ...providerUi,
       phase: hasSnapshot ? 'ready' : 'error',
@@ -5361,7 +5443,37 @@ async function refreshProviderSnapshot(message = null) {
       busy: false,
     };
   }
-  if (['providers', 'agents'].includes(workspaceView) && currentState.phase === 'ready') renderReady(currentState);
+  if (
+    (providerSettingsIsVisible() || workspaceView === 'agents')
+    && currentState.phase === 'ready'
+  ) renderReady(currentState);
+  return true;
+}
+
+function beginProviderAsyncContext() {
+  return {
+    revision: ++providerRequestRevision,
+    accountId: currentState.phase === 'ready' ? currentState.account?.id ?? null : null,
+  };
+}
+
+function providerAsyncContextIsCurrent(context) {
+  return (
+    context.revision === providerRequestRevision
+    && currentState.phase === 'ready'
+    && (currentState.account?.id ?? null) === context.accountId
+  );
+}
+
+function providerAccountIsCurrent(accountId) {
+  return (
+    currentState.phase === 'ready'
+    && (currentState.account?.id ?? null) === accountId
+  );
+}
+
+function providerSettingsIsVisible() {
+  return workspaceView === 'settings' && settingsTab === 'providers';
 }
 
 async function submitProviderProfile(event) {
@@ -5399,7 +5511,7 @@ async function submitProviderProfile(event) {
         ? `[data-edit-profile="${cssEscape(editingProfileId)}"]`
         : '[data-open-provider-editor]',
     };
-    if (workspaceView === 'providers' && currentState.phase === 'ready') renderReady(currentState);
+    if (providerSettingsIsVisible() && currentState.phase === 'ready') renderReady(currentState);
   }
 }
 
@@ -5590,10 +5702,12 @@ async function testProviderConnection(event) {
 }
 
 async function prepareDeleteProviderProfile(profileId) {
+  const requestContext = beginProviderAsyncContext();
   let overview;
   try {
     overview = await bridge.getAgentModelOverview();
   } catch (error) {
+    if (!providerAsyncContextIsCurrent(requestContext)) return;
     providerUi = {
       ...providerUi,
       error: publicError(error, '无法确认哪些 Agent 正在使用这个供应商，因此没有执行删除。'),
@@ -5602,6 +5716,7 @@ async function prepareDeleteProviderProfile(profileId) {
     renderReady(currentState);
     return;
   }
+  if (!providerAsyncContextIsCurrent(requestContext)) return;
   const affected = (overview?.agents || []).filter(
     (item) => item.providerProfileId === profileId,
   );
@@ -5632,6 +5747,7 @@ async function runProviderProbe(button) {
     );
     if (!confirmPaidInference) return;
   }
+  const requestContext = beginProviderAsyncContext();
   providerUi = { ...providerUi, busy: true, error: null, message: null };
   renderReady(currentState);
   try {
@@ -5641,8 +5757,10 @@ async function runProviderProbe(button) {
       level,
       confirmPaidInference,
     });
+    if (!providerAsyncContextIsCurrent(requestContext)) return;
     await refreshProviderSnapshot(probeNotice(response?.probe));
   } catch (error) {
+    if (!providerAsyncContextIsCurrent(requestContext)) return;
     providerUi = {
       ...providerUi,
       phase: 'ready',
@@ -5655,14 +5773,19 @@ async function runProviderProbe(button) {
 }
 
 async function runProviderOperation(operation, successMessage) {
+  const requestContext = beginProviderAsyncContext();
+  const { accountId } = requestContext;
   providerUi = { ...providerUi, busy: true, error: null, message: null };
   renderReady(currentState);
   try {
     await operation();
-    await refreshProviderSnapshot(successMessage);
+    if (!providerAsyncContextIsCurrent(requestContext)) return false;
+    const refreshed = await refreshProviderSnapshot(successMessage);
+    if (!refreshed || !providerAccountIsCurrent(accountId)) return false;
     await refreshAgentOverview();
-    return true;
+    return providerAccountIsCurrent(accountId);
   } catch (error) {
+    if (!providerAsyncContextIsCurrent(requestContext)) return false;
     providerUi = {
       ...providerUi,
       phase: 'ready',
@@ -6105,7 +6228,7 @@ function agentInitial(agent) {
 }
 
 function accountChip(account) {
-  return `<div class="account-chip"><div class="avatar">${escapeHtml(initials(account))}</div><div><strong>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span>${escapeHtml(account.email || '')}</span></div></div>`;
+  return `<div class="account-chip"><div class="avatar" data-settings-card-avatar>${escapeHtml(initials(account))}</div><div><strong>${escapeHtml(account.displayName || 'AgentMesh360 用户')}</strong><span>${escapeHtml(account.email || '')}</span></div></div>`;
 }
 
 function initials(account) {

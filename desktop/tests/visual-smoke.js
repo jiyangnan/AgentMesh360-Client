@@ -99,7 +99,10 @@ app.whenReady().then(async () => {
       ));
     }
   } else if (phase === 'provider' || phase === 'provider-bottom') {
-    await window.webContents.executeJavaScript("document.getElementById('nav-providers').click()");
+    await window.webContents.executeJavaScript(`
+      document.getElementById('open-account-settings').click();
+      document.querySelector('[data-settings-tab="providers"]').click();
+    `);
     await new Promise((resolve) => setTimeout(resolve, 180));
     if (phase === 'provider-bottom' || process.env.AGENTMESH360_VISUAL_PROVIDER_PRESET) {
       await window.webContents.executeJavaScript(
@@ -135,7 +138,7 @@ app.whenReady().then(async () => {
   } else if (phase === 'background') {
     await window.webContents.executeJavaScript(`
       (() => {
-        document.getElementById('nav-settings').click();
+        document.getElementById('open-account-settings').click();
         document.querySelector('[data-settings-tab="background"]').click();
       })()
     `);

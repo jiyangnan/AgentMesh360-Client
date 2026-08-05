@@ -43,12 +43,14 @@ Cycle 60 的 P3 零新 key provenance preflight 见
 [`../operations/RELEASE_PROVENANCE_PREFLIGHT_V1.md`](../operations/RELEASE_PROVENANCE_PREFLIGHT_V1.md)。
 当前实现证据、逐轮计划复盘和下一轮工作见
 [`../PROJECT_PROGRESS.md`](../PROJECT_PROGRESS.md)。
+当前页面层级与导航责任见
+[`CLIENT_INFORMATION_ARCHITECTURE_V2.md`](CLIENT_INFORMATION_ARCHITECTURE_V2.md)。
 
 ## 2026-08-05：首次使用引导状态化
 
 首次用户的默认主路径保持“配置模型供应商 → 激活 Agent → 开始或继续对话”。首页只在路径
 未完成或模型配置需要修复时展示三步状态与唯一下一步；正常常驻 Agent 的回访首页直接显示
-Agent 列表，“设置 > 使用指南”可随时重新打开同一套状态。进度来自 Host 的非秘密
+Agent 列表，“账户与设置 > 使用指南”可随时重新打开同一套状态。进度来自 Host 的非秘密
 `configuredProviderCount`、常驻状态和 `bindingIssue`，不读取 Key、不拉完整 Provider
 Snapshot、不建立 Renderer 完成标记。加载/失败/空 Catalog 均失败关闭；空 Catalog 的恢复
 会真实重读 Host Agent 目录。Agent 激活只有在身份 ready、无激活错误、目标同时进入
@@ -102,11 +104,13 @@ flowchart TB
         APPROVALS["权限与审批"]
     end
 
-    subgraph SETTINGS["设置"]
+    subgraph SETTINGS["账户与设置"]
+        SETTINGS_CENTER["账户设置中心"]
         PROVIDERS["BYOK Provider 与模型"]
         ACCOUNT["账号、订阅与 credits"]
-        DATA["本地数据与导出"]
-        SECURITY["权限与安全"]
+        BACKGROUND["后台运行"]
+        GUIDE["使用指南"]
+        DIAGNOSTICS["高级诊断"]
     end
 
     subgraph AGENTS["可安装的产品 Agent"]
@@ -124,10 +128,12 @@ flowchart TB
     HOME_NAV --> CATALOG
     HOME_NAV --> ACTIVE
     HOME_NAV --> UPDATES
-    HOME_NAV --> PROVIDERS
-    HOME_NAV --> ACCOUNT
-    HOME_NAV --> DATA
-    HOME_NAV --> SECURITY
+    HOME_NAV -->|"左下账户入口"| SETTINGS_CENTER
+    SETTINGS_CENTER --> ACCOUNT
+    SETTINGS_CENTER --> PROVIDERS
+    SETTINGS_CENTER --> BACKGROUND
+    SETTINGS_CENTER --> GUIDE
+    SETTINGS_CENTER --> DIAGNOSTICS
     CATALOG --> TYPES
     TYPES --> JOB
     TYPES --> LECTURE
@@ -512,7 +518,7 @@ flowchart LR
 | --- | --- | --- |
 | 持久化产品身份 | **已实现：账户隔离基础能力** | SQLite Agent Registry、账户级确定性 Main Session/Workspace、旧状态认领、跨账户隐藏、激活 ACP 方法、Session 固定、启动恢复 |
 | 订阅硬门禁 | **Core + Host + 桌面身份外壳已实现并完成生产真实验收** | 服务端 bootstrap、Google/GitHub 系统浏览器登录、邮箱密码兼容登录、loopback + S256 PKCE 一次性交接、Refresh Token 轮换、系统安全存储、启动 / 唤醒 / 聚焦 / 定时重验、订阅拦截和官网跳转；owner Google 账号已通过 Core/Host 双 active 和新进程加密恢复 |
-| BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 已真实通过；桌面接入流程已简化** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 已获得订阅门禁、输入校验、输出脱敏的 Host Provider 管理窄桥，并提供 Profile/Catalog/global-agent Assignment 设置页；官方供应商现在自动锁定协议、认证和官方地址，兼容协议只在自定义高级设置中出现；新 Profile 使用未保存配置与零化内存 Key 完成最小推理连接测试，成功后才解锁保存，测试不写 Vault/Profile/Assignment/Binding/Turn Route；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a/F0b 验证 Gemini Streaming、Function Calling、Structured Output、Reasoning 与重启 Tool Loop；P5 又用真实 owner 订阅验证 Profile/Assignment、Agent Main Turn Route、无 fallback 失败和加密重启恢复 |
+| BYOK Provider 层 | **切片 A/B/C/D0/D1/E1/E2/E3/F0a/F0b 已完成；P5 owner canary 已真实通过；桌面接入流程已简化** | 已实现共享 state.db v10（v7/v8 加固本地 Package Registry，v9 增加远端签名元数据缓存，v10 增加非秘密条件请求状态）、Provider Profile/Vault、声明式 Catalog、Capability、Model Policy、三层 Model Assignment、非秘密 RouteCompiler、账户隔离产品 Agent、不可变 Session Binding、Turn Route 可信存储接口、管理 ACP、凭据诊断安全门槛、Host Credential Lease、三协议投影、actor 接收后写 Turn Route、同一 Turn 多调用复用、产品主 Prompt与全部已确认 Session 辅助消费者接入；产品 subagent 使用不可伪造的 Host-only `subagent` Authority，不继承 Grok credential/AuthManager，父→子→父本机 mock Provider E2E、专用模型/main fallback 与失败门槛均已覆盖；离线 Trace classifier 已确认不属于产品 Session 数据面；Renderer 通过订阅门禁、输入校验和输出脱敏的 Host Provider 管理窄桥维护 Profile/Catalog，具体 Agent Assignment 已从历史全局设置迁移到各 Agent 齿轮中的模型页；官方供应商现在自动锁定协议、认证和官方地址，兼容协议只在自定义高级设置中出现；新 Profile 使用未保存配置与零化内存 Key 完成最小推理连接测试，成功后才解锁保存，测试不写 Vault/Profile/Assignment/Binding/Turn Route；E3 已加入 Host-owned 本地/元数据/最小推理 Probe、付费双重确认与非秘密历史；F0a/F0b 验证 Gemini Streaming、Function Calling、Structured Output、Reasoning 与重启 Tool Loop；P5 又用真实 owner 订阅验证 Profile/Assignment、Agent Main Turn Route、无 fallback 失败和加密重启恢复 |
 | 动态 Agent Package | **H0/H1 至 H2d4 与 P1-P5 已完成；P5 v2 Package canary 已通过并完整清场** | H2d4 已在 Artifact/Envelope 前 bounded fetch Release Manifest，核对 Registry SHA、canonical strict 文档、Client/Host projection 与 H1 metadata。P2/P3/P4 分别完成测试 key ceremony、四 Agent 双构建 provenance 与隔离分发演练并清场；P5 已完成四 Agent baseline、两个 Job 更新、两 Root/Publisher、四段 Trust、五版 Registry、单 SGP1 Droplet、双 Spaces bucket、DNS-only Origin、61/61 Registry-last 发布、14 项 live Host 加 7 项证据/契约场景。21 场景真实暴露并修复 Origin 覆写、签名 expiry 精度、Package receipt/JS 安全整数、持久 Host/矩阵收口等合同问题。Registry-first 清场后 Root、Publisher、Release、DNS、Droplet、limited key、Bucket、Provider、Keychain、Host 与 26 GiB 隔离 Client 全部归零；生产 Root、Publisher Bundle、endpoint 和发布仍关闭 |
 | 桌面产品外壳 | **身份外壳、Agent 首页、Provider/Package/客户端设置，以及 Host Catalog 全部 Agent 的固定 Main Session 多内容对话、三栏 Agent 工作区、齿轮设置、恢复通路、标准 ACP 单次权限审批、安全只读工具活动、通用 Workspace Artifact/Project State、Harness 后台活动与 Session Plan 安全投影已实现；P6 R4 no-authority preflight、unsigned internal arm64 build、隔离安装/生命周期及 strict 留存验收已完成** | 已激活 Agent 默认进入对话；Composer 支持文字、图片、文件、网页链接、拖放和截图粘贴，通过 ACP `Text` / `Image` / `ResourceLink` / `EmbeddedResource` 进入 Grok Harness；Agent 工作时输入框继续可用，并以 Grok `x.ai/interject` 追加文字要求；Renderer 不读取本机路径、附件字节或 Session authority。二级栏上半区列真正常驻 Agent、下半区当前只列 Host 权威支持的唯一主会话；模型、agent.md 和 user.md 收入设置。三个首方 Agent 已由打包 Host 通过真实 detach/Leader 替换恢复；P6 内部版固定无 Developer ID、公证、自动更新/上传。权威 Prompt Queue、停止/send-now、受控 `/`/`$`/`@`、真正多会话、音视频输入、云附件库、生产 R4、签名/更新/rollback 场景、P7/P8、Scheduler、Subagent、Agent 专属垂直 UI 和生产 authority 不自动启动 |
 | 后台 Host | **持久 Leader、重连、崩溃恢复与隐藏登录启动源码已实现** | 默认采用 AgentMesh360 专属 socket/lock 的 Grok Leader；真实测试已验证 detach 后同一 PID/Main Session，以及 Leader SIGKILL 后新 PID、Refresh Token 轮换、Core/Host 双重 bootstrap 与同一 Main Session；G2 已加入无 Renderer 的系统登录启动、第二实例开窗、首次激活注册和用户设置开关；签名安装包 Login Item E2E、主进程自身守护、受控 shutdown、通知与完整审计仍是发布目标 |
@@ -530,7 +536,7 @@ Cycle 134 修复了 Cycle 133 后台复验与 Host 授权更新之间的竞态�
 用例结果为 42 通过、3 个外部真实服务阻断、0 失败。下一产品切片仍回到首次使用引导，
 不扩展价格、余额、自动 fallback、P7/P8 或生产发布。
 
-Cycle 144 将用户已验证可用的主对话重构为三栏 Agent 工作区：全局导航保持三项，二级栏
+Cycle 144 将用户已验证可用的主对话重构为三栏 Agent 工作区：当时全局导航保持三项，二级栏
 按“常驻 Agent / 当前 Agent 会话”分区，主内容默认只显示对话；模型、行为和用户偏好从
 右上角齿轮进入设置。当前 Host 仍严格是一 Agent 一个确定性 Main Session，因此会话区
 只显示一条真实“主会话”，不扫描普通 Grok Session，也不伪造多会话 CRUD。Renderer
@@ -553,6 +559,13 @@ Enter 发送、Shift+Enter 换行；Agent 工作时 Composer 保持可用，按�
 通过 `x.ai/interject` 调整当前任务且不取消原 Turn。完整 Queue、停止/send-now、命令、
 Skill、受控工作区文件、历史和语音按安全依赖分阶段实现，不把所有能力堆到固定主视觉。
 详细合同见 [`GROK_FIRST_INPUT_SYSTEM_V2.md`](GROK_FIRST_INPUT_SYSTEM_V2.md)。
+
+Cycle 165 根据 owner 的持续使用反馈进一步收敛信息架构：全局一级导航只保留日常目的
+“Agent”，模型供应商和客户端设置不再与 Agent 平铺。左下完整账户区域成为明确的
+“账户与设置”入口，二级面板集中承载账号与订阅、模型供应商、后台运行、使用指南和高级
+诊断；退出登录只在账号页显式出现。Provider 仍是列表优先的独立管理页，只有进入其子页时
+才读取 Snapshot；具体 Agent 的模型、`agent.md` 和 `user.md` 仍由对话右上角齿轮管理。
+首次引导、Host 状态和 Agent 模型恢复均深链到真实目标，不恢复已经淘汰的一级入口。
 
 Job Agent、LectureCast Agent 和 Deploy Agent 已从相同的 Manifest v1 载入，不再
 分别硬编码 Registry 元数据与 Agent Profile。Host 现在会在启动时复验并合并本地

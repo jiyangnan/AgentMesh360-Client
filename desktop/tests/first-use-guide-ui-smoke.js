@@ -315,7 +315,7 @@ app.whenReady().then(async () => {
     "document.querySelector('.agent-model-alert')?.innerText.includes('Deploy Agent')",
   ), true);
   await window.webContents.executeJavaScript(
-    "document.getElementById('nav-settings').click(); document.querySelector('[data-settings-tab=\"guide\"]').click()",
+    "document.getElementById('open-account-settings').click(); document.querySelector('[data-settings-tab=\"guide\"]').click()",
   );
   await waitFor(() => window.webContents.executeJavaScript(
     "document.querySelector('.onboarding-strip.settings-guide.ready') !== null",

@@ -1292,7 +1292,7 @@ owner 已在另一个任务中把猎聘页面变化修复到官方 `AgentMesh-Jo
 回到首次使用引导，优先让新用户清楚完成“配置模型供应商 → 激活 Agent → 开始对话”，不借此
 开启多会话后端、在线 Agent 商店、P7/P8、签名、公证或在线发布。
 
-## 74. 当前切片：首次使用三步引导闭环
+## 74. 已完成历史切片：首次使用三步引导闭环
 
 Job Agent `0.5.6` 真实猎聘 UAT 关闭后，产品顺序回到首次使用主路径。本切片只让用户清楚完成
 “配置模型供应商 → 激活 Agent → 开始或继续对话”，不新增业务模块：
@@ -1302,7 +1302,8 @@ Job Agent `0.5.6` 真实猎聘 UAT 关闭后，产品顺序回到首次使用主
    首页；
 2. 未完成用户首页展示三步状态与唯一真实下一步；Overview 加载/失败不猜测，空 Agent
    Catalog 通过真实 Host 刷新动作恢复，模型失效只进入对应 Agent 的模型设置；
-3. 有正常常驻 Agent 的回访用户首页保持紧凑；“设置 > 使用指南”复用同一状态，可打开或
+3. 有正常常驻 Agent 的回访用户首页保持紧凑；当时的“设置 > 使用指南”（现为“账户与设置
+   > 使用指南”）复用同一状态，可打开或
    继续明确命名的 Agent。没有 Host 首条用户消息证据时，第三步保持“当前步骤”，不伪造完成；
 4. Agent 激活返回后必须由 Main 确认身份仍为 ready、无激活错误、目标
    `desiredState=running` 且运行态属于允许的常驻/启动状态；失败保持模型设置和可重试状态，
@@ -1321,3 +1322,24 @@ push；源码 Node/Electron/视觉/产品旅程、包内真实 Host `239/239`、
 `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-d0902bc-arm64`。现有
 `/Applications/AgentMesh360.app` 按安全合同未被自动覆盖；下一证据层只是在 owner 安装后
 按真实账号状态核对三步引导，不借此开启新的产品功能。
+
+## 75. 当前切片：账户设置中心与主导航收敛
+
+owner 在真实账号回访态继续验收后确认：模型供应商和普通客户端设置主要服务首次配置或
+低频维护，不应与日常 Agent 工作平铺。本切片只调整信息层级，不改变任何业务 authority：
+
+1. 全局一级导航只保留 Agent；左下完整账户区域改为可访问的“账户与设置”按钮，不再把
+   不明确的箭头直接当作退出；
+2. 账户设置中心集中承载账号与订阅、模型供应商、后台运行、使用指南和高级诊断，当前项
+   active/`aria-current` 唯一，退出登录只在账号页显式出现；
+3. Provider 继续保持“已配置列表优先 → 显式新增/编辑弹窗”，且只有进入 Provider 子页才
+   读取 Host Snapshot；Agent 模型、`agent.md` 和 `user.md` 继续归具体 Agent 齿轮设置；
+4. 首次引导、Host 状态和 Agent 模型恢复保留状态化深链；账号切换关闭设置中心、清理旧
+   Provider 投影并回到 Agent，不能把旧账号配置泄漏给新账号；
+5. 自动化覆盖鼠标与键盘入口、五子页、唯一选中态、Provider 懒加载、账号切换、Host 深链、
+   1180×760 至 1440×900 以及 720px 窄窗口；安装包验收不得再查找旧 `nav-providers` 或
+   `nav-settings`。
+
+本切片不新增 Provider、Agent、多会话、在线 Package、生产 Trust、P7/P8、签名、公证或
+在线发布；不修改 owner 的真实账号、Key、credits、会话或 `/Applications`。完整页面合同见
+[`CLIENT_INFORMATION_ARCHITECTURE_V2.md`](CLIENT_INFORMATION_ARCHITECTURE_V2.md)。

@@ -517,17 +517,44 @@ button { -webkit-app-region: no-drag; }
 .sidebar-account {
   display: flex;
   align-items: center;
+  width: 100%;
   gap: 10px;
   padding: 13px 10px;
+  color: var(--text);
+  text-align: left;
+  border: 0;
   border-top: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  background: transparent;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
   -webkit-app-region: no-drag;
+}
+
+.sidebar-account:hover,
+.sidebar-account.active {
+  background: rgba(146, 119, 255, .075);
+}
+
+.sidebar-account.active {
+  color: #f3efff;
+  box-shadow: inset 0 0 0 1px rgba(182, 165, 255, .1);
 }
 
 .sidebar-account .copy { min-width: 0; flex: 1; }
 .sidebar-account strong,
 .sidebar-account span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-account strong { font-size: 12px; }
-.sidebar-account span { margin-top: 2px; color: var(--muted); font-size: 10px; }
+.sidebar-account strong { font-size: 13px; }
+.sidebar-account span { margin-top: 2px; color: var(--muted); font-size: 12px; }
+.sidebar-account .sidebar-account-arrow {
+  margin: 0;
+  color: #68758a;
+  font-size: 22px;
+  line-height: 1;
+  transition: color .16s ease, transform .16s ease;
+}
+.sidebar-account:hover .sidebar-account-arrow,
+.sidebar-account.active .sidebar-account-arrow { color: #c8bcff; transform: translateX(2px); }
 
 .workspace-main { overflow: auto; padding: 48px 48px 38px; }
 
@@ -1018,6 +1045,131 @@ button { -webkit-app-region: no-drag; }
 .account-settings-card .account-chip { margin-top: 0; }
 .account-settings-card > button { margin-top: 18px; }
 .provider-only-column { max-width: 980px; }
+
+.account-center {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.account-center-header {
+  margin-bottom: 28px;
+}
+
+.account-center-header .eyebrow { margin-bottom: 8px; }
+.account-center-header h1 { margin: 0; font-size: 34px; letter-spacing: -.04em; }
+.account-center-header > p:last-child {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.account-center-layout {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  align-items: start;
+  gap: 30px;
+}
+
+.account-center-rail {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+}
+
+.account-center-identity {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 4px 4px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-center-identity .avatar { width: 38px; height: 38px; }
+.account-center-identity strong,
+.account-center-identity span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-center-identity strong { font-size: 13px; }
+.account-center-identity span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+.account-center-menu { display: grid; gap: 15px; margin-top: 16px; }
+.account-center-menu-group > p {
+  margin: 0 8px 6px;
+  color: #647084;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.account-center-menu-group button {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  gap: 9px;
+  min-height: 58px;
+  padding: 8px 9px;
+  color: #909bae;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  cursor: pointer;
+  background: transparent;
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.account-center-menu-group button:hover {
+  color: #ded8f4;
+  background: rgba(255,255,255,.026);
+}
+
+.account-center-menu-group button.active {
+  color: #f1edff;
+  border-color: rgba(182,165,255,.15);
+  background: rgba(146,119,255,.09);
+}
+
+.account-center-menu-glyph {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #a99be7;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid rgba(182,165,255,.12);
+  border-radius: 9px;
+  background: rgba(146,119,255,.045);
+}
+
+.account-center-menu-group button > span:nth-child(2) { min-width: 0; }
+.account-center-menu-group button strong,
+.account-center-menu-group button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-center-menu-group button strong { font-size: 13px; font-weight: 620; }
+.account-center-menu-group button small {
+  margin-top: 3px;
+  color: #7f8c9f;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+}
+.account-center-menu-group button.active small { color: #8176a5; }
+.account-center-menu-group button > i { color: #59667a; font-size: 17px; font-style: normal; }
+.account-center-menu-group button.active > i { color: #b9abf3; }
+
+.account-center-content { min-width: 0; padding-bottom: 30px; }
+.account-center-content > .workspace-header { margin-top: 0; }
+.account-center-content .workspace-header h1 { font-size: 30px; }
+.account-center-content .provider-header { grid-template-columns: minmax(0, 1fr) auto; }
+.account-center-content .provider-header h1 { font-size: 30px; }
+.account-center-content .provider-only-column,
+.account-center-content .agent-settings-panel { max-width: none; }
 
 .security-row {
   display: flex;
@@ -3169,6 +3321,9 @@ summary:focus-visible {
   .agent-conversation-workspace .conversation-transcript,
   .conversation-composer-dock { padding-left: 20px; padding-right: 20px; }
   .agent-settings-workspace { padding-left: 30px; padding-right: 30px; }
+  .account-center-layout { grid-template-columns: 1fr; gap: 22px; }
+  .account-center-rail { position: static; }
+  .account-center-menu { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .agent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .provider-layout { grid-template-columns: 1fr; }
   .provider-overview { grid-template-columns: repeat(3, 1fr); }
@@ -3201,6 +3356,8 @@ summary:focus-visible {
   .credential-action-row { grid-template-columns: 1fr; }
   .model-discovery-button { width: 100%; margin: -2px 0 13px; }
   .provider-modal-form .panel-actions { align-items: stretch; flex-direction: column; }
+  .account-center-menu { grid-template-columns: 1fr; }
+  .account-center-header h1 { font-size: 30px; }
   .provider-secondary-actions,
   .provider-save-actions { width: 100%; }
   .provider-secondary-actions button,
