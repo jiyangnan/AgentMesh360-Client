@@ -443,7 +443,7 @@ flowchart TD
     REQUEST["产品 Agent 请求推理或执行动作"] --> DECLARED["读取 Package 声明的能力要求"]
     DECLARED --> KIND{"请求类型"}
 
-    KIND -->|"模型推理"| MODEL["解析独立 Model Assignment\n会话级、Agent 级或全局"]
+    KIND -->|"模型推理"| MODEL["解析具体 Agent 的当前模型设置\nHost 内部只兼容历史 global/main Assignment"]
     MODEL --> CAPABLE{"所选模型是否满足工具、上下文、视觉和输出要求？"}
     CAPABLE -->|"否"| EXPLAIN["说明不兼容原因，并要求用户选择其他模型"]
     CAPABLE -->|"是"| BINDING["读取或创建不可变 Session Binding\n固定 route revision"]

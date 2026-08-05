@@ -1,6 +1,6 @@
 # 账户设置中心与主导航收敛计划
 
-状态：源码、UI 回归与独立终审完成；等待内部包验收
+状态：源码与唯一内部包验收完成；owner 安装态人工 UAT 待执行
 
 日期：2026-08-05
 
@@ -76,7 +76,17 @@ Agent 的模型、`agent.md` 与 `user.md` 继续只由 Agent 对话右上角齿
   在源码层通过，安装包/人工层保持待执行，因此最终 `--require-executed` 按设计阻断；
 - 当前所有自动化均为本机 fixture，不读取真实账号/Key，不发送消息或 Provider 请求，不消耗
   credits 或产生费用；按 owner 要求未使用 Kimi；
-- 独立只读终审结论为 `APPROVE`，无 P0/P1/P2；剩余门槛是 clean commit/push、新唯一内部包
-  及包内真实 Host/安装 UI 验收。
-- 打包前磁盘预检已阻止一次可能占满磁盘的 incremental 冷构建；内部构建器现固定关闭可丢弃的
-  Cargo incremental，并保留旧包直到新包完整通过。
+- 独立只读终审结论为 `APPROVE`，无 P0/P1/P2；产品 commit
+  `3b0f57b4911253794b35cfe805ee7bf5f7446da7` 与构建安全 commit
+  `aa75fb41361efa344805941468e3a81ca10ed7f5` 均已 clean push；
+- 打包前磁盘预检阻止了一次可能占满磁盘的 incremental 冷构建；内部构建器固定
+  `CARGO_INCREMENTAL=0` 后，本次真实冷构建完成，临时 target 自动清理。该策略可能影响
+  构建时长、二进制大小和哈希，本轮只以完整包级复验确认当前产物；
+- receipt `desktop_internal_p6_aa75fb41361e_arm64`、双 SHA、DMG、ZIP、DMG/ZIP 关键内容、
+  `app.asar` 与源码、构建/交付四文件均通过；包内 arm64 Host 版本为
+  `1000.1.1785915225001 (aa75fb4)`，完整 Desktop 门禁 `239 passed / 0 failed / 0 skipped`；
+- 唯一内部交付位于
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-aa75fb4-arm64`；上一包已删除，
+  Downloads 与构建证据各只保留当前版本；
+- 未覆盖现有 `/Applications`。`TC-NAV-001`、`TC-GUIDE-001`、`TC-SETTINGS-001` 仍需 owner
+  安装新包后做真实账号动态确认，完成前保持“待执行”。

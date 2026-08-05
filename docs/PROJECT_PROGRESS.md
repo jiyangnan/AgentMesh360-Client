@@ -8945,7 +8945,8 @@ owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果�
 
 ### 循环 165：Agent 唯一主导航与账户设置中心
 
-状态：源码、UI 回归与独立终审完成；等待 clean commit 后执行唯一内部包及包内 Host 验收
+状态：源码、UI 回归、独立终审、clean push、包内真实 Host、DMG/ZIP/receipt、唯一内部
+交付与旧包清理完成；owner 安装态人工 UAT 待执行
 
 本轮开始前重新核对产品蓝图、信息架构、首次使用三步引导和 owner 回访态反馈，确认主路径
 仍是“配置模型供应商 → 激活 Agent → 在 Agent 对话中开始工作”，但访问频率不同：Agent 是
@@ -8983,10 +8984,38 @@ owner 真实猎聘复跑现已通过，`TC-AGENT-009` 正式关闭；本结果�
 打包前磁盘预检发现仅余约 14GiB，而默认 Release profile 开启 incremental，历史临时 Cargo
 target 峰值约 24GB。首次冷构建在输出 Artifact 前主动中止并清理 1.8GiB 临时目录，旧包完整
 保留；内部构建器随后固定 `CARGO_INCREMENTAL=0`，并新增单元测试，避免后续靠手工清理才能
-打包。该调整只减少可丢弃编译缓存，不改变 Host runtime、签名边界或产物验证门槛。
+打包。该调整会改变 Cargo 的编译策略，可能影响构建时长、二进制大小和最终哈希，但不改变
+产品功能语义、Host runtime 版本规则、签名边界或产物验证门槛；是否足以降低磁盘峰值仍以
+本轮真实冷构建和完整包级复验为准。本次非增量冷构建实际完成，编译临时目录自动删除；
+构建与验收期间观测到的最低可用空间约 `7GiB`，清理验证临时目录和上一包后约 `9.4GiB`。
+这只证明本次构建成功，不把它泛化为任意机器或任意后续版本的固定磁盘需求。
 
-计划复盘：当前 diff 仍严格对应信息架构收敛，没有新增 Provider、Agent、多会话、在线
-Package、生产 Trust、P7/P8、签名、公证或在线发布，也没有修改真实账号、持久会话或
-`/Applications`。下一步只允许先关闭独立审查问题，clean commit/push 后构建同一 commit 的
-unsigned internal arm64 包，执行包内真实 Host、DMG/ZIP/receipt 与动态 UI 验收；新包全绿后
-才清理上一包，并把最终证据回填本节。
+最终包级与交付证据：
+
+1. 产品 commit `3b0f57b4911253794b35cfe805ee7bf5f7446da7` 与构建安全 commit
+   `aa75fb41361efa344805941468e3a81ca10ed7f5` 均已 clean push；内部包绑定后者，receipt
+   `desktop_internal_p6_aa75fb41361e_arm64` 严格复验为 `passed`；
+2. 包内 arm64 Host 报告 `grok 1000.1.1785915225001 (aa75fb4)`；使用隔离 HOME/TMPDIR 和
+   本机回环 fixture 执行完整 Desktop 门禁为 `239 passed / 0 failed / 0 skipped`，没有访问
+   真实账号、Provider、credits 或外部服务；
+3. DMG 为 `181449993` bytes，SHA-256
+   `2c3a66369514f4fae43aaabb31938db8ff8d80708ca44d217c6cf873d6eecb2d`；ZIP 为
+   `181236131` bytes，SHA-256
+   `d8624fa3ad278bd3471c14b6c013caf4d83f1be32956b2a8e4ef52309db72e07`；receipt、双
+   `SHA256SUMS`、DMG checksum 与 ZIP CRC 全部通过；
+4. DMG 与 ZIP 的 Host、`app.asar`、主 `Info.plist`、听写 Helper、Helper `Info.plist` 和
+   capabilities 逐字节一致；ZIP `app.asar` 中的 `app.js`、`style.css`、`preload.js` 与
+   `main.js` 和提交源码逐字节一致，Host 与听写 Helper 均为可执行 arm64；
+5. 构建目录与 Downloads 交付目录四文件逐字节一致；唯一交付目录为
+   `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-aa75fb4-arm64`。
+   上一 `d0902bc` 交付和构建证据已删除，当前两侧各只保留 `aa75fb4` 一份；根 `target/`、
+   `desktop/.native-build`、构建临时目录和 DMG 挂载均不存在；
+6. 没有覆盖、启动或修改现有 `/Applications/AgentMesh360.app`。因此
+   `TC-NAV-001`、`TC-GUIDE-001`、`TC-SETTINGS-001` 继续保持安装态人工层“待执行”，不把
+   源码 smoke、包内字节一致或旧安装状态冒充为 owner 动态 UAT。
+
+计划复盘：本轮仍严格对应信息架构收敛，没有新增 Provider、Agent、多会话、在线 Package、
+生产 Trust、P7/P8、签名、公证或在线发布，也没有修改真实账号、持久会话或
+`/Applications`。源码、终审、构建、包内 Host、DMG/ZIP、交付副本和单版本清理均已闭环；
+下一证据层只由 owner 安装上述唯一内部包后核对真实账号下的导航、指南与设置中心，不借此
+扩大当前开发范围。

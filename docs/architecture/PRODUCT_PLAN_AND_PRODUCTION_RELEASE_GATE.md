@@ -1323,7 +1323,7 @@ push；源码 Node/Electron/视觉/产品旅程、包内真实 Host `239/239`、
 `/Applications/AgentMesh360.app` 按安全合同未被自动覆盖；下一证据层只是在 owner 安装后
 按真实账号状态核对三步引导，不借此开启新的产品功能。
 
-## 75. 当前切片：账户设置中心与主导航收敛
+## 75. 已完成历史切片：账户设置中心与主导航收敛
 
 owner 在真实账号回访态继续验收后确认：模型供应商和普通客户端设置主要服务首次配置或
 低频维护，不应与日常 Agent 工作平铺。本切片只调整信息层级，不改变任何业务 authority：
@@ -1343,3 +1343,10 @@ owner 在真实账号回访态继续验收后确认：模型供应商和普通�
 本切片不新增 Provider、Agent、多会话、在线 Package、生产 Trust、P7/P8、签名、公证或
 在线发布；不修改 owner 的真实账号、Key、credits、会话或 `/Applications`。完整页面合同见
 [`CLIENT_INFORMATION_ARCHITECTURE_V2.md`](CLIENT_INFORMATION_ARCHITECTURE_V2.md)。
+
+2026-08-05 本切片由产品 commit `3b0f57b4911253794b35cfe805ee7bf5f7446da7` 和构建安全
+commit `aa75fb41361efa344805941468e3a81ca10ed7f5` 完成并 clean push；包内真实 Host 完整
+Desktop 门禁 `239/239`、receipt、DMG、ZIP、关键包内容和唯一交付副本均通过。唯一内部包位于
+`/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-aa75fb4-arm64`。当前
+`/Applications/AgentMesh360.app` 未被自动覆盖；owner 安装态下的导航、指南与设置中心人工
+确认是下一证据层，不把它冒充为本轮已执行自动化。

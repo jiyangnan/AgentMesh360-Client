@@ -126,10 +126,10 @@ rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
 这些摘要只绑定上述 commit 的本地内部产物；未来任何重新构建都必须产生新的 receipt
 与摘要，不能沿用本节的数值。
 
-## 最新内部体验版
+## 历史内部体验版：2026-07-31 687e4d7
 
 2026-07-31 已从 clean pushed commit
-`687e4d7d77e21608d92f498df0d0d5b69137d243` 构建并交付当前 arm64 内部体验版：
+`687e4d7d77e21608d92f498df0d0d5b69137d243` 构建并交付当时的 arm64 内部体验版：
 
 - receipt：`desktop_internal_p6_687e4d7d77e2_arm64`；
 - Desktop `0.1.1`，Host runtime `1000.1.1785511674001 (687e4d7)`；
@@ -141,12 +141,37 @@ rollback 和完整 18 场景矩阵；内部体验版不能跳过这些门。
   副本逐字节比较以及 arm64 Host/版本、`app.asar`、`Info.plist` inventory 全部通过；
 - 真实覆盖安装恢复 active 订阅、持久 Host、1 个常驻 Agent 和可用主会话；旧 Leader
   已让位给新包。验收消息发送、Provider 请求和 AgentMesh credits 均为 0；
-- 本地交付目录：
-  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-687e4d7-arm64/`；
-- 新包验证并完成真实安装后才删除 `2df5b20` 上一包和旧构建证据；当前 Downloads 与
-  `desktop/dist/internal` 各只保留这一份，仓库根 `target/` 不存在；
+- 当时的本地交付目录为
+  `~/Downloads/AgentMesh360-Internal-Test-2026-07-31-687e4d7-arm64/`，现已由后续版本按
+  单包留存规则清理；
+- 该轮在新包验证并完成真实安装后才删除 `2df5b20` 上一包和旧构建证据；该轮结束时
+  Downloads 与 `desktop/dist/internal` 各只保留 `687e4d7` 一份，仓库根 `target/` 不存在；
 - 本次仍未签名、未公证、未上传、未请求 Provider，Apple/credits/Provider 费用均为
   0。
+
+## 最新内部体验版
+
+2026-08-05 已从 clean pushed commit
+`aa75fb41361efa344805941468e3a81ca10ed7f5` 构建并交付当前 arm64 内部体验版：
+
+- receipt：`desktop_internal_p6_aa75fb41361e_arm64`；
+- Desktop `0.1.1`，Host runtime `1000.1.1785915225001 (aa75fb4)`；
+- DMG：`181449993` bytes，SHA-256
+  `2c3a66369514f4fae43aaabb31938db8ff8d80708ca44d217c6cf873d6eecb2d`；
+- ZIP：`181236131` bytes，SHA-256
+  `d8624fa3ad278bd3471c14b6c013caf4d83f1be32956b2a8e4ef52309db72e07`；
+- receipt verifier、构建与交付双 `SHA256SUMS`、`hdiutil verify`、ZIP CRC、四文件逐字节
+  比较、DMG/ZIP 关键内容、`app.asar` 与源码全部通过；
+- 包内 arm64 Host 在隔离 HOME/TMPDIR 与本机回环 fixture 下执行完整 Desktop 门禁为
+  `239 passed / 0 failed / 0 skipped`；没有访问真实账户、Provider、credits 或外部服务；
+- 本地交付目录：
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-aa75fb4-arm64`；
+- 新包全绿后已删除 `d0902bc` 上一包及旧构建证据；当前 Downloads 与
+  `desktop/dist/internal` 各只保留 `aa75fb4` 一份，仓库根 `target/`、
+  `desktop/.native-build`、构建临时目录与 DMG 挂载均不存在；
+- 本次没有覆盖或启动现有 `/Applications/AgentMesh360.app`，也未签名、公证、上传或请求
+  Provider；Apple/credits/Provider 费用均为 0。账户设置中心的真实安装态人工 UAT 仍需
+  owner 安装此包后执行。
 
 隔离安装、首次启动、Login Item 与打包 Host 的后续矩阵见
 [`P6_UNSIGNED_INTERNAL_INSTALL_LIFECYCLE.md`](P6_UNSIGNED_INTERNAL_INSTALL_LIFECYCLE.md)。

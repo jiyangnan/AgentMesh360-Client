@@ -141,8 +141,9 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
   常驻/启动状态时必须报错并留在模型设置，不能显示成功或误开对话。
 - **验证层**：Node + Electron + 安装包 + 人工
 - **本轮结果**：待执行
-- **证据说明**：源码 Node、Electron、视觉与产品旅程结构验证通过；`d0902bc` 旧包只能证明
-  三步状态机，不能证明新的账户入口路由。新包动态验收和 owner 人工确认仍待执行。
+- **证据说明**：源码 Node、Electron、视觉与产品旅程结构验证已通过；新的账户入口与
+  “账户与设置 > 使用指南”路由仍需由本轮新包动态验收和 owner 安装态人工确认，完成前
+  保持待执行。
 
 ## TC-GUIDE-002：首次引导未知、失败与空目录恢复
 
@@ -1980,3 +1981,27 @@ Grok Build Harness 负责推理循环、工具、权限、压缩与恢复。
 - 包内 `app.asar` 包含单体 Composer 标记、30px 外圆角和准确附件隐私文案，公开 UI 不含
   `AgentMesh360 Core`。Downloads 与 dist 各只保留 `7e0a60e` 一份，旧 `75b225b` 和临时缓存
   已删除；没有覆盖 `/Applications/AgentMesh360.app`。
+
+### 2026-08-05 Agent 唯一主导航与账户设置中心执行
+
+- 产品旅程结构验证器 `3/3`，当前 `93` 条、`14` 个领域；本轮新增的
+  `TC-NAV-001`、`TC-GUIDE-001`、`TC-SETTINGS-001` 已完成源码 Node、Electron、视觉和
+  包字节验证，但因没有覆盖当前 `/Applications` 或进入 owner 真实账号做动态确认，三条
+  仍按完整验证层保持“待执行”；
+- Desktop 源码回归 `239 total / 234 passed / 0 failed / 5 skipped`；账户设置中心、首次引导、
+  Agent 管理、Provider、Conversation、紧凑布局与 Package 七组 Electron smoke 全部退出 0；
+  账户中心另覆盖键盘、唯一 `aria-current`、Provider 懒加载、账号切换迟到响应和
+  1180×760、1280×768、1280×800、1440×900、720×760 五档视口；
+- 产品 commit `3b0f57b4911253794b35cfe805ee7bf5f7446da7` 与构建安全 commit
+  `aa75fb41361efa344805941468e3a81ca10ed7f5` 已 clean push；当前包 receipt
+  `desktop_internal_p6_aa75fb41361e_arm64`，Host 为 arm64，版本
+  `1000.1.1785915225001 (aa75fb4)`；
+- 包内 Host 在隔离 HOME/TMPDIR、本机回环 fake Core/Provider 下执行完整 Desktop 门禁
+  `239 passed / 0 failed / 0 skipped`；receipt、双 SHA、DMG checksum、ZIP CRC、
+  DMG/ZIP 关键内容、`app.asar` 与源码、构建/交付四文件均通过；
+- 唯一内部交付目录为
+  `/Users/ferdinandji/Downloads/AgentMesh360-Internal-Test-2026-08-05-aa75fb4-arm64`；上一
+  `d0902bc` 包和旧构建证据已删除，Downloads 与 dist 各只保留当前版本，根 `target/`、
+  `.native-build`、构建临时目录和 DMG 挂载均不存在；
+- 测试没有读取真实账户或 Provider Key，没有发送消息、Provider/Core 外部请求，不消耗
+  credits，不产生费用；未调用 Kimi，也没有启动、覆盖或修改 `/Applications`。
