@@ -11,6 +11,14 @@ and migration source. Do not implement new client features there. Copy or
 rewrite only still-valid contracts and assets into this repository, with an
 explicit source note when provenance matters.
 
+## Development status
+
+Development is paused by owner decision on 2026-11-11. The last development
+cycle closed on 2026-08-05. Do not start new client features, upstream
+synchronization, packaging or release work here until the owner explicitly
+reopens the repository. Reading the repository and answering questions about it
+remain fine.
+
 ## Product direction
 
 - Grok Build is the primary harness, not an optional execution adapter.

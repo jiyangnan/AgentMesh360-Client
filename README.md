@@ -5,6 +5,9 @@
 > 本仓库是 [`xai-org/grok-build`](https://github.com/xai-org/grok-build) 的
 > Grok-first Fork：Grok Build 提供核心 Agent Harness，AgentMesh360 在其上构建
 > 持久化多 Agent 桌面产品。
+>
+> **开发状态（2026-11-11）：暂停。** 最近一次开发循环收于 2026-08-05。恢复开发需要 owner
+> 明确决定；在此之前不接受新功能、上游同步或发布工作。
 
 **Job Agent**、**Lecturecast Agent**、**Deploy Agent** 等第一方产品 Agent
 将在这里作为用户可见、可长期驻留的 Agent 运行，并拥有固定对话、记忆、工具、
