@@ -19,6 +19,11 @@ synchronization, packaging or release work here until the owner explicitly
 reopens the repository. Reading the repository and answering questions about it
 remain fine.
 
+The owner adopted the restart-review criteria on 2026-11-14, recorded in
+[README](README.md#开发暂停与重启评审条件). Meeting either condition only permits
+a restart review; it does not reopen development or authorize a release.
+Preserve the freeze until the owner explicitly reopens it.
+
 ## Product direction
 
 - Grok Build is the primary harness, not an optional execution adapter.
